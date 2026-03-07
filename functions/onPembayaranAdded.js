@@ -1,0 +1,334 @@
+// functions/onPembayaranAdded.js
+// =========================================================================
+// CLOUD FUNCTION: ON PEMBAYARAN ADDED (100% OTOMATIS) - v3
+// =========================================================================
+//
+// PERUBAHAN v3:
+// âœ… Menyimpan ke node pembayaran_harian untuk akses cepat Pimpinan
+// âœ… Menyimpan ke node event_harian/nasabah_baru saat pencairan
+// âœ… Menyimpan ke node event_harian/nasabah_lunas saat lunas
+// âœ… Update pelanggan_bermasalah saat nasabah lunas (hapus dari list)
+// =========================================================================
+
+const functions = require('firebase-functions');
+const admin = require('firebase-admin');
+
+const db = admin.database();
+
+const { processPembayaranBaru, getTodayIndonesia } = require('./summaryHelpers');
+
+// =========================================================================
+// HELPER: Simpan ke node pembayaran_harian
+// =========================================================================
+async function saveToPembayaranHarian(adminUid, pelangganId, pembayaran, jenis) {
+    try {
+        const today = getTodayIndonesia();
+        
+        // Dapatkan data admin dan cabang
+        const adminSnap = await db.ref(`metadata/admins/${adminUid}`).once('value');
+        const adminData = adminSnap.val();
+        
+        if (!adminData || !adminData.cabang) {
+            console.log('âš ï¸ Admin atau cabang tidak ditemukan');
+            return;
+        }
+        
+        const cabangId = adminData.cabang;
+        
+        // Dapatkan nama pelanggan
+        const pelangganSnap = await db.ref(`pelanggan/${adminUid}/${pelangganId}`).once('value');
+        const pelangganData = pelangganSnap.val();
+        
+        const pembayaranData = {
+            pelangganId: pelangganId,
+            namaPanggilan: pelangganData?.namaPanggilan || 'Unknown',
+            namaKtp: pelangganData?.namaKtp || '',
+            adminUid: adminUid,
+            // âœ… PERBAIKAN: Prioritaskan email agar Pimpinan tahu siapa adminnya
+            adminName: adminData.name || adminData.email || '',
+            adminEmail: adminData.email || '',
+            jumlah: pembayaran.jumlah || 0,
+            jenis: jenis, // "cicilan", "tambah_bayar", atau "pencairan"
+            tanggal: pembayaran.tanggal || today,
+            timestamp: admin.database.ServerValue.TIMESTAMP
+        };
+        
+        // Simpan ke pembayaran_harian/{cabangId}/{tanggal}/{autoId}
+        await db.ref(`pembayaran_harian/${cabangId}/${today}`).push(pembayaranData);
+        
+        console.log(`âœ… Saved to pembayaran_harian: ${cabangId}/${today} - ${pelangganData?.namaPanggilan} - Rp ${pembayaran.jumlah}`);
+        
+    } catch (error) {
+        console.error('âŒ Error saving to pembayaran_harian:', error.message);
+    }
+}
+
+// =========================================================================
+// âœ… HELPER: Simpan ke event_harian/nasabah_baru
+// =========================================================================
+async function saveToNasabahBaru(adminUid, pelangganId, pelanggan) {
+    try {
+        const today = getTodayIndonesia();
+        
+        const adminSnap = await db.ref(`metadata/admins/${adminUid}`).once('value');
+        const adminData = adminSnap.val();
+        
+        if (!adminData || !adminData.cabang) return;
+        
+        const cabangId = adminData.cabang;
+        
+        const nasabahBaruData = {
+            namaPanggilan: pelanggan.namaPanggilan || '',
+            namaKtp: pelanggan.namaKtp || '',
+            adminUid: adminUid,
+            // âœ… PERBAIKAN: Prioritaskan email
+            adminName: adminData.name || adminData.email || '',
+            besarPinjaman: pelanggan.besarPinjaman || 0,
+            totalDiterima: pelanggan.totalDiterima || 0,
+            wilayah: pelanggan.wilayah || '',
+            tanggalDaftar: today,
+            timestamp: admin.database.ServerValue.TIMESTAMP
+        };
+        
+        await db.ref(`event_harian/${cabangId}/${today}/nasabah_baru/${pelangganId}`).set(nasabahBaruData);
+        
+        console.log(`âœ… Saved to event_harian/nasabah_baru: ${pelanggan.namaPanggilan}`);
+        
+    } catch (error) {
+        console.error('âŒ Error saving to nasabah_baru:', error.message);
+    }
+}
+
+// =========================================================================
+// âœ… HELPER: Simpan ke event_harian/nasabah_lunas
+// =========================================================================
+async function saveToNasabahLunas(adminUid, pelangganId, pelanggan) {
+    try {
+        const today = getTodayIndonesia();
+        
+        const adminSnap = await db.ref(`metadata/admins/${adminUid}`).once('value');
+        const adminData = adminSnap.val();
+        
+        if (!adminData || !adminData.cabang) return;
+        
+        const cabangId = adminData.cabang;
+        
+        // Hitung total dibayar
+        let totalDibayar = 0;
+        if (pelanggan.pembayaranList) {
+            const pembayaranList = Array.isArray(pelanggan.pembayaranList)
+                ? pelanggan.pembayaranList
+                : Object.values(pelanggan.pembayaranList || {});
+            pembayaranList.forEach(p => {
+                totalDibayar += p.jumlah || 0;
+                if (p.subPembayaran) {
+                    const subList = Array.isArray(p.subPembayaran)
+                        ? p.subPembayaran
+                        : Object.values(p.subPembayaran || {});
+                    subList.forEach(sub => totalDibayar += sub.jumlah || 0);
+                }
+            });
+        }
+        
+        const nasabahLunasData = {
+            namaPanggilan: pelanggan.namaPanggilan || '',
+            namaKtp: pelanggan.namaKtp || '',
+            adminUid: adminUid,
+            // âœ… PERBAIKAN: Prioritaskan email
+            adminName: adminData.name || adminData.email || '',
+            totalPinjaman: pelanggan.totalPelunasan || 0,
+            totalDibayar: totalDibayar,
+            wilayah: pelanggan.wilayah || '',
+            tanggalLunas: today,
+            timestamp: admin.database.ServerValue.TIMESTAMP
+        };
+        
+        await db.ref(`event_harian/${cabangId}/${today}/nasabah_lunas/${pelangganId}`).set(nasabahLunasData);
+        
+        // Hapus dari pelanggan_bermasalah jika ada
+        await db.ref(`pelanggan_bermasalah/${cabangId}/${pelangganId}`).remove();
+        
+        console.log(`âœ… Saved to event_harian/nasabah_lunas: ${pelanggan.namaPanggilan}`);
+        
+    } catch (error) {
+        console.error('âŒ Error saving to nasabah_lunas:', error.message);
+    }
+}
+
+// =========================================================================
+// âœ… HELPER: Cek apakah nasabah sudah lunas
+// =========================================================================
+function isNasabahLunas(pelanggan) {
+    const totalPelunasan = pelanggan.totalPelunasan || 0;
+    if (totalPelunasan <= 0) return false;
+    
+    let totalDibayar = 0;
+    if (pelanggan.pembayaranList) {
+        const pembayaranList = Array.isArray(pelanggan.pembayaranList)
+            ? pelanggan.pembayaranList
+            : Object.values(pelanggan.pembayaranList || {});
+        pembayaranList.forEach(p => {
+            totalDibayar += p.jumlah || 0;
+            if (p.subPembayaran) {
+                const subList = Array.isArray(p.subPembayaran)
+                    ? p.subPembayaran
+                    : Object.values(p.subPembayaran || {});
+                subList.forEach(sub => totalDibayar += sub.jumlah || 0);
+            }
+        });
+    }
+    
+    return totalDibayar >= totalPelunasan;
+}
+
+// =========================================================================
+// TRIGGER: Pembayaran Cicilan Baru
+// =========================================================================
+exports.onPembayaranAdded = functions.database
+    .ref('/pelanggan/{adminUid}/{pelangganId}/pembayaranList/{pembayaranIndex}')
+    .onCreate(async (snapshot, context) => {
+        const { adminUid, pelangganId } = context.params;
+        const pembayaran = snapshot.val();
+        
+        console.log(`ðŸ’° Payment: Rp ${pembayaran.jumlah} for ${pelangganId}`);
+        
+        try {
+            // 1. Update summary (existing logic)
+            await processPembayaranBaru(adminUid, pelangganId, pembayaran);
+            
+            // 2. Simpan ke pembayaran_harian
+            await saveToPembayaranHarian(adminUid, pelangganId, pembayaran, 'cicilan');
+            
+            // 3. âœ… Cek apakah nasabah lunas setelah pembayaran ini
+            const pelangganSnap = await db.ref(`pelanggan/${adminUid}/${pelangganId}`).once('value');
+            const pelanggan = pelangganSnap.val();
+            
+            if (pelanggan && isNasabahLunas(pelanggan)) {
+                await saveToNasabahLunas(adminUid, pelangganId, pelanggan);
+            }
+            
+            return null;
+        } catch (error) {
+            console.error(`âŒ Error: ${error.message}`);
+            return null;
+        }
+    });
+
+// =========================================================================
+// TRIGGER: Sub-Pembayaran (Tambah Bayar)
+// =========================================================================
+exports.onSubPembayaranAdded = functions.database
+    .ref('/pelanggan/{adminUid}/{pelangganId}/pembayaranList/{pembayaranIndex}/subPembayaran/{subIndex}')
+    .onCreate(async (snapshot, context) => {
+        const { adminUid, pelangganId } = context.params;
+        const subPembayaran = snapshot.val();
+        
+        console.log(`ðŸ’° Sub-payment: Rp ${subPembayaran.jumlah} for ${pelangganId}`);
+        
+        try {
+            // 1. Update summary (existing logic)
+            await processPembayaranBaru(adminUid, pelangganId, subPembayaran);
+            
+            // 2. Simpan ke pembayaran_harian
+            await saveToPembayaranHarian(adminUid, pelangganId, subPembayaran, 'tambah_bayar');
+            
+            // 3. âœ… Cek apakah nasabah lunas setelah pembayaran ini
+            const pelangganSnap = await db.ref(`pelanggan/${adminUid}/${pelangganId}`).once('value');
+            const pelanggan = pelangganSnap.val();
+            
+            if (pelanggan && isNasabahLunas(pelanggan)) {
+                await saveToNasabahLunas(adminUid, pelangganId, pelanggan);
+            }
+            
+            return null;
+        } catch (error) {
+            console.error(`âŒ Error: ${error.message}`);
+            return null;
+        }
+    });
+
+// =========================================================================
+// âœ… TRIGGER untuk Pencairan Pinjaman Baru (Status berubah ke Aktif)
+// =========================================================================
+exports.onPelangganApproved = functions.database
+    .ref('/pelanggan/{adminUid}/{pelangganId}/status')
+    .onUpdate(async (change, context) => {
+        const { adminUid, pelangganId } = context.params;
+        const beforeStatus = change.before.val();
+        const afterStatus = change.after.val();
+        
+        // Hanya proses jika status berubah ke "Aktif"
+        if (afterStatus?.toLowerCase() !== 'aktif') return null;
+        if (beforeStatus?.toLowerCase() === 'aktif') return null;
+        
+        console.log(`ðŸŽ‰ Pelanggan approved: ${pelangganId}`);
+        
+        try {
+            const today = getTodayIndonesia();
+            
+            // Dapatkan data pelanggan
+            const pelangganSnap = await db.ref(`pelanggan/${adminUid}/${pelangganId}`).once('value');
+            const pelanggan = pelangganSnap.val();
+            
+            if (!pelanggan) return null;
+            
+            // Hitung jumlah yang dicairkan
+            let jumlahDicairkan = 0;
+            if (pelanggan.totalDiterima > 0) {
+                jumlahDicairkan = pelanggan.totalDiterima;
+            } else if (pelanggan.admin > 0 && pelanggan.simpanan > 0) {
+                jumlahDicairkan = pelanggan.besarPinjaman - pelanggan.admin - pelanggan.simpanan;
+            } else {
+                const adminFee = Math.round(pelanggan.besarPinjaman * 0.05);
+                const simpanan = Math.round(pelanggan.besarPinjaman * 0.05);
+                jumlahDicairkan = pelanggan.besarPinjaman - adminFee - simpanan;
+            }
+            
+            // 1. Simpan ke pembayaran_harian sebagai pencairan
+            const pencairanData = {
+                jumlah: jumlahDicairkan,
+                tanggal: today
+            };
+            await saveToPembayaranHarian(adminUid, pelangganId, pencairanData, 'pencairan');
+            
+            // ✅ PERBAIKAN: Jika lanjut pinjaman dengan sisa utang, catat ke pembayaranList
+            // agar tercatat di pembukuan (buku pokok) — bukan hanya di laporan harian
+            const sisaUtangLama = pelanggan.sisaUtangLamaSebelumTopUp || 0;
+            const pinjamanKe = pelanggan.pinjamanKe || 1;
+            if (sisaUtangLama > 0 && pinjamanKe > 1) {
+                // Tentukan index berikutnya di pembayaranList
+                const currentList = pelanggan.pembayaranList;
+                let nextIndex = 0;
+                if (Array.isArray(currentList)) {
+                    nextIndex = currentList.length;
+                } else if (currentList && typeof currentList === 'object') {
+                    const keys = Object.keys(currentList).map(Number).filter(n => !isNaN(n));
+                    nextIndex = keys.length > 0 ? Math.max(...keys) + 1 : 0;
+                }
+
+                // Simpan ke pembayaranList nasabah di Firebase
+                const pelunasanEntry = {
+                    jumlah: sisaUtangLama,
+                    tanggal: today,
+                    subPembayaran: []
+                };
+                await db.ref(`pelanggan/${adminUid}/${pelangganId}/pembayaranList/${nextIndex}`).set(pelunasanEntry);
+
+                // CATATAN: JANGAN panggil saveToPembayaranHarian di sini
+                // Penulisan ke pembayaranList otomatis trigger onPembayaranAdded
+                // yang sudah menangani penyimpanan ke pembayaran_harian
+
+                console.log(`✅ Sisa utang Rp ${sisaUtangLama} saved to pembayaranList[${nextIndex}] AND will auto-save to pembayaran_harian`);
+            }
+            
+            // 2. ✅ Simpan ke event_harian/nasabah_baru
+            await saveToNasabahBaru(adminUid, pelangganId, pelanggan);
+            
+            console.log(`✅ Pencairan recorded: Rp ${jumlahDicairkan}`);
+            
+            return null;
+        } catch (error) {
+            console.error(`âŒ Error: ${error.message}`);
+            return null;
+        }
+    });

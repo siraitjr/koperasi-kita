@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- Cache directory untuk foto sementara -->
+    <cache-path 
+        name="cache" 
+        path="." />
+    
+    <!-- External cache untuk foto -->
+    <external-cache-path 
+        name="external_cache" 
+        path="." />
+    
+    <!-- Files directory -->
+    <files-path 
+        name="files" 
+        path="." />
+    
+    <!-- External files directory -->
+    <external-files-path 
+        name="external_files" 
+        path="." />
+</paths>

@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Rekening Koran - Sirait Kredit</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📋</text></svg>">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(135deg, #1a5e1f 0%, #2e7d32 100%);
+      min-height: 100vh;
+      color: #333;
+    }
+    
+    .container {
+      max-width: 480px;
+      margin: 0 auto;
+      padding: 16px;
+      padding-bottom: 80px;
+    }
+    
+    /* Loading */
+    .loading {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      color: white;
+    }
+    .spinner {
+      width: 44px; height: 44px;
+      border: 4px solid rgba(255,255,255,0.3);
+      border-top-color: white;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .loading p { margin-top: 16px; opacity: 0.9; }
+    
+    /* Error */
+    .error-screen {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 24px;
+    }
+    .error-card {
+      background: white;
+      border-radius: 20px;
+      padding: 32px 24px;
+      text-align: center;
+      max-width: 320px;
+      box-shadow: 0 16px 48px rgba(0,0,0,0.25);
+    }
+    .error-icon { font-size: 56px; margin-bottom: 12px; }
+    .error-title { font-size: 18px; font-weight: 700; color: #c62828; margin-bottom: 8px; }
+    .error-msg { color: #666; font-size: 14px; line-height: 1.5; }
+    
+    /* Main */
+    .main { display: none; }
+    
+    /* Header */
+    .header {
+      background: white;
+      border-radius: 16px;
+      padding: 20px;
+      margin-bottom: 12px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.1);
+    }
+    .header-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 16px;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .brand-icon {
+      width: 40px; height: 40px;
+      background: linear-gradient(135deg, #2e7d32, #43a047);
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+    }
+    .brand h1 { font-size: 16px; color: #1b5e20; }
+    .brand p { font-size: 11px; color: #666; }
+    
+    .badge {
+      padding: 5px 12px;
+      border-radius: 16px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+    .badge.aktif { background: #e8f5e9; color: #2e7d32; }
+    .badge.lunas { background: #2e7d32; color: white; }
+    
+    .name { font-size: 24px; font-weight: 700; color: #1b5e20; }
+    .member-id { font-size: 13px; color: #666; margin-top: 2px; }
+    .member-nik { font-size: 12px; color: #888; margin-top: 2px; }
+    
+    .info-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+      margin-top: 16px;
+    }
+    .info-item {
+      background: #f5f5f5;
+      padding: 10px 12px;
+      border-radius: 8px;
+    }
+    .info-label { font-size: 10px; color: #888; text-transform: uppercase; letter-spacing: 0.5px; }
+    .info-value { font-size: 13px; font-weight: 600; color: #333; margin-top: 2px; }
+    
+    /* Cards */
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+    .card {
+      background: white;
+      border-radius: 14px;
+      padding: 16px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    }
+    .card.primary { background: linear-gradient(135deg, #1565c0, #1976d2); color: white; }
+    .card.success { background: linear-gradient(135deg, #2e7d32, #43a047); color: white; }
+    .card.warning { background: linear-gradient(135deg, #ef6c00, #f57c00); color: white; }
+    .card.info { background: linear-gradient(135deg, #7b1fa2, #9c27b0); color: white; }
+    .card-label { font-size: 10px; opacity: 0.85; text-transform: uppercase; letter-spacing: 0.5px; }
+    .card-value { font-size: 18px; font-weight: 700; margin-top: 6px; }
+    .card:not(.primary):not(.success):not(.warning):not(.info) .card-label { color: #666; }
+    .card:not(.primary):not(.success):not(.warning):not(.info) .card-value { color: #333; }
+    
+    /* Section */
+    .section {
+      background: white;
+      border-radius: 14px;
+      margin-bottom: 12px;
+      overflow: hidden;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    }
+    .section-header {
+      padding: 14px 16px;
+      background: #fafafa;
+      font-weight: 600;
+      font-size: 13px;
+      display: flex;
+      justify-content: space-between;
+      border-bottom: 1px solid #eee;
+    }
+    .section-header .count { font-size: 11px; color: #888; font-weight: 500; }
+    
+    /* Payment */
+    .pay-item {
+      display: flex;
+      align-items: center;
+      padding: 12px 16px;
+      border-bottom: 1px solid #f0f0f0;
+    }
+    .pay-item:last-child { border-bottom: none; }
+    .pay-no {
+      width: 26px; height: 26px;
+      background: #e8f5e9;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      font-weight: 600;
+      color: #2e7d32;
+      margin-right: 12px;
+    }
+    .pay-info { flex: 1; }
+    .pay-date { font-size: 13px; font-weight: 500; }
+    .pay-note { font-size: 11px; color: #888; margin-top: 1px; }
+    .pay-amount { font-size: 13px; font-weight: 600; color: #2e7d32; }
+    
+    /* Schedule */
+    .sch-item {
+      display: flex;
+      align-items: center;
+      padding: 10px 16px;
+      border-bottom: 1px solid #f0f0f0;
+      font-size: 12px;
+    }
+    .sch-item:last-child { border-bottom: none; }
+    .sch-item.done { background: #f5f5f5; }
+    .sch-item.done .sch-date { text-decoration: line-through; color: #999; }
+    .sch-no { width: 22px; color: #888; }
+    .sch-date { flex: 1; }
+    .sch-amount { font-weight: 500; }
+    .sch-check { margin-left: 8px; color: #2e7d32; }
+    
+    /* Empty */
+    .empty { text-align: center; padding: 24px; color: #999; font-size: 13px; }
+    
+    /* FAB */
+    .fab-wrap {
+      position: fixed;
+      bottom: 16px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: none;
+      gap: 10px;
+    }
+    .fab {
+      padding: 12px 20px;
+      border-radius: 24px;
+      border: none;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+    }
+    .fab-print { background: white; color: #333; }
+    .fab-share { background: #25D366; color: white; }
+    
+    /* Footer */
+    .footer {
+      text-align: center;
+      padding: 16px;
+      color: rgba(255,255,255,0.7);
+      font-size: 11px;
+    }
+    
+    /* Print */
+    @media print {
+      body { background: white !important; }
+      .container { max-width: 100%; padding: 0; }
+      .fab-wrap { display: none !important; }
+      .card.primary, .card.success, .card.warning, .card.info {
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
+    }
+    
+    /* Animation */
+    .fade-in { animation: fadeIn 0.3s ease-out; }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <!-- Loading -->
+    <div id="loading" class="loading">
+      <div class="spinner"></div>
+      <p>Memuat data...</p>
+    </div>
+    
+    <!-- Error -->
+    <div id="error" class="error-screen">
+      <div class="error-card">
+        <div class="error-icon">😕</div>
+        <div class="error-title" id="errTitle">Link Tidak Valid</div>
+        <div class="error-msg" id="errMsg">Silakan hubungi petugas untuk mendapatkan link baru.</div>
+      </div>
+    </div>
+    
+    <!-- Main -->
+    <div id="main" class="main">
+      <div class="header fade-in">
+        <div class="header-top">
+          <div class="brand">
+            <div class="brand-icon">📋</div>
+            <div>
+              <h1>KOPERASI SIMPAN PINJAM</h1>
+              <p>SI GODANG ULU JAYA</p>
+            </div>
+          </div>
+          <div class="badge aktif" id="badge">Aktif</div>
+        </div>
+        <div class="name" id="nama">-</div>
+        <div class="member-id" id="noAnggota">No. Anggota: -</div>
+        <div class="member-nik" id="nik">NIK: -</div>
+        <div class="info-grid">
+          <div class="info-item">
+            <div class="info-label">Pinjaman Ke</div>
+            <div class="info-value" id="pinjamanKe">-</div>
+          </div>
+          <div class="info-item">
+            <div class="info-label">Tanggal Pengajuan</div>
+            <div class="info-value" id="tanggal">-</div>
+          </div>
+          <div class="info-item">
+            <div class="info-label">Tenor</div>
+            <div class="info-value" id="tenor">-</div>
+          </div>
+          <div class="info-item">
+            <div class="info-label">Wilayah</div>
+            <div class="info-value" id="wilayah">-</div>
+          </div>
+        </div>
+      </div>
+      
+      <div class="cards fade-in">
+        <div class="card primary">
+          <div class="card-label">Besar Pinjaman</div>
+          <div class="card-value" id="besarPinjaman">Rp 0</div>
+        </div>
+        <div class="card">
+          <div class="card-label">Total Pelunasan</div>
+          <div class="card-value" id="totalPelunasan">Rp 0</div>
+        </div>
+      </div>
+      
+      <div class="cards fade-in">
+        <div class="card success">
+          <div class="card-label">Sudah Dibayar</div>
+          <div class="card-value" id="totalDibayar">Rp 0</div>
+        </div>
+        <div class="card warning">
+          <div class="card-label">Sisa Hutang</div>
+          <div class="card-value" id="sisaHutang">Rp 0</div>
+        </div>
+      </div>
+      
+      <div class="cards fade-in">
+        <div class="card">
+          <div class="card-label">Sisa Tenor</div>
+          <div class="card-value" id="sisaTenor">0 kali</div>
+        </div>
+        <div class="card info">
+          <div class="card-label">💰 Simpanan</div>
+          <div class="card-value" id="simpanan">Rp 0</div>
+        </div>
+      </div>
+      
+      <div class="section fade-in">
+        <div class="section-header">
+          <span>📝 Riwayat Pembayaran</span>
+          <span class="count" id="payCount">0</span>
+        </div>
+        <div id="payList"><div class="empty">Belum ada pembayaran</div></div>
+      </div>
+      
+      <div class="section fade-in">
+        <div class="section-header">📅 Jadwal Cicilan</div>
+        <div id="schList"><div class="empty">Tidak ada jadwal</div></div>
+      </div>
+      
+      <div class="footer">
+        Data per <span id="genAt">-</span><br>
+        © KoperasiKita
+      </div>
+    </div>
+  </div>
+  
+  <div class="fab-wrap" id="fab">
+    <button class="fab fab-print" onclick="window.print()">🖨️ Cetak</button>
+    <button class="fab fab-share" onclick="share()">📤 Bagikan</button>
+  </div>
+
+  <script>
+    // =========================================================================
+    // CONFIG
+    // =========================================================================
+    const API = 'https://asia-southeast1-koperasikitagodangulu.cloudfunctions.net/getRekeningKoran';
+    
+    // =========================================================================
+    // INIT
+    // =========================================================================
+    document.addEventListener('DOMContentLoaded', load);
+    
+    async function load() {
+      const token = new URLSearchParams(location.search).get('t');
+      
+      if (!token) {
+        showError('Link Tidak Valid', 'Parameter tidak lengkap. Hubungi petugas.');
+        return;
+      }
+      
+      try {
+        const res = await fetch(`${API}?t=${encodeURIComponent(token)}`);
+        const json = await res.json();
+        
+        if (json.success && json.data) {
+          render(json.data);
+        } else {
+          showError('Akses Ditolak', json.error || 'Link tidak valid.');
+        }
+      } catch (e) {
+        console.error(e);
+        showError('Gagal Memuat', 'Periksa koneksi internet Anda.');
+      }
+    }
+    
+    function render(d) {
+      hide('loading');
+      show('main');
+      show('fab');
+      
+      // Header
+      $('#nama').textContent = d.nama;
+      $('#noAnggota').textContent = `No. Anggota: ${d.nomorAnggota}`;
+      $('#nik').textContent = `NIK: ${d.nik || '-'}`;
+      $('#pinjamanKe').textContent = `Ke-${d.pinjamanKe}`;
+      $('#tanggal').textContent = d.tanggalDaftar;
+      $('#tenor').textContent = `${d.tenor} hari`;
+      $('#wilayah').textContent = d.wilayah;
+      
+      // Badge
+      const badge = $('#badge');
+      if (d.isLunas) {
+        badge.textContent = '✅ LUNAS';
+        badge.className = 'badge lunas';
+      }
+      
+      // Cards
+      $('#besarPinjaman').textContent = rp(d.besarPinjaman);
+      $('#totalPelunasan').textContent = rp(d.totalPelunasan);
+      $('#totalDibayar').textContent = rp(d.totalDibayar);
+      $('#sisaHutang').textContent = rp(d.sisaHutang);
+      $('#sisaTenor').textContent = `${d.sisaTenor} kali`;
+      $('#simpanan').textContent = rp(d.simpanan);
+      
+      // Payments
+      const pays = d.riwayatPembayaran || [];
+      $('#payCount').textContent = `${pays.length} transaksi`;
+      if (pays.length) {
+        $('#payList').innerHTML = pays.map(p => `
+          <div class="pay-item">
+            <div class="pay-no">${p.no}</div>
+            <div class="pay-info">
+              <div class="pay-date">${p.tanggal}</div>
+              ${p.keterangan ? `<div class="pay-note">${p.keterangan}</div>` : ''}
+            </div>
+            <div class="pay-amount">${rp(p.jumlah)}</div>
+          </div>
+        `).join('');
+      }
+      
+      // Schedule
+      const schs = d.referensiCicilan || [];
+      if (schs.length) {
+        $('#schList').innerHTML = schs.map(s => `
+          <div class="sch-item ${s.isCompleted ? 'done' : ''}">
+            <div class="sch-no">${s.no}.</div>
+            <div class="sch-date">${s.tanggal}</div>
+            <div class="sch-amount">${rp(s.jumlah)}</div>
+            ${s.isCompleted ? '<div class="sch-check">✓</div>' : ''}
+          </div>
+        `).join('');
+      }
+      
+      // Footer
+      $('#genAt').textContent = new Date(d.generatedAt).toLocaleDateString('id-ID', {
+        day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit'
+      });
+    }
+    
+    function showError(title, msg) {
+      hide('loading');
+      show('error');
+      $('#errTitle').textContent = title;
+      $('#errMsg').textContent = msg;
+    }
+    
+    function share() {
+      if (navigator.share) {
+        navigator.share({ title: 'Rekening Koran', url: location.href }).catch(() => {});
+      } else {
+        navigator.clipboard.writeText(location.href).then(() => alert('Link disalin!'));
+      }
+    }
+    
+    // Helpers
+    const $ = s => document.querySelector(s);
+    const show = id => document.getElementById(id).style.display = id === 'fab' ? 'flex' : 'block';
+    const hide = id => document.getElementById(id).style.display = 'none';
+    const rp = n => 'Rp ' + (n || 0).toLocaleString('id-ID');
+  </script>
+</body>
+</html>
