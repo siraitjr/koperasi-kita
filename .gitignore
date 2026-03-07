@@ -35,3 +35,18 @@ google-services.json
 
 # Node modules
 node_modules/
+
+#Node / Next.js
+node_modules/
+.next
+npm-debug.log*
+
+#Android
+.gradle/
+build/
+local.properties
+.idea/
+
+#OS
+.DS_Store
+Thumbs.db
