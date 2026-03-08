@@ -23,6 +23,16 @@ const JENIS_OPTIONS = [
   { value: 'sp', label: 'SP' },
 ];
 
+const JENIS_ARAH = {
+  uang_kas: 'keluar',
+  penggajian: 'keluar',
+  transport: 'keluar',
+  suntikan_dana: 'masuk',
+  pinjaman_kas: 'masuk',
+  sp: 'keluar',
+};
+
+
 const BULAN_INDO = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
 
 function getCurrentMonthKey() {
@@ -655,7 +665,7 @@ function JurnalScreen({ user, cabang, cabangList, onBack, onLogout }) {
 // ============================================================
 function FormModal({ cabangAdmins, onClose, onSuccess }) {
   const [jenis, setJenis] = useState('uang_kas');
-  const [arah, setArah] = useState('masuk');
+  const [arah, setArah] = useState('keluar');
   const [jumlah, setJumlah] = useState('');
   const [keterangan, setKeterangan] = useState('');
   const [tanggal] = useState(getTodayIndo());
@@ -702,7 +712,7 @@ function FormModal({ cabangAdmins, onClose, onSuccess }) {
         {/* Jenis */}
         <div style={{ marginBottom: 16 }}>
           <label style={{ fontSize: 13, fontWeight: 600, marginBottom: 6, display: 'block' }}>Jenis Transaksi</label>
-          <select value={jenis} onChange={(e) => { setJenis(e.target.value); setTargetAdmin(''); }}
+            <select value={jenis} onChange={(e) => { const v = e.target.value; setJenis(v); setArah(JENIS_ARAH[v] || 'keluar'); setTargetAdmin(''); }}
             style={{ width: '100%', padding: '10px 14px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 14, background: 'var(--card)' }}>
             {JENIS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
@@ -719,26 +729,6 @@ function FormModal({ cabangAdmins, onClose, onSuccess }) {
             </select>
           </div>
         )}
-
-        {/* Arah */}
-        <div style={{ marginBottom: 16 }}>
-          <label style={{ fontSize: 13, fontWeight: 600, marginBottom: 6, display: 'block' }}>Arah</label>
-          <div style={{ display: 'flex', gap: 10 }}>
-            {[{ val: 'masuk', label: '↑ Masuk', color: 'var(--success)', bg: '#e8f8f0' },
-              { val: 'keluar', label: '↓ Keluar', color: 'var(--danger)', bg: '#fef2f0' }].map(opt => (
-              <button key={opt.val} onClick={() => setArah(opt.val)}
-                style={{
-                  flex: 1, padding: '10px 0', borderRadius: 10, fontSize: 14, fontWeight: 600,
-                  border: arah === opt.val ? `2px solid ${opt.color}` : '1px solid var(--border)',
-                  background: arah === opt.val ? opt.bg : 'var(--card)',
-                  color: arah === opt.val ? opt.color : 'var(--text-muted)',
-                  transition: 'all 0.2s'
-                }}>
-                {opt.label}
-              </button>
-            ))}
-          </div>
-        </div>
 
         {/* Jumlah */}
         <div style={{ marginBottom: 16 }}>
