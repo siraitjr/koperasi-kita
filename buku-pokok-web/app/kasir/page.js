@@ -159,6 +159,18 @@ export default function KasirPage() {
     );
   }
 
+    if (screen === 'bukuRekap') {
+    return (
+      <BukuRekapScreen
+        user={userData}
+        cabang={selectedCabang}
+        cabangList={cabangList}
+        onBack={() => setScreen('home')}
+        onLogout={handleLogout}
+      />
+    );
+  }
+
   if (screen === 'ringkasan') {
     return (
       <RingkasanScreen
@@ -305,6 +317,14 @@ function HomeScreen({ user, cabangList, summaryData, selectedCabang, onSelectCab
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
           <path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/>
           <path d="M10 6h4"/><path d="M10 10h4"/><path d="M10 14h4"/><path d="M10 18h4"/>
+        </svg>
+      ),
+    },
+        {
+      id: 'bukuRekap', name: 'Buku Rekap', desc: 'Rekap harian per resort',
+      icon: (
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+          <path d="M3 3h18v18H3zM3 9h18M3 15h18M9 3v18M15 3v18"/>
         </svg>
       ),
     },
@@ -919,6 +939,324 @@ function BukuPokokAccessScreen({ user, cabang, cabangList, onBack, onLogout }) {
   );
 }
 
+// ============================================================
+// BUKU REKAP SCREEN (Rekap harian per resort)
+// ============================================================
+function BukuRekapScreen({ user, cabang, cabangList, onBack, onLogout }) {
+  const isUnit = user?.role === 'kasir_unit';
+  const [activeCabang, setActiveCabang] = useState(cabang || cabangList[0] || null);
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (!activeCabang) return;
+    setLoading(true);
+    setError('');
+    getBukuPokok({
+      cabangId: activeCabang.id,
+      adminUid: '',
+      status: 'aktif',
+    }).then(result => {
+      if (result.success && result.type === 'buku_pokok') {
+        setData(result.data);
+      }
+    }).catch(err => {
+      setError('Gagal memuat data: ' + err.message);
+    }).finally(() => {
+      setLoading(false);
+    });
+  }, [activeCabang?.id]);
+
+  // ==================== COMPUTE REKAP PER RESORT ====================
+  const rekapRows = (() => {
+    if (!data?.nasabah) return [];
+
+    const allNasabah = data.nasabah;
+    const admins = activeCabang?.admins || [];
+    const todayStr = data.today || getTodayIndo();
+
+    // Helper: parse "07 Feb 2026" ke Date object
+    const BULAN_MAP_REV = {};
+    BULAN_INDO.forEach((b, i) => { BULAN_MAP_REV[b] = i; });
+    const parseDateStr = (s) => {
+      if (!s) return null;
+      const parts = s.split(' ');
+      if (parts.length !== 3) return null;
+      const m = BULAN_MAP_REV[parts[1]];
+      if (m === undefined) return null;
+      return new Date(parseInt(parts[2]), m, parseInt(parts[0]));
+    };
+
+    // Helper: is nasabah "baru" (pinjaman ke-1) or "lama" (lanjut)
+    const isDropBaru = (n) => (n.pinjamanKe || 1) <= 1;
+
+    // Filter active nasabah (same as storting global)
+    const now = new Date();
+    const wibOffset = 7 * 60 * 60 * 1000;
+    const wib = new Date(now.getTime() + (now.getTimezoneOffset() * 60000) + wibOffset);
+    const threeMonthsAgo = new Date(wib.getFullYear(), wib.getMonth() - 3, 1);
+
+    // Group per admin (resort)
+    const rows = [];
+
+    for (const adm of admins) {
+      const resortNasabah = allNasabah.filter(n => n.adminUid === adm.uid);
+
+      // Nasabah yang dicairkan hari ini (drop hari ini)
+      const droppedToday = resortNasabah.filter(n => {
+        const tglCair = (n.tanggalPencairan || '').trim();
+        return tglCair === todayStr;
+      });
+
+      // Pisahkan drop baru vs lama
+      const dropBaruList = droppedToday.filter(n => isDropBaru(n));
+      const dropLamaList = droppedToday.filter(n => !isDropBaru(n));
+
+      const dropBaruCount = dropBaruList.length;
+      const dropLamaCount = dropLamaList.length;
+
+      // Nominal drop
+      const nominalDropBaru = dropBaruList.reduce((s, n) => s + (n.besarPinjaman || 0), 0);
+      const nominalDropLama = dropLamaList.reduce((s, n) => s + (n.besarPinjaman || 0), 0);
+      const totalDrop = nominalDropBaru + nominalDropLama;
+
+      // Target = sum of besarPinjaman * 3% for eligible nasabah
+      let target = 0;
+      resortNasabah.forEach(n => {
+        // Exclude menunggu pencairan
+        const sk = (n.statusKhusus || '').toUpperCase().replace(/ /g, '_');
+        if (sk === 'MENUNGGU_PENCAIRAN') return;
+        // Exclude > 3 bulan
+        const tglAcuan = (n.tanggalPencairan || '').trim() || (n.tanggalPengajuan || '').trim() || (n.tanggalDaftar || '').trim();
+        const acuanDate = parseDateStr(tglAcuan);
+        if (acuanDate && acuanDate < threeMonthsAgo) return;
+        // Exclude cair hari ini
+        if ((n.tanggalPencairan || '').trim() === todayStr) return;
+        // Exclude sudah lunas
+        if (n.totalPelunasan > 0 && n.sisaUtang <= 0) return;
+
+        target += Math.round((n.besarPinjaman || 0) * 0.03);
+      });
+
+      // Storting = total pembayaran hari ini
+      let storting = 0;
+      resortNasabah.forEach(n => {
+        const pay = n.pembayaran?.[todayStr];
+        if (pay) {
+          storting += pay.total || 0;
+        }
+      });
+
+      // Persen = storting / target * 100
+      const persen = target > 0 ? Math.round(storting / target * 100) : 0;
+
+      // Admin = 5% dari total besar pinjaman hari ini (drop hari ini)
+      const adminFee = Math.round(totalDrop * 0.05);
+
+      // Tabungan = 5% dari total besar pinjaman hari ini
+      const tabungan = Math.round(totalDrop * 0.05);
+
+      // Debit = Storting + Admin + Tabungan
+      const debit = storting + adminFee + tabungan;
+
+      // Pencairan Tabungan
+      const pencairanTabungan = 0;
+
+      // Kredit = Total Drop + Pencairan Tabungan
+      const kredit = totalDrop + pencairanTabungan;
+
+      // Kas Pakai
+      const kasPakai = 0;
+
+      // Tunai Pasar = Debit - Kredit
+      const tunaiPasar = debit - kredit;
+
+      rows.push({
+        resortName: adm.name,
+        dropBaru: dropBaruCount,
+        dropLama: dropLamaCount,
+        target,
+        kasPakai,
+        storting,
+        persen,
+        adminFee,
+        tabungan,
+        debit,
+        nominalDropBaru,
+        nominalDropLama,
+        totalDrop,
+        pencairanTabungan,
+        kredit,
+        tunaiPasar,
+      });
+    }
+
+    return rows;
+  })();
+
+  // Totals
+  const totals = rekapRows.reduce((acc, r) => ({
+    dropBaru: acc.dropBaru + r.dropBaru,
+    dropLama: acc.dropLama + r.dropLama,
+    target: acc.target + r.target,
+    kasPakai: acc.kasPakai + r.kasPakai,
+    storting: acc.storting + r.storting,
+    adminFee: acc.adminFee + r.adminFee,
+    tabungan: acc.tabungan + r.tabungan,
+    debit: acc.debit + r.debit,
+    nominalDropBaru: acc.nominalDropBaru + r.nominalDropBaru,
+    nominalDropLama: acc.nominalDropLama + r.nominalDropLama,
+    totalDrop: acc.totalDrop + r.totalDrop,
+    pencairanTabungan: acc.pencairanTabungan + r.pencairanTabungan,
+    kredit: acc.kredit + r.kredit,
+    tunaiPasar: acc.tunaiPasar + r.tunaiPasar,
+  }), {
+    dropBaru: 0, dropLama: 0, target: 0, kasPakai: 0, storting: 0,
+    adminFee: 0, tabungan: 0, debit: 0, nominalDropBaru: 0, nominalDropLama: 0,
+    totalDrop: 0, pencairanTabungan: 0, kredit: 0, tunaiPasar: 0,
+  });
+  const totalPersen = totals.target > 0 ? Math.round(totals.storting / totals.target * 100) : 0;
+
+  const thStyle = { padding: '8px 6px', textAlign: 'center', fontWeight: 700, fontSize: 10, whiteSpace: 'nowrap', position: 'sticky', top: 0, background: '#f8f9fa', zIndex: 2, borderBottom: '2px solid var(--border)' };
+  const tdStyle = { padding: '6px', textAlign: 'right', fontFamily: "'DM Mono', monospace", fontSize: 11 };
+  const tdNameStyle = { padding: '6px 8px', textAlign: 'left', fontWeight: 600, fontSize: 12, whiteSpace: 'nowrap' };
+
+  return (
+    <div className="page-container">
+      <header className="top-bar">
+        <div className="top-bar-left">
+          <button onClick={onBack} className="btn-back">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg>
+          </button>
+          <div>
+            <h1>Buku Rekap</h1>
+            <p>{activeCabang?.name || 'Pilih Cabang'} — {data?.today || getTodayIndo()}</p>
+          </div>
+        </div>
+        <div className="top-bar-right">
+          <button onClick={onLogout} className="btn-icon" title="Keluar">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></svg>
+          </button>
+        </div>
+      </header>
+
+      <main style={{ padding: 20 }} className="fade-in">
+        {/* Cabang selector for kasir_wilayah */}
+        {!isUnit && cabangList.length > 1 && (
+          <div style={{ marginBottom: 16 }}>
+            <select value={activeCabang?.id || ''} onChange={(e) => setActiveCabang(cabangList.find(c => c.id === e.target.value))}
+              style={{ padding: '8px 12px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 13, background: 'var(--card)' }}>
+              {cabangList.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </div>
+        )}
+
+        {loading ? (
+          <div style={{ textAlign: 'center', padding: 60 }}>
+            <div className="loading-spinner" />
+            <p style={{ color: 'var(--text-muted)', marginTop: 12, fontSize: 13 }}>Memuat Buku Rekap...</p>
+          </div>
+        ) : error ? (
+          <div style={{ textAlign: 'center', padding: 60, color: 'var(--danger)', fontSize: 14 }}>{error}</div>
+        ) : rekapRows.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: 60 }}>
+            <p style={{ color: 'var(--text-muted)', fontSize: 14 }}>Tidak ada data resort</p>
+          </div>
+        ) : (
+          <>
+            {/* Summary cards */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10, marginBottom: 20 }}>
+              <div style={{ background: '#e8f8f0', borderRadius: 12, padding: '12px 16px' }}>
+                <p style={{ fontSize: 11, color: 'var(--text-muted)' }}>Total Storting</p>
+                <p style={{ fontSize: 16, fontWeight: 700, color: 'var(--success)' }}>{formatRpFull(totals.storting)}</p>
+              </div>
+              <div style={{ background: 'var(--primary-light)', borderRadius: 12, padding: '12px 16px' }}>
+                <p style={{ fontSize: 11, color: 'var(--text-muted)' }}>Target</p>
+                <p style={{ fontSize: 16, fontWeight: 700, color: 'var(--primary)' }}>{formatRpFull(totals.target)}</p>
+              </div>
+              <div style={{ background: '#fef2f0', borderRadius: 12, padding: '12px 16px' }}>
+                <p style={{ fontSize: 11, color: 'var(--text-muted)' }}>Total Drop</p>
+                <p style={{ fontSize: 16, fontWeight: 700, color: 'var(--danger)' }}>{formatRpFull(totals.totalDrop)}</p>
+              </div>
+              <div style={{ background: '#f0f4ff', borderRadius: 12, padding: '12px 16px' }}>
+                <p style={{ fontSize: 11, color: 'var(--text-muted)' }}>Tunai Pasar</p>
+                <p style={{ fontSize: 16, fontWeight: 700, color: totals.tunaiPasar >= 0 ? 'var(--success)' : 'var(--danger)' }}>{formatRpFull(totals.tunaiPasar)}</p>
+              </div>
+            </div>
+
+            {/* Table */}
+            <div style={{ overflow: 'auto', border: '1px solid var(--border)', borderRadius: 12, background: 'var(--card)' }}>
+              <table style={{ width: '100%', minWidth: 1200, fontSize: 12, borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ background: '#f8f9fa' }}>
+                    <th style={{ ...thStyle, textAlign: 'left', paddingLeft: 10 }}>Resort</th>
+                    <th style={{ ...thStyle, background: '#e8f8f0' }}>Drop Baru</th>
+                    <th style={{ ...thStyle, background: '#e8f8f0' }}>Drop Lama</th>
+                    <th style={thStyle}>Target</th>
+                    <th style={thStyle}>Kas Pakai</th>
+                    <th style={{ ...thStyle, background: '#dff5eb' }}>Storting</th>
+                    <th style={{ ...thStyle, background: '#dff5eb' }}>%</th>
+                    <th style={thStyle}>Admin</th>
+                    <th style={thStyle}>Tabungan</th>
+                    <th style={{ ...thStyle, background: '#e0ecff' }}>Debit</th>
+                    <th style={{ ...thStyle, background: '#fef2f0' }}>Drop Baru (Rp)</th>
+                    <th style={{ ...thStyle, background: '#fef2f0' }}>Drop Lama (Rp)</th>
+                    <th style={{ ...thStyle, background: '#fef2f0' }}>Total Drop</th>
+                    <th style={thStyle}>Cair Tab.</th>
+                    <th style={{ ...thStyle, background: '#fff3e0' }}>Kredit</th>
+                    <th style={{ ...thStyle, background: '#f3e8ff' }}>Tunai Pasar</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rekapRows.map((row, idx) => (
+                    <tr key={idx} style={{ borderBottom: '1px solid var(--border-light)' }}>
+                      <td style={tdNameStyle}>{row.resortName}</td>
+                      <td style={{ ...tdStyle, textAlign: 'center', fontWeight: 600 }}>{row.dropBaru || '-'}</td>
+                      <td style={{ ...tdStyle, textAlign: 'center', fontWeight: 600 }}>{row.dropLama || '-'}</td>
+                      <td style={tdStyle}>{row.target > 0 ? formatRp(row.target) : '-'}</td>
+                      <td style={tdStyle}>{row.kasPakai > 0 ? formatRp(row.kasPakai) : '-'}</td>
+                      <td style={{ ...tdStyle, color: 'var(--success)', fontWeight: 600 }}>{row.storting > 0 ? formatRp(row.storting) : '-'}</td>
+                      <td style={{ ...tdStyle, textAlign: 'center', fontWeight: 700, color: row.persen >= 100 ? 'var(--success)' : row.persen >= 50 ? '#b8860b' : 'var(--danger)' }}>{row.persen > 0 ? `${row.persen}%` : '-'}</td>
+                      <td style={tdStyle}>{row.adminFee > 0 ? formatRp(row.adminFee) : '-'}</td>
+                      <td style={tdStyle}>{row.tabungan > 0 ? formatRp(row.tabungan) : '-'}</td>
+                      <td style={{ ...tdStyle, color: '#1a56db', fontWeight: 600 }}>{row.debit > 0 ? formatRp(row.debit) : '-'}</td>
+                      <td style={{ ...tdStyle, color: 'var(--danger)' }}>{row.nominalDropBaru > 0 ? formatRp(row.nominalDropBaru) : '-'}</td>
+                      <td style={{ ...tdStyle, color: 'var(--danger)' }}>{row.nominalDropLama > 0 ? formatRp(row.nominalDropLama) : '-'}</td>
+                      <td style={{ ...tdStyle, color: 'var(--danger)', fontWeight: 600 }}>{row.totalDrop > 0 ? formatRp(row.totalDrop) : '-'}</td>
+                      <td style={tdStyle}>{row.pencairanTabungan > 0 ? formatRp(row.pencairanTabungan) : '-'}</td>
+                      <td style={{ ...tdStyle, color: '#d97706', fontWeight: 600 }}>{row.kredit > 0 ? formatRp(row.kredit) : '-'}</td>
+                      <td style={{ ...tdStyle, fontWeight: 700, color: row.tunaiPasar >= 0 ? 'var(--success)' : 'var(--danger)' }}>{row.tunaiPasar !== 0 ? formatRp(row.tunaiPasar) : '-'}</td>
+                    </tr>
+                  ))}
+                  {/* TOTAL ROW */}
+                  <tr style={{ borderTop: '2px solid var(--border)', background: '#f8f9fa', fontWeight: 800 }}>
+                    <td style={{ ...tdNameStyle, fontWeight: 800 }}>TOTAL</td>
+                    <td style={{ ...tdStyle, textAlign: 'center', fontWeight: 800 }}>{totals.dropBaru}</td>
+                    <td style={{ ...tdStyle, textAlign: 'center', fontWeight: 800 }}>{totals.dropLama}</td>
+                    <td style={{ ...tdStyle, fontWeight: 800 }}>{formatRp(totals.target)}</td>
+                    <td style={{ ...tdStyle, fontWeight: 800 }}>{totals.kasPakai > 0 ? formatRp(totals.kasPakai) : '-'}</td>
+                    <td style={{ ...tdStyle, fontWeight: 800, color: 'var(--success)' }}>{formatRp(totals.storting)}</td>
+                    <td style={{ ...tdStyle, textAlign: 'center', fontWeight: 800 }}>{totalPersen}%</td>
+                    <td style={{ ...tdStyle, fontWeight: 800 }}>{formatRp(totals.adminFee)}</td>
+                    <td style={{ ...tdStyle, fontWeight: 800 }}>{formatRp(totals.tabungan)}</td>
+                    <td style={{ ...tdStyle, fontWeight: 800, color: '#1a56db' }}>{formatRp(totals.debit)}</td>
+                    <td style={{ ...tdStyle, fontWeight: 800, color: 'var(--danger)' }}>{formatRp(totals.nominalDropBaru)}</td>
+                    <td style={{ ...tdStyle, fontWeight: 800, color: 'var(--danger)' }}>{formatRp(totals.nominalDropLama)}</td>
+                    <td style={{ ...tdStyle, fontWeight: 800, color: 'var(--danger)' }}>{formatRp(totals.totalDrop)}</td>
+                    <td style={{ ...tdStyle, fontWeight: 800 }}>{totals.pencairanTabungan > 0 ? formatRp(totals.pencairanTabungan) : '-'}</td>
+                    <td style={{ ...tdStyle, fontWeight: 800, color: '#d97706' }}>{formatRp(totals.kredit)}</td>
+                    <td style={{ ...tdStyle, fontWeight: 800, color: totals.tunaiPasar >= 0 ? 'var(--success)' : 'var(--danger)' }}>{formatRp(totals.tunaiPasar)}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+      </main>
+    </div>
+  );
+}
 
 // ============================================================
 // RINGKASAN SCREEN
