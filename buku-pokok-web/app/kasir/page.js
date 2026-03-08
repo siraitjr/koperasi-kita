@@ -559,10 +559,6 @@ function JurnalScreen({ user, cabang, cabangList, onBack, onLogout }) {
             <p style={{ fontSize: 11, color: 'var(--text-muted)' }}>Total Keluar</p>
             <p style={{ fontSize: 16, fontWeight: 700, color: 'var(--danger)' }}>{formatRpFull(summary.totalKeluar || 0)}</p>
           </div>
-          <div style={{ background: 'var(--primary-light)', borderRadius: 12, padding: '12px 16px' }}>
-            <p style={{ fontSize: 11, color: 'var(--text-muted)' }}>Saldo</p>
-            <p style={{ fontSize: 16, fontWeight: 700, color: 'var(--primary)' }}>{formatRpFull(summary.saldo || 0)}</p>
-          </div>
         </div>
 
         {/* Content */}
@@ -607,14 +603,10 @@ function JurnalScreen({ user, cabang, cabangList, onBack, onLogout }) {
                     </div>
                     <div style={{ textAlign: 'right', flexShrink: 0 }}>
                       <p style={{ fontSize: 15, fontWeight: 700, color: entry.arah === 'masuk' ? 'var(--success)' : 'var(--danger)' }}>
-                        {entry.arah === 'masuk' ? '+' : '-'}{formatRpFull(entry.jumlah)}
+                        {formatRpFull(entry.jumlah)}
+
                       </p>
                     </div>
-                    {isUnit && entry.createdBy === user?.uid && (
-                      <button onClick={() => setDeleteConfirm(entry)} style={{ color: 'var(--text-light)', padding: 4, flexShrink: 0 }} title="Hapus">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-                      </button>
-                    )}
                   </div>
                 ))}
               </div>
