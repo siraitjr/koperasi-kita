@@ -650,8 +650,56 @@ class SmartFirebaseLoader(
                 }.awaitAll().flatten()
             }
 
-            val pending = results.filter { it.status == "Menunggu Approval" }
+            // ✅ PERBAIKAN: Double-check approval phase dari data pelanggan aktual
+            val pending = results.filter { pelanggan ->
+                if (pelanggan.status != "Menunggu Approval") return@filter false
+                val phase = pelanggan.dualApprovalInfo?.approvalPhase ?: ""
+                phase == "awaiting_pimpinan" || phase.isEmpty() || pelanggan.dualApprovalInfo == null
+            }.toMutableList()
+
+            // ✅ SELF-HEALING: Cari pengajuan yang ada di pelanggan tapi tidak ada di pengajuan_approval
+            val loadedIds = pending.map { it.id }.toSet()
+            try {
+                val adminListSnap = database.child("metadata").child("cabang")
+                    .child(cabangId).child("adminList").get().await()
+                val adminList = adminListSnap.children.mapNotNull { it.getValue(String::class.java) }
+
+                coroutineScope {
+                    adminList.map { adminUid ->
+                        async {
+                            try {
+                                val pelSnap = database.child("pelanggan").child(adminUid)
+                                    .orderByChild("status").equalTo("Menunggu Approval")
+                                    .get().await()
+
+                                pelSnap.children.mapNotNull { child ->
+                                    val pel = child.getValue(Pelanggan::class.java)
+                                    if (pel != null && !loadedIds.contains(pel.id)) {
+                                        val phase = pel.dualApprovalInfo?.approvalPhase ?: ""
+                                        val isPhase1 = phase == "awaiting_pimpinan" || phase.isEmpty() || pel.dualApprovalInfo == null
+                                        if (isPhase1) {
+                                            Log.w(TAG, "🔧 SELF-HEALING: Orphan ditemukan: ${pel.namaPanggilan}")
+                                            pel.copy(id = child.key ?: pel.id, adminUid = adminUid, cabangId = cabangId)
+                                        } else null
+                                    } else null
+                                }
+                            } catch (e: Exception) {
+                                emptyList()
+                            }
+                        }
+                    }.awaitAll().flatten()
+                }.also { orphans ->
+                    if (orphans.isNotEmpty()) {
+                        pending.addAll(orphans)
+                        Log.d(TAG, "🔧 SELF-HEALING: Recovered ${orphans.size} orphaned pengajuan")
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "⚠️ Self-healing check gagal (non-critical): ${e.message}")
+            }
+
             cacheManager.cachePendingApprovals(cabangId, pending)
+
 
             Log.d(TAG, "✅ Loaded ${pending.size} pending approvals (filtered by phase)")
             pending

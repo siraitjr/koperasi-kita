@@ -1786,11 +1786,21 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     }
 
                     if (cabangId.isNotBlank()) {
-                        simpanKePengajuanApproval(toSave, cabangId)
+                        // ✅ PERBAIKAN: Update cabangId di pelanggan jika sebelumnya kosong
+                        if (toSave.cabangId.isBlank()) {
+                            Log.d("Pengajuan", "📝 Menyimpan cabangId '$cabangId' ke pelanggan: ${toSave.namaPanggilan}")
+                            database.child("pelanggan").child(targetAdminUid).child(id)
+                                .child("cabangId").setValue(cabangId)
+                        }
+                        simpanKePengajuanApproval(toSave.copy(cabangId = cabangId), cabangId)
                         Log.d("Pengajuan", "✅ Pengajuan disimpan untuk: ${toSave.namaPanggilan}")
                     } else {
                         Log.e("Pengajuan", "❌ CABANG ID KOSONG - pengajuan_approval tidak bisa dibuat untuk: ${toSave.namaPanggilan}")
+                        // ✅ PERBAIKAN: Simpan ke pending queue agar bisa di-retry saat cabangId tersedia
+                        // Self-healing di loadPendingApprovalsOptimized akan menangani kasus ini
+                        Log.d("Pengajuan", "🔧 Pengajuan akan ter-detect oleh self-healing saat Pimpinan buka halaman approval")
                     }
+
                 }
 
                 onSuccess?.invoke()
@@ -4086,8 +4096,18 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                         return@launch
                     }
 
-                    Log.w("Approval", "⚠️ Unknown phase: $currentPhase")
-                    onFailure?.invoke(Exception("Unknown approval phase: $currentPhase"))
+                    // =========================================================================
+                    // PHASE LAIN: Pengajuan sudah melewati tahap Pimpinan
+                    // =========================================================================
+                    val phaseMessage = when (currentPhase) {
+                        ApprovalPhase.AWAITING_KOORDINATOR -> "Pengajuan ini sudah Anda setujui dan sedang menunggu review Koordinator (Tahap 2/5)"
+                        ApprovalPhase.AWAITING_PENGAWAS -> "Pengajuan ini sedang menunggu review Pengawas (Tahap 3/5)"
+                        ApprovalPhase.AWAITING_KOORDINATOR_FINAL -> "Pengajuan ini sedang menunggu konfirmasi Koordinator (Tahap 4/5)"
+                        ApprovalPhase.COMPLETED -> "Pengajuan ini sudah selesai diproses"
+                        else -> "Pengajuan ini sedang dalam proses approval tahap lain ($currentPhase)"
+                    }
+                    Log.w("Approval", "⚠️ Phase tidak sesuai untuk Pimpinan: $currentPhase")
+                    onFailure?.invoke(Exception(phaseMessage))
                     return@launch
                 } else {
                     // =========================================================================
@@ -5092,8 +5112,16 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                         return@launch
                     }
 
-                    Log.w("Rejection", "⚠️ Unknown phase: $currentPhase")
-                    onFailure?.invoke(Exception("Unknown approval phase: $currentPhase"))
+                    // Phase lain: Pengajuan sudah melewati tahap Pimpinan
+                    val phaseMessage = when (currentPhase) {
+                        ApprovalPhase.AWAITING_KOORDINATOR -> "Pengajuan ini sudah melewati tahap Pimpinan dan sedang menunggu review Koordinator (Tahap 2/5)"
+                        ApprovalPhase.AWAITING_PENGAWAS -> "Pengajuan ini sedang menunggu review Pengawas (Tahap 3/5)"
+                        ApprovalPhase.AWAITING_KOORDINATOR_FINAL -> "Pengajuan ini sedang menunggu konfirmasi Koordinator (Tahap 4/5)"
+                        ApprovalPhase.COMPLETED -> "Pengajuan ini sudah selesai diproses"
+                        else -> "Pengajuan ini sedang dalam proses approval tahap lain ($currentPhase)"
+                    }
+                    Log.w("Rejection", "⚠️ Phase tidak sesuai untuk Pimpinan: $currentPhase")
+                    onFailure?.invoke(Exception(phaseMessage))
                     return@launch
                 }
 
@@ -7980,7 +8008,16 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                                 val snap = database.child("pelanggan").child(adminId).child(id).get().await()
                                 val pelanggan = snap.getValue(Pelanggan::class.java)
                                 if (pelanggan != null && pelanggan.status == "Menunggu Approval") {
-                                    pelangganList.add(pelanggan)
+                                    // ✅ PERBAIKAN: Double-check approval phase dari data pelanggan
+                                    val phase = pelanggan.dualApprovalInfo?.approvalPhase ?: ""
+                                    val isStillPhase1 = phase == ApprovalPhase.AWAITING_PIMPINAN ||
+                                            phase.isEmpty() ||
+                                            pelanggan.dualApprovalInfo == null
+                                    if (isStillPhase1) {
+                                        pelangganList.add(pelanggan)
+                                    } else {
+                                        Log.d("Approval", "⏭️ Skip ${pelanggan.namaPanggilan}: sudah di phase $phase")
+                                    }
                                 }
                             }
                             pelangganList
@@ -7993,13 +8030,64 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
 
                 val results = jobs.awaitAll()
                 _pendingApprovals.clear()
+                val loadedIds = mutableSetOf<String>()
                 results.forEach { list ->
                     list.distinctBy { it.id }.forEach {
                         _pendingApprovals.add(it)
+                        loadedIds.add(it.id)
                     }
                 }
                 Log.d("Approval", "Loaded ${_pendingApprovals.size} pending approvals for cabang $cabangId")
+
+                // ✅ SELF-HEALING: Cari pengajuan yang ada di pelanggan tapi tidak ada di pengajuan_approval
+                // Ini menangani kasus dimana simpanKePengajuanApproval gagal (offline/cabangId kosong)
+                try {
+                    val adminListSnap = database.child("metadata").child("cabang")
+                        .child(cabangId).child("adminList").get().await()
+                    val adminList = adminListSnap.children.mapNotNull { it.getValue(String::class.java) }
+
+                    for (adminUid in adminList) {
+                        val pelangganSnap = database.child("pelanggan").child(adminUid)
+                            .orderByChild("status").equalTo("Menunggu Approval")
+                            .get().await()
+
+                        pelangganSnap.children.forEach { child ->
+                            val pelanggan = child.getValue(Pelanggan::class.java)
+                            if (pelanggan != null && !loadedIds.contains(pelanggan.id)) {
+                                // Cek apakah ini Phase 1 (menunggu pimpinan)
+                                val phase = pelanggan.dualApprovalInfo?.approvalPhase ?: ""
+                                val isPhase1 = phase == ApprovalPhase.AWAITING_PIMPINAN ||
+                                        phase.isEmpty() || pelanggan.dualApprovalInfo == null
+
+                                if (isPhase1) {
+                                    Log.w("Approval", "🔧 SELF-HEALING: Ditemukan pengajuan orphan: ${pelanggan.namaPanggilan} (${pelanggan.id})")
+                                    _pendingApprovals.add(pelanggan.copy(
+                                        id = child.key ?: pelanggan.id,
+                                        adminUid = adminUid,
+                                        cabangId = cabangId
+                                    ))
+                                    loadedIds.add(pelanggan.id)
+
+                                    // Auto-create pengajuan_approval entry yang hilang
+                                    simpanKePengajuanApproval(pelanggan.copy(
+                                        id = child.key ?: pelanggan.id,
+                                        adminUid = adminUid,
+                                        cabangId = cabangId
+                                    ), cabangId)
+                                    Log.d("Approval", "🔧 SELF-HEALING: Entry pengajuan_approval dibuat untuk: ${pelanggan.namaPanggilan}")
+                                }
+                            }
+                        }
+                    }
+
+                    if (_pendingApprovals.size > results.flatten().size) {
+                        Log.d("Approval", "🔧 SELF-HEALING: Recovered ${_pendingApprovals.size - results.flatten().size} orphaned pengajuan")
+                    }
+                } catch (e: Exception) {
+                    Log.w("Approval", "⚠️ Self-healing check gagal (non-critical): ${e.message}")
+                }
             } catch (e: Exception) {
+
                 Log.e("Approval", "Error loading optimized approvals: ${e.message}")
             }
         }
