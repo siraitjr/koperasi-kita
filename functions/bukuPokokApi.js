@@ -460,6 +460,8 @@ exports.getBukuPokokSummary = functions
             const cabangData = metadata.cabang || {};
             const adminsData = metadata.admins || {};
 
+
+
             const cabangList = [];
 
             for (const [cabangId, cabang] of Object.entries(cabangData)) {

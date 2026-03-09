@@ -177,6 +177,8 @@ exports.getKasirSummary = functions
             const cabangData = metadata.cabang || {};
             const adminsData = metadata.admins || {};
 
+
+
             // Build cabang list
             const cabangList = [];
             for (const [cabangId, cabang] of Object.entries(cabangData)) {
