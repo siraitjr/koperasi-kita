@@ -3784,11 +3784,23 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                                                         }
                                                 }
                                                 if (!snapshot.hasChildren()) {
-                                                    // ✅ PERBAIKAN: Jika pengajuan tidak ditemukan, buat baru lalu update
-                                                    Log.w("Approval", "⚠️ Pengajuan tidak ditemukan di pengajuan_approval, membuat entry baru...")
+                                                    // =================================================================
+                                                    // FALLBACK: Entry pengajuan_approval tidak ditemukan
+                                                    // SOLUSI: 2-Step Deterministik (TANPA delay)
+                                                    //
+                                                    // Step 1: Buat entry dengan phase AWAITING_PIMPINAN
+                                                    //         → onCreate fires → CF skip dualApprovalInfo (FIX 2)
+                                                    //         → CF kirim notifikasi ke Pimpinan (harmless duplicate)
+                                                    //
+                                                    // Step 2: Update approvalPhase ke AWAITING_KOORDINATOR
+                                                    //         → onUpdate fires → onPimpinanReviewed trigger
+                                                    //         → Koordinator PASTI dapat notifikasi
+                                                    // =================================================================
+                                                    Log.w("Approval", "⚠️ Pengajuan tidak ditemukan, 2-step approach")
 
-                                                    // Buat entry baru di pengajuan_approval dengan dualApprovalInfo
                                                     val newPengajuanRef = database.child("pengajuan_approval").child(branchId).push()
+
+                                                    // Step 1: Buat entry dengan Phase 1 (AWAITING_PIMPINAN) + pimpinan data
                                                     val pengajuanData = mapOf(
                                                         "adminUid" to updatedPelanggan.adminUid,
                                                         "nama" to updatedPelanggan.namaKtp,
@@ -3803,45 +3815,92 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                                                         "timestamp" to com.google.firebase.database.ServerValue.TIMESTAMP,
                                                         "dualApprovalInfo" to mapOf(
                                                             "requiresDualApproval" to true,
-                                                            "approvalPhase" to ApprovalPhase.AWAITING_KOORDINATOR,
+                                                            "approvalPhase" to ApprovalPhase.AWAITING_PIMPINAN,
                                                             "pimpinanApproval" to mapOf(
-                                                                "status" to updatedDualInfo.pimpinanApproval.status,
-                                                                "by" to updatedDualInfo.pimpinanApproval.by,
-                                                                "uid" to updatedDualInfo.pimpinanApproval.uid,
-                                                                "timestamp" to updatedDualInfo.pimpinanApproval.timestamp,
-                                                                "note" to updatedDualInfo.pimpinanApproval.note,
-                                                                "adjustedAmount" to updatedDualInfo.pimpinanApproval.adjustedAmount,
-                                                                "adjustedTenor" to updatedDualInfo.pimpinanApproval.adjustedTenor
+                                                                "status" to "pending", "by" to "", "uid" to "",
+                                                                "timestamp" to 0, "note" to "",
+                                                                "adjustedAmount" to 0, "adjustedTenor" to 0
                                                             ),
                                                             "koordinatorApproval" to mapOf(
-                                                                "status" to "pending",
-                                                                "by" to "",
-                                                                "uid" to "",
-                                                                "timestamp" to 0,
-                                                                "note" to ""
+                                                                "status" to "pending", "by" to "", "uid" to "",
+                                                                "timestamp" to 0, "note" to "",
+                                                                "adjustedAmount" to 0, "adjustedTenor" to 0
                                                             ),
                                                             "pengawasApproval" to mapOf(
-                                                                "status" to "pending",
-                                                                "by" to "",
-                                                                "uid" to "",
-                                                                "timestamp" to 0,
-                                                                "note" to ""
-                                                            )
+                                                                "status" to "pending", "by" to "", "uid" to "",
+                                                                "timestamp" to 0, "note" to "",
+                                                                "adjustedAmount" to 0, "adjustedTenor" to 0
+                                                            ),
+                                                            "finalDecision" to "",
+                                                            "finalDecisionBy" to "",
+                                                            "finalDecisionTimestamp" to 0,
+                                                            "rejectionReason" to "",
+                                                            "koordinatorFinalConfirmed" to false,
+                                                            "koordinatorFinalTimestamp" to 0,
+                                                            "pimpinanFinalConfirmed" to false,
+                                                            "pimpinanFinalTimestamp" to 0
                                                         )
                                                     )
 
                                                     newPengajuanRef.setValue(pengajuanData)
                                                         .addOnSuccessListener {
-                                                            Log.d("Approval", "✅ Entry pengajuan baru dibuat, cloud function akan trigger notifikasi ke Koordinator")
-                                                            updateLocalAndRefresh(pelangganId, updatedPelanggan, cabangId)
-                                                            onSuccess?.invoke()
+                                                            Log.d("Approval", "✅ Step 1 selesai: entry dibuat dengan Phase 1")
+
+                                                            // Step 2: UPDATE dualApprovalInfo ke phase sebenarnya
+                                                            // Ini DIJAMIN trigger onUpdate karena:
+                                                            // - approvalPhase berubah dari AWAITING_PIMPINAN → AWAITING_KOORDINATOR
+                                                            // - pimpinanApproval.status berubah dari pending → approved
+                                                            val updatedDualInfoMap = mapOf(
+                                                                "requiresDualApproval" to true,
+                                                                "approvalPhase" to updatedDualInfo.approvalPhase,
+                                                                "pimpinanApproval" to mapOf(
+                                                                    "status" to updatedDualInfo.pimpinanApproval.status,
+                                                                    "by" to updatedDualInfo.pimpinanApproval.by,
+                                                                    "uid" to updatedDualInfo.pimpinanApproval.uid,
+                                                                    "timestamp" to updatedDualInfo.pimpinanApproval.timestamp,
+                                                                    "note" to updatedDualInfo.pimpinanApproval.note,
+                                                                    "adjustedAmount" to updatedDualInfo.pimpinanApproval.adjustedAmount,
+                                                                    "adjustedTenor" to updatedDualInfo.pimpinanApproval.adjustedTenor
+                                                                ),
+                                                                "koordinatorApproval" to mapOf(
+                                                                    "status" to "pending", "by" to "", "uid" to "",
+                                                                    "timestamp" to 0, "note" to "",
+                                                                    "adjustedAmount" to 0, "adjustedTenor" to 0
+                                                                ),
+                                                                "pengawasApproval" to mapOf(
+                                                                    "status" to "pending", "by" to "", "uid" to "",
+                                                                    "timestamp" to 0, "note" to "",
+                                                                    "adjustedAmount" to 0, "adjustedTenor" to 0
+                                                                ),
+                                                                "finalDecision" to "",
+                                                                "finalDecisionBy" to "",
+                                                                "finalDecisionTimestamp" to 0,
+                                                                "rejectionReason" to "",
+                                                                "koordinatorFinalConfirmed" to false,
+                                                                "koordinatorFinalTimestamp" to 0,
+                                                                "pimpinanFinalConfirmed" to false,
+                                                                "pimpinanFinalTimestamp" to 0
+                                                            )
+
+                                                            newPengajuanRef.child("dualApprovalInfo").setValue(updatedDualInfoMap)
+                                                                .addOnSuccessListener {
+                                                                    Log.d("Approval", "✅ Step 2 selesai: phase updated ke ${updatedDualInfo.approvalPhase} → CF onUpdate PASTI trigger")
+                                                                    updateLocalAndRefresh(pelangganId, updatedPelanggan, cabangId)
+                                                                    onSuccess?.invoke()
+                                                                }
+                                                                .addOnFailureListener { e2 ->
+                                                                    Log.e("Approval", "❌ Step 2 gagal: ${e2.message}")
+                                                                    updateLocalAndRefresh(pelangganId, updatedPelanggan, cabangId)
+                                                                    onSuccess?.invoke()
+                                                                }
                                                         }
                                                         .addOnFailureListener { e ->
-                                                            Log.e("Approval", "❌ Gagal membuat entry pengajuan: ${e.message}")
+                                                            Log.e("Approval", "❌ Step 1 gagal: ${e.message}")
                                                             updateLocalAndRefresh(pelangganId, updatedPelanggan, cabangId)
                                                             onSuccess?.invoke()
                                                         }
                                                 }
+
                                             }
                                             override fun onCancelled(error: DatabaseError) {
                                                 Log.e("Approval", "❌ Error: ${error.message}")
@@ -7804,156 +7863,114 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
 
         val approvalRef = database.child("pengajuan_approval").child(cabangId)
 
-        // ✅ PERBAIKAN: Cek dulu apakah entry dengan pelangganId yang sama sudah ada
+        // Step 1: Cari entry lama untuk pelangganId yang sama
         approvalRef.orderByChild("pelangganId").equalTo(pelanggan.id)
             .get()
             .addOnSuccessListener { snapshot ->
-                val pengajuanData = mutableMapOf<String, Any?>(
-                    "adminUid" to pelanggan.adminUid,
-                    "nama" to pelanggan.namaKtp,
-                    "namaPanggilan" to pelanggan.namaPanggilan,
-                    "tanggalPengajuan" to pelanggan.tanggalPengajuan,
-                    "status" to "Menunggu Approval",
-                    "jenisPinjaman" to if (pelanggan.besarPinjaman >= 3000000) "diatas_3jt" else "dibawah_3jt",
-                    "besarPinjaman" to pelanggan.besarPinjaman,
-                    "tenor" to pelanggan.tenor,
-                    "pinjamanKe" to pelanggan.pinjamanKe,
-                    "pelangganId" to pelanggan.id,
-                    "timestamp" to com.google.firebase.database.ServerValue.TIMESTAMP
-                )
 
-// ✅ KRITIS: Reset dualApprovalInfo ke Phase 1 untuk >= 3jt
-// Agar onUpdate cloud function tetap trigger saat Pimpinan approve
-                if (pelanggan.besarPinjaman >= DualApprovalThreshold.MINIMUM_AMOUNT) {
-                    pengajuanData["dualApprovalInfo"] = mapOf(
-                        "requiresDualApproval" to true,
-                        "approvalPhase" to ApprovalPhase.AWAITING_PIMPINAN,
-                        "pimpinanApproval" to mapOf(
-                            "status" to "pending", "by" to "", "uid" to "",
-                            "timestamp" to 0, "note" to "",
-                            "adjustedAmount" to 0, "adjustedTenor" to 0
-                        ),
-                        "koordinatorApproval" to mapOf(
-                            "status" to "pending", "by" to "", "uid" to "",
-                            "timestamp" to 0, "note" to "",
-                            "adjustedAmount" to 0, "adjustedTenor" to 0
-                        ),
-                        "pengawasApproval" to mapOf(
-                            "status" to "pending", "by" to "", "uid" to "",
-                            "timestamp" to 0, "note" to "",
-                            "adjustedAmount" to 0, "adjustedTenor" to 0
-                        ),
-                        "finalDecision" to "",
-                        "finalDecisionBy" to "",
-                        "finalDecisionTimestamp" to 0,
-                        "rejectionReason" to "",
-                        "koordinatorFinalConfirmed" to false,
-                        "koordinatorFinalTimestamp" to 0,
-                        "pimpinanFinalConfirmed" to false,
-                        "pimpinanFinalTimestamp" to 0
-                    )
-                } else {
-                    // Untuk < 3jt, hapus dualApprovalInfo lama jika ada
-                    pengajuanData["dualApprovalInfo"] = null
-                }
+                // Step 2: Siapkan data pengajuan LENGKAP (termasuk dualApprovalInfo)
+                val pengajuanData = buildPengajuanData(pelanggan)
 
                 if (snapshot.exists() && snapshot.childrenCount > 0) {
-                    // ✅ Entry sudah ada → update entry pertama yang ditemukan, abaikan duplikat
-                    val existingKey = snapshot.children.first().key
-                    if (existingKey != null) {
-                        approvalRef.child(existingKey).setValue(pengajuanData)
-                            .addOnSuccessListener {
-                                Log.d("Pengajuan", "✅ Updated existing pengajuan_approval/$cabangId/$existingKey")
-                            }
-                            .addOnFailureListener { e ->
-                                Log.e("Pengajuan", "❌ Gagal update pengajuan_approval: ${e.message}")
-                            }
-                    }
+                    // ================================================================
+                    // ENTRY LAMA ADA → HAPUS SEMUA, lalu buat baru dengan push()
+                    // Ini MENJAMIN onCreate trigger → notifikasi PASTI terkirim
+                    // ================================================================
+                    Log.d("Pengajuan", "🗑️ Hapus ${snapshot.childrenCount} entry lama untuk ${pelanggan.namaPanggilan}")
 
-                    // ✅ Bersihkan entry duplikat jika ada lebih dari 1
-                    if (snapshot.childrenCount > 1) {
-                        var isFirst = true
-                        snapshot.children.forEach { child ->
-                            if (isFirst) {
-                                isFirst = false
-                            } else {
-                                child.ref.removeValue()
-                                Log.d("Pengajuan", "🗑️ Hapus duplikat: ${child.key}")
+                    var deletedCount = 0
+                    val totalToDelete = snapshot.childrenCount.toInt()
+
+                    snapshot.children.forEach { child ->
+                        child.ref.removeValue().addOnCompleteListener {
+                            deletedCount++
+                            // Step 3: Setelah SEMUA entry lama terhapus, baru buat entry baru
+                            if (deletedCount >= totalToDelete) {
+                                createNewPengajuanEntry(approvalRef, pengajuanData, cabangId)
                             }
                         }
                     }
                 } else {
-                    // ✅ Belum ada → buat baru dengan push()
-                    val pengajuanRef = approvalRef.push()
-                    val pengajuanId = pengajuanRef.key ?: return@addOnSuccessListener
-
-                    pengajuanRef.setValue(pengajuanData)
-                        .addOnSuccessListener {
-                            Log.d("Pengajuan", "✅ Berhasil menyimpan ke pengajuan_approval/$cabangId/$pengajuanId")
-                        }
-                        .addOnFailureListener { e ->
-                            Log.e("Pengajuan", "❌ Gagal menyimpan ke pengajuan_approval: ${e.message}")
-                        }
+                    // BELUM ADA → langsung buat baru
+                    createNewPengajuanEntry(approvalRef, pengajuanData, cabangId)
                 }
             }
             .addOnFailureListener { e ->
-                // ✅ PERBAIKAN: Gunakan pelangganId sebagai key (bukan push) untuk mencegah duplikat
-                Log.w("Pengajuan", "⚠️ Gagal cek duplikat, gunakan pelangganId sebagai key: ${e.message}")
+                // Fallback: query gagal → langsung push (bisa duplikat, tapi CF tetap trigger)
+                Log.w("Pengajuan", "⚠️ Gagal cek duplikat: ${e.message}, langsung push")
+                val pengajuanData = buildPengajuanData(pelanggan)
+                createNewPengajuanEntry(approvalRef, pengajuanData, cabangId)
+            }
+    }
 
-                val pengajuanData = mutableMapOf<String, Any?>(
-                    "adminUid" to pelanggan.adminUid,
-                    "nama" to pelanggan.namaKtp,
-                    "namaPanggilan" to pelanggan.namaPanggilan,
-                    "tanggalPengajuan" to pelanggan.tanggalPengajuan,
-                    "status" to "Menunggu Approval",
-                    "jenisPinjaman" to if (pelanggan.besarPinjaman >= 3000000) "diatas_3jt" else "dibawah_3jt",
-                    "besarPinjaman" to pelanggan.besarPinjaman,
-                    "tenor" to pelanggan.tenor,
-                    "pinjamanKe" to pelanggan.pinjamanKe,
-                    "pelangganId" to pelanggan.id,
-                    "timestamp" to com.google.firebase.database.ServerValue.TIMESTAMP
-                )
+    // Helper: Buat map data pengajuan LENGKAP
+    private fun buildPengajuanData(pelanggan: Pelanggan): MutableMap<String, Any?> {
+        val data = mutableMapOf<String, Any?>(
+            "adminUid" to pelanggan.adminUid,
+            "nama" to pelanggan.namaKtp,
+            "namaPanggilan" to pelanggan.namaPanggilan,
+            "tanggalPengajuan" to pelanggan.tanggalPengajuan,
+            "status" to "Menunggu Approval",
+            "jenisPinjaman" to if (pelanggan.besarPinjaman >= 3000000) "diatas_3jt" else "dibawah_3jt",
+            "besarPinjaman" to pelanggan.besarPinjaman,
+            "tenor" to pelanggan.tenor,
+            "pinjamanKe" to pelanggan.pinjamanKe,
+            "pelangganId" to pelanggan.id,
+            "timestamp" to com.google.firebase.database.ServerValue.TIMESTAMP
+        )
 
-                if (pelanggan.besarPinjaman >= DualApprovalThreshold.MINIMUM_AMOUNT) {
-                    pengajuanData["dualApprovalInfo"] = mapOf(
-                        "requiresDualApproval" to true,
-                        "approvalPhase" to ApprovalPhase.AWAITING_PIMPINAN,
-                        "pimpinanApproval" to mapOf(
-                            "status" to "pending", "by" to "", "uid" to "",
-                            "timestamp" to 0, "note" to "",
-                            "adjustedAmount" to 0, "adjustedTenor" to 0
-                        ),
-                        "koordinatorApproval" to mapOf(
-                            "status" to "pending", "by" to "", "uid" to "",
-                            "timestamp" to 0, "note" to "",
-                            "adjustedAmount" to 0, "adjustedTenor" to 0
-                        ),
-                        "pengawasApproval" to mapOf(
-                            "status" to "pending", "by" to "", "uid" to "",
-                            "timestamp" to 0, "note" to "",
-                            "adjustedAmount" to 0, "adjustedTenor" to 0
-                        ),
-                        "finalDecision" to "",
-                        "finalDecisionBy" to "",
-                        "finalDecisionTimestamp" to 0,
-                        "rejectionReason" to "",
-                        "koordinatorFinalConfirmed" to false,
-                        "koordinatorFinalTimestamp" to 0,
-                        "pimpinanFinalConfirmed" to false,
-                        "pimpinanFinalTimestamp" to 0
-                    )
-                } else {
-                    pengajuanData["dualApprovalInfo"] = null
-                }
+        // TETAP sertakan dualApprovalInfo dari client sebagai BACKUP
+        // CF onNewPengajuanCreated (setelah FIX 2) akan skip jika sudah ada
+        if (pelanggan.besarPinjaman >= DualApprovalThreshold.MINIMUM_AMOUNT) {
+            data["dualApprovalInfo"] = mapOf(
+                "requiresDualApproval" to true,
+                "approvalPhase" to ApprovalPhase.AWAITING_PIMPINAN,
+                "pimpinanApproval" to mapOf(
+                    "status" to "pending", "by" to "", "uid" to "",
+                    "timestamp" to 0, "note" to "",
+                    "adjustedAmount" to 0, "adjustedTenor" to 0
+                ),
+                "koordinatorApproval" to mapOf(
+                    "status" to "pending", "by" to "", "uid" to "",
+                    "timestamp" to 0, "note" to "",
+                    "adjustedAmount" to 0, "adjustedTenor" to 0
+                ),
+                "pengawasApproval" to mapOf(
+                    "status" to "pending", "by" to "", "uid" to "",
+                    "timestamp" to 0, "note" to "",
+                    "adjustedAmount" to 0, "adjustedTenor" to 0
+                ),
+                "finalDecision" to "",
+                "finalDecisionBy" to "",
+                "finalDecisionTimestamp" to 0,
+                "rejectionReason" to "",
+                "koordinatorFinalConfirmed" to false,
+                "koordinatorFinalTimestamp" to 0,
+                "pimpinanFinalConfirmed" to false,
+                "pimpinanFinalTimestamp" to 0
+            )
+        } else {
+            data["dualApprovalInfo"] = null
+        }
 
-                // Gunakan pelangganId sebagai key — kalau sudah ada, di-overwrite (bukan duplikat baru)
-                approvalRef.child(pelanggan.id).setValue(pengajuanData)
-                    .addOnSuccessListener {
-                        Log.d("Pengajuan", "✅ Fallback berhasil: pengajuan_approval/$cabangId/${pelanggan.id}")
-                    }
-                    .addOnFailureListener { e2 ->
-                        Log.e("Pengajuan", "❌ Fallback gagal: ${e2.message}")
-                    }
+        return data
+    }
+
+    // Helper: Buat entry baru dengan push() — SELALU trigger onCreate
+    private fun createNewPengajuanEntry(
+        approvalRef: com.google.firebase.database.DatabaseReference,
+        data: Map<String, Any?>,
+        cabangId: String
+    ) {
+        val newRef = approvalRef.push()
+        val newKey = newRef.key ?: return
+
+        newRef.setValue(data)
+            .addOnSuccessListener {
+                Log.d("Pengajuan", "✅ Entry baru dibuat: pengajuan_approval/$cabangId/$newKey (onCreate PASTI trigger)")
+            }
+            .addOnFailureListener { e ->
+                Log.e("Pengajuan", "❌ Gagal buat entry: ${e.message}")
             }
     }
 

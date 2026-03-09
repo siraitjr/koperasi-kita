@@ -72,6 +72,13 @@ exports.onPelangganWrite = functions.database
 
 /**
  * Safety net: pastikan pengajuan_approval ada untuk setiap pelanggan "Menunggu Approval"
+ * 
+ * STRATEGI ANTI-RACE-CONDITION:
+ * - Jika entry ADA dan FRESH → skip (client sudah buat)
+ * - Jika entry ADA tapi BASI → hapus semua + push baru (trigger onCreate)
+ * - Jika entry TIDAK ADA → tunggu 5 detik, cek lagi:
+ *   - Jika sekarang ADA → client sudah buat, skip
+ *   - Jika masih TIDAK ADA → client gagal, buat sebagai backup
  */
 async function ensurePengajuanApprovalExists(adminUid, pelangganId, pelangganData) {
     try {
@@ -83,17 +90,40 @@ async function ensurePengajuanApprovalExists(adminUid, pelangganId, pelangganDat
             return;
         }
         
-        const existingSnap = await db.ref(`pengajuan_approval/${cabangId}`)
-            .orderByChild('pelangganId')
-            .equalTo(pelangganId)
-            .once('value');
-        
+        const approvalPath = `pengajuan_approval/${cabangId}`;
         const besarPinjaman = pelangganData.besarPinjaman || 0;
         
+        // Helper: query entry berdasarkan pelangganId
+        const queryEntries = async () => {
+            return await db.ref(approvalPath)
+                .orderByChild('pelangganId')
+                .equalTo(pelangganId)
+                .once('value');
+        };
+        
+        // Helper: buat data pengajuan baru
+        const buildPengajuanData = () => ({
+            adminUid: adminUid,
+            nama: pelangganData.namaKtp || '',
+            namaPanggilan: pelangganData.namaPanggilan || '',
+            tanggalPengajuan: pelangganData.tanggalPengajuan || '',
+            status: 'Menunggu Approval',
+            jenisPinjaman: besarPinjaman >= 3000000 ? 'diatas_3jt' : 'dibawah_3jt',
+            besarPinjaman: besarPinjaman,
+            tenor: pelangganData.tenor || 24,
+            pinjamanKe: pelangganData.pinjamanKe || 1,
+            pelangganId: pelangganId,
+            timestamp: admin.database.ServerValue.TIMESTAMP
+        });
+        
+        // =============================================
+        // CEK PERTAMA
+        // =============================================
+        const existingSnap = await queryEntries();
+        
         if (existingSnap.exists()) {
-            // ✅ PERBAIKAN: Cek apakah entry yang ada BASI (sudah completed/bukan Phase 1)
+            // Entry ditemukan — cek apakah masih fresh atau basi
             let needsReset = false;
-            let existingKey = null;
             
             existingSnap.forEach(child => {
                 const data = child.val();
@@ -103,73 +133,56 @@ async function ensurePengajuanApprovalExists(adminUid, pelangganId, pelangganDat
                     const phase = dualInfo.approvalPhase || '';
                     const pimpinanStatus = dualInfo.pimpinanApproval?.status || 'pending';
                     
-                    // Entry BASI jika: phase bukan awaiting_pimpinan, ATAU pimpinan sudah aksi
+                    // Entry BASI jika: sudah melewati Phase 1, ATAU pimpinan sudah aksi
                     if (phase !== 'awaiting_pimpinan' && phase !== '') {
                         needsReset = true;
-                        existingKey = child.key;
                     } else if (pimpinanStatus !== 'pending') {
                         needsReset = true;
-                        existingKey = child.key;
                     }
-                }
-                
-                if (!existingKey) {
-                    existingKey = child.key;
                 }
             });
             
-            if (needsReset && existingKey) {
-                console.log(`🔧 Safety net: RESET entry basi untuk ${pelangganData.namaPanggilan || pelangganId}`);
+            if (needsReset) {
+                // BASI → hapus SEMUA entry, lalu buat baru dengan push()
+                console.log(`🔧 Safety net: entry BASI untuk ${pelangganData.namaPanggilan || pelangganId}, reset...`);
                 
-                const resetData = {
-                    adminUid: adminUid,
-                    nama: pelangganData.namaKtp || '',
-                    namaPanggilan: pelangganData.namaPanggilan || '',
-                    tanggalPengajuan: pelangganData.tanggalPengajuan || '',
-                    status: 'Menunggu Approval',
-                    jenisPinjaman: besarPinjaman >= 3000000 ? 'diatas_3jt' : 'dibawah_3jt',
-                    besarPinjaman: besarPinjaman,
-                    tenor: pelangganData.tenor || 24,
-                    pinjamanKe: pelangganData.pinjamanKe || 1,
-                    pelangganId: pelangganId,
-                    timestamp: admin.database.ServerValue.TIMESTAMP
-                };
-                
-                // Gunakan setValue (bukan update) agar dualApprovalInfo lama TERHAPUS
-                await db.ref(`pengajuan_approval/${cabangId}/${existingKey}`).set(resetData);
-                console.log(`✅ Safety net: entry direset ke Phase 1`);
-                
-                // Hapus entry duplikat jika ada
-                let isFirst = true;
+                const deletePromises = [];
                 existingSnap.forEach(child => {
-                    if (isFirst) { isFirst = false; return; }
-                    child.ref.remove();
-                    console.log(`🗑️ Safety net: hapus duplikat ${child.key}`);
+                    deletePromises.push(child.ref.remove());
+                    console.log(`🗑️ Safety net: hapus ${child.key}`);
                 });
+                await Promise.all(deletePromises);
+                
+                // Buat baru — push() = trigger onCreate = notifikasi terkirim
+                await db.ref(approvalPath).push(buildPengajuanData());
+                console.log(`✅ Safety net: entry baru dibuat (onCreate trigger)`);
             } else {
-                // Entry masih fresh (Phase 1, pending), tidak perlu diubah
+                // FRESH → tidak perlu diubah
+                console.log(`✅ Safety net: entry sudah ada dan masih fresh, skip`);
                 return;
             }
+            
         } else {
-            // BELUM ADA → buat entry baru
-            console.log(`🔧 Safety net: membuat pengajuan_approval untuk ${pelangganData.namaPanggilan || pelangganId}`);
+            // =================================================
+            // ENTRY TIDAK ADA → Mungkin client sedang membuat
+            // Tunggu 5 detik, lalu cek lagi
+            // =================================================
+            console.log(`⏳ Safety net: entry belum ada, tunggu client 5 detik...`);
+            await new Promise(resolve => setTimeout(resolve, 5000));
             
-            const pengajuanData = {
-                adminUid: adminUid,
-                nama: pelangganData.namaKtp || '',
-                namaPanggilan: pelangganData.namaPanggilan || '',
-                tanggalPengajuan: pelangganData.tanggalPengajuan || '',
-                status: 'Menunggu Approval',
-                jenisPinjaman: besarPinjaman >= 3000000 ? 'diatas_3jt' : 'dibawah_3jt',
-                besarPinjaman: besarPinjaman,
-                tenor: pelangganData.tenor || 24,
-                pinjamanKe: pelangganData.pinjamanKe || 1,
-                pelangganId: pelangganId,
-                timestamp: admin.database.ServerValue.TIMESTAMP
-            };
+            // CEK KEDUA
+            const recheckSnap = await queryEntries();
             
-            await db.ref(`pengajuan_approval/${cabangId}`).push(pengajuanData);
-            console.log(`✅ Safety net: pengajuan_approval dibuat untuk cabang ${cabangId}`);
+            if (recheckSnap.exists()) {
+                // Client sudah membuat → skip
+                console.log(`✅ Safety net: client sudah membuat entry, skip`);
+                return;
+            }
+            
+            // Masih tidak ada setelah 5 detik → client gagal, buat sebagai backup
+            console.log(`🔧 Safety net: client gagal membuat entry, buat backup`);
+            await db.ref(approvalPath).push(buildPengajuanData());
+            console.log(`✅ Safety net: backup entry dibuat (onCreate trigger)`);
         }
         
     } catch (error) {

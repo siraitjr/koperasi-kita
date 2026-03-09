@@ -68,52 +68,47 @@ exports.onNewPengajuanCreated = functions.database
 
             // =========================================================================
             // Setup dual approval info jika >= 3jt
-            // UPDATED: Tambah koordinatorApproval dan koordinatorFinalConfirmed
+            // FIX: Hanya set jika belum ada (mencegah overwrite dari client)
             // =========================================================================
             if (requiresDualApproval) {
-                await snapshot.ref.child('dualApprovalInfo').set({
-                    requiresDualApproval: true,
-                    approvalPhase: ApprovalPhase.AWAITING_PIMPINAN, // Phase 1
-                    pimpinanApproval: { 
-                        status: 'pending', 
-                        by: '', 
-                        uid: '', 
-                        timestamp: 0, 
-                        note: '',
-                        adjustedAmount: 0,
-                        adjustedTenor: 0
-                    },
-                    // ✅ BARU: Koordinator approval
-                    koordinatorApproval: { 
-                        status: 'pending', 
-                        by: '', 
-                        uid: '', 
-                        timestamp: 0, 
-                        note: '',
-                        adjustedAmount: 0,
-                        adjustedTenor: 0
-                    },
-                    pengawasApproval: { 
-                        status: 'pending', 
-                        by: '', 
-                        uid: '', 
-                        timestamp: 0, 
-                        note: '',
-                        adjustedAmount: 0,
-                        adjustedTenor: 0
-                    },
-                    finalDecision: '',
-                    finalDecisionBy: '',
-                    finalDecisionTimestamp: 0,
-                    rejectionReason: '',
-                    // ✅ BARU: Koordinator final confirmation
-                    koordinatorFinalConfirmed: false,
-                    koordinatorFinalTimestamp: 0,
-                    pimpinanFinalConfirmed: false,
-                    pimpinanFinalTimestamp: 0
-                });
-                console.log('✅ DualApprovalInfo initialized with Phase 1 (AWAITING_PIMPINAN)');
+                const existingDualInfo = pengajuanData.dualApprovalInfo;
+                const existingPhase = existingDualInfo?.approvalPhase || '';
+
+                // Hanya initialize jika belum ada atau masih kosong
+                if (!existingDualInfo || !existingPhase) {
+                    await snapshot.ref.child('dualApprovalInfo').set({
+                        requiresDualApproval: true,
+                        approvalPhase: ApprovalPhase.AWAITING_PIMPINAN,
+                        pimpinanApproval: { 
+                            status: 'pending', by: '', uid: '', 
+                            timestamp: 0, note: '',
+                            adjustedAmount: 0, adjustedTenor: 0
+                        },
+                        koordinatorApproval: { 
+                            status: 'pending', by: '', uid: '', 
+                            timestamp: 0, note: '',
+                            adjustedAmount: 0, adjustedTenor: 0
+                        },
+                        pengawasApproval: { 
+                            status: 'pending', by: '', uid: '', 
+                            timestamp: 0, note: '',
+                            adjustedAmount: 0, adjustedTenor: 0
+                        },
+                        finalDecision: '',
+                        finalDecisionBy: '',
+                        finalDecisionTimestamp: 0,
+                        rejectionReason: '',
+                        koordinatorFinalConfirmed: false,
+                        koordinatorFinalTimestamp: 0,
+                        pimpinanFinalConfirmed: false,
+                        pimpinanFinalTimestamp: 0
+                    });
+                    console.log('✅ DualApprovalInfo initialized with Phase 1 (AWAITING_PIMPINAN)');
+                } else {
+                    console.log(`ℹ️ DualApprovalInfo sudah ada (phase: ${existingPhase}), skip overwrite`);
+                }
             }
+
 
             // Dapatkan pimpinan UID
             const cabangSnap = await db.ref(`metadata/cabang/${cabangId}`).once('value');
