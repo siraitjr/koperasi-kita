@@ -1176,84 +1176,64 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
     fun loadAdminNotifications() {
         val adminUid = Firebase.auth.currentUser?.uid ?: return
 
-        viewModelScope.launch {
-            try {
-                database.child("admin_notifications").child(adminUid)
-                    .addValueEventListener(object : ValueEventListener {
-                        override fun onDataChange(snapshot: DataSnapshot) {
-                            Log.d("Notification", "🔄 TOPBAR - REAL-TIME UPDATE")
-                            Log.d(
-                                "Notification",
-                                "📊 Data received: ${snapshot.childrenCount} items"
-                            )
+        // Jika listener sudah aktif untuk UID yang sama, skip
+        if (adminNotificationListener != null && adminNotificationListenerUid == adminUid) {
+            Log.d("Notification", "⏭️ Listener already active for $adminUid, skipping")
+            return
+        }
 
-                            val notifList = mutableListOf<AdminNotification>()
-
-                            for (notifSnapshot in snapshot.children) {
-                                try {
-                                    // ✅ PERBAIKAN: Cek apakah data adalah Map (object) sebelum deserialize
-                                    val rawValue = notifSnapshot.value
-
-                                    // Skip jika bukan Map (bisa Boolean, String, Number, dll)
-                                    if (rawValue !is Map<*, *>) {
-                                        Log.w(
-                                            "Notification",
-                                            "⚠️ Skipping non-object data: ${notifSnapshot.key} = $rawValue"
-                                        )
-                                        continue
-                                    }
-
-                                    // Safe deserialize dengan try-catch
-                                    val notification =
-                                        notifSnapshot.getValue(AdminNotification::class.java)
-                                    if (notification != null) {
-                                        // Simpan key sebagai ID menggunakan copy() karena id adalah val
-                                        val notifWithId = if (notification.id.isBlank()) {
-                                            notification.copy(id = notifSnapshot.key ?: "")
-                                        } else {
-                                            notification
-                                        }
-                                        notifList.add(notifWithId)
-                                    }
-                                } catch (e: Exception) {
-                                    // ✅ PERBAIKAN: Catch error per-item, tidak crash seluruh app
-                                    Log.e(
-                                        "Notification",
-                                        "❌ Error parsing notification ${notifSnapshot.key}: ${e.message}"
-                                    )
-                                    // Continue ke notifikasi berikutnya
-                                }
-                            }
-
-                            val sortedList = notifList.sortedByDescending { it.timestamp }
-                            adminNotifications.value = sortedList
-
-                            Log.d(
-                                "Notification",
-                                "✅ TopBar loaded ${sortedList.size} notifications"
-                            )
-                            Log.d("Notification", "   👁️ Unread: ${sortedList.count { !it.read }}")
-
-                            // DEBUG: Log detail notifikasi unread
-                            sortedList.forEach { notif ->
-                                if (!notif.read) {
-                                    Log.d(
-                                        "Notification",
-                                        "   🔴 UNREAD: ${notif.title} (${notif.type})"
-                                    )
-                                }
-                            }
-                        }
-
-                        override fun onCancelled(error: DatabaseError) {
-                            Log.e("Notification", "❌ TopBar error: ${error.message}")
-                        }
-                    })
-            } catch (e: Exception) {
-                Log.e("Notification", "❌ TopBar exception: ${e.message}")
+        // Hapus listener lama jika ada
+        adminNotificationListenerUid?.let { oldUid ->
+            adminNotificationListener?.let { oldListener ->
+                database.child("admin_notifications").child(oldUid).removeEventListener(oldListener)
+                Log.d("Notification", "🧹 Removed old listener for $oldUid")
             }
         }
+
+        val listener = object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                Log.d("Notification", "🔄 TOPBAR - REAL-TIME UPDATE")
+                Log.d("Notification", "📊 Data received: ${snapshot.childrenCount} items")
+
+                val notifList = mutableListOf<AdminNotification>()
+
+                for (notifSnapshot in snapshot.children) {
+                    try {
+                        val rawValue = notifSnapshot.value
+                        if (rawValue !is Map<*, *>) {
+                            Log.w("Notification", "⚠️ Skipping non-object data: ${notifSnapshot.key} = $rawValue")
+                            continue
+                        }
+
+                        val notification = notifSnapshot.getValue(AdminNotification::class.java)
+                        if (notification != null) {
+                            val notifWithId = if (notification.id.isBlank()) {
+                                notification.copy(id = notifSnapshot.key ?: "")
+                            } else {
+                                notification
+                            }
+                            notifList.add(notifWithId)
+                        }
+                    } catch (e: Exception) {
+                        Log.e("Notification", "❌ Error parsing notification ${notifSnapshot.key}: ${e.message}")
+                    }
+                }
+
+                val sortedList = notifList.sortedByDescending { it.timestamp }
+                adminNotifications.value = sortedList
+                Log.d("Notification", "✅ TopBar loaded ${sortedList.size} notifications, Unread: ${sortedList.count { !it.read }}")
+            }
+
+            override fun onCancelled(error: DatabaseError) {
+                Log.e("Notification", "❌ TopBar error: ${error.message}")
+            }
+        }
+
+        database.child("admin_notifications").child(adminUid).addValueEventListener(listener)
+        adminNotificationListener = listener
+        adminNotificationListenerUid = adminUid
     }
+
 
     fun markNotificationAsRead(notificationId: String) {
         val adminUid = Firebase.auth.currentUser?.uid ?: return
@@ -5610,24 +5590,33 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
     // =========================================================================
     fun startDevicePresence() {
         val uid = Firebase.auth.currentUser?.uid ?: return
+
+        // Jika sudah ada listener, skip
+        if (devicePresenceListener != null) return
+
         val presenceRef = database.child("device_presence").child(uid)
         val connectedRef = FirebaseDatabase.getInstance("https://koperasikitagodangulu-default-rtdb.asia-southeast1.firebasedatabase.app").getReference(".info/connected")
 
-        connectedRef.addValueEventListener(object : ValueEventListener {
+        val listener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
                 val connected = snapshot.getValue(Boolean::class.java) ?: false
                 if (connected) {
                     presenceRef.child("online").setValue(true)
-                    presenceRef.child("lastSeen").setValue(ServerValue.TIMESTAMP)
+                    presenceRef.child("lastSeen").setValue(com.google.firebase.database.ServerValue.TIMESTAMP)
                     presenceRef.child("online").onDisconnect().setValue(false)
-                    presenceRef.child("lastSeen").onDisconnect().setValue(ServerValue.TIMESTAMP)
+                    presenceRef.child("lastSeen").onDisconnect().setValue(com.google.firebase.database.ServerValue.TIMESTAMP)
                 }
             }
             override fun onCancelled(error: DatabaseError) {
                 Log.e("Presence", "Error: ${error.message}")
             }
-        })
+        }
+
+        connectedRef.addValueEventListener(listener)
+        devicePresenceListener = listener
+        devicePresenceConnectedRef = connectedRef
     }
+
 
     private suspend fun isAdminDeviceOnline(adminUid: String): Boolean {
         return try {
@@ -6813,7 +6802,33 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
         }
         cleanupRoleListeners()
 
-        // ✅ TAMBAHAN: Cleanup network callback
+        // Cleanup admin notification listener
+        adminNotificationListenerUid?.let { uid ->
+            adminNotificationListener?.let { listener ->
+                database.child("admin_notifications").child(uid).removeEventListener(listener)
+            }
+        }
+        adminNotificationListener = null
+        adminNotificationListenerUid = null
+
+        // Cleanup device presence listener
+        devicePresenceConnectedRef?.let { ref ->
+            devicePresenceListener?.let { listener ->
+                ref.removeEventListener(listener)
+            }
+        }
+        devicePresenceListener = null
+        devicePresenceConnectedRef = null
+
+        // Cleanup data update listener
+        Firebase.auth.currentUser?.uid?.let { uid ->
+            dataUpdateListener?.let { listener ->
+                database.child("data_updates").child(uid).child("lastUpdate").removeEventListener(listener)
+            }
+        }
+        dataUpdateListener = null
+
+        // Cleanup network callback
         try {
             networkCallbackVM?.let {
                 val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
@@ -6824,8 +6839,9 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
             Log.e("PelangganVM", "Error cleaning up network callback: ${e.message}")
         }
 
-        Log.d("PelangganVM", "🧹 ViewModel cleared, listeners removed")
+        Log.d("PelangganVM", "🧹 ViewModel cleared, ALL listeners removed")
     }
+
 
     fun getPinjamanInfoForApproval(pelanggan: Pelanggan): PinjamanApprovalInfo {
         // ✅ PERBAIKAN: Gunakan sisaUtangLamaSebelumTopUp yang sudah disimpan
@@ -6884,6 +6900,10 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     private var dataUpdateListener: ValueEventListener? = null
+    private var adminNotificationListener: ValueEventListener? = null
+    private var adminNotificationListenerUid: String? = null
+    private var devicePresenceListener: ValueEventListener? = null
+    private var devicePresenceConnectedRef: com.google.firebase.database.DatabaseReference? = null
 
     // ✅ TAMBAHKAN variabel baru di atas fungsi (di area deklarasi variabel class,
 //    misalnya dekat baris 439 di mana lastLoadedKey dideklarasikan):
@@ -12399,12 +12419,34 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                             totalPinjamanAktif += totalPelunasanValue
                             totalPiutang += (totalPelunasanValue - totalDibayar).coerceAtLeast(0)
 
-                            // Hitung target hari ini (60% dari cicilan)
-                            val nilaiCicilan = (pelanggan.hasilSimulasiCicilan
-                                .find { it.tanggal == today }?.jumlah
-                                ?: pelanggan.hasilSimulasiCicilan.firstOrNull()?.jumlah
-                                ?: (pelanggan.besarPinjaman * 5 / 100)).toLong()
-                            targetHariIni += nilaiCicilan * 60L / 100L
+                            // Hitung target hari ini — SAMA dengan calculateTargetHarian() admin lapangan:
+                            // 1. Skip jika statusKhusus == MENUNGGU_PENCAIRAN
+                            // 2. Skip jika > 3 bulan
+                            // 3. Skip jika cair hari ini
+                            // 4. Flat 3% dari besarPinjaman
+                            val skipTarget = pelanggan.statusKhusus == "MENUNGGU_PENCAIRAN"
+                            val tglAcuan = pelanggan.tanggalPencairan.ifBlank {
+                                pelanggan.tanggalPengajuan.ifBlank { pelanggan.tanggalDaftar }
+                            }
+                            val dateFormatCheck = SimpleDateFormat("dd MMM yyyy", Locale("in", "ID"))
+                            val threeMonthsAgo = Calendar.getInstance().apply {
+                                add(Calendar.MONTH, -3)
+                                set(Calendar.DAY_OF_MONTH, 1)
+                                set(Calendar.HOUR_OF_DAY, 0)
+                                set(Calendar.MINUTE, 0)
+                                set(Calendar.SECOND, 0)
+                                set(Calendar.MILLISECOND, 0)
+                            }.time
+                            val isOverThreeMonths = try {
+                                val acuanDate = dateFormatCheck.parse(tglAcuan)
+                                acuanDate != null && acuanDate.before(threeMonthsAgo)
+                            } catch (_: Exception) { false }
+                            val isCairHariIni = pelanggan.tanggalPencairan.isNotBlank() && pelanggan.tanggalPencairan == today
+
+                            if (!skipTarget && !isOverThreeMonths && !isCairHariIni) {
+                                targetHariIni += pelanggan.besarPinjaman * 3L / 100L
+                            }
+
 
                             // Cek nasabah baru hari ini
                             val tanggalDaftar = pelanggan.tanggalDaftar.ifBlank { pelanggan.tanggalPengajuan }

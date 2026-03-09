@@ -27,6 +27,11 @@ import androidx.navigation.NavController
 import com.example.koperasikitagodangulu.utils.formatRupiah
 import android.widget.Toast
 import com.google.accompanist.systemuicontroller.rememberSystemUiController
+import android.app.DatePickerDialog
+import java.util.Calendar
+import java.text.SimpleDateFormat
+import java.util.Locale
+import androidx.compose.foundation.clickable
 
 // Modern Color Palette
 private object EditCustomerColors {
@@ -85,7 +90,6 @@ fun EditPelangganScreen(
     var wilayah by remember { mutableStateOf(pelanggan?.wilayah ?: "") }
     var noHp by remember { mutableStateOf(pelanggan?.noHp ?: "") }
     var jenisUsaha by remember { mutableStateOf(pelanggan?.jenisUsaha ?: "") }
-
     var isLoading by remember { mutableStateOf(false) }
     var showError by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf("") }

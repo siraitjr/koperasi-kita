@@ -162,8 +162,6 @@ fun AdminHomeScreen(navController: NavController, viewModel: PelangganViewModel)
         if (isScreenFocused) {
             Log.d("Notification", "🔄 AdminHomeScreen focused, refreshing notifications")
             viewModel.loadAdminNotifications()
-            delay(1000)
-            viewModel.loadAdminNotifications()
         }
     }
 
@@ -198,8 +196,9 @@ fun AdminHomeScreen(navController: NavController, viewModel: PelangganViewModel)
 
     LaunchedEffect(Unit) {
         viewModel.debugNotificationStructure()
-        viewModel.loadAdminNotifications()
+        // loadAdminNotifications sudah dipanggil di LaunchedEffect(isScreenFocused) dan di LaunchedEffect(Unit) pertama
     }
+
 
 //    SideEffect {
 //        systemUiController.setSystemBarsColor(
