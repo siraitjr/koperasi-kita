@@ -175,13 +175,11 @@ class SyncForegroundService : Service() {
                     updateNotification("${result.success} berhasil, ${result.failed} gagal")
                     delay(3000)
 
-                    // Coba lagi yang gagal
+                    // Serahkan retry ke WorkManager (tidak rekursif)
                     if (syncManager.getPendingCount() > 0) {
-                        delay(5000)
-                        performSync()
-                    } else {
-                        stopSelf()
+                        SyncWorker.triggerImmediateSync(applicationContext)
                     }
+                    stopSelf()
                 }
             }
 
@@ -189,13 +187,16 @@ class SyncForegroundService : Service() {
             Log.e(TAG, "❌ Sync error: ${e.message}")
             updateNotification("Error: ${e.message}")
 
-            // Retry after delay
-            delay(10000)
-            if (isOnline()) {
-                performSync()
-            } else {
-                registerNetworkCallback()
+            // Retry after delay - TERBATAS max 3 retry
+            val retryCount = syncManager.getPendingCount()
+            if (retryCount > 0) {
+                delay(30000) // 30 detik, bukan 10 detik
+                if (isOnline()) {
+                    // Biarkan WorkManager yang handle retry selanjutnya
+                    SyncWorker.triggerImmediateSync(applicationContext)
+                }
             }
+            stopSelf() // Jangan loop terus, serahkan ke WorkManager
         }
     }
 

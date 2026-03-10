@@ -413,7 +413,7 @@ function calculateDelta(before, after) {
     // =========================================================================
     // HELPER: Tentukan "kategori efektif" nasabah
     // =========================================================================
-    function getEffectiveCategory(data) {
+        function getEffectiveCategory(data) {
         if (!data) return 'none';
         
         const status = (data.status || '').toLowerCase();
@@ -440,6 +440,22 @@ function calculateDelta(before, after) {
                     return 'menungguPencairan';
                 }
             } else {
+                // ✅ FIX: Cek apakah nasabah cair hari ini
+                // Konsisten dgn PDL: nasabah cair hari ini belum dihitung aktif
+                const tanggalPencairan = (data.tanggalPencairan || '').trim();
+                if (tanggalPencairan !== '' && tanggalPencairan === today) {
+                    return 'cairHariIni';
+                }
+                
+                // ✅ FIX: Cek apakah nasabah > 3 bulan
+                // Konsisten dgn PDL: nasabah macet tidak dihitung aktif
+                const tglAcuan = tanggalPencairan
+                    || (data.tanggalPengajuan || '').trim()
+                    || (data.tanggalDaftar || '').trim();
+                if (isOverThreeMonths(tglAcuan)) {
+                    return 'nonAktifMacet';
+                }
+                
                 return 'aktif';
             }
         } else if (status === 'lunas') {
@@ -471,6 +487,13 @@ function calculateDelta(before, after) {
             delta.piutangChange = Math.max(0, totalPelunasan - totalDibayar);
             delta.targetHariIniChange = calculateTargetHariIni(after);
             if (tanggalDaftar === today) delta.nasabahBaruHariIniChange = 1;
+                    } else if (category === 'cairHariIni' || category === 'nonAktifMacet') {
+            // Tidak menambah aktifChange, tapi tetap hitung totalNasabah (sudah di atas)
+            // Untuk cairHariIni: nasabahBaruHariIni tetap dihitung
+            if (category === 'cairHariIni') {
+                const tanggalDaftar = after.tanggalDaftar || after.tanggalPengajuan || '';
+                if (tanggalDaftar === today) delta.nasabahBaruHariIniChange = 1;
+            }
         } else if (category === 'lunas') {
             delta.lunasChange = 1;
         } else if (category === 'menungguPencairan') {
@@ -499,6 +522,8 @@ function calculateDelta(before, after) {
             delta.pinjamanAktifChange = -totalPelunasan;
             delta.piutangChange = -Math.max(0, totalPelunasan - totalDibayar);
             delta.targetHariIniChange = -calculateTargetHariIni(before);
+        } else if (category === 'cairHariIni' || category === 'nonAktifMacet') {
+        // Tidak kurangi aktifChange karena memang tidak pernah dihitung aktif
         } else if (category === 'lunas') {
             delta.lunasChange = -1;
         } else if (category === 'menungguPencairan') {
@@ -534,14 +559,16 @@ function calculateDelta(before, after) {
                 delta.pinjamanAktifChange -= beforePelunasan;
                 delta.piutangChange -= Math.max(0, beforePelunasan - beforeDibayar);
                 delta.targetHariIniChange -= calculateTargetHariIni(before);
+                            } else if (beforeCategory === 'cairHariIni' || beforeCategory === 'nonAktifMacet') {
+                // Tidak kurangi aktifChange
+
             } else if (beforeCategory === 'lunas') {
                 delta.lunasChange -= 1;
             } else if (beforeCategory === 'menungguPencairan') {
                 delta.nasabahMenungguPencairanChange -= 1;
             } else if (beforeCategory === 'menunggu') {
                 delta.menungguChange -= 1;
-            }
-            
+            }            
             // Tambah ke kategori sesudahnya
             if (afterCategory === 'aktif') {
                 delta.aktifChange += 1;
@@ -557,6 +584,15 @@ function calculateDelta(before, after) {
                     // Backward compatibility: flow lama tanpa pencairan
                     delta.nasabahBaruHariIniChange = 1;
                 }
+                            } else if (afterCategory === 'cairHariIni' || afterCategory === 'nonAktifMacet') {
+                // Tidak menambah aktifChange
+                if (afterCategory === 'cairHariIni') {
+                    const tanggalPencairan = after.tanggalPencairan || '';
+                    if (beforeCategory === 'disetujui' && tanggalPencairan === today) {
+                        delta.nasabahBaruHariIniChange = 1;
+                    }
+                }
+
             } else if (afterCategory === 'lunas') {
                 delta.lunasChange += 1;
             } else if (afterCategory === 'menungguPencairan') {
@@ -792,11 +828,26 @@ async function fullRecalculateAdminSummary(adminUid) {
                         nasabahLunas++;
                         if (adaPembayaranPadaTanggal(p, today)) nasabahLunasHariIni++;
                     }
-                } else {
+                                } else {
                     if (!isMenungguPencairanManual) {
-                        nasabahAktif++;
-                        totalPinjamanAktif += totalPelunasan;
-                        totalPiutang += Math.max(0, totalPelunasan - totalDibayar);
+                        // ✅ FIX: Exclude nasabah cair hari ini dari nasabahAktif
+                        // Konsisten dengan PDL (RingkasanDashboardScreen.kt line 119-121)
+                        // Nasabah yang dicairkan hari ini belum dihitung aktif, baru besok
+                        const tglCair = (p.tanggalPencairan || '').trim();
+                        const isCairHariIni = tglCair !== '' && tglCair === today;
+                        
+                        // ✅ FIX: Exclude nasabah > 3 bulan dari nasabahAktif
+                        // Konsisten dengan PDL (RingkasanDashboardScreen.kt line 113-116)
+                        const tglAcuanAktif = (p.tanggalPencairan || '').trim()
+                            || (p.tanggalPengajuan || '').trim()
+                            || (p.tanggalDaftar || '').trim();
+                        const isOverThreeMonthsAktif = isOverThreeMonths(tglAcuanAktif);
+                        
+                        if (!isCairHariIni && !isOverThreeMonthsAktif) {
+                            nasabahAktif++;
+                            totalPinjamanAktif += totalPelunasan;
+                            totalPiutang += Math.max(0, totalPelunasan - totalDibayar);
+                        }
                         
                         if (!isHariLibur) {
                             // ✅ BARU: Exclude nasabah macet (> 4 bulan)

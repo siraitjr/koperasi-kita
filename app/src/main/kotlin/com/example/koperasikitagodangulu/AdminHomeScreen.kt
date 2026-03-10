@@ -107,7 +107,10 @@ fun AdminHomeScreen(navController: NavController, viewModel: PelangganViewModel)
 
     val isOnline by viewModel.isOnline.collectAsState()
     val isSyncing by viewModel.isSyncing.collectAsState()
-    val unsyncedCount = viewModel.getUnsyncedCount()
+    var unsyncedCount by remember { mutableIntStateOf(0) }
+    LaunchedEffect(Unit) {
+        unsyncedCount = viewModel.getUnsyncedCount()
+    }
     val activeBroadcasts by viewModel.activeBroadcasts.collectAsState()
     val systemBarsPadding = WindowInsets.systemBars.asPaddingValues()
 
@@ -131,7 +134,6 @@ fun AdminHomeScreen(navController: NavController, viewModel: PelangganViewModel)
         systemUiController.setNavigationBarColor(bgColor, darkIcons = !isDark)
     }
 
-// Launcher untuk pick image
     val photoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
@@ -155,22 +157,9 @@ fun AdminHomeScreen(navController: NavController, viewModel: PelangganViewModel)
         isVisible = true
         viewModel.loadAdminPhotoUrl()
         viewModel.loadActiveBroadcasts()
-        viewModel.cleanupStuckMenungguPencairan() // ← Tambah di sini
-    }
-
-    LaunchedEffect(isScreenFocused) {
-        if (isScreenFocused) {
-            Log.d("Notification", "🔄 AdminHomeScreen focused, refreshing notifications")
-            viewModel.loadAdminNotifications()
-        }
-    }
-
-    LaunchedEffect(Unit) {
+        viewModel.cleanupStuckMenungguPencairan()
+        viewModel.loadAdminNotifications()
         viewModel.startNetworkMonitoring()
-
-        // ✅ FIX: Start remote takeover listener agar admin bisa merespons sinyal pimpinan.
-        // Listener ini HARUS dipasang di sini karena auto-login tidak melewati proceedWithLogin().
-        // Guard di dalam fungsi sudah mencegah duplikasi dan mode takeover.
         viewModel.startRemoteTakeoverListener {
             LocationTrackingMonitor.stopMonitoring()
             LocationCheckWorker.cancel(context)
@@ -185,31 +174,6 @@ fun AdminHomeScreen(navController: NavController, viewModel: PelangganViewModel)
             }
         }
     }
-
-    LaunchedEffect(adminNotifications) {
-        Log.d("Notification", "📢 Total notifikasi: ${adminNotifications.size}")
-        Log.d("Notification", "📢 Unread notifikasi: ${unreadNotifications.size}")
-        adminNotifications.forEach { notif ->
-            Log.d("Notification", "   - ${notif.type}: ${notif.title} (read: ${notif.read})")
-        }
-    }
-
-    LaunchedEffect(Unit) {
-        viewModel.debugNotificationStructure()
-        // loadAdminNotifications sudah dipanggil di LaunchedEffect(isScreenFocused) dan di LaunchedEffect(Unit) pertama
-    }
-
-
-//    SideEffect {
-//        systemUiController.setSystemBarsColor(
-//            color = bgColor,
-//            darkIcons = !isDark
-//        )
-//        systemUiController.setStatusBarColor(
-//            color = Color.Transparent,
-//            darkIcons = !isDark
-//        )
-//    }
 
     Box(
         modifier = Modifier

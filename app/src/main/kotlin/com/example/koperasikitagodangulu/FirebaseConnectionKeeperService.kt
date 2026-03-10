@@ -171,9 +171,11 @@ class FirebaseConnectionKeeperService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         removeTrackingListener()
-        // Jadwalkan restart — service ini harus selalu hidup
-        scheduleRestart()
-        Log.d(TAG, "🛑 Service destroyed, restart scheduled")
+        Log.d(TAG, "🛑 Service destroyed")
+        // DIHAPUS: scheduleRestart() di onDestroy
+        // Restart hanya di onTaskRemoved (user swipe close),
+        // BUKAN di onDestroy yang bisa dipanggil oleh sistem
+        // atau oleh kode sendiri (stopSelf), menyebabkan infinite restart loop
     }
 
     private fun scheduleRestart() {

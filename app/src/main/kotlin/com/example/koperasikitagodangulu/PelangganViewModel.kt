@@ -8859,20 +8859,10 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                         val nasabahAktif = summarySnap.child("nasabahAktif").getValue(Int::class.java) ?: 0
                         val totalPiutang = summarySnap.child("totalPiutang").getValue(Long::class.java) ?: 0L
 
-                        // ✅ FALLBACK: Jika summary ada tapi kosong, coba hitung dari raw data
+                        // Summary kosong = admin memang belum punya nasabah aktif,
+                        // atau Cloud Functions belum jalan. JANGAN load raw data (BOROS RTDB).
                         if (nasabahAktif == 0 && totalPiutang == 0L) {
-                            Log.w(TAG, "⚠️ Summary empty for $adminUid, checking raw data...")
-
-                            val calculatedSummary = calculateAdminSummaryFromRawData(adminUid)
-                            if (calculatedSummary != null && (calculatedSummary.nasabahAktif > 0 || calculatedSummary.totalPelanggan > 0)) {
-                                Log.d(TAG, "✅ Using calculated summary for $adminUid (aktif: ${calculatedSummary.nasabahAktif}, total: ${calculatedSummary.totalPelanggan})")
-                                adminSummaries.add(calculatedSummary)
-
-                                // Update Firebase untuk next time
-                                updateAdminSummaryInFirebase(adminUid, calculatedSummary)
-                                needsCabangUpdate = true
-                                continue
-                            }
+                            Log.w(TAG, "⚠️ Summary empty for $adminUid (CF mungkin belum recalc)")
                         }
 
                         // Gunakan data dari summary
@@ -8895,37 +8885,25 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                             )
                         )
                     } else {
-                        // ✅ Summary tidak ada sama sekali, hitung dari raw data
-                        Log.w(TAG, "⚠️ No summary node for $adminUid, calculating from raw data...")
-
-                        val calculatedSummary = calculateAdminSummaryFromRawData(adminUid)
-                        if (calculatedSummary != null) {
-                            Log.d(TAG, "✅ Created summary for $adminUid from raw data")
-                            adminSummaries.add(calculatedSummary)
-
-                            // Update Firebase untuk next time
-                            updateAdminSummaryInFirebase(adminUid, calculatedSummary)
-                            needsCabangUpdate = true
-                        } else {
-                            // Benar-benar tidak ada data
-                            adminSummaries.add(
-                                AdminSummary(
-                                    adminId = adminUid,
-                                    adminName = adminMeta.child("name").getValue(String::class.java)
-                                        ?: adminMeta.child("nama").getValue(String::class.java)
-                                        ?: "Admin",
-                                    adminEmail = adminMeta.child("email").getValue(String::class.java) ?: "",
-                                    cabang = cabangId,
-                                    totalPelanggan = 0,
-                                    nasabahAktif = 0,
-                                    nasabahLunas = 0,
-                                    nasabahMenunggu = 0,
-                                    totalPinjamanAktif = 0L,
-                                    totalPiutang = 0L,
-                                    pembayaranHariIni = 0L
-                                )
+                        // Summary tidak ada = CF belum pernah jalan untuk admin ini
+                        Log.w(TAG, "⚠️ No summary node for $adminUid (jalankan weeklyFullRecalc)")
+                        adminSummaries.add(
+                            AdminSummary(
+                                adminId = adminUid,
+                                adminName = adminMeta.child("name").getValue(String::class.java)
+                                    ?: adminMeta.child("nama").getValue(String::class.java)
+                                    ?: "Admin",
+                                adminEmail = adminMeta.child("email").getValue(String::class.java) ?: "",
+                                cabang = cabangId,
+                                totalPelanggan = 0,
+                                nasabahAktif = 0,
+                                nasabahLunas = 0,
+                                nasabahMenunggu = 0,
+                                totalPinjamanAktif = 0L,
+                                totalPiutang = 0L,
+                                pembayaranHariIni = 0L
                             )
-                        }
+                        )
                     }
                 } catch (e: Exception) {
                     Log.e(TAG, "Error loading summary for $adminUid: ${e.message}")
@@ -10736,56 +10714,9 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     // ✅ FALLBACK: Jika cabang summary kosong, hitung dari admin summaries
                     if (nasabahAktif == 0 && totalPiutang == 0L) {
                         Log.w(TAG, "⚠️ [Pengawas] Cabang summary empty for ${cabang.cabangId}, calculating...")
-
-                        // Hitung dari admin summaries yang sudah di-load
-                        var calculatedNasabahAktif = 0
-                        var calculatedTotalPiutang = 0L
-                        var calculatedTotalNasabah = 0
-                        var calculatedNasabahLunas = 0
-                        var calculatedNasabahMenunggu = 0
-                        var calculatedTotalPinjamanAktif = 0L
-                        var calculatedPembayaranHariIni = 0L
-                        var calculatedTargetHariIni = 0L
-                        var calculatedNasabahBaruHariIni = 0
-                        var calculatedNasabahLunasHariIni = 0
-
-                        for (adminUid in cabang.adminList) {
-                            val adminSummary = calculateAdminSummaryFromRawData(adminUid)
-                            if (adminSummary != null) {
-                                calculatedNasabahAktif += adminSummary.nasabahAktif
-                                calculatedTotalPiutang += adminSummary.totalPiutang
-                                calculatedTotalNasabah += adminSummary.totalPelanggan
-                                calculatedNasabahLunas += adminSummary.nasabahLunas
-                                calculatedNasabahMenunggu += adminSummary.nasabahMenunggu
-                                calculatedTotalPinjamanAktif += adminSummary.totalPinjamanAktif
-                                calculatedPembayaranHariIni += adminSummary.pembayaranHariIni
-                                calculatedTargetHariIni += adminSummary.targetHariIni
-                                calculatedNasabahBaruHariIni += adminSummary.nasabahBaruHariIni
-                                calculatedNasabahLunasHariIni += adminSummary.nasabahLunasHariIni
-                            }
-                        }
-
-                        if (calculatedNasabahAktif > 0 || calculatedTotalNasabah > 0) {
-                            summaries[cabang.cabangId] = PengawasCabangSummary(
-                                cabangId = cabang.cabangId,
-                                cabangName = cabang.name,
-                                totalNasabah = calculatedTotalNasabah,
-                                nasabahAktif = calculatedNasabahAktif,
-                                nasabahLunas = calculatedNasabahLunas,
-                                nasabahMenunggu = calculatedNasabahMenunggu,
-                                nasabahBaruHariIni = calculatedNasabahBaruHariIni,
-                                nasabahLunasHariIni = calculatedNasabahLunasHariIni,
-                                targetHariIni = calculatedTargetHariIni,
-                                pembayaranHariIni = calculatedPembayaranHariIni,
-                                totalPinjamanAktif = calculatedTotalPinjamanAktif,
-                                totalPiutang = calculatedTotalPiutang,
-                                adminCount = cabang.adminList.size,
-                                lastUpdated = System.currentTimeMillis()
-                            )
-
-                            Log.d(TAG, "✅ [Pengawas] Calculated cabang summary for ${cabang.cabangId}")
-                            continue  // ✅ Now works because we're in a for loop
-                        }
+                        // Summary ada tapi kosong = CF belum recalc
+                        Log.w(TAG, "⚠️ [Pengawas] Summary empty for ${cabang.cabangId} (jalankan weeklyFullRecalc)")
+                        // Tidak fallback ke raw data. Tetap gunakan summary apa adanya (lanjut ke bawah)
                     }
 
                     summaries[cabang.cabangId] = PengawasCabangSummary(
@@ -10805,49 +10736,11 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                         lastUpdated = summarySnap.child("lastUpdated").getValue(Long::class.java) ?: 0L
                     )
                 } else {
-                    // ✅ Cabang summary tidak ada, hitung dari raw data
-                    Log.w(TAG, "⚠️ [Pengawas] No cabang summary for ${cabang.cabangId}, calculating...")
-
-                    var totalNasabah = 0
-                    var nasabahAktif = 0
-                    var nasabahLunas = 0
-                    var nasabahMenunggu = 0
-                    var totalPinjamanAktif = 0L
-                    var totalPiutang = 0L
-                    var pembayaranHariIni = 0L
-                    var targetHariIni = 0L
-                    var nasabahBaruHariIni = 0
-                    var nasabahLunasHariIni = 0
-
-                    for (adminUid in cabang.adminList) {
-                        val adminSummary = calculateAdminSummaryFromRawData(adminUid)
-                        if (adminSummary != null) {
-                            totalNasabah += adminSummary.totalPelanggan
-                            nasabahAktif += adminSummary.nasabahAktif
-                            nasabahLunas += adminSummary.nasabahLunas
-                            nasabahMenunggu += adminSummary.nasabahMenunggu
-                            totalPinjamanAktif += adminSummary.totalPinjamanAktif
-                            totalPiutang += adminSummary.totalPiutang
-                            pembayaranHariIni += adminSummary.pembayaranHariIni
-                            targetHariIni += adminSummary.targetHariIni
-                            nasabahBaruHariIni += adminSummary.nasabahBaruHariIni
-                            nasabahLunasHariIni += adminSummary.nasabahLunasHariIni
-                        }
-                    }
-
+                    // Cabang summary tidak ada = CF belum pernah jalan
+                    Log.w(TAG, "⚠️ [Pengawas] No cabang summary for ${cabang.cabangId} (jalankan weeklyFullRecalc)")
                     summaries[cabang.cabangId] = PengawasCabangSummary(
                         cabangId = cabang.cabangId,
                         cabangName = cabang.name,
-                        totalNasabah = totalNasabah,
-                        nasabahAktif = nasabahAktif,
-                        nasabahLunas = nasabahLunas,
-                        nasabahMenunggu = nasabahMenunggu,
-                        nasabahBaruHariIni = nasabahBaruHariIni,
-                        nasabahLunasHariIni = nasabahLunasHariIni,
-                        targetHariIni = targetHariIni,
-                        pembayaranHariIni = pembayaranHariIni,
-                        totalPinjamanAktif = totalPinjamanAktif,
-                        totalPiutang = totalPiutang,
                         adminCount = cabang.adminList.size,
                         lastUpdated = System.currentTimeMillis()
                     )
@@ -10875,20 +10768,8 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                         val nasabahAktif = summarySnap.child("nasabahAktif").getValue(Int::class.java) ?: 0
                         val totalPiutang = summarySnap.child("totalPiutang").getValue(Long::class.java) ?: 0L
 
-                        // ✅ FALLBACK: Jika summary ada tapi kosong
                         if (nasabahAktif == 0 && totalPiutang == 0L) {
-                            Log.w(TAG, "⚠️ [Pengawas] Summary empty for $adminUid, checking raw data...")
-
-                            val calculatedSummary = calculateAdminSummaryFromRawData(adminUid)
-                            if (calculatedSummary != null && (calculatedSummary.nasabahAktif > 0 || calculatedSummary.totalPelanggan > 0)) {
-                                Log.d(TAG, "✅ [Pengawas] Using calculated summary for $adminUid")
-                                summaries[adminUid] = calculatedSummary
-
-                                // Update Firebase
-                                updateAdminSummaryInFirebase(adminUid, calculatedSummary)
-                                needsUpdate = true
-                                return@forEach  // ✅ FIXED: gunakan return@forEach bukan continue
-                            }
+                            Log.w(TAG, "⚠️ [Pengawas] Summary empty for $adminUid (CF mungkin belum recalc)")
                         }
 
                         summaries[adminUid] = AdminSummary(
@@ -10908,15 +10789,9 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                             pembayaranHariIni = summarySnap.child("pembayaranHariIni").getValue(Long::class.java) ?: 0L
                         )
                     } else {
-                        // ✅ Summary tidak ada, hitung dari raw data
-                        Log.w(TAG, "⚠️ [Pengawas] No summary for $adminUid, calculating...")
-
-                        val calculatedSummary = calculateAdminSummaryFromRawData(adminUid)
-                        if (calculatedSummary != null) {
-                            summaries[adminUid] = calculatedSummary
-                            updateAdminSummaryInFirebase(adminUid, calculatedSummary)
-                            needsUpdate = true
-                        }
+                        // Summary tidak ada = CF belum pernah jalan untuk admin ini
+                        Log.w(TAG, "⚠️ [Pengawas] No summary for $adminUid (jalankan weeklyFullRecalc)")
+                        // Tidak ditambahkan ke summaries - admin tanpa summary diabaikan
                     }
                 } catch (e: Exception) {
                     Log.e(TAG, "Error loading admin summary for $adminUid: ${e.message}")
