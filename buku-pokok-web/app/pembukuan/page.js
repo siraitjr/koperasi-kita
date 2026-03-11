@@ -645,11 +645,62 @@ function getKategoriNasabah(nasabah) {
       return new Date(parseInt(parts[2]), m, parseInt(parts[0]));
     };
 
-    // Target Kini = dari summary Cloud Functions (single source of truth)
-    // Dihitung oleh Cloud Functions dengan aturan SAMA PERSIS dengan Android:
-    // - besarPinjaman × 3% (flat)
-    // - Exclude > 3 bulan, menunggu pencairan, cair hari ini, sudah lunas
-    const targetHarianKini = data?.targetHarianHariIni || 0;
+    // String hari ini dalam format "dd Mmm yyyy" (WIB)
+    const todayDateStr = `${String(todayDate.getDate()).padStart(2, '0')} ${BULAN_INDO_ARR[todayDate.getMonth()]} ${todayDate.getFullYear()}`;
+
+    // Helper: hitung target aktif pada tanggal tertentu dari data nasabah (tanpa RTDB tambahan).
+    // Aturan konsisten dengan Android RingkasanDashboardScreen & summaryHelpers.js:
+    //  - besarPinjaman × 3%
+    //  - Exclude nasabah belum cair / cair pada tanggal itu sendiri
+    //  - Exclude nasabah > 3 bulan dari tanggalPencairan pada tanggal tsb
+    //  - Exclude nasabah yang sudah lunas (total dibayar s/d tanggal tsb >= totalPelunasan)
+    const calculateTargetForDate = (targetDateStr) => {
+      const targetDate = parseDateStr(targetDateStr);
+      if (!targetDate) return 0;
+
+      // Batas 3 bulan sebelum targetDate
+      const threeMonthsBefore = new Date(targetDate);
+      threeMonthsBefore.setMonth(threeMonthsBefore.getMonth() - 3);
+
+      let total = 0;
+      allNasabah.forEach(n => {
+        const status = (n.status || '').toLowerCase();
+        // Exclude status non-aktif
+        if (['ditolak', 'tidak aktif', 'disetujui', 'menunggu approval'].includes(status)) return;
+
+        // Harus sudah ada tanggalPencairan (sudah dicairkan)
+        const tglCair = (n.tanggalPencairan || '').trim();
+        if (!tglCair) return;
+
+        const caiDate = parseDateStr(tglCair);
+        if (!caiDate) return;
+
+        // Nasabah baru cair pada targetDate → belum dihitung hari itu (mulai besok)
+        // Nasabah belum cair sama sekali pada targetDate → skip
+        if (caiDate >= targetDate) return;
+
+        // Sudah > 3 bulan dari tanggalPencairan pada targetDate → exclude
+        if (caiDate < threeMonthsBefore) return;
+
+        // Hitung total dibayar nasabah ini sampai targetDate
+        let totalDibayarSampaiD = 0;
+        if (n.pembayaran) {
+          Object.entries(n.pembayaran).forEach(([payDateStr, payData]) => {
+            const payDate = parseDateStr(payDateStr);
+            if (payDate && payDate <= targetDate) {
+              totalDibayarSampaiD += payData.total || 0;
+            }
+          });
+        }
+
+        // Sudah lunas pada targetDate → exclude
+        const totalPelunasan = n.totalPelunasan || 0;
+        if (totalPelunasan > 0 && totalDibayarSampaiD >= totalPelunasan) return;
+
+        total += Math.floor((n.besarPinjaman || 0) * 3 / 100);
+      });
+      return total;
+    };
 
     // Hitung per tanggal
     let dropBerjalan = 0;
@@ -684,17 +735,24 @@ function getKategoriNasabah(nasabah) {
         }
       });
 
+      // Target Kini per tanggal:
+      // - Hari ini: pakai data?.targetHarianHariIni dari Cloud Functions (single source of truth, paling akurat)
+      // - Tanggal lampau: hitung dari data nasabah (siapa saja yang aktif pada tanggal itu)
+      const targetKini = dateStr === todayDateStr
+        ? (data?.targetHarianHariIni || 0)
+        : calculateTargetForDate(dateStr);
+
       dropBerjalan += dropKini;
-      targetBerjalan += targetHarianKini;
+      targetBerjalan += targetKini;
       stortingBerjalan += stortingKini;
 
-      const persentase = targetHarianKini > 0 ? Math.round(stortingKini / targetHarianKini * 100) : 0;
+      const persentase = targetKini > 0 ? Math.round(stortingKini / targetKini * 100) : 0;
 
       rows.push({
         tanggal: dateStr,
         dropKini,
         dropBerjalan,
-        targetKini: targetHarianKini,
+        targetKini,
         targetBerjalan,
         stortingKini,
         stortingBerjalan,
