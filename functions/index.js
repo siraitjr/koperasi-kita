@@ -199,3 +199,9 @@ exports.scanDuplicateNasabah = detectDuplicate.scanDuplicateNasabah;
 exports.cleanupDuplicateNasabah = detectDuplicate.cleanupDuplicateNasabah;
 
 exports.cleanupDuplicateApprovals = functions.https.onRequest(cleanupDuplicateApprovals);
+
+// =========================================================================
+// DATA INTEGRITY FIX (ONE-TIME) - Hapus ghost data, isi cabangId kosong
+// =========================================================================
+const dataIntegrityFix = require('./dataIntegrityFix');
+exports.dataIntegrityFix = dataIntegrityFix.dataIntegrityFix;

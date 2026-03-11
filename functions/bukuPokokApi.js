@@ -294,21 +294,27 @@ exports.getBukuPokok = functions
             // 5. Generate tanggal hari kerja berurutan (seperti buku pokok fisik)
             const hariKerja = generateHariKerja(60); // 60 hari kerja ke belakang
 
-            // 6. Fetch pelanggan data per admin (1 read per admin node)
+            // 6. Fetch pelanggan data per admin — ✅ OPTIMASI: Parallel reads
             let nasabahList = [];
             const adminNames = {};
 
-            for (const aUid of adminUids) {
-                // Get admin name
-                const adminMeta = await db.ref(`metadata/admins/${aUid}`).once('value');
-                const adminData = adminMeta.val();
+            // Batch read: admin metadata + pelanggan data + summary — semua paralel
+            const [adminMetaResults, pelangganResults, summaryResults] = await Promise.all([
+                Promise.all(adminUids.map(aUid => db.ref(`metadata/admins/${aUid}`).once('value'))),
+                Promise.all(adminUids.map(aUid => db.ref(`pelanggan/${aUid}`).once('value'))),
+                Promise.all(adminUids.map(aUid => db.ref(`summary/perAdmin/${aUid}`).once('value')))
+            ]);
+
+            // Process admin names
+            adminUids.forEach((aUid, i) => {
+                const adminData = adminMetaResults[i].val();
                 adminNames[aUid] = adminData ? (adminData.name || adminData.email || aUid) : aUid;
+            });
 
-                // ✅ OPTIMASI: Satu kali read per admin node
-                const pelangganSnap = await db.ref(`pelanggan/${aUid}`).once('value');
-                const pelangganData = pelangganSnap.val();
-
-                if (!pelangganData) continue;
+            // Process pelanggan data
+            adminUids.forEach((aUid, i) => {
+                const pelangganData = pelangganResults[i].val();
+                if (!pelangganData) return;
 
                 Object.entries(pelangganData).forEach(([pId, p]) => {
                     // Filter by status
@@ -344,24 +350,21 @@ exports.getBukuPokok = functions
                         adminName: adminNames[aUid],
                         cabangId: p.cabangId || '',
                         wilayah: p.wilayah || '',
-                        fotoKtpUrl: p.fotoKtpUrl || '',
-                        fotoNasabahUrl: p.fotoNasabahUrl || '',
                         simpanan: p.simpanan || 0,
                         totalDiterima: p.totalDiterima || 0,
                         pembayaran: pembayaranPerTanggal
                     });
                 });
-            }
+            });
 
-            // 6b. Hitung target harian + pembayaranHariIni dari summary nodes
+            // 6b. Hitung target harian + pembayaranHariIni dari summary nodes (sudah dibaca paralel di atas)
             let totalTargetHarian = 0;
             let totalPembayaranHariIni = 0;
-            for (const aUid of adminUids) {
-                const summarySnap = await db.ref(`summary/perAdmin/${aUid}`).once('value');
-                const summaryData = summarySnap.val() || {};
+            summaryResults.forEach(snap => {
+                const summaryData = snap.val() || {};
                 totalTargetHarian += summaryData.targetHariIni || 0;
                 totalPembayaranHariIni += summaryData.pembayaranHariIni || 0;
-            }
+            });
 
             // 6c. Apply Android-style filters (hanya untuk status 'aktif')
             // Konsisten dengan RingkasanDashboardScreen.kt
