@@ -113,13 +113,14 @@ async function saveToNasabahLunas(adminUid, pelangganId, pelanggan) {
         
         const cabangId = adminData.cabang;
         
-        // Hitung total dibayar
+        // Hitung total dibayar — ✅ FIX: Exclude entry 'Bunga...'
         let totalDibayar = 0;
         if (pelanggan.pembayaranList) {
             const pembayaranList = Array.isArray(pelanggan.pembayaranList)
                 ? pelanggan.pembayaranList
                 : Object.values(pelanggan.pembayaranList || {});
             pembayaranList.forEach(p => {
+                if (p && p.tanggal && p.tanggal.startsWith('Bunga')) return;
                 totalDibayar += p.jumlah || 0;
                 if (p.subPembayaran) {
                     const subList = Array.isArray(p.subPembayaran)
@@ -161,13 +162,15 @@ async function saveToNasabahLunas(adminUid, pelangganId, pelanggan) {
 function isNasabahLunas(pelanggan) {
     const totalPelunasan = pelanggan.totalPelunasan || 0;
     if (totalPelunasan <= 0) return false;
-    
+
     let totalDibayar = 0;
     if (pelanggan.pembayaranList) {
         const pembayaranList = Array.isArray(pelanggan.pembayaranList)
             ? pelanggan.pembayaranList
             : Object.values(pelanggan.pembayaranList || {});
         pembayaranList.forEach(p => {
+            // ✅ FIX: Exclude entry 'Bunga...' — konsisten dengan calculateTotalDibayar di summaryHelpers & bukuPokokApi
+            if (p && p.tanggal && p.tanggal.startsWith('Bunga')) return;
             totalDibayar += p.jumlah || 0;
             if (p.subPembayaran) {
                 const subList = Array.isArray(p.subPembayaran)
@@ -177,7 +180,7 @@ function isNasabahLunas(pelanggan) {
             }
         });
     }
-    
+
     return totalDibayar >= totalPelunasan;
 }
 
@@ -204,9 +207,19 @@ exports.onPembayaranAdded = functions.database
             const pelanggan = pelangganSnap.val();
             
             if (pelanggan && isNasabahLunas(pelanggan)) {
-                await saveToNasabahLunas(adminUid, pelangganId, pelanggan);
+                // FIX: Skip jika ini pembayaran sisa utang lama dari top-up/lanjut pinjaman
+                // Karena saat top-up, totalPelunasan baru mungkin belum ter-write
+                const pinjamanKe = pelanggan.pinjamanKe || 1;
+                const sisaUtangLama = pelanggan.sisaUtangLamaSebelumTopUp || 0;
+                const isTopUpPayment = pinjamanKe > 1 && sisaUtangLama > 0 && pembayaran.jumlah === sisaUtangLama;
+
+                if (isTopUpPayment) {
+                    console.log('Skip lunas check - pembayaran sisa utang lama top-up Rp ' + sisaUtangLama);
+                } else {
+                    await saveToNasabahLunas(adminUid, pelangganId, pelanggan);
+                }
             }
-            
+
             return null;
         } catch (error) {
             console.error(`âŒ Error: ${error.message}`);

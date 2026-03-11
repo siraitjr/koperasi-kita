@@ -102,18 +102,18 @@ function calculateTotalDibayar(pelanggan) {
         : Object.values(pelanggan.pembayaranList || {});
     
     pembayaranList.forEach(p => {
-        // ✅ PERBAIKAN: Exclude pembayaran dengan tanggal 'Bunga...' (konsisten dengan nasabahIndex)
-        if (p && p.tanggal && !p.tanggal.startsWith('Bunga')) {
-            total += p.jumlah || 0;
-            
-            if (p.subPembayaran) {
-                const subList = Array.isArray(p.subPembayaran)
-                    ? p.subPembayaran
-                    : Object.values(p.subPembayaran || {});
-                subList.forEach(sub => {
-                    total += sub.jumlah || 0;
-                });
-            }
+        if (!p) return;
+        // ✅ FIX: Hanya skip entry 'Bunga...', JANGAN skip entry tanpa tanggal
+        if (p.tanggal && p.tanggal.startsWith('Bunga')) return;
+        total += p.jumlah || 0;
+
+        if (p.subPembayaran) {
+            const subList = Array.isArray(p.subPembayaran)
+                ? p.subPembayaran
+                : Object.values(p.subPembayaran || {});
+            subList.forEach(sub => {
+                total += sub.jumlah || 0;
+            });
         }
     });
     
@@ -676,28 +676,32 @@ async function processPelangganChange(adminUid, beforeData, afterData) {
 // =========================================================================
 async function processPembayaranBaru(adminUid, pelangganId, pembayaran) {
     const jumlahPembayaran = pembayaran.jumlah || 0;
-    
+
     console.log(`💰 Processing payment: Rp ${jumlahPembayaran} for ${pelangganId}`);
-    
+
     try {
         if (jumlahPembayaran <= 0) {
             console.log(`⚠️ Skipping - jumlah pembayaran <= 0`);
             return;
         }
-        
-        // ✅ v8 FIX: Sekarang JUGA update piutangChange!
-        // Saat pembayaran masuk, piutang berkurang
+
+        // ✅ FIX: Cek apakah tanggal pembayaran = hari ini
+        // Pembayaran backdated atau offline sync TIDAK boleh inflate pembayaranHariIni
+        const today = getTodayIndonesia();
+        const tglPembayaran = (pembayaran.tanggal || '').trim();
+        const isToday = tglPembayaran === today || tglPembayaran === '';
+
         const delta = {
-            nasabahChange: 0, 
-            aktifChange: 0, 
-            lunasChange: 0, 
+            nasabahChange: 0,
+            aktifChange: 0,
+            lunasChange: 0,
             menungguChange: 0,
-            nasabahMenungguPencairanChange: 0, 
-            pinjamanAktifChange: 0, 
-            piutangChange: -jumlahPembayaran, // ✅ v8: KURANGI piutang!
-            pembayaranHariIniChange: jumlahPembayaran, // ✅ TAMBAH pembayaran hari ini
+            nasabahMenungguPencairanChange: 0,
+            pinjamanAktifChange: 0,
+            piutangChange: -jumlahPembayaran, // ✅ v8: KURANGI piutang (selalu)
+            pembayaranHariIniChange: isToday ? jumlahPembayaran : 0, // ✅ FIX: Hanya jika tanggal = hari ini
             nasabahBaruHariIniChange: 0,
-            nasabahLunasHariIniChange: 0, 
+            nasabahLunasHariIniChange: 0,
             targetHariIniChange: 0
         };
         

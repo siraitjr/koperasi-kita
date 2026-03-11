@@ -63,16 +63,17 @@ function calculateTotalDibayar(pembayaranList) {
         : Object.values(pembayaranList || {});
 
     list.forEach(p => {
-        if (p && p.tanggal && !p.tanggal.startsWith('Bunga')) {
-            total += p.jumlah || 0;
-            if (p.subPembayaran) {
-                const subList = Array.isArray(p.subPembayaran)
-                    ? p.subPembayaran
-                    : Object.values(p.subPembayaran || {});
-                subList.forEach(sub => {
-                    total += sub.jumlah || 0;
-                });
-            }
+        if (!p) return;
+        // ✅ FIX: Hanya skip entry 'Bunga...', JANGAN skip entry tanpa tanggal
+        if (p.tanggal && p.tanggal.startsWith('Bunga')) return;
+        total += p.jumlah || 0;
+        if (p.subPembayaran) {
+            const subList = Array.isArray(p.subPembayaran)
+                ? p.subPembayaran
+                : Object.values(p.subPembayaran || {});
+            subList.forEach(sub => {
+                total += sub.jumlah || 0;
+            });
         }
     });
 
@@ -91,8 +92,11 @@ function extractPembayaranPerTanggal(pembayaranList) {
         : Object.values(pembayaranList || {});
 
     list.forEach((p, index) => {
-        if (p && p.tanggal && !p.tanggal.startsWith('Bunga')) {
-            const tgl = p.tanggal;
+        if (!p) return;
+        // ✅ FIX: Hanya skip entry 'Bunga...', entry tanpa tanggal tetap dihitung
+        if (p.tanggal && p.tanggal.startsWith('Bunga')) return;
+        {
+            const tgl = p.tanggal || 'Tanpa Tanggal';
             if (!perTanggal[tgl]) {
                 perTanggal[tgl] = { total: 0, entries: [] };
             }
@@ -311,7 +315,8 @@ exports.getBukuPokok = functions
                     const pStatus = (p.status || '').toLowerCase();
                     if (statusFilter === 'aktif' && pStatus !== 'aktif' && pStatus !== 'disetujui') return;
                     if (statusFilter === 'lunas' && pStatus !== 'lunas') return;
-                    if (statusFilter === 'semua' && pStatus === 'menunggu approval' && pStatus === 'ditolak') return;
+                    // ✅ FIX: && → || (string tidak bisa sama dengan 2 nilai sekaligus)
+                    if (statusFilter === 'semua' && (pStatus === 'menunggu approval' || pStatus === 'ditolak')) return;
 
                     const totalDibayar = calculateTotalDibayar(p.pembayaranList);
                     const totalPelunasan = p.totalPelunasan || 0;
