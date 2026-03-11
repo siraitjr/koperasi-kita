@@ -220,6 +220,7 @@ exports.getBukuPokok = functions
             // 3. Parse parameters
             const { cabangId, adminUid, status } = req.query;
             const statusFilter = (status || 'aktif').toLowerCase();
+            console.log(`[getBukuPokok] VERSION=2026-03-11-v3, statusFilter=${statusFilter}, cabangId=${cabangId}`);
 
             // 4. Determine which admins to fetch
             let adminUids = [];
@@ -317,11 +318,14 @@ exports.getBukuPokok = functions
                 if (!pelangganData) return;
 
                 Object.entries(pelangganData).forEach(([pId, p]) => {
-                    // Filter by status
+                    // Filter by status — percaya status di database
                     const pStatus = (p.status || '').toLowerCase();
-                    if (statusFilter === 'aktif' && pStatus !== 'aktif' && pStatus !== 'disetujui') return;
+                    // DEBUG: log nasabah yang tersaring oleh filter aktif
+                    if (statusFilter === 'aktif' && pStatus !== 'aktif' && pStatus !== 'disetujui') {
+                        console.log(`[DEBUG] FILTERED OUT: ${p.namaKtp || pId}, status="${p.status}", pStatus="${pStatus}"`);
+                        return;
+                    }
                     if (statusFilter === 'lunas' && pStatus !== 'lunas') return;
-                    // ✅ FIX: && → || (string tidak bisa sama dengan 2 nilai sekaligus)
                     if (statusFilter === 'semua' && (pStatus === 'menunggu approval' || pStatus === 'ditolak')) return;
 
                     const totalDibayar = calculateTotalDibayar(p.pembayaranList);
@@ -365,44 +369,6 @@ exports.getBukuPokok = functions
                 totalTargetHarian += summaryData.targetHariIni || 0;
                 totalPembayaranHariIni += summaryData.pembayaranHariIni || 0;
             });
-
-            // 6c. Apply Android-style filters (hanya untuk status 'aktif')
-            // Konsisten dengan RingkasanDashboardScreen.kt
-            if (statusFilter === 'aktif') {
-                const todayStr = getTodayIndonesia();
-                const nowWib = new Date(new Date().getTime() + 7 * 60 * 60 * 1000);
-                const threeMonthsAgo = new Date(nowWib.getUTCFullYear(), nowWib.getUTCMonth() - 3, 1);
-
-                const parseTglIndo = (dateStr) => {
-                    if (!dateStr) return null;
-                    const BLN = {'Jan':0,'Feb':1,'Mar':2,'Apr':3,'Mei':4,'Jun':5,'Jul':6,'Agu':7,'Sep':8,'Okt':9,'Nov':10,'Des':11};
-                    const parts = dateStr.trim().split(' ');
-                    if (parts.length !== 3) return null;
-                    const m = BLN[parts[1]];
-                    if (m === undefined) return null;
-                    return new Date(parseInt(parts[2]), m, parseInt(parts[0]));
-                };
-
-                nasabahList = nasabahList.filter(n => {
-                    // Exclude MENUNGGU_PENCAIRAN
-                    const sk = (n.statusKhusus || '').toUpperCase().replace(/ /g, '_');
-                    if (sk === 'MENUNGGU_PENCAIRAN') return false;
-
-                    // Exclude > 3 bulan
-                    const tglAcuan = (n.tanggalPencairan || '').trim() || (n.tanggalPengajuan || '').trim() || (n.tanggalDaftar || '').trim();
-                    const acuanDate = parseTglIndo(tglAcuan);
-                    if (acuanDate && acuanDate < threeMonthsAgo) return false;
-
-                    // Exclude cair hari ini
-                    const tglCair = (n.tanggalPencairan || '').trim();
-                    if (tglCair === todayStr) return false;
-
-                    // Exclude sudah lunas cicilan
-                    if (n.totalPelunasan > 0 && n.sisaUtang <= 0) return false;
-
-                    return true;
-                });
-            }
 
             // 7. Sort nasabah by adminName, then nomorAnggota
             nasabahList.sort((a, b) => {
