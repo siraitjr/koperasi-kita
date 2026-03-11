@@ -54,14 +54,24 @@ exports.onPelangganWrite = functions.database
         try {
             // Summary OTOMATIS dibuat jika belum ada
             await processPelangganChange(adminUid, beforeData, afterData);
-            
+
+            // =========================================================
+            // AUTO-ARSIP: Simpan riwayat pinjaman lama saat lanjut pinjaman
+            // Deteksi: pinjamanKe naik = nasabah lanjut ke pinjaman baru
+            // Data lama diambil dari beforeData (masih utuh sebelum di-overwrite)
+            // =========================================================
+            if (beforeData && afterData &&
+                (afterData.pinjamanKe || 1) > (beforeData.pinjamanKe || 1)) {
+                await archiveRiwayatPinjaman(adminUid, pelangganId, beforeData);
+            }
+
             // =========================================================
             // SAFETY NET: Auto-create pengajuan_approval jika belum ada
             // =========================================================
             if (afterData && afterData.status === 'Menunggu Approval') {
                 await ensurePengajuanApprovalExists(adminUid, pelangganId, afterData);
             }
-            
+
             console.log(`✅ Done`);
             return null;
         } catch (error) {
@@ -187,5 +197,96 @@ async function ensurePengajuanApprovalExists(adminUid, pelangganId, pelangganDat
         
     } catch (error) {
         console.error(`❌ Safety net error: ${error.message}`);
+    }
+}
+
+// =========================================================================
+// AUTO-ARSIP: Simpan riwayat pinjaman lama ke riwayat_pinjaman/
+// =========================================================================
+// Dipanggil otomatis saat pinjamanKe naik (lanjut pinjaman)
+// Menyimpan SELURUH data pinjaman lama termasuk pembayaranList
+// sehingga pembukuan tetap tercatat permanen
+// =========================================================================
+async function archiveRiwayatPinjaman(adminUid, pelangganId, beforeData) {
+    try {
+        const pinjamanKeLama = beforeData.pinjamanKe || 1;
+
+        // Cek apakah sudah pernah diarsip (hindari duplikat)
+        const existingSnap = await db.ref(
+            `riwayat_pinjaman/${adminUid}/${pelangganId}/${pinjamanKeLama}`
+        ).once('value');
+
+        if (existingSnap.exists()) {
+            console.log(`📦 Riwayat pinjaman ke-${pinjamanKeLama} sudah ada, skip arsip`);
+            return;
+        }
+
+        // Hitung total dibayar dari pembayaranList lama
+        let totalDibayar = 0;
+        const pembayaranList = beforeData.pembayaranList || [];
+        const listArray = Array.isArray(pembayaranList)
+            ? pembayaranList
+            : Object.values(pembayaranList);
+
+        listArray.forEach(p => {
+            if (!p) return;
+            if (p.tanggal && p.tanggal.startsWith && p.tanggal.startsWith('Bunga')) return;
+            totalDibayar += p.jumlah || 0;
+            const subList = p.subPembayaran
+                ? (Array.isArray(p.subPembayaran) ? p.subPembayaran : Object.values(p.subPembayaran))
+                : [];
+            subList.forEach(sub => {
+                totalDibayar += sub.jumlah || 0;
+            });
+        });
+
+        const totalPelunasan = beforeData.totalPelunasan || 0;
+        const sisaUtang = Math.max(0, totalPelunasan - totalDibayar);
+
+        // Simpan arsip lengkap
+        const arsipData = {
+            // Identitas
+            namaKtp: beforeData.namaKtp || '',
+            namaPanggilan: beforeData.namaPanggilan || '',
+            nomorAnggota: beforeData.nomorAnggota || '',
+
+            // Data pinjaman
+            pinjamanKe: pinjamanKeLama,
+            besarPinjaman: beforeData.besarPinjaman || 0,
+            totalPelunasan: totalPelunasan,
+            totalDibayar: totalDibayar,
+            sisaUtang: sisaUtang,
+            tenor: beforeData.tenor || 0,
+            jasaPinjaman: beforeData.jasaPinjaman || 0,
+            admin: beforeData.admin || 0,
+            simpanan: beforeData.simpanan || 0,
+            totalDiterima: beforeData.totalDiterima || 0,
+
+            // Tanggal
+            tanggalPengajuan: beforeData.tanggalPengajuan || '',
+            tanggalPencairan: beforeData.tanggalPencairan || '',
+            tanggalLunasCicilan: beforeData.tanggalLunasCicilan || '',
+
+            // Status terakhir
+            status: beforeData.status || '',
+            statusKhusus: beforeData.statusKhusus || '',
+
+            // Riwayat pembayaran lengkap (DATA UTAMA yang harus permanen)
+            pembayaranList: beforeData.pembayaranList || [],
+
+            // Metadata arsip
+            archivedAt: admin.database.ServerValue.TIMESTAMP,
+            adminUid: adminUid
+        };
+
+        await db.ref(
+            `riwayat_pinjaman/${adminUid}/${pelangganId}/${pinjamanKeLama}`
+        ).set(arsipData);
+
+        console.log(`📦 Riwayat pinjaman ke-${pinjamanKeLama} berhasil diarsip untuk ${beforeData.namaKtp || pelangganId}`);
+        console.log(`   💰 Pinjaman: Rp ${beforeData.besarPinjaman}, Dibayar: Rp ${totalDibayar}, Sisa: Rp ${sisaUtang}`);
+
+    } catch (error) {
+        console.error(`❌ Gagal arsip riwayat pinjaman: ${error.message}`);
     }
 }
