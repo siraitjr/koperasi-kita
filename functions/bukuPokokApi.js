@@ -220,7 +220,7 @@ exports.getBukuPokok = functions
             // 3. Parse parameters
             const { cabangId, adminUid, status } = req.query;
             const statusFilter = (status || 'aktif').toLowerCase();
-            console.log(`[getBukuPokok] VERSION=2026-03-11-v3, statusFilter=${statusFilter}, cabangId=${cabangId}`);
+            console.log(`[getBukuPokok] VERSION=2026-03-11-v4-riwayat, statusFilter=${statusFilter}, cabangId=${cabangId}`);
 
             // 4. Determine which admins to fetch
             let adminUids = [];
@@ -299,17 +299,47 @@ exports.getBukuPokok = functions
             let nasabahList = [];
             const adminNames = {};
 
-            // Batch read: admin metadata + pelanggan data + summary — semua paralel
-            const [adminMetaResults, pelangganResults, summaryResults] = await Promise.all([
+            // Batch read: admin metadata + pelanggan data + summary + riwayat — semua paralel
+            const [adminMetaResults, pelangganResults, summaryResults, riwayatResults] = await Promise.all([
                 Promise.all(adminUids.map(aUid => db.ref(`metadata/admins/${aUid}`).once('value'))),
                 Promise.all(adminUids.map(aUid => db.ref(`pelanggan/${aUid}`).once('value'))),
-                Promise.all(adminUids.map(aUid => db.ref(`summary/perAdmin/${aUid}`).once('value')))
+                Promise.all(adminUids.map(aUid => db.ref(`summary/perAdmin/${aUid}`).once('value'))),
+                Promise.all(adminUids.map(aUid => db.ref(`riwayat_pinjaman/${aUid}`).once('value')))
             ]);
 
             // Process admin names
             adminUids.forEach((aUid, i) => {
                 const adminData = adminMetaResults[i].val();
                 adminNames[aUid] = adminData ? (adminData.name || adminData.email || aUid) : aUid;
+            });
+
+            // Build riwayat lookup: { pelangganId: [ {pinjamanKe, ...}, ... ] }
+            const riwayatLookup = {};
+            adminUids.forEach((aUid, i) => {
+                const riwayatData = riwayatResults[i].val();
+                if (!riwayatData) return;
+                Object.entries(riwayatData).forEach(([pId, pinjamanMap]) => {
+                    if (!riwayatLookup[pId]) riwayatLookup[pId] = [];
+                    Object.entries(pinjamanMap).forEach(([pinjamanKe, data]) => {
+                        const rTotalDibayar = calculateTotalDibayar(data.pembayaranList);
+                        const rTotalPelunasan = data.totalPelunasan || 0;
+                        riwayatLookup[pId].push({
+                            pinjamanKe: parseInt(pinjamanKe),
+                            besarPinjaman: data.besarPinjaman || 0,
+                            totalPelunasan: rTotalPelunasan,
+                            totalDibayar: rTotalDibayar,
+                            sisaUtang: Math.max(0, rTotalPelunasan - rTotalDibayar),
+                            tenor: data.tenor || 0,
+                            tanggalPengajuan: data.tanggalPengajuan || '',
+                            tanggalPencairan: data.tanggalPencairan || '',
+                            tanggalLunasCicilan: data.tanggalLunasCicilan || '',
+                            status: data.status || '',
+                            pembayaran: extractPembayaranPerTanggal(data.pembayaranList)
+                        });
+                    });
+                    // Sort by pinjamanKe ascending
+                    riwayatLookup[pId].sort((a, b) => a.pinjamanKe - b.pinjamanKe);
+                });
             });
 
             // Process pelanggan data
@@ -332,6 +362,12 @@ exports.getBukuPokok = functions
                     const totalPelunasan = p.totalPelunasan || 0;
                     const sisaUtang = Math.max(0, totalPelunasan - totalDibayar);
                     const pembayaranPerTanggal = extractPembayaranPerTanggal(p.pembayaranList);
+
+                    // Riwayat pinjaman lama (jika ada)
+                    const riwayat = riwayatLookup[pId] || [];
+
+                    // Hitung total sisa utang dari pinjaman lama yang belum lunas
+                    const sisaUtangLama = riwayat.reduce((sum, r) => sum + (r.sisaUtang || 0), 0);
 
                     nasabahList.push({
                         id: pId,
@@ -356,7 +392,11 @@ exports.getBukuPokok = functions
                         wilayah: p.wilayah || '',
                         simpanan: p.simpanan || 0,
                         totalDiterima: p.totalDiterima || 0,
-                        pembayaran: pembayaranPerTanggal
+                        pembayaran: pembayaranPerTanggal,
+                        // Riwayat pinjaman lama
+                        sisaUtangLama: sisaUtangLama,
+                        sisaUtangLamaSebelumTopUp: p.sisaUtangLamaSebelumTopUp || 0,
+                        riwayatPinjaman: riwayat
                     });
                 });
             });
