@@ -670,25 +670,15 @@ function getKategoriNasabah(nasabah) {
       return entries.length > 0 ? entries[0].besarPinjaman : (n.besarPinjaman || 0);
     };
 
-    // Helper: hitung target aktif pada tanggal tertentu dari data nasabah (tanpa RTDB tambahan).
-    // Aturan konsisten dengan Android RingkasanDashboardScreen & summaryHelpers.js:
-    //  - getEffectiveBesarPinjaman × 3% (besarPinjaman sesuai tanggal, dari pinjamanHistory)
-    //  - Exclude nasabah belum cair / cair pada tanggal itu sendiri
-    //  - Exclude nasabah > 3 bulan dari tanggalPencairan pada tanggal tsb
-    //  - Exclude nasabah yang sudah lunas SEBELUM tanggal tsb (payDate < targetDate)
     const calculateTargetForDate = (targetDateStr) => {
       const targetDate = parseDateStr(targetDateStr);
       if (!targetDate) return 0;
 
-      // Batas 3 bulan sebelum targetDate
-      const threeMonthsBefore = new Date(targetDate);
-      threeMonthsBefore.setMonth(threeMonthsBefore.getMonth() - 3);
-
       let total = 0;
       allNasabah.forEach(n => {
         const status = (n.status || '').toLowerCase();
-        // Exclude status non-aktif
-        if (['ditolak', 'tidak aktif', 'disetujui', 'menunggu approval'].includes(status)) return;
+        // Exclude status yang benar-benar tidak valid
+        if (['ditolak', 'tidak aktif', 'menunggu approval'].includes(status)) return;
 
         // Harus sudah ada tanggalPencairan (sudah dicairkan)
         const tglCair = (n.tanggalPencairan || '').trim();
@@ -697,15 +687,11 @@ function getKategoriNasabah(nasabah) {
         const caiDate = parseDateStr(tglCair);
         if (!caiDate) return;
 
-        // Nasabah baru cair pada targetDate → belum dihitung hari itu (mulai besok)
-        // Nasabah belum cair sama sekali pada targetDate → skip
+        // Nasabah baru cair pada targetDate atau sesudahnya → belum dihitung
         if (caiDate >= targetDate) return;
 
-        // Sudah > 3 bulan dari tanggalPencairan pada targetDate → exclude
-        if (caiDate < threeMonthsBefore) return;
-
-        // Hitung total dibayar nasabah ini SEBELUM targetDate (bukan pada hari itu)
-        // Tujuan: nasabah yang baru lunas PADA targetDate masih masuk target hari itu
+        // Hitung total dibayar SEBELUM targetDate (bukan pada hari itu).
+        // Dengan begini nasabah yang baru lunas HARI INI masih masuk target hari ini.
         let totalDibayarSampaiD = 0;
         if (n.pembayaran) {
           Object.entries(n.pembayaran).forEach(([payDateStr, payData]) => {
@@ -720,7 +706,7 @@ function getKategoriNasabah(nasabah) {
         const totalPelunasan = n.totalPelunasan || 0;
         if (totalPelunasan > 0 && totalDibayarSampaiD >= totalPelunasan) return;
 
-        // Gunakan besarPinjaman yang berlaku pada targetDate (bukan nilai terkini)
+        // Gunakan besarPinjaman yang berlaku pada targetDate (dari pinjamanHistory)
         total += Math.floor(getEffectiveBesarPinjaman(n, targetDate) * 3 / 100);
       });
       return total;
