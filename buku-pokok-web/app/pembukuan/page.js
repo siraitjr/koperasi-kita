@@ -674,24 +674,38 @@ function getKategoriNasabah(nasabah) {
       const targetDate = parseDateStr(targetDateStr);
       if (!targetDate) return 0;
 
+      // Batas 3 bulan: awal bulan, 3 bulan sebelum targetDate — sama dengan CF summaryHelpers.js
+      const threeMonthsBefore = new Date(targetDate.getFullYear(), targetDate.getMonth() - 3, 1);
+
       let total = 0;
       allNasabah.forEach(n => {
         const status = (n.status || '').toLowerCase();
-        // Exclude status yang benar-benar tidak valid
+        // Exclude status tidak valid / belum proses
         if (['ditolak', 'tidak aktif', 'menunggu approval'].includes(status)) return;
 
-        // Harus sudah ada tanggalPencairan (sudah dicairkan)
-        const tglCair = (n.tanggalPencairan || '').trim();
-        if (!tglCair) return;
+        // Exclude MENUNGGU_PENCAIRAN: cicilan selesai, tinggal tunggu simpanan dikembalikan
+        const statusKhusus = (n.statusKhusus || '').toUpperCase().replace(/ /g, '_');
+        if (statusKhusus === 'MENUNGGU_PENCAIRAN') return;
 
-        const caiDate = parseDateStr(tglCair);
-        if (!caiDate) return;
+        const besar = n.besarPinjaman || 0;
+        if (!besar) return;
 
-        // Nasabah baru cair pada targetDate atau sesudahnya → belum dihitung
-        if (caiDate >= targetDate) return;
+        // Tanggal mulai: tanggalPencairan jika ada, fallback ke tanggalDaftar
+        // (API sudah menyertakan tanggalPengajuan sebagai fallback di tanggalDaftar)
+        const tglAcuan = (n.tanggalPencairan || '').trim() || (n.tanggalDaftar || '').trim();
+        if (!tglAcuan) return;
+
+        const acuanDate = parseDateStr(tglAcuan);
+        if (!acuanDate) return;
+
+        // Belum mulai pada targetDate → skip
+        if (acuanDate >= targetDate) return;
+
+        // Macet > 3 bulan → exclude (konsisten dengan CF & Android)
+        if (acuanDate < threeMonthsBefore) return;
 
         // Hitung total dibayar SEBELUM targetDate (bukan pada hari itu).
-        // Dengan begini nasabah yang baru lunas HARI INI masih masuk target hari ini.
+        // Nasabah yang baru lunas HARI INI masih masuk target hari ini.
         let totalDibayarSampaiD = 0;
         if (n.pembayaran) {
           Object.entries(n.pembayaran).forEach(([payDateStr, payData]) => {
