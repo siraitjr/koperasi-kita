@@ -550,6 +550,10 @@ function getKategoriNasabah(nasabah) {
 }
 
   // ==================== FETCH DATA ====================
+  // Untuk Storting Global, pakai status='semua' agar nasabah yang sudah lunas
+  // bulan ini tetap ikut kalkulasi target/storting pada tanggal mereka masih aktif.
+  // Untuk tabel biasa, gunakan statusFilter yang dipilih user (Aktif/Lunas/Semua).
+  const fetchStatus = tabelFilter === 'stortingGlobal' ? 'semua' : statusFilter;
   useEffect(() => {
     async function fetchData() {
       setLoading(true);
@@ -558,7 +562,7 @@ function getKategoriNasabah(nasabah) {
         const result = await getBukuPokok({
           cabangId: cabang.id,
           adminUid: selectedAdmin?.uid || '',
-          status: statusFilter,
+          status: fetchStatus,
         });
         if (result.success && result.type === 'buku_pokok') {
           setData(result.data);
@@ -570,7 +574,7 @@ function getKategoriNasabah(nasabah) {
       }
     }
     fetchData();
-  }, [cabang.id, selectedAdmin?.uid, statusFilter]);
+  }, [cabang.id, selectedAdmin?.uid, fetchStatus]);
 
   // ==================== FILTER ====================
   const filtered = data?.nasabah?.filter((n) => {
