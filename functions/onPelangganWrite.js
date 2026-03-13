@@ -8,7 +8,7 @@ const functions = require('firebase-functions');
 const admin = require('firebase-admin');
 
 const db = admin.database();
-const { processPelangganChange } = require('./summaryHelpers');
+const { processPelangganChange, getTodayIndonesia } = require('./summaryHelpers');
 
 // Debounce mechanism
 const recentlyProcessed = new Map();
@@ -54,14 +54,37 @@ exports.onPelangganWrite = functions.database
         try {
             // Summary OTOMATIS dibuat jika belum ada
             await processPelangganChange(adminUid, beforeData, afterData);
-            
+
+            // =========================================================
+            // PINJAMAN HISTORY: Simpan riwayat besarPinjaman saat lanjut pinjaman
+            // =========================================================
+            // Disimpan di node terpisah (bukan di bawah pelanggan) agar tidak
+            // memicu infinite loop pada trigger ini.
+            // Format: pinjamanHistory/{adminUid}/{pelangganId}/{autoId}
+            //   { besarPinjaman: <nilai lama>, berlakuSampai: "dd Mmm yyyy" }
+            // Makna berlakuSampai: hari TERAKHIR besarPinjaman lama berlaku
+            // (hari lanjut pinjaman itu sendiri).
+            // =========================================================
+            if (beforeData && afterData) {
+                const oldBesar = beforeData.besarPinjaman || 0;
+                const newBesar = afterData.besarPinjaman || 0;
+                if (oldBesar > 0 && newBesar !== oldBesar) {
+                    const today = getTodayIndonesia();
+                    await db.ref(`pinjamanHistory/${adminUid}/${pelangganId}`).push({
+                        besarPinjaman: oldBesar,
+                        berlakuSampai: today,
+                    });
+                    console.log(`📝 pinjamanHistory saved: ${oldBesar} → ${newBesar} (berlakuSampai: ${today})`);
+                }
+            }
+
             // =========================================================
             // SAFETY NET: Auto-create pengajuan_approval jika belum ada
             // =========================================================
             if (afterData && afterData.status === 'Menunggu Approval') {
                 await ensurePengajuanApprovalExists(adminUid, pelangganId, afterData);
             }
-            
+
             console.log(`✅ Done`);
             return null;
         } catch (error) {

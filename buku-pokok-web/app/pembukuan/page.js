@@ -648,12 +648,30 @@ function getKategoriNasabah(nasabah) {
     // String hari ini dalam format "dd Mmm yyyy" (WIB)
     const todayDateStr = `${String(todayDate.getDate()).padStart(2, '0')} ${BULAN_INDO_ARR[todayDate.getMonth()]} ${todayDate.getFullYear()}`;
 
+    // Helper: cari besarPinjaman yang berlaku pada targetDate berdasarkan pinjamanHistory.
+    // pinjamanHistory menyimpan nilai LAMA beserta berlakuSampai (hari terakhir nilai itu valid).
+    // Algoritma: cari entry dengan berlakuSampai >= targetDate yang paling awal.
+    //   - Jika ada → gunakan besarPinjaman dari entry itu (nilai lama yang masih berlaku)
+    //   - Jika tidak ada → gunakan n.besarPinjaman saat ini (nilai paling baru)
+    // Contoh lanjut pinjaman 500k→1M pada 13 Mar:
+    //   history = { besarPinjaman: 500k, berlakuSampai: "13 Mar 2026" }
+    //   Untuk targetDate 13 Mar: berlakuSampai >= 13 Mar → gunakan 500k ✓
+    //   Untuk targetDate 14 Mar: tidak ada history >= 14 Mar → gunakan current 1M ✓
+    const getEffectiveBesarPinjaman = (n, targetDate) => {
+      if (!n.pinjamanHistory) return n.besarPinjaman || 0;
+      const entries = Object.values(n.pinjamanHistory)
+        .map(h => ({ besarPinjaman: h.besarPinjaman, berlakuSampaiDate: parseDateStr(h.berlakuSampai) }))
+        .filter(h => h.berlakuSampaiDate && h.berlakuSampaiDate >= targetDate)
+        .sort((a, b) => a.berlakuSampaiDate - b.berlakuSampaiDate);
+      return entries.length > 0 ? entries[0].besarPinjaman : (n.besarPinjaman || 0);
+    };
+
     // Helper: hitung target aktif pada tanggal tertentu dari data nasabah (tanpa RTDB tambahan).
     // Aturan konsisten dengan Android RingkasanDashboardScreen & summaryHelpers.js:
-    //  - besarPinjaman × 3%
+    //  - getEffectiveBesarPinjaman × 3% (besarPinjaman sesuai tanggal, dari pinjamanHistory)
     //  - Exclude nasabah belum cair / cair pada tanggal itu sendiri
     //  - Exclude nasabah > 3 bulan dari tanggalPencairan pada tanggal tsb
-    //  - Exclude nasabah yang sudah lunas (total dibayar s/d tanggal tsb >= totalPelunasan)
+    //  - Exclude nasabah yang sudah lunas SEBELUM tanggal tsb (payDate < targetDate)
     const calculateTargetForDate = (targetDateStr) => {
       const targetDate = parseDateStr(targetDateStr);
       if (!targetDate) return 0;
@@ -682,7 +700,8 @@ function getKategoriNasabah(nasabah) {
         // Sudah > 3 bulan dari tanggalPencairan pada targetDate → exclude
         if (caiDate < threeMonthsBefore) return;
 
-        // Hitung total dibayar nasabah ini sampai targetDate
+        // Hitung total dibayar nasabah ini SEBELUM targetDate (bukan pada hari itu)
+        // Tujuan: nasabah yang baru lunas PADA targetDate masih masuk target hari itu
         let totalDibayarSampaiD = 0;
         if (n.pembayaran) {
           Object.entries(n.pembayaran).forEach(([payDateStr, payData]) => {
@@ -693,11 +712,12 @@ function getKategoriNasabah(nasabah) {
           });
         }
 
-        // Sudah lunas pada targetDate → exclude
+        // Sudah lunas sebelum targetDate → exclude
         const totalPelunasan = n.totalPelunasan || 0;
         if (totalPelunasan > 0 && totalDibayarSampaiD >= totalPelunasan) return;
 
-        total += Math.floor((n.besarPinjaman || 0) * 3 / 100);
+        // Gunakan besarPinjaman yang berlaku pada targetDate (bukan nilai terkini)
+        total += Math.floor(getEffectiveBesarPinjaman(n, targetDate) * 3 / 100);
       });
       return total;
     };
@@ -735,12 +755,10 @@ function getKategoriNasabah(nasabah) {
         }
       });
 
-      // Target Kini per tanggal:
-      // - Hari ini: pakai data?.targetHarianHariIni dari Cloud Functions (single source of truth, paling akurat)
-      // - Tanggal lampau: hitung dari data nasabah (siapa saja yang aktif pada tanggal itu)
-      const targetKini = dateStr === todayDateStr
-        ? (data?.targetHarianHariIni || 0)
-        : calculateTargetForDate(dateStr);
+      // Target Kini per tanggal — dihitung dari data nasabah untuk semua tanggal.
+      // Dengan payDate < targetDate, nasabah yang baru lunas/lanjut pinjaman HARI INI
+      // masih dihitung dalam target hari ini (konsisten dengan buku manual koperasi).
+      const targetKini = calculateTargetForDate(dateStr);
 
       dropBerjalan += dropKini;
       targetBerjalan += targetKini;

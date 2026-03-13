@@ -301,8 +301,12 @@ exports.getBukuPokok = functions
                 adminNames[aUid] = adminData ? (adminData.name || adminData.email || aUid) : aUid;
 
                 // ✅ OPTIMASI: Satu kali read per admin node
-                const pelangganSnap = await db.ref(`pelanggan/${aUid}`).once('value');
+                const [pelangganSnap, pinjamanHistorySnap] = await Promise.all([
+                    db.ref(`pelanggan/${aUid}`).once('value'),
+                    db.ref(`pinjamanHistory/${aUid}`).once('value'),
+                ]);
                 const pelangganData = pelangganSnap.val();
+                const pinjamanHistoryData = pinjamanHistorySnap.val() || {};
 
                 if (!pelangganData) continue;
 
@@ -343,7 +347,8 @@ exports.getBukuPokok = functions
                         fotoNasabahUrl: p.fotoNasabahUrl || '',
                         simpanan: p.simpanan || 0,
                         totalDiterima: p.totalDiterima || 0,
-                        pembayaran: pembayaranPerTanggal
+                        pembayaran: pembayaranPerTanggal,
+                        pinjamanHistory: pinjamanHistoryData[pId] || null,
                     });
                 });
             }
