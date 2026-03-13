@@ -796,6 +796,18 @@ async function fullRecalculateAdminSummary(adminUid) {
                         nasabahLunas++;
                         if (adaPembayaranPadaTanggal(p, today)) nasabahLunasHariIni++;
                     }
+                    // Aktif+isSudahLunas HARI INI → tetap masuk target (sama dengan case 'lunas')
+                    if (!isHariLibur) {
+                        const tglLunasCicilan = (p.tanggalLunasCicilan || '').trim();
+                        if (tglLunasCicilan === today) {
+                            const tglAcuan = (p.tanggalPencairan || '').trim()
+                                || (p.tanggalPengajuan || '').trim()
+                                || (p.tanggalDaftar || '').trim();
+                            if (!isOverThreeMonths(tglAcuan)) {
+                                targetHariIni += Math.floor((p.besarPinjaman || 0) * 3 / 100);
+                            }
+                        }
+                    }
                 } else {
                     if (!isMenungguPencairanManual) {
                         nasabahAktif++;
