@@ -419,9 +419,12 @@ exports.getBukuPokok = functions
                         } else {
                             // Lunas via pembayaran hari ini (status masih 'aktif', tapi cicilan selesai hari ini)
                             const pembayaranHariIni = (n.pembayaran[todayStr] || {}).total || 0;
-                            const isLunasHariIni = pembayaranHariIni > 0
+                            const isLunasViaPayment = pembayaranHariIni > 0
                                 && (n.totalDibayar - pembayaranHariIni) < n.totalPelunasan;
-                            if (!isLunasHariIni) return false;
+                            // Lunas via tanggalLunasCicilan >= hari ini (di-set admin, belum bayar hari ini)
+                            const tglLunasDate = parseTglIndoDate((n.tanggalLunasCicilan || '').trim());
+                            const isLunasViaDate = !!(tglLunasDate && todayDate && tglLunasDate >= todayDate);
+                            if (!isLunasViaPayment && !isLunasViaDate) return false;
                         }
                     }
 
