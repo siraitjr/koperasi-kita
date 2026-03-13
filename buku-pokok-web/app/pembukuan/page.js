@@ -687,7 +687,7 @@ function getKategoriNasabah(nasabah) {
         if (n.pembayaran) {
           Object.entries(n.pembayaran).forEach(([payDateStr, payData]) => {
             const payDate = parseDateStr(payDateStr);
-            if (payDate && payDate <= targetDate) {
+            if (payDate && payDate < targetDate) {
               totalDibayarSampaiD += payData.total || 0;
             }
           });
