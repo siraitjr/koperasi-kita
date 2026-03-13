@@ -713,11 +713,12 @@ function getKategoriNasabah(nasabah) {
           if (!tglLunasCicilan) return; // Lunas tanpa tanggal cicilan → pinjaman lama, skip
           const tglLunasDate = parseDateStr(tglLunasCicilan);
           if (!tglLunasDate || tglLunasDate < targetDate) return; // lunas sebelum hari ini
-          // tglLunasDate >= targetDate → lunas HARI INI → masuk target hari ini
+          // tglLunasDate === targetDate → lunas HARI INI → langsung masuk target, skip payment check
+          total += Math.floor(getEffectiveBesarPinjaman(n, targetDate) * 3 / 100);
+          return;
         }
 
-        // Hitung total dibayar SEBELUM targetDate (bukan pada hari itu).
-        // Nasabah yang baru lunas HARI INI masih masuk target hari ini.
+        // Non-Lunas: cek payment untuk exclude nasabah yang sudah lunas sebelum targetDate
         let totalDibayarSampaiD = 0;
         if (n.pembayaran) {
           Object.entries(n.pembayaran).forEach(([payDateStr, payData]) => {
@@ -728,7 +729,6 @@ function getKategoriNasabah(nasabah) {
           });
         }
 
-        // Sudah lunas sebelum targetDate (via payment history) → exclude
         const totalPelunasan = n.totalPelunasan || 0;
         if (totalPelunasan > 0 && totalDibayarSampaiD >= totalPelunasan) return;
 

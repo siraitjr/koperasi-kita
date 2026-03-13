@@ -533,7 +533,11 @@ function calculateDelta(before, after) {
                 delta.aktifChange -= 1;
                 delta.pinjamanAktifChange -= beforePelunasan;
                 delta.piutangChange -= Math.max(0, beforePelunasan - beforeDibayar);
-                delta.targetHariIniChange -= calculateTargetHariIni(before);
+                // Jika lunas HARI INI → target tetap ada untuk hari ini (buku: lunas hari ini masih dihitung)
+                const tglLunasCicilanAfter = (after.tanggalLunasCicilan || '').trim();
+                if (tglLunasCicilanAfter !== today) {
+                    delta.targetHariIniChange -= calculateTargetHariIni(before);
+                }
             } else if (beforeCategory === 'lunas') {
                 delta.lunasChange -= 1;
             } else if (beforeCategory === 'menungguPencairan') {
