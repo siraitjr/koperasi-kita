@@ -704,6 +704,15 @@ function getKategoriNasabah(nasabah) {
         // Macet > 3 bulan → exclude (konsisten dengan CF & Android)
         if (acuanDate < threeMonthsBefore) return;
 
+        // Untuk nasabah Lunas: gunakan tanggalLunasCicilan sebagai penentu utama
+        if (status === 'lunas') {
+          const tglLunasCicilan = (n.tanggalLunasCicilan || '').trim();
+          if (!tglLunasCicilan) return; // Lunas tanpa tanggal cicilan → pinjaman lama, skip
+          const tglLunasDate = parseDateStr(tglLunasCicilan);
+          if (!tglLunasDate || tglLunasDate < targetDate) return; // lunas sebelum hari ini
+          // tglLunasDate >= targetDate → lunas HARI INI → masuk target hari ini
+        }
+
         // Hitung total dibayar SEBELUM targetDate (bukan pada hari itu).
         // Nasabah yang baru lunas HARI INI masih masuk target hari ini.
         let totalDibayarSampaiD = 0;
@@ -716,7 +725,7 @@ function getKategoriNasabah(nasabah) {
           });
         }
 
-        // Sudah lunas sebelum targetDate → exclude
+        // Sudah lunas sebelum targetDate (via payment history) → exclude
         const totalPelunasan = n.totalPelunasan || 0;
         if (totalPelunasan > 0 && totalDibayarSampaiD >= totalPelunasan) return;
 
