@@ -292,6 +292,15 @@ exports.getBukuPokok = functions
 
             // 6. Fetch pelanggan data per admin (1 read per admin node)
             const todayStr = getTodayIndonesia();
+            // Helper: parse "DD Mmm YYYY" → Date (untuk perbandingan >= hari ini)
+            const BLN_MAP = {Jan:0,Feb:1,Mar:2,Apr:3,Mei:4,Jun:5,Jul:6,Agu:7,Sep:8,Okt:9,Nov:10,Des:11};
+            const parseTglIndoDate = (dateStr) => {
+                if (!dateStr) return null;
+                const parts = dateStr.trim().split(' ');
+                if (parts.length !== 3 || BLN_MAP[parts[1]] === undefined) return null;
+                return new Date(parseInt(parts[2]), BLN_MAP[parts[1]], parseInt(parts[0]));
+            };
+            const todayDate = parseTglIndoDate(todayStr);
             let nasabahList = [];
             const adminNames = {};
 
@@ -316,7 +325,10 @@ exports.getBukuPokok = functions
                     const pStatus = (p.status || '').toLowerCase();
                     if (statusFilter === 'aktif' && pStatus !== 'aktif' && pStatus !== 'disetujui') {
                         // Exception: nasabah lunas HARI INI tetap masuk (keluar besok)
-                        if (pStatus !== 'lunas' || (p.tanggalLunasCicilan || '').trim() !== todayStr) return;
+                        // Konsisten dengan web: tglLunasDate >= targetDate
+                        if (pStatus !== 'lunas') return;
+                        const tglLunasDate = parseTglIndoDate((p.tanggalLunasCicilan || '').trim());
+                        if (!tglLunasDate || !todayDate || tglLunasDate < todayDate) return;
                     }
                     if (statusFilter === 'lunas' && pStatus !== 'lunas') return;
                     if (statusFilter === 'semua' && pStatus === 'menunggu approval' && pStatus === 'ditolak') return;
@@ -398,8 +410,20 @@ exports.getBukuPokok = functions
                     const tglCair = (n.tanggalPencairan || '').trim();
                     if (tglCair === todayStr) return false;
 
-                    // Exclude sudah lunas cicilan — kecuali lunas HARI INI (keluar besok)
-                    if (n.totalPelunasan > 0 && n.sisaUtang <= 0 && n.tanggalLunasCicilan !== todayStr) return false;
+                    // Exclude sudah lunas cicilan — kecuali baru lunas HARI INI (keluar besok)
+                    if (n.totalPelunasan > 0 && n.sisaUtang <= 0) {
+                        // Lunas via status='lunas': sudah diverifikasi tanggalLunasCicilan >= today di line 316
+                        const nStatus = (n.status || '').toLowerCase();
+                        if (nStatus === 'lunas') {
+                            // pass through — already date-verified at early filter
+                        } else {
+                            // Lunas via pembayaran hari ini (status masih 'aktif', tapi cicilan selesai hari ini)
+                            const pembayaranHariIni = (n.pembayaran[todayStr] || {}).total || 0;
+                            const isLunasHariIni = pembayaranHariIni > 0
+                                && (n.totalDibayar - pembayaranHariIni) < n.totalPelunasan;
+                            if (!isLunasHariIni) return false;
+                        }
+                    }
 
                     return true;
                 });

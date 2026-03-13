@@ -729,12 +729,22 @@ async function processNasabahBaru(adminUid, pelangganId, pelanggan) {
 // =========================================================================
 async function fullRecalculateAdminSummary(adminUid) {
     console.log(`🔄 Full recalculation for admin: ${adminUid}`);
-    
+
     const today = getTodayIndonesia();
     const isHariLibur = isHoliday(today);
-    
+
+    // Helper: parse "DD Mmm YYYY" → Date object (untuk perbandingan >= hari ini)
+    const parseDateIndo = (dateStr) => {
+        if (!dateStr) return null;
+        const BLN = {Jan:0,Feb:1,Mar:2,Apr:3,Mei:4,Jun:5,Jul:6,Agu:7,Sep:8,Okt:9,Nov:10,Des:11};
+        const parts = dateStr.trim().split(' ');
+        if (parts.length !== 3 || BLN[parts[1]] === undefined) return null;
+        return new Date(parseInt(parts[2]), BLN[parts[1]], parseInt(parts[0]));
+    };
+    const todayDate = parseDateIndo(today);
+
     const pelangganSnap = await db.ref(`pelanggan/${adminUid}`).once('value');
-    
+
     let totalNasabah = 0, nasabahAktif = 0, nasabahLunas = 0, nasabahMenunggu = 0;
     let nasabahMenungguPencairan = 0, totalPinjamanAktif = 0, totalPiutang = 0;
     let targetHariIni = 0, nasabahBaruHariIni = 0, nasabahLunasHariIni = 0, pembayaranHariIni = 0;
@@ -796,10 +806,16 @@ async function fullRecalculateAdminSummary(adminUid) {
                         nasabahLunas++;
                         if (adaPembayaranPadaTanggal(p, today)) nasabahLunasHariIni++;
                     }
-                    // Aktif+isSudahLunas HARI INI → tetap masuk target (sama dengan case 'lunas')
+                    // Baru lunas hari ini? Cek dua cara:
+                    // 1. Pembayaran hari ini menyebabkan lunas (payment-based, paling umum)
+                    // 2. tanggalLunasCicilan >= today (admin-set, misal RISMAYANTI)
                     if (!isHariLibur) {
-                        const tglLunasCicilan = (p.tanggalLunasCicilan || '').trim();
-                        if (tglLunasCicilan === today) {
+                        const pembayaranHariIni = hitungPembayaranPadaTanggal(p, today);
+                        const lunasViaPembayaran = pembayaranHariIni > 0
+                            && (totalDibayar - pembayaranHariIni) < totalPelunasan;
+                        const tglLunasDate = parseDateIndo((p.tanggalLunasCicilan || '').trim());
+                        const lunasViaDate = tglLunasDate && todayDate && tglLunasDate >= todayDate;
+                        if (lunasViaPembayaran || lunasViaDate) {
                             const tglAcuan = (p.tanggalPencairan || '').trim()
                                 || (p.tanggalPengajuan || '').trim()
                                 || (p.tanggalDaftar || '').trim();
@@ -837,10 +853,11 @@ async function fullRecalculateAdminSummary(adminUid) {
                     nasabahLunas++;
                     if (adaPembayaranPadaTanggal(p, today)) nasabahLunasHariIni++;
                 }
-                // Lunas HARI INI → tetap masuk target hari ini (sama dengan buku fisik)
+                // Lunas HARI INI atau sesudahnya → tetap masuk target (konsisten dengan web)
+                // Web menggunakan: tglLunasDate >= targetDate
                 if (!isHariLibur) {
-                    const tglLunasCicilan = (p.tanggalLunasCicilan || '').trim();
-                    if (tglLunasCicilan === today) {
+                    const tglLunasDate = parseDateIndo((p.tanggalLunasCicilan || '').trim());
+                    if (tglLunasDate && todayDate && tglLunasDate >= todayDate) {
                         const tglAcuan = (p.tanggalPencairan || '').trim()
                             || (p.tanggalPengajuan || '').trim()
                             || (p.tanggalDaftar || '').trim();
