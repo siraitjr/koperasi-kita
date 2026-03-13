@@ -825,6 +825,18 @@ async function fullRecalculateAdminSummary(adminUid) {
                     nasabahLunas++;
                     if (adaPembayaranPadaTanggal(p, today)) nasabahLunasHariIni++;
                 }
+                // Lunas HARI INI → tetap masuk target hari ini (sama dengan buku fisik)
+                if (!isHariLibur) {
+                    const tglLunasCicilan = (p.tanggalLunasCicilan || '').trim();
+                    if (tglLunasCicilan === today) {
+                        const tglAcuan = (p.tanggalPencairan || '').trim()
+                            || (p.tanggalPengajuan || '').trim()
+                            || (p.tanggalDaftar || '').trim();
+                        if (!isOverThreeMonths(tglAcuan)) {
+                            targetHariIni += Math.floor((p.besarPinjaman || 0) * 3 / 100);
+                        }
+                    }
+                }
                 break;
                 
             case 'menunggu approval':
