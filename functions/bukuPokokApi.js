@@ -339,6 +339,7 @@ exports.getBukuPokok = functions
                         tanggalDaftar: p.tanggalDaftar || p.tanggalPengajuan || '',
                         tanggalPencairan: p.tanggalPencairan || '',
                         tanggalPengajuan: p.tanggalPengajuan || '',
+                        tanggalLunasCicilan: p.tanggalLunasCicilan || '',
                         adminUid: aUid,
                         adminName: adminNames[aUid],
                         cabangId: p.cabangId || '',

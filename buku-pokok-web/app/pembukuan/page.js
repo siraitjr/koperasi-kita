@@ -690,9 +690,12 @@ function getKategoriNasabah(nasabah) {
         const besar = n.besarPinjaman || 0;
         if (!besar) return;
 
-        // Tanggal mulai: tanggalPencairan jika ada, fallback ke tanggalDaftar
-        // (API sudah menyertakan tanggalPengajuan sebagai fallback di tanggalDaftar)
-        const tglAcuan = (n.tanggalPencairan || '').trim() || (n.tanggalDaftar || '').trim();
+        // Tanggal mulai: konsisten dengan Android (tanggalPencairan → tanggalPengajuan → tanggalDaftar)
+        // tanggalPengajuan sebelum tanggalDaftar agar 3-bulan filter tidak di-bypass oleh
+        // tanggalDaftar yang diperbarui (nasabah lama dengan pinjaman baru belum cair).
+        const tglAcuan = (n.tanggalPencairan || '').trim()
+          || (n.tanggalPengajuan || '').trim()
+          || (n.tanggalDaftar || '').trim();
         if (!tglAcuan) return;
 
         const acuanDate = parseDateStr(tglAcuan);
