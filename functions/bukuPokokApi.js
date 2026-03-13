@@ -291,6 +291,7 @@ exports.getBukuPokok = functions
             const hariKerja = generateHariKerja(60); // 60 hari kerja ke belakang
 
             // 6. Fetch pelanggan data per admin (1 read per admin node)
+            const todayStr = getTodayIndonesia();
             let nasabahList = [];
             const adminNames = {};
 
@@ -313,7 +314,10 @@ exports.getBukuPokok = functions
                 Object.entries(pelangganData).forEach(([pId, p]) => {
                     // Filter by status
                     const pStatus = (p.status || '').toLowerCase();
-                    if (statusFilter === 'aktif' && pStatus !== 'aktif' && pStatus !== 'disetujui') return;
+                    if (statusFilter === 'aktif' && pStatus !== 'aktif' && pStatus !== 'disetujui') {
+                        // Exception: nasabah lunas HARI INI tetap masuk (keluar besok)
+                        if (pStatus !== 'lunas' || (p.tanggalLunasCicilan || '').trim() !== todayStr) return;
+                    }
                     if (statusFilter === 'lunas' && pStatus !== 'lunas') return;
                     if (statusFilter === 'semua' && pStatus === 'menunggu approval' && pStatus === 'ditolak') return;
 
@@ -367,7 +371,6 @@ exports.getBukuPokok = functions
             // 6c. Apply Android-style filters (hanya untuk status 'aktif')
             // Konsisten dengan RingkasanDashboardScreen.kt
             if (statusFilter === 'aktif') {
-                const todayStr = getTodayIndonesia();
                 const nowWib = new Date(new Date().getTime() + 7 * 60 * 60 * 1000);
                 const threeMonthsAgo = new Date(nowWib.getUTCFullYear(), nowWib.getUTCMonth() - 3, 1);
 
@@ -395,8 +398,8 @@ exports.getBukuPokok = functions
                     const tglCair = (n.tanggalPencairan || '').trim();
                     if (tglCair === todayStr) return false;
 
-                    // Exclude sudah lunas cicilan
-                    if (n.totalPelunasan > 0 && n.sisaUtang <= 0) return false;
+                    // Exclude sudah lunas cicilan — kecuali lunas HARI INI (keluar besok)
+                    if (n.totalPelunasan > 0 && n.sisaUtang <= 0 && n.tanggalLunasCicilan !== todayStr) return false;
 
                     return true;
                 });
