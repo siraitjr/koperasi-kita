@@ -103,15 +103,15 @@ export default function KasirPage() {
             setSummaryData(d.summary);
             setJenisLabels(d.jenisLabels || {});
 
-            // Kasir unit langsung set cabang
-            if (d.user.role === 'kasir_unit' && d.cabangList.length === 1) {
+            // Kasir unit & pimpinan langsung set cabang (hanya 1 cabang)
+            if ((d.user.role === 'kasir_unit' || d.user.role === 'pimpinan') && d.cabangList.length === 1) {
               setSelectedCabang(d.cabangList[0]);
             }
             setScreen('home');
           }
         } catch (err) {
           console.error('Failed to get kasir summary:', err);
-          if (err.message && err.message.includes('Kasir')) {
+          if (err.message && (err.message.includes('Kasir') || err.message.includes('diizinkan'))) {
             setScreen('forbidden');
           } else {
             setScreen('home');
@@ -294,7 +294,7 @@ function ForbiddenScreen({ onLogout }) {
       <div style={{ textAlign: 'center', padding: 40 }}>
         <div style={{ fontSize: 48, marginBottom: 16 }}>🔒</div>
         <h2 style={{ fontSize: 20, fontWeight: 700, marginBottom: 8 }}>Akses Ditolak</h2>
-        <p style={{ color: 'var(--text-muted)', marginBottom: 24 }}>Akun Anda bukan akun Kasir. Halaman ini hanya untuk Kasir Unit dan Kasir Wilayah.</p>
+        <p style={{ color: 'var(--text-muted)', marginBottom: 24 }}>Akun Anda tidak memiliki akses ke halaman ini.</p>
         <button onClick={onLogout} className="login-btn" style={{ maxWidth: 200, margin: '0 auto' }}>Keluar</button>
       </div>
     </div>
@@ -305,12 +305,21 @@ function ForbiddenScreen({ onLogout }) {
 // ============================================================
 // HOME SCREEN (Dashboard Kasir)
 // ============================================================
+const ROLE_LABELS = {
+  kasir_unit: 'Kasir Unit',
+  kasir_wilayah: 'Kasir Wilayah',
+  pimpinan: 'Pimpinan',
+  koordinator: 'Koordinator',
+  pengawas: 'Pengawas',
+  sekretaris: 'Sekretaris',
+};
+
 function HomeScreen({ user, cabangList, summaryData, selectedCabang, onSelectCabang, onNavigate, onLogout }) {
   const isUnit = user?.role === 'kasir_unit';
   const cabId = selectedCabang?.id || (isUnit && cabangList[0]?.id);
   const summary = cabId ? (summaryData[cabId] || {}) : {};
 
-  const roleLabel = isUnit ? 'Kasir Unit' : 'Kasir Wilayah';
+  const roleLabel = ROLE_LABELS[user?.role] || user?.role || 'Kasir';
 
   const menus = [
     {

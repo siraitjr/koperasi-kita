@@ -11,6 +11,11 @@ import { auth } from '../../lib/firebase';
 import { getSummary, getBukuPokok } from '../../lib/api';
 import { formatRp, formatRpFull, formatRpShort } from '../../lib/format';
 
+// Role yang diarahkan ke halaman /kasir (bukan /pembukuan)
+const KASIR_PAGE_ROLES = ['kasir_unit', 'kasir_wilayah', 'pimpinan', 'koordinator', 'pengawas', 'sekretaris'];
+// Role yang hanya melihat satu cabang di /kasir
+const SINGLE_CABANG_ROLES = ['kasir_unit', 'pimpinan'];
+
 export default function Home() {
   const [user, setUser] = useState(null);
   const [userData, setUserData] = useState(null);
@@ -51,19 +56,19 @@ export default function Home() {
             setUserData(result.data.user);
             setCabangList(result.data.cabangList);
 
-            // Redirect kasir ke halaman /kasir (kecuali jika dari /kasir untuk lihat Buku Pokok)
+            // Redirect ke halaman /kasir (kecuali jika dari /kasir untuk lihat Buku Pokok)
             const userRole = result.data.user.role;
             const urlParams = new URLSearchParams(window.location.search);
             const fromKasir = urlParams.get('from') === 'kasir';
 
-            if ((userRole === 'kasir_unit' || userRole === 'kasir_wilayah') && !fromKasir) {
+            if (KASIR_PAGE_ROLES.includes(userRole) && !fromKasir) {
               window.location.href = '/kasir';
               return;
             }
 
-            // Kasir dari /kasir: langsung ke Buku Pokok, skip home
-            if (fromKasir && (userRole === 'kasir_unit' || userRole === 'kasir_wilayah')) {
-              if (userRole === 'kasir_unit' && result.data.cabangList.length === 1) {
+            // Dari /kasir: langsung ke Buku Pokok, skip home
+            if (fromKasir && KASIR_PAGE_ROLES.includes(userRole)) {
+              if (SINGLE_CABANG_ROLES.includes(userRole) && result.data.cabangList.length === 1) {
                 setSelectedCabang(result.data.cabangList[0]);
                 setScreen('bukuPokok');
               } else {
@@ -132,7 +137,7 @@ export default function Home() {
   };
 
   const handleBackToDashboard = () => {
-    if (userData?.role === 'kasir_unit') {
+    if (KASIR_PAGE_ROLES.includes(userData?.role)) {
       window.location.href = '/kasir';
       return;
     }
@@ -143,7 +148,7 @@ export default function Home() {
   };
 
   const handleBackToHome = () => {
-    if (userData?.role === 'kasir_unit' || userData?.role === 'kasir_wilayah') {
+    if (KASIR_PAGE_ROLES.includes(userData?.role)) {
       window.location.href = '/kasir';
       return;
     }

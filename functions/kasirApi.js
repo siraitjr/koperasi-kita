@@ -23,6 +23,11 @@ const db = admin.database();
 const JENIS_VALID = ['uang_kas', 'penggajian', 'transport', 'suntikan_dana', 'pinjaman_kas', 'sp'];
 const ARAH_VALID = ['masuk', 'keluar'];
 
+// Role yang boleh mengakses halaman kasir (read-only kecuali kasir_unit)
+const KASIR_VIEWER_ROLES = ['kasir_unit', 'kasir_wilayah', 'pimpinan', 'koordinator', 'pengawas', 'sekretaris'];
+// Role yang hanya melihat satu cabang (cabang mereka sendiri)
+const SINGLE_CABANG_ROLES = ['kasir_unit', 'pimpinan'];
+
 const JENIS_LABELS = {
     uang_kas: 'Uang Kas',
     penggajian: 'BU/Penggajian',
@@ -166,8 +171,8 @@ exports.getKasirSummary = functions
                 return;
             }
 
-            if (user.role !== 'kasir_unit' && user.role !== 'kasir_wilayah') {
-                res.status(403).json({ success: false, error: 'Akses hanya untuk Kasir' });
+            if (!KASIR_VIEWER_ROLES.includes(user.role)) {
+                res.status(403).json({ success: false, error: 'Akses tidak diizinkan' });
                 return;
             }
 
@@ -200,7 +205,7 @@ exports.getKasirSummary = functions
 
             // Filter berdasarkan role
             let visibleCabang = cabangList;
-            if (user.role === 'kasir_unit') {
+            if (SINGLE_CABANG_ROLES.includes(user.role)) {
                 visibleCabang = cabangList.filter(c => c.id === user.cabang);
             }
 
@@ -267,8 +272,8 @@ exports.getKasirEntries = functions
                 return;
             }
 
-            if (user.role !== 'kasir_unit' && user.role !== 'kasir_wilayah') {
-                res.status(403).json({ success: false, error: 'Akses hanya untuk Kasir' });
+            if (!KASIR_VIEWER_ROLES.includes(user.role)) {
+                res.status(403).json({ success: false, error: 'Akses tidak diizinkan' });
                 return;
             }
 
@@ -278,7 +283,7 @@ exports.getKasirEntries = functions
                 return;
             }
 
-            if (user.role === 'kasir_unit' && user.cabang !== cabangId) {
+            if (SINGLE_CABANG_ROLES.includes(user.role) && user.cabang !== cabangId) {
                 res.status(403).json({ success: false, error: 'Tidak memiliki akses ke cabang ini' });
                 return;
             }
