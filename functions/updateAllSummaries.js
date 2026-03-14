@@ -262,21 +262,24 @@ exports.triggerTargetRecalc = onCall(async (request) => {
                 const isStatusLunas = status === 'lunas';
                 if (!isStatusAktif && !isStatusLunas) return;
 
-                // 2. Exclude jika simpanan sudah dicairkan (sepenuhnya selesai)
-                const statusPencairanSimpanan = (p.statusPencairanSimpanan || '').trim();
-                if (statusPencairanSimpanan === 'Dicairkan') return;
-
-                // 3. Exclude nasabah > 3 bulan
+                // 2. Exclude nasabah > 3 bulan
                 const tglAcuan = (p.tanggalPencairan || '').trim()
                     || (p.tanggalPengajuan || '').trim()
                     || (p.tanggalDaftar || '').trim();
                 if (isOverThreeMonths(tglAcuan)) return;
 
-                // 4. Exclude nasabah cair hari ini (hanya untuk yang masih aktif, belum lunas)
+                // 3. Cek apakah sudah lunas cicilan
                 const totalDibayar = calculateTotalDibayar(p);
                 const totalPelunasan = p.totalPelunasan || 0;
                 const isSudahLunas = totalPelunasan > 0 && totalDibayar >= totalPelunasan;
-                if (!isSudahLunas) {
+
+                if (isSudahLunas) {
+                    // MENUNGGU_PENCAIRAN: masuk target HANYA jika lunas cicilan HARI INI
+                    // Besok tidak dihitung lagi (konsisten buku fisik)
+                    const tglLunasCicilan = (p.tanggalLunasCicilan || '').trim();
+                    if (tglLunasCicilan !== today) return;
+                } else {
+                    // Nasabah aktif biasa: exclude yang cair hari ini
                     const tglCair = (p.tanggalPencairan || '').trim();
                     if (tglCair === today) return;
                 }

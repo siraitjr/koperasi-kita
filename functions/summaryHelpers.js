@@ -542,8 +542,8 @@ function calculateDelta(before, after) {
                 delta.lunasChange -= 1;
             } else if (beforeCategory === 'menungguPencairan') {
                 delta.nasabahMenungguPencairanChange -= 1;
-                // Keluar dari menungguPencairan → keluar dari target
-                delta.targetHariIniChange -= calculateTargetHariIni(before);
+                // Target tidak diubah di sini — triggerTargetRecalc sudah mengecualikan
+                // menungguPencairan dari hari berikutnya (tanggalLunasCicilan !== today)
             } else if (beforeCategory === 'menunggu') {
                 delta.menungguChange -= 1;
             }
@@ -807,11 +807,15 @@ async function fullRecalculateAdminSummary(adminUid) {
                     if (statusPencairanSimpanan === 'Dicairkan') {
                         nasabahLunas++;
                         if (adaPembayaranPadaTanggal(p, today)) nasabahLunasHariIni++;
-                        // Simpanan sudah dikembalikan → tidak di target
-                    } else {
-                        // MENUNGGU_PENCAIRAN: cicilan selesai tapi simpanan belum dikembalikan
-                        // Admin masih mengunjungi untuk cairkan simpanan → masih di target (konsisten buku fisik)
-                        if (!isHariLibur) {
+                    }
+                    // Masuk target HANYA jika lunas cicilan HARI INI
+                    // (besok sudah tidak dihitung, konsisten buku fisik)
+                    if (!isHariLibur) {
+                        const tglLunasCicilan = (p.tanggalLunasCicilan || '').trim();
+                        const pembayaranHariIni = hitungPembayaranPadaTanggal(p, today);
+                        const lunasViaPembayaran = pembayaranHariIni > 0
+                            && (totalDibayar - pembayaranHariIni) < totalPelunasan;
+                        if (tglLunasCicilan === today || lunasViaPembayaran) {
                             const tglAcuan = (p.tanggalPencairan || '').trim()
                                 || (p.tanggalPengajuan || '').trim()
                                 || (p.tanggalDaftar || '').trim();
@@ -848,11 +852,14 @@ async function fullRecalculateAdminSummary(adminUid) {
                 if (statusPencairanSimpanan === 'Dicairkan') {
                     nasabahLunas++;
                     if (adaPembayaranPadaTanggal(p, today)) nasabahLunasHariIni++;
-                    // Simpanan sudah dikembalikan → tidak di target
-                } else {
-                    // MENUNGGU_PENCAIRAN (raw status='lunas' tapi simpanan belum dicairkan)
-                    // Masih masuk target (konsisten buku fisik)
-                    if (!isHariLibur) {
+                }
+                // Masuk target HANYA jika lunas cicilan HARI INI
+                if (!isHariLibur) {
+                    const tglLunasCicilan = (p.tanggalLunasCicilan || '').trim();
+                    const pembayaranHariIni = hitungPembayaranPadaTanggal(p, today);
+                    const lunasViaPembayaran = pembayaranHariIni > 0
+                        && (totalDibayar - pembayaranHariIni) < totalPelunasan;
+                    if (tglLunasCicilan === today || lunasViaPembayaran) {
                         const tglAcuan = (p.tanggalPencairan || '').trim()
                             || (p.tanggalPengajuan || '').trim()
                             || (p.tanggalDaftar || '').trim();
