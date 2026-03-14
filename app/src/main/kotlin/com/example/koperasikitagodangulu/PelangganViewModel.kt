@@ -91,6 +91,8 @@ import com.example.koperasikitagodangulu.models.DeletionRequest
 import com.example.koperasikitagodangulu.models.DeletionRequestStatus
 import com.example.koperasikitagodangulu.models.PaymentDeletionRequest
 import com.example.koperasikitagodangulu.models.PaymentDeletionRequestStatus
+import com.example.koperasikitagodangulu.models.PencairanSimpananRequest
+import com.example.koperasikitagodangulu.models.PencairanSimpananRequestStatus
 import com.google.firebase.database.DatabaseReference
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withTimeoutOrNull
@@ -608,6 +610,15 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
 
     private val _unreadTenorChangeCount = MutableStateFlow(0)
     val unreadTenorChangeCount: StateFlow<Int> = _unreadTenorChangeCount
+
+    // =========================================================================
+    // PENCAIRAN SIMPANAN REQUESTS
+    // =========================================================================
+    private val _pendingPencairanSimpananRequests = MutableStateFlow<List<PencairanSimpananRequest>>(emptyList())
+    val pendingPencairanSimpananRequests: StateFlow<List<PencairanSimpananRequest>> = _pendingPencairanSimpananRequests
+
+    private val _unreadPencairanSimpananCount = MutableStateFlow(0)
+    val unreadPencairanSimpananCount: StateFlow<Int> = _unreadPencairanSimpananCount
 
     // Biaya Awal untuk Pengawas/Koordinator
     private val _pengawasBiayaAwal = MutableStateFlow<List<BiayaAwalItem>>(emptyList())
@@ -12678,6 +12689,281 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
             } catch (e: Exception) {
                 Log.e("Pencairan", "❌ Error: ${e.message}")
                 onFailure?.invoke(e)
+            }
+        }
+    }
+
+    // =========================================================================
+    // PENCAIRAN SIMPANAN REQUEST FUNCTIONS
+    // =========================================================================
+
+    /**
+     * Admin lapangan membuat request pencairan simpanan (parsial atau penuh).
+     * Request dikirim ke Pengawas untuk disetujui.
+     * Path Firebase: pencairan_simpanan_requests/{requestId}
+     */
+    fun createPencairanSimpananRequest(
+        pelanggan: Pelanggan,
+        jumlahDicairkan: Int,
+        onSuccess: () -> Unit,
+        onFailure: (Exception) -> Unit
+    ) {
+        viewModelScope.launch {
+            try {
+                val currentUser = Firebase.auth.currentUser
+                if (currentUser == null) {
+                    onFailure(Exception("User belum login"))
+                    return@launch
+                }
+
+                if (jumlahDicairkan <= 0) {
+                    onFailure(Exception("Jumlah pencairan harus lebih dari 0"))
+                    return@launch
+                }
+                if (jumlahDicairkan > pelanggan.simpanan) {
+                    onFailure(Exception("Jumlah pencairan tidak boleh melebihi total simpanan"))
+                    return@launch
+                }
+
+                val requestedByName = database.child("metadata/admins/${currentUser.uid}/name")
+                    .get().await().getValue(String::class.java)
+                    ?: currentUser.email ?: "Admin"
+
+                val cabangId = _currentUserCabang.value ?: ""
+
+                val requestId = database.child("pencairan_simpanan_requests").push().key
+                    ?: throw Exception("Gagal membuat ID request")
+
+                val request = PencairanSimpananRequest(
+                    id = requestId,
+                    pelangganId = pelanggan.id,
+                    pelangganNama = pelanggan.namaKtp.ifBlank { pelanggan.namaPanggilan },
+                    pelangganNik = pelanggan.nik,
+                    pelangganWilayah = pelanggan.wilayah,
+                    pinjamanKe = pelanggan.pinjamanKe,
+                    besarPinjaman = pelanggan.besarPinjaman,
+                    totalSimpanan = pelanggan.simpanan,
+                    jumlahDicairkan = jumlahDicairkan,
+                    adminUid = pelanggan.adminUid.ifBlank { currentUser.uid },
+                    requestedByUid = currentUser.uid,
+                    requestedByName = requestedByName,
+                    requestedByEmail = currentUser.email ?: "",
+                    cabangId = cabangId,
+                    status = PencairanSimpananRequestStatus.PENDING,
+                    createdAt = System.currentTimeMillis(),
+                    read = false
+                )
+
+                database.child("pencairan_simpanan_requests").child(requestId)
+                    .setValue(request)
+                    .await()
+
+                Log.d("PencairanSimpanan", "✅ Request pencairan dibuat: ${pelanggan.namaKtp}, jumlah=$jumlahDicairkan")
+                onSuccess()
+
+            } catch (e: Exception) {
+                Log.e("PencairanSimpanan", "❌ Gagal membuat request: ${e.message}")
+                onFailure(e)
+            }
+        }
+    }
+
+    /**
+     * Load semua pending pencairan simpanan requests (dipanggil oleh Pengawas).
+     * Path Firebase: pencairan_simpanan_requests (filter status=pending, cabangId=current)
+     */
+    fun loadPendingPencairanSimpananRequests() {
+        viewModelScope.launch {
+            try {
+                val cabangId = _currentUserCabang.value
+                Log.d("PencairanSimpanan", "🔄 Loading pencairan simpanan requests, cabang=$cabangId")
+
+                val snapshot = database.child("pencairan_simpanan_requests")
+                    .orderByChild("status")
+                    .equalTo(PencairanSimpananRequestStatus.PENDING)
+                    .get()
+                    .await()
+
+                val requests = mutableListOf<PencairanSimpananRequest>()
+                var unreadCount = 0
+
+                for (child in snapshot.children) {
+                    try {
+                        val req = child.getValue(PencairanSimpananRequest::class.java)
+                        if (req != null) {
+                            // Filter by cabang jika ada
+                            if (cabangId.isNullOrBlank() || req.cabangId == cabangId) {
+                                requests.add(req)
+                                if (!req.read) unreadCount++
+                            }
+                        }
+                    } catch (e: Exception) {
+                        Log.e("PencairanSimpanan", "Error parsing request: ${e.message}")
+                    }
+                }
+
+                val sortedList = requests.sortedByDescending { it.createdAt }
+                _pendingPencairanSimpananRequests.value = sortedList
+                _unreadPencairanSimpananCount.value = unreadCount
+
+                Log.d("PencairanSimpanan", "✅ Loaded ${sortedList.size} requests, $unreadCount unread")
+
+            } catch (e: Exception) {
+                Log.e("PencairanSimpanan", "❌ Error loading: ${e.message}")
+            }
+        }
+    }
+
+    /**
+     * Pengawas menyetujui request pencairan simpanan.
+     * - Mengurangi simpanan nasabah sebesar jumlahDicairkan
+     * - Jika sisa simpanan <= 0: set statusPencairanSimpanan = "Dicairkan" (lunas sepenuhnya)
+     * - Hapus request dari Firebase
+     */
+    fun approvePencairanSimpananRequest(
+        requestId: String,
+        catatanPengawas: String = "",
+        onSuccess: () -> Unit,
+        onFailure: (Exception) -> Unit
+    ) {
+        viewModelScope.launch {
+            try {
+                val currentUser = Firebase.auth.currentUser
+                if (currentUser == null) {
+                    onFailure(Exception("User belum login"))
+                    return@launch
+                }
+
+                // Ambil request
+                val reqSnap = database.child("pencairan_simpanan_requests/$requestId").get().await()
+                val request = reqSnap.getValue(PencairanSimpananRequest::class.java)
+                    ?: run { onFailure(Exception("Request tidak ditemukan")); return@launch }
+
+                val reviewerName = database.child("metadata/admins/${currentUser.uid}/name")
+                    .get().await().getValue(String::class.java)
+                    ?: currentUser.email ?: "Pengawas"
+
+                val adminUid = request.adminUid.ifBlank { request.requestedByUid }
+                val pelangganId = request.pelangganId
+
+                // Ambil data simpanan terkini dari Firebase (bukan cache)
+                val simpananSnap = database.child("pelanggan/$adminUid/$pelangganId/simpanan")
+                    .get().await()
+                val simpananSaatIni = simpananSnap.getValue(Int::class.java) ?: request.totalSimpanan
+
+                val sisaSimpanan = maxOf(simpananSaatIni - request.jumlahDicairkan, 0)
+                val dateFormat = SimpleDateFormat("dd MMM yyyy", Locale("in", "ID"))
+                val tanggalSekarang = dateFormat.format(Date())
+
+                // Update pelanggan
+                val pelangganUpdates = mutableMapOf<String, Any>(
+                    "simpanan" to sisaSimpanan,
+                    "lastUpdated" to SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
+                )
+
+                if (sisaSimpanan <= 0) {
+                    // Pencairan penuh → status Dicairkan sama seperti cairkanSimpanan()
+                    pelangganUpdates["statusPencairanSimpanan"] = "Dicairkan"
+                    pelangganUpdates["tanggalPencairanSimpanan"] = tanggalSekarang
+                    pelangganUpdates["dicairkanOleh"] = reviewerName
+                    pelangganUpdates["status"] = "Lunas"
+                    pelangganUpdates["statusKhusus"] = ""
+                    pelangganUpdates["catatanStatusKhusus"] = ""
+                    pelangganUpdates["tanggalStatusKhusus"] = ""
+                    pelangganUpdates["diberiTandaOleh"] = ""
+                }
+
+                database.child("pelanggan/$adminUid/$pelangganId")
+                    .updateChildren(pelangganUpdates)
+                    .await()
+
+                // Update local list
+                val idx = daftarPelanggan.indexOfFirst { it.id == pelangganId }
+                if (idx != -1) {
+                    daftarPelanggan[idx] = daftarPelanggan[idx].copy(
+                        simpanan = sisaSimpanan,
+                        statusPencairanSimpanan = if (sisaSimpanan <= 0) "Dicairkan" else daftarPelanggan[idx].statusPencairanSimpanan,
+                        tanggalPencairanSimpanan = if (sisaSimpanan <= 0) tanggalSekarang else daftarPelanggan[idx].tanggalPencairanSimpanan,
+                        dicairkanOleh = if (sisaSimpanan <= 0) reviewerName else daftarPelanggan[idx].dicairkanOleh,
+                        status = if (sisaSimpanan <= 0) "Lunas" else daftarPelanggan[idx].status,
+                        statusKhusus = if (sisaSimpanan <= 0) "" else daftarPelanggan[idx].statusKhusus
+                    )
+                }
+
+                // Jika pencairan penuh, hapus dari pelanggan_status_khusus
+                if (sisaSimpanan <= 0) {
+                    val cabangId = request.cabangId.ifBlank { _currentUserCabang.value ?: "" }
+                    if (cabangId.isNotBlank()) {
+                        try {
+                            database.child("pelanggan_status_khusus/$cabangId/$pelangganId").removeValue().await()
+                        } catch (e: Exception) {
+                            Log.w("PencairanSimpanan", "Gagal hapus dari status_khusus: ${e.message}")
+                        }
+                    }
+                }
+
+                // Hapus request (selesai diproses)
+                database.child("pencairan_simpanan_requests/$requestId").removeValue().await()
+
+                // Update state lokal
+                _pendingPencairanSimpananRequests.value = _pendingPencairanSimpananRequests.value
+                    .filter { it.id != requestId }
+
+                val tipeLabel = if (sisaSimpanan <= 0) "penuh" else "parsial (sisa Rp ${formatRupiah(sisaSimpanan)})"
+                Log.d("PencairanSimpanan", "✅ Request disetujui, pencairan $tipeLabel untuk ${request.pelangganNama}")
+                onSuccess()
+
+            } catch (e: Exception) {
+                Log.e("PencairanSimpanan", "❌ Error approving: ${e.message}")
+                onFailure(e)
+            }
+        }
+    }
+
+    /**
+     * Pengawas menolak request pencairan simpanan.
+     * Simpanan nasabah tidak berubah, request dihapus.
+     */
+    fun rejectPencairanSimpananRequest(
+        requestId: String,
+        catatanPengawas: String,
+        onSuccess: () -> Unit,
+        onFailure: (Exception) -> Unit
+    ) {
+        viewModelScope.launch {
+            try {
+                val currentUser = Firebase.auth.currentUser
+                    ?: run { onFailure(Exception("User belum login")); return@launch }
+
+                // Hapus request (penolakan tidak perlu menyimpan arsip seperti approval)
+                database.child("pencairan_simpanan_requests/$requestId").removeValue().await()
+
+                // Update state lokal
+                _pendingPencairanSimpananRequests.value = _pendingPencairanSimpananRequests.value
+                    .filter { it.id != requestId }
+
+                Log.d("PencairanSimpanan", "✅ Request pencairan ditolak")
+                onSuccess()
+
+            } catch (e: Exception) {
+                Log.e("PencairanSimpanan", "❌ Error rejecting: ${e.message}")
+                onFailure(e)
+            }
+        }
+    }
+
+    /** Mark all pencairan simpanan requests as read */
+    fun markAllPencairanSimpananAsRead() {
+        viewModelScope.launch {
+            try {
+                val unread = _pendingPencairanSimpananRequests.value.filter { !it.read }
+                for (req in unread) {
+                    database.child("pencairan_simpanan_requests/${req.id}/read")
+                        .setValue(true).await()
+                }
+                _unreadPencairanSimpananCount.value = 0
+            } catch (e: Exception) {
+                Log.e("PencairanSimpanan", "Error marking as read: ${e.message}")
             }
         }
     }

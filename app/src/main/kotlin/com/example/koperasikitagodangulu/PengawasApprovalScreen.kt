@@ -44,6 +44,8 @@ import com.example.koperasikitagodangulu.models.ApproverRole
 import com.example.koperasikitagodangulu.models.DualApprovalThreshold
 import com.example.koperasikitagodangulu.models.DeletionRequest
 import com.example.koperasikitagodangulu.models.DeletionRequestStatus
+import com.example.koperasikitagodangulu.models.PencairanSimpananRequest
+import com.example.koperasikitagodangulu.models.PencairanSimpananRequestStatus
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import kotlinx.coroutines.delay
@@ -87,6 +89,10 @@ fun PengawasApprovalScreen(
     val pengawasSerahTerimaNotifications by viewModel.pengawasSerahTerimaNotifications.collectAsState()
     val unreadPengawasSerahTerimaCount by viewModel.unreadPengawasSerahTerimaCount.collectAsState()
 
+    // Tab Simpanan: pencairan simpanan requests
+    val pencairanSimpananRequests by viewModel.pendingPencairanSimpananRequests.collectAsState()
+    val unreadPencairanSimpananCount by viewModel.unreadPencairanSimpananCount.collectAsState()
+
     // ✅ TAMBAHAN: Tab state
     var selectedTabIndex by remember { mutableStateOf(initialTab) }  // ✅ Gunakan initialTab
 
@@ -101,6 +107,7 @@ fun PengawasApprovalScreen(
         viewModel.markAllPengawasPengajuanNotificationsAsRead()
 
         viewModel.loadSerahTerimaNotificationsForPengawas()
+        viewModel.loadPendingPencairanSimpananRequests()
     }
 
     // Handle operation result
@@ -185,6 +192,30 @@ fun PengawasApprovalScreen(
                         }
                     }
                 )
+
+                // Tab Simpanan
+                Tab(
+                    selected = selectedTabIndex == 2,
+                    onClick = {
+                        selectedTabIndex = 2
+                        viewModel.markAllPencairanSimpananAsRead()
+                        viewModel.loadPendingPencairanSimpananRequests()
+                    },
+                    text = { Text("Simpanan") },
+                    icon = {
+                        Box {
+                            Icon(Icons.Default.Savings, contentDescription = null)
+                            if (unreadPencairanSimpananCount > 0) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(8.dp)
+                                        .background(Color.Red, CircleShape)
+                                        .align(Alignment.TopEnd)
+                                )
+                            }
+                        }
+                    }
+                )
             }
 
             // ✅ KONTEN BERDASARKAN TAB
@@ -228,10 +259,47 @@ fun PengawasApprovalScreen(
                         onMarkComplete = { notification ->
                             viewModel.deletePengawasSerahTerimaNotification(
                                 notificationId = notification.id,
+                                onSuccess = { }
+                            )
+                        }
+                    )
+                }
+                2 -> {
+                    // TAB SIMPANAN — Pencairan Simpanan Requests
+                    PengawasSimpananTabContent(
+                        requests = pencairanSimpananRequests,
+                        isDark = isDark,
+                        onApprove = { request ->
+                            isLoading = true
+                            viewModel.approvePencairanSimpananRequest(
+                                requestId = request.id,
                                 onSuccess = {
-                                    // Optional: tampilkan toast
+                                    isLoading = false
+                                    operationMessage = "Pencairan simpanan disetujui"
+                                },
+                                onFailure = { e ->
+                                    isLoading = false
+                                    operationMessage = "Gagal: ${e.message}"
                                 }
                             )
+                        },
+                        onReject = { request, alasan ->
+                            isLoading = true
+                            viewModel.rejectPencairanSimpananRequest(
+                                requestId = request.id,
+                                catatanPengawas = alasan,
+                                onSuccess = {
+                                    isLoading = false
+                                    operationMessage = "Pencairan simpanan ditolak"
+                                },
+                                onFailure = { e ->
+                                    isLoading = false
+                                    operationMessage = "Gagal: ${e.message}"
+                                }
+                            )
+                        },
+                        onRefresh = {
+                            viewModel.loadPendingPencairanSimpananRequests()
                         }
                     )
                 }
@@ -1993,5 +2061,381 @@ private fun DetailRowDeletion(label: String, value: String) {
             Text(label, color = Color.Gray, fontSize = 13.sp)
             Text(value, fontSize = 13.sp, fontWeight = FontWeight.Medium)
         }
+    }
+}
+
+// =============================================================================
+// TAB SIMPANAN — Pencairan Simpanan Requests
+// =============================================================================
+
+@Composable
+private fun PengawasSimpananTabContent(
+    requests: List<PencairanSimpananRequest>,
+    isDark: Boolean,
+    onApprove: (PencairanSimpananRequest) -> Unit,
+    onReject: (PencairanSimpananRequest, String) -> Unit,
+    onRefresh: () -> Unit
+) {
+    val cardColor = PengawasColors.getCard(isDark)
+    val txtColor = if (isDark) Color.White else Color(0xFF1E293B)
+    val subtitleColor = if (isDark) Color(0xFF94A3B8) else Color(0xFF64748B)
+
+    if (requests.isEmpty()) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(32.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Icon(
+                Icons.Default.Savings,
+                contentDescription = null,
+                tint = subtitleColor,
+                modifier = Modifier.size(64.dp)
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(
+                text = "Tidak Ada Permintaan Pencairan",
+                fontWeight = FontWeight.Bold,
+                fontSize = 18.sp,
+                color = txtColor,
+                textAlign = TextAlign.Center
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = "Belum ada permintaan pencairan simpanan dari admin lapangan",
+                fontSize = 14.sp,
+                color = subtitleColor,
+                textAlign = TextAlign.Center
+            )
+            Spacer(modifier = Modifier.height(24.dp))
+            OutlinedButton(onClick = onRefresh) {
+                Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text("Refresh")
+            }
+        }
+        return
+    }
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "${requests.size} permintaan menunggu",
+                    fontSize = 13.sp,
+                    color = subtitleColor
+                )
+                TextButton(onClick = onRefresh) {
+                    Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Refresh", fontSize = 13.sp)
+                }
+            }
+        }
+        items(requests, key = { it.id }) { request ->
+            PencairanSimpananRequestCard(
+                request = request,
+                isDark = isDark,
+                cardColor = cardColor,
+                txtColor = txtColor,
+                subtitleColor = subtitleColor,
+                onApprove = { onApprove(request) },
+                onReject = { alasan -> onReject(request, alasan) }
+            )
+        }
+    }
+}
+
+@Composable
+private fun PencairanSimpananRequestCard(
+    request: PencairanSimpananRequest,
+    isDark: Boolean,
+    cardColor: Color,
+    txtColor: Color,
+    subtitleColor: Color,
+    onApprove: () -> Unit,
+    onReject: (String) -> Unit
+) {
+    val successColor = Color(0xFF10B981)
+    val warningColor = Color(0xFFF59E0B)
+    val dangerColor = Color(0xFFEF4444)
+
+    val isParsial = request.jumlahDicairkan < request.totalSimpanan
+    val sisaSimpanan = maxOf(request.totalSimpanan - request.jumlahDicairkan, 0)
+
+    var showApproveDialog by remember { mutableStateOf(false) }
+    var showRejectDialog by remember { mutableStateOf(false) }
+    var rejectReason by remember { mutableStateOf("") }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = cardColor),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            // Header: nama nasabah + badge jenis pencairan
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = request.pelangganNama,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 16.sp,
+                        color = txtColor,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = "Diajukan oleh: ${request.requestedByName}",
+                        fontSize = 12.sp,
+                        color = subtitleColor
+                    )
+                }
+                Surface(
+                    shape = RoundedCornerShape(20.dp),
+                    color = if (isParsial) warningColor.copy(alpha = 0.15f) else successColor.copy(alpha = 0.15f)
+                ) {
+                    Text(
+                        text = if (isParsial) "Parsial" else "Penuh",
+                        color = if (isParsial) warningColor else successColor,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                    )
+                }
+            }
+
+            HorizontalDivider(color = if (isDark) Color(0xFF334155) else Color(0xFFE2E8F0))
+
+            // Info grid: 2 kolom
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    SimpananInfoRow("Pinjaman Ke", "${request.pinjamanKe}", subtitleColor, txtColor)
+                    SimpananInfoRow("Besar Pinjaman", "Rp ${formatRupiah(request.besarPinjaman)}", subtitleColor, txtColor)
+                    SimpananInfoRow("Wilayah", request.pelangganWilayah.ifBlank { "-" }, subtitleColor, txtColor)
+                }
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    SimpananInfoRow("Total Simpanan", "Rp ${formatRupiah(request.totalSimpanan)}", subtitleColor, successColor)
+                    SimpananInfoRow(
+                        "Dicairkan",
+                        "Rp ${formatRupiah(request.jumlahDicairkan)}",
+                        subtitleColor,
+                        if (isParsial) warningColor else successColor
+                    )
+                    if (isParsial) {
+                        SimpananInfoRow("Sisa Simpanan", "Rp ${formatRupiah(sisaSimpanan)}", subtitleColor, txtColor)
+                    }
+                }
+            }
+
+            // Tombol Tolak dan Setujui
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedButton(
+                    onClick = { showRejectDialog = true },
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(10.dp),
+                    border = BorderStroke(1.dp, dangerColor),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = dangerColor)
+                ) {
+                    Icon(Icons.Default.Close, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Tolak", fontWeight = FontWeight.SemiBold)
+                }
+                Button(
+                    onClick = { showApproveDialog = true },
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = successColor)
+                ) {
+                    Icon(Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Setujui", fontWeight = FontWeight.SemiBold)
+                }
+            }
+        }
+    }
+
+    // Dialog Konfirmasi Setujui
+    if (showApproveDialog) {
+        AlertDialog(
+            onDismissRequest = { showApproveDialog = false },
+            shape = RoundedCornerShape(20.dp),
+            icon = {
+                Box(
+                    modifier = Modifier
+                        .size(56.dp)
+                        .background(successColor.copy(alpha = 0.15f), CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Default.CheckCircle, contentDescription = null, tint = successColor, modifier = Modifier.size(32.dp))
+                }
+            },
+            title = {
+                Text(
+                    text = "Setujui Pencairan Simpanan",
+                    fontWeight = FontWeight.Bold,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(containerColor = successColor.copy(alpha = 0.08f))
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text(request.pelangganNama, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text("Total Simpanan", fontSize = 13.sp, color = Color.Gray)
+                                Text("Rp ${formatRupiah(request.totalSimpanan)}", fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                            }
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text("Dicairkan", fontSize = 13.sp, color = Color.Gray)
+                                Text(
+                                    "Rp ${formatRupiah(request.jumlahDicairkan)}",
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = successColor
+                                )
+                            }
+                            if (isParsial) {
+                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                    Text("Sisa Simpanan", fontSize = 13.sp, color = Color.Gray)
+                                    Text("Rp ${formatRupiah(sisaSimpanan)}", fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                                }
+                            }
+                        }
+                    }
+                    if (!isParsial) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Icon(Icons.Default.Info, contentDescription = null, tint = warningColor, modifier = Modifier.size(14.dp))
+                            Text(
+                                text = "Simpanan akan ditandai 'Dicairkan' sepenuhnya",
+                                fontSize = 11.sp,
+                                color = warningColor
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = { showApproveDialog = false; onApprove() },
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = successColor)
+                ) { Text("Ya, Setujui") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showApproveDialog = false }) { Text("Batal") }
+            }
+        )
+    }
+
+    // Dialog Tolak
+    if (showRejectDialog) {
+        AlertDialog(
+            onDismissRequest = { showRejectDialog = false },
+            shape = RoundedCornerShape(20.dp),
+            icon = {
+                Box(
+                    modifier = Modifier
+                        .size(56.dp)
+                        .background(dangerColor.copy(alpha = 0.15f), CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Default.Close, contentDescription = null, tint = dangerColor, modifier = Modifier.size(32.dp))
+                }
+            },
+            title = {
+                Text(
+                    text = "Tolak Pencairan Simpanan",
+                    fontWeight = FontWeight.Bold,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(containerColor = dangerColor.copy(alpha = 0.08f))
+                    ) {
+                        Column(modifier = Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(request.pelangganNama, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                            Text(
+                                "Pengajuan: Rp ${formatRupiah(request.jumlahDicairkan)} dari Rp ${formatRupiah(request.totalSimpanan)}",
+                                fontSize = 12.sp,
+                                color = Color.Gray
+                            )
+                        }
+                    }
+                    OutlinedTextField(
+                        value = rejectReason,
+                        onValueChange = { rejectReason = it },
+                        label = { Text("Alasan Penolakan") },
+                        placeholder = { Text("Masukkan alasan penolakan...") },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp),
+                        minLines = 2,
+                        maxLines = 4
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = { showRejectDialog = false; onReject(rejectReason); rejectReason = "" },
+                    enabled = rejectReason.isNotBlank(),
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = dangerColor)
+                ) { Text("Tolak") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showRejectDialog = false; rejectReason = "" }) { Text("Batal") }
+            }
+        )
+    }
+}
+
+@Composable
+private fun SimpananInfoRow(label: String, value: String, labelColor: Color, valueColor: Color) {
+    Column {
+        Text(text = label, fontSize = 11.sp, color = labelColor)
+        Text(text = value, fontSize = 13.sp, fontWeight = FontWeight.Medium, color = valueColor, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }

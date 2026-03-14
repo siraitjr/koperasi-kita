@@ -558,3 +558,79 @@ data class PaymentDeletionRequest(
         else -> status
     }
 }
+
+// =========================================================================
+// PENCAIRAN SIMPANAN REQUEST - Pengajuan Pencairan Simpanan (Parsial/Penuh)
+// =========================================================================
+//
+// ALUR:
+// 1. Admin lapangan klik "Cairkan Simpanan" → input jumlah yang ingin dicairkan
+// 2. Request dibuat dan disimpan di pencairan_simpanan_requests/{requestId}
+// 3. Pengawas melihat di tab "Simpanan" pada PengawasApprovalScreen
+// 4. Pengawas review dan approve/reject
+// 5. Jika approve: simpanan dikurangi jumlahDicairkan
+//    - Jika sisa simpanan <= 0: statusPencairanSimpanan = "Dicairkan"
+//    - Jika sisa simpanan > 0: simpanan berkurang, nasabah masih tampil di daftar
+// 6. Jika reject: request dihapus, simpanan tidak berubah
+// =========================================================================
+object PencairanSimpananRequestStatus {
+    const val PENDING = "pending"
+    const val APPROVED = "approved"
+    const val REJECTED = "rejected"
+}
+
+data class PencairanSimpananRequest(
+    val id: String = "",
+
+    // Informasi Nasabah
+    val pelangganId: String = "",
+    val pelangganNama: String = "",
+    val pelangganNik: String = "",
+    val pelangganWilayah: String = "",
+    val pinjamanKe: Int = 1,
+    val besarPinjaman: Int = 0,
+
+    // Informasi Simpanan
+    val totalSimpanan: Int = 0,        // Total simpanan sebelum pencairan
+    val jumlahDicairkan: Int = 0,      // Jumlah yang diminta dicairkan
+
+    // Informasi Admin yang mengajukan
+    val adminUid: String = "",
+    val requestedByUid: String = "",
+    val requestedByName: String = "",
+    val requestedByEmail: String = "",
+    val cabangId: String = "",
+
+    // Status request
+    val status: String = PencairanSimpananRequestStatus.PENDING,
+
+    // Informasi approval/rejection oleh Pengawas
+    val reviewedByUid: String = "",
+    val reviewedByName: String = "",
+    val reviewedAt: Long = 0L,
+    val catatanPengawas: String = "",
+
+    // Timestamp
+    val createdAt: Long = 0L,
+    val read: Boolean = false
+) {
+    constructor() : this(
+        "", "", "", "", "", 1, 0, 0, 0,
+        "", "", "", "", "", PencairanSimpananRequestStatus.PENDING,
+        "", "", 0L, "", 0L, false
+    )
+
+    fun isPending(): Boolean = status == PencairanSimpananRequestStatus.PENDING
+    fun isApproved(): Boolean = status == PencairanSimpananRequestStatus.APPROVED
+    fun isRejected(): Boolean = status == PencairanSimpananRequestStatus.REJECTED
+
+    /** Pencairan parsial jika jumlah < total simpanan */
+    fun isParsial(): Boolean = jumlahDicairkan < totalSimpanan
+
+    fun getDisplayStatus(): String = when (status) {
+        PencairanSimpananRequestStatus.PENDING -> "Menunggu Persetujuan"
+        PencairanSimpananRequestStatus.APPROVED -> "Disetujui"
+        PencairanSimpananRequestStatus.REJECTED -> "Ditolak"
+        else -> status
+    }
+}

@@ -30,6 +30,9 @@ import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import com.example.koperasikitagodangulu.utils.formatRupiah
 import android.widget.Toast
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
+import com.example.koperasikitagodangulu.utils.formatRupiahInput
 import com.google.accompanist.systemuicontroller.rememberSystemUiController
 
 // Modern Color Palette untuk Pencairan
@@ -175,21 +178,26 @@ fun DaftarMenungguPencairanScreen(
             }
         }
 
-        // Modern Dialog Konfirmasi Pencairan
+        // Dialog Pencairan Simpanan (input jumlah → kirim ke Pengawas)
         if (showConfirmDialog && selectedPelanggan != null) {
-            ModernConfirmDialog(
+            CairkanSimpananRequestDialog(
                 pelanggan = selectedPelanggan!!,
                 viewModel = viewModel,
                 isProcessing = isProcessing,
-                onConfirm = {
+                onSubmit = { jumlahDicairkan ->
                     isProcessing = true
-                    viewModel.cairkanSimpanan(
-                        pelangganId = selectedPelanggan!!.id,
+                    viewModel.createPencairanSimpananRequest(
+                        pelanggan = selectedPelanggan!!,
+                        jumlahDicairkan = jumlahDicairkan,
                         onSuccess = {
                             isProcessing = false
                             showConfirmDialog = false
                             selectedPelanggan = null
-                            Toast.makeText(context, "Simpanan berhasil dicairkan", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(
+                                context,
+                                "Permintaan pencairan dikirim ke Pengawas",
+                                Toast.LENGTH_SHORT
+                            ).show()
                         },
                         onFailure = { e ->
                             isProcessing = false
@@ -863,14 +871,31 @@ private fun SearchNotFoundState(searchQuery: String, isDark: Boolean) {
     }
 }
 
+/**
+ * Dialog untuk mengajukan permintaan pencairan simpanan ke Pengawas.
+ * Admin lapangan memasukkan jumlah yang ingin dicairkan (parsial atau penuh),
+ * lalu request dikirim ke Pengawas untuk persetujuan.
+ */
 @Composable
-private fun ModernConfirmDialog(
+private fun CairkanSimpananRequestDialog(
     pelanggan: Pelanggan,
     viewModel: PelangganViewModel,
     isProcessing: Boolean,
-    onConfirm: () -> Unit,
+    onSubmit: (Int) -> Unit,
     onDismiss: () -> Unit
 ) {
+    var jumlahInput by remember { mutableStateOf("") }
+    val totalSimpanan = pelanggan.simpanan
+
+    // Hitung nilai numerik dari input
+    val jumlahAngka = remember(jumlahInput) {
+        jumlahInput.replace(".", "").replace(",", "").toLongOrNull()?.toInt() ?: 0
+    }
+    val sisaSimpanan = maxOf(totalSimpanan - jumlahAngka, 0)
+    val isParsial = jumlahAngka in 1 until totalSimpanan
+    val isPenuh = jumlahAngka == totalSimpanan
+    val isInputValid = jumlahAngka in 1..totalSimpanan
+
     AlertDialog(
         onDismissRequest = { if (!isProcessing) onDismiss() },
         shape = RoundedCornerShape(24.dp),
@@ -895,9 +920,9 @@ private fun ModernConfirmDialog(
         },
         title = {
             Text(
-                text = "Konfirmasi Pencairan",
+                text = "Ajukan Pencairan Simpanan",
                 fontWeight = FontWeight.Bold,
-                fontSize = 20.sp,
+                fontSize = 18.sp,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth()
             )
@@ -905,46 +930,57 @@ private fun ModernConfirmDialog(
         text = {
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Text(
-                    text = "Anda akan mencairkan simpanan untuk:",
-                    textAlign = TextAlign.Center,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-
+                // Info Nasabah
                 Card(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp),
+                    shape = RoundedCornerShape(12.dp),
                     colors = CardDefaults.cardColors(
-                        containerColor = PencairanColors.success.copy(alpha = 0.1f)
+                        containerColor = PencairanColors.success.copy(alpha = 0.08f)
                     )
                 ) {
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(16.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                            .padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         Text(
                             text = viewModel.getDisplayName(pelanggan),
                             fontWeight = FontWeight.Bold,
-                            fontSize = 18.sp
+                            fontSize = 16.sp,
+                            color = MaterialTheme.colorScheme.onSurface
                         )
-
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = "Pinjaman Ke",
+                                fontSize = 13.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                text = "${pelanggan.pinjamanKe}",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
                         HorizontalDivider(color = PencairanColors.success.copy(alpha = 0.2f))
-
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             Text(
                                 text = "Total Simpanan",
+                                fontSize = 13.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             Text(
-                                text = "Rp ${formatRupiah(pelanggan.simpanan)}",
+                                text = "Rp ${formatRupiah(totalSimpanan)}",
+                                fontSize = 14.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = PencairanColors.success
                             )
@@ -952,19 +988,92 @@ private fun ModernConfirmDialog(
                     }
                 }
 
+                // Input jumlah
+                OutlinedTextField(
+                    value = jumlahInput,
+                    onValueChange = { raw ->
+                        val digits = raw.filter { it.isDigit() }
+                        jumlahInput = if (digits.isNotEmpty()) {
+                            formatRupiahInput(digits)
+                        } else ""
+                    },
+                    label = { Text("Jumlah Dicairkan") },
+                    placeholder = { Text("Masukkan jumlah") },
+                    prefix = { Text("Rp ") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    isError = jumlahInput.isNotBlank() && !isInputValid,
+                    supportingText = {
+                        when {
+                            jumlahInput.isNotBlank() && jumlahAngka <= 0 ->
+                                Text("Jumlah harus lebih dari 0", color = MaterialTheme.colorScheme.error)
+                            jumlahInput.isNotBlank() && jumlahAngka > totalSimpanan ->
+                                Text("Melebihi total simpanan (Rp ${formatRupiah(totalSimpanan)})", color = MaterialTheme.colorScheme.error)
+                            else -> {}
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    singleLine = true
+                )
+
+                // Tombol cepat: Cairkan Semua
+                TextButton(
+                    onClick = { jumlahInput = formatRupiahInput(totalSimpanan.toString()) },
+                    modifier = Modifier.align(Alignment.End)
+                ) {
+                    Text(
+                        text = "Cairkan Semua (Rp ${formatRupiah(totalSimpanan)})",
+                        fontSize = 12.sp,
+                        color = PencairanColors.success
+                    )
+                }
+
+                // Preview sisa simpanan (jika input valid dan parsial)
+                if (isInputValid && isParsial) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = PencairanColors.warning.copy(alpha = 0.1f)
+                        )
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(10.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Sisa simpanan setelah cairkan:",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                text = "Rp ${formatRupiah(sisaSimpanan)}",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = PencairanColors.warning
+                            )
+                        }
+                    }
+                }
+
+                // Info bahwa ini perlu persetujuan pengawas
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.fillMaxWidth()
                 ) {
                     Icon(
                         Icons.Rounded.Info,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(16.dp)
+                        modifier = Modifier.size(14.dp)
                     )
                     Text(
-                        text = "Tindakan ini tidak dapat dibatalkan",
-                        fontSize = 12.sp,
+                        text = "Permintaan akan dikirim ke Pengawas untuk disetujui",
+                        fontSize = 11.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
@@ -972,8 +1081,8 @@ private fun ModernConfirmDialog(
         },
         confirmButton = {
             Button(
-                onClick = onConfirm,
-                enabled = !isProcessing,
+                onClick = { onSubmit(jumlahAngka) },
+                enabled = !isProcessing && isInputValid,
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(12.dp),
                 colors = ButtonDefaults.buttonColors(
@@ -987,15 +1096,18 @@ private fun ModernConfirmDialog(
                         strokeWidth = 2.dp
                     )
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("Memproses...")
+                    Text("Mengirim...")
                 } else {
                     Icon(
-                        Icons.Rounded.CheckCircle,
+                        Icons.Rounded.Send,
                         contentDescription = null,
                         modifier = Modifier.size(18.dp)
                     )
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("Ya, Cairkan", fontWeight = FontWeight.Bold)
+                    Text(
+                        text = if (isPenuh) "Kirim (Penuh)" else "Kirim ke Pengawas",
+                        fontWeight = FontWeight.Bold
+                    )
                 }
             }
         },
