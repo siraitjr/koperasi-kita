@@ -253,6 +253,8 @@ data class AdminNotification(
     val pelangganNama: String = "",
     val alasanPenolakan: String = "",
     val catatanPersetujuan: String = "",
+    val catatanPengawas: String = "",
+    val catatanPimpinan: String = "",
 
     val pinjamanDiajukan: Int = 0,
     val pinjamanDisetujui: Int = 0,
@@ -265,7 +267,7 @@ data class AdminNotification(
     val timestamp: Long = 0L,
     val read: Boolean = false
 ) {
-    constructor() : this("", "", "", "", "", "", "", "", 0, 0, 0, 0, false, "", "", 0L, false)
+    constructor() : this("", "", "", "", "", "", "", "", "", "", 0, 0, 0, 0, false, "", "", 0L, false)
 }
 
 data class DashboardData(
@@ -12905,6 +12907,31 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                 // Hapus request (selesai diproses)
                 database.child("pencairan_simpanan_requests/$requestId").removeValue().await()
 
+                // Kirim notifikasi ke Admin lapangan bahwa pencairan disetujui
+                try {
+                    val notificationId = UUID.randomUUID().toString()
+                    val tipeLabel = if (sisaSimpanan <= 0) "penuh" else "parsial"
+                    val adminNotification = mapOf(
+                        "id" to notificationId,
+                        "type" to "SIMPANAN_APPROVED",
+                        "title" to "Pencairan Simpanan Disetujui",
+                        "message" to "Pencairan simpanan ${request.pelangganNama} (${tipeLabel}, Rp ${formatRupiah(request.jumlahDicairkan)}) telah disetujui oleh $reviewerName",
+                        "pelangganId" to pelangganId,
+                        "pelangganNama" to request.pelangganNama,
+                        "catatanPengawas" to catatanPengawas,
+                        "catatanPersetujuan" to catatanPengawas,
+                        "timestamp" to System.currentTimeMillis(),
+                        "read" to false
+                    )
+                    database.child("admin_notifications")
+                        .child(request.requestedByUid)
+                        .child(notificationId)
+                        .setValue(adminNotification)
+                        .await()
+                } catch (e: Exception) {
+                    Log.w("PencairanSimpanan", "⚠️ Gagal kirim notifikasi approval: ${e.message}")
+                }
+
                 // Update state lokal
                 _pendingPencairanSimpananRequests.value = _pendingPencairanSimpananRequests.value
                     .filter { it.id != requestId }
@@ -12935,8 +12962,42 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                 val currentUser = Firebase.auth.currentUser
                     ?: run { onFailure(Exception("User belum login")); return@launch }
 
+                // Ambil data request sebelum dihapus
+                val reqSnap = database.child("pencairan_simpanan_requests/$requestId").get().await()
+                val request = reqSnap.getValue(PencairanSimpananRequest::class.java)
+
+                val reviewerName = database.child("metadata/admins/${currentUser.uid}/name")
+                    .get().await().getValue(String::class.java)
+                    ?: currentUser.email ?: "Pengawas"
+
                 // Hapus request (penolakan tidak perlu menyimpan arsip seperti approval)
                 database.child("pencairan_simpanan_requests/$requestId").removeValue().await()
+
+                // Kirim notifikasi ke Admin lapangan bahwa pencairan ditolak
+                if (request != null) {
+                    try {
+                        val notificationId = UUID.randomUUID().toString()
+                        val adminNotification = mapOf(
+                            "id" to notificationId,
+                            "type" to "SIMPANAN_REJECTED",
+                            "title" to "Pencairan Simpanan Ditolak",
+                            "message" to "Pencairan simpanan ${request.pelangganNama} ditolak oleh $reviewerName. Alasan: $catatanPengawas",
+                            "pelangganId" to request.pelangganId,
+                            "pelangganNama" to request.pelangganNama,
+                            "alasanPenolakan" to catatanPengawas,
+                            "catatanPengawas" to catatanPengawas,
+                            "timestamp" to System.currentTimeMillis(),
+                            "read" to false
+                        )
+                        database.child("admin_notifications")
+                            .child(request.requestedByUid)
+                            .child(notificationId)
+                            .setValue(adminNotification)
+                            .await()
+                    } catch (e: Exception) {
+                        Log.w("PencairanSimpanan", "⚠️ Gagal kirim notifikasi penolakan: ${e.message}")
+                    }
+                }
 
                 // Update state lokal
                 _pendingPencairanSimpananRequests.value = _pendingPencairanSimpananRequests.value
@@ -13469,6 +13530,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                         "message" to "Nasabah ${request.pelangganNama} telah dihapus dari sistem",
                         "pelangganId" to pelangganId,
                         "pelangganNama" to request.pelangganNama,
+                        "catatanPengawas" to catatanPengawas,
                         "timestamp" to System.currentTimeMillis(),
                         "read" to false
                     )
@@ -13623,6 +13685,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                         "pelangganId" to pelangganId,
                         "pelangganNama" to request.pelangganNama,
                         "reviewedBy" to pimpinanName,
+                        "catatanPimpinan" to catatanPimpinan,
                         "timestamp" to System.currentTimeMillis(),
                         "read" to false
                     )
@@ -13700,6 +13763,8 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                         "pelangganId" to request.pelangganId,
                         "pelangganNama" to request.pelangganNama,
                         "reviewedBy" to pimpinanName,
+                        "alasanPenolakan" to catatanPimpinan,
+                        "catatanPimpinan" to catatanPimpinan,
                         "timestamp" to System.currentTimeMillis(),
                         "read" to false
                     )
@@ -13797,6 +13862,10 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     return@launch
                 }
 
+                // Ambil data request sebelum dihapus (perlu requestedByUid untuk notifikasi)
+                val requestSnap = database.child("deletion_requests/$requestId").get().await()
+                val request = requestSnap.getValue(DeletionRequest::class.java)
+
                 // Ambil info pengawas
                 val pengawasSnap = database.child("metadata/admins/${currentUser.uid}").get().await()
                 val pengawasName = pengawasSnap.child("name").getValue(String::class.java)
@@ -13814,6 +13883,33 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
 
                 // Hapus request (nasabah tetap ada)
                 database.child("deletion_requests/$requestId").removeValue().await()
+
+                // Kirim notifikasi ke Admin bahwa penghapusan ditolak
+                if (request != null) {
+                    try {
+                        val notificationId = UUID.randomUUID().toString()
+                        val adminNotification = mapOf(
+                            "id" to notificationId,
+                            "type" to "DELETION_REJECTED",
+                            "title" to "Penghapusan Nasabah Ditolak",
+                            "message" to "Pengajuan penghapusan ${request.pelangganNama} ditolak oleh Pengawas. Alasan: $catatanPengawas",
+                            "pelangganId" to request.pelangganId,
+                            "pelangganNama" to request.pelangganNama,
+                            "reviewedBy" to pengawasName,
+                            "alasanPenolakan" to catatanPengawas,
+                            "catatanPengawas" to catatanPengawas,
+                            "timestamp" to System.currentTimeMillis(),
+                            "read" to false
+                        )
+                        database.child("admin_notifications")
+                            .child(request.requestedByUid)
+                            .child(notificationId)
+                            .setValue(adminNotification)
+                            .await()
+                    } catch (e: Exception) {
+                        Log.w("DeletionRequest", "⚠️ Gagal kirim notifikasi penolakan: ${e.message}")
+                    }
+                }
 
                 // Update state lokal
                 _pendingDeletionRequests.value = _pendingDeletionRequests.value
@@ -14858,7 +14954,10 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     "title" to "Perubahan Tenor Ditolak",
                     "message" to "Pengajuan perubahan tenor ${request.pelangganNama} ditolak. Alasan: $alasanPenolakan",
                     "pelangganId" to request.pelangganId,
+                    "pelangganNama" to request.pelangganNama,
                     "reviewedBy" to pimpinanName,
+                    "alasanPenolakan" to alasanPenolakan,
+                    "catatanPimpinan" to alasanPenolakan,
                     "timestamp" to System.currentTimeMillis(),
                     "read" to false
                 )

@@ -520,11 +520,33 @@ fun DetailNotifikasiScreen(
                             DetailItem("Alasan Penolakan", notification.alasanPenolakan, txtColor)
                         }
 
+                        // Catatan dari Pengawas (untuk Deletion, Tenor, Simpanan)
+                        if (notification.catatanPengawas.isNotBlank()) {
+                            DetailItem("Catatan Pengawas", notification.catatanPengawas, txtColor)
+                        }
+
+                        // Catatan dari Pimpinan (untuk Deletion, Tenor)
+                        if (notification.catatanPimpinan.isNotBlank()) {
+                            DetailItem("Catatan Pimpinan", notification.catatanPimpinan, txtColor)
+                        }
+
+                        // Alasan penolakan untuk Deletion, Tenor, dan Simpanan
+                        if (notification.type in listOf("DELETION_REJECTED", "TENOR_CHANGE_REJECTED", "SIMPANAN_REJECTED") && notification.alasanPenolakan.isNotBlank()) {
+                            DetailItem("Alasan Penolakan", notification.alasanPenolakan, txtColor)
+                        }
+
+                        // Catatan persetujuan untuk Deletion, Tenor, dan Simpanan
+                        if (notification.type in listOf("DELETION_APPROVED", "TENOR_CHANGE_APPROVED", "SIMPANAN_APPROVED") && notification.catatanPersetujuan.isNotBlank()) {
+                            DetailItem("Catatan Persetujuan", notification.catatanPersetujuan, txtColor)
+                        }
+
                         DetailItem(
                             "Status",
                             when (notification.type) {
-                                "REJECTION" -> "Ditolak"
-                                "APPROVAL" -> "Disetujui"
+                                "REJECTION", "DUAL_APPROVAL_REJECTED", "DELETION_REJECTED",
+                                "TENOR_CHANGE_REJECTED", "SIMPANAN_REJECTED" -> "Ditolak"
+                                "APPROVAL", "DUAL_APPROVAL_APPROVED", "DELETION_APPROVED",
+                                "TENOR_CHANGE_APPROVED", "SIMPANAN_APPROVED" -> "Disetujui"
                                 else -> "Diproses"
                             },
                             txtColor
