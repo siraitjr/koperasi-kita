@@ -73,8 +73,9 @@ exports.onPelangganWrite = functions.database
                     await db.ref(`pinjamanHistory/${adminUid}/${pelangganId}`).push({
                         besarPinjaman: oldBesar,
                         berlakuSampai: today,
+                        tanggalPencairan: beforeData.tanggalPencairan || '',
                     });
-                    console.log(`📝 pinjamanHistory saved: ${oldBesar} → ${newBesar} (berlakuSampai: ${today})`);
+                    console.log(`📝 pinjamanHistory saved: ${oldBesar} → ${newBesar} (berlakuSampai: ${today}, tglCairLama: ${beforeData.tanggalPencairan || ''})`);
                 }
             }
 

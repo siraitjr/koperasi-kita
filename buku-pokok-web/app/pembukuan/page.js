@@ -529,13 +529,27 @@ function parseTanggalIndo(tgl) {
 }
 
 function getKategoriNasabah(nasabah) {
-  const tgl = nasabah.tanggalPencairan || nasabah.tanggalPengajuan || nasabah.tanggalDaftar || '';
-  const parsed = parseTanggalIndo(tgl);
-  if (!parsed) return 'ML';
-
   const now = new Date();
   const wibOffset = 7 * 60 * 60 * 1000;
   const wib = new Date(now.getTime() + (now.getTimezoneOffset() * 60000) + wibOffset);
+
+  let tgl = nasabah.tanggalPencairan || nasabah.tanggalPengajuan || nasabah.tanggalDaftar || '';
+
+  // Jika lanjut pinjaman hari ini, gunakan tanggalPencairan LAMA dari pinjamanHistory
+  // (buku fisik rule 4: tetap di kategori lama hari ini, pindah ke PB besok)
+  if (nasabah.tanggalPencairan && nasabah.pinjamanHistory) {
+    const BULAN_ARR = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+    const todayStr = `${String(wib.getDate()).padStart(2, '0')} ${BULAN_ARR[wib.getMonth()]} ${wib.getFullYear()}`;
+    if (nasabah.tanggalPencairan.trim() === todayStr) {
+      const oldEntry = Object.values(nasabah.pinjamanHistory)
+        .find(h => h.berlakuSampai === todayStr && h.tanggalPencairan);
+      if (oldEntry) tgl = oldEntry.tanggalPencairan;
+    }
+  }
+
+  const parsed = parseTanggalIndo(tgl);
+  if (!parsed) return 'ML';
+
   const nowMonth = wib.getMonth();
   const nowYear = wib.getFullYear();
 
@@ -670,6 +684,18 @@ function getKategoriNasabah(nasabah) {
       return entries.length > 0 ? entries[0].besarPinjaman : (n.besarPinjaman || 0);
     };
 
+    // Helper: tanggalPencairan yang berlaku pada targetDate (rule 3 buku fisik).
+    // Jika lanjut pinjaman terjadi PADA targetDate, kembalikan tanggalPencairan lama
+    // dari pinjamanHistory agar acuanDate di target calculation memakai pinjaman lama.
+    const getEffectiveTanggalPencairan = (n, targetDateStr) => {
+      const current = (n.tanggalPencairan || '').trim();
+      if (!current || !n.pinjamanHistory || current !== targetDateStr) return current;
+      // tanggalPencairan === targetDateStr → cek pinjamanHistory untuk tgl pencairan lama
+      const oldEntry = Object.values(n.pinjamanHistory)
+        .find(h => h.berlakuSampai === targetDateStr && h.tanggalPencairan);
+      return oldEntry ? oldEntry.tanggalPencairan.trim() : current;
+    };
+
     const calculateTargetForDate = (targetDateStr) => {
       const targetDate = parseDateStr(targetDateStr);
       if (!targetDate) return 0;
@@ -690,10 +716,9 @@ function getKategoriNasabah(nasabah) {
         const besar = n.besarPinjaman || 0;
         if (!besar) return;
 
-        // Tanggal mulai: konsisten dengan Android (tanggalPencairan → tanggalPengajuan → tanggalDaftar)
-        // tanggalPengajuan sebelum tanggalDaftar agar 3-bulan filter tidak di-bypass oleh
-        // tanggalDaftar yang diperbarui (nasabah lama dengan pinjaman baru belum cair).
-        const tglAcuan = (n.tanggalPencairan || '').trim()
+        // Tanggal mulai: gunakan tanggalPencairan lama jika lanjut pinjaman pada targetDate (rule 3).
+        // Untuk nasabah biasa, efeknya sama seperti (n.tanggalPencairan || tanggalPengajuan || tanggalDaftar).
+        const tglAcuan = getEffectiveTanggalPencairan(n, targetDateStr)
           || (n.tanggalPengajuan || '').trim()
           || (n.tanggalDaftar || '').trim();
         if (!tglAcuan) return;

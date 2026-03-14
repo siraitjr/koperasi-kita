@@ -406,9 +406,14 @@ exports.getBukuPokok = functions
                     const acuanDate = parseTglIndo(tglAcuan);
                     if (acuanDate && acuanDate < threeMonthsAgo) return false;
 
-                    // Exclude cair hari ini
+                    // Exclude cair hari ini — kecuali lanjut pinjaman (ada pinjamanHistory berlakuSampai = hari ini)
+                    // Lanjut pinjaman: target hari ini masih pakai pinjaman lama (rule 3 buku fisik)
                     const tglCair = (n.tanggalPencairan || '').trim();
-                    if (tglCair === todayStr) return false;
+                    if (tglCair === todayStr) {
+                        const isLanjutPinjaman = n.pinjamanHistory && Object.values(n.pinjamanHistory)
+                            .some(h => h.berlakuSampai === todayStr && h.tanggalPencairan);
+                        if (!isLanjutPinjaman) return false;
+                    }
 
                     // Exclude sudah lunas cicilan — kecuali baru lunas HARI INI (keluar besok)
                     if (n.totalPelunasan > 0 && n.sisaUtang <= 0) {
