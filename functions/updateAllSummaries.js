@@ -254,30 +254,32 @@ exports.triggerTargetRecalc = onCall(async (request) => {
                 const p = child.val();
                 if (!p) return;
                 
-                // ===== FILTER: SAMA PERSIS DENGAN Android RingkasanDashboardScreen.kt =====
-                
-                // 1. Hanya status Aktif/Active
+                // ===== FILTER: konsisten dengan fullRecalculateAdminSummary =====
+
+                // 1. Hanya status Aktif/Active atau Lunas
                 const status = (p.status || '').toLowerCase();
-                if (status !== 'aktif' && status !== 'active') return;
-                
-                // 2. Exclude MENUNGGU_PENCAIRAN
-                const statusKhusus = (p.statusKhusus || '').toUpperCase().replace(/ /g, '_');
-                if (statusKhusus === 'MENUNGGU_PENCAIRAN') return;
-                
+                const isStatusAktif = status === 'aktif' || status === 'active';
+                const isStatusLunas = status === 'lunas';
+                if (!isStatusAktif && !isStatusLunas) return;
+
+                // 2. Exclude jika simpanan sudah dicairkan (sepenuhnya selesai)
+                const statusPencairanSimpanan = (p.statusPencairanSimpanan || '').trim();
+                if (statusPencairanSimpanan === 'Dicairkan') return;
+
                 // 3. Exclude nasabah > 3 bulan
                 const tglAcuan = (p.tanggalPencairan || '').trim()
                     || (p.tanggalPengajuan || '').trim()
                     || (p.tanggalDaftar || '').trim();
                 if (isOverThreeMonths(tglAcuan)) return;
-                
-                // 4. Exclude nasabah cair hari ini
-                const tglCair = (p.tanggalPencairan || '').trim();
-                if (tglCair === today) return;
-                
-                // 5. Belum lunas
+
+                // 4. Exclude nasabah cair hari ini (hanya untuk yang masih aktif, belum lunas)
                 const totalDibayar = calculateTotalDibayar(p);
                 const totalPelunasan = p.totalPelunasan || 0;
-                if (totalPelunasan > 0 && totalDibayar >= totalPelunasan) return;
+                const isSudahLunas = totalPelunasan > 0 && totalDibayar >= totalPelunasan;
+                if (!isSudahLunas) {
+                    const tglCair = (p.tanggalPencairan || '').trim();
+                    if (tglCair === today) return;
+                }
                 
                 // ===== HITUNG TARGET: Flat 3% dari besarPinjaman =====
                 adminTarget += Math.floor((p.besarPinjaman || 0) * 3 / 100);

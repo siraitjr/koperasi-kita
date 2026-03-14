@@ -533,15 +533,17 @@ function calculateDelta(before, after) {
                 delta.aktifChange -= 1;
                 delta.pinjamanAktifChange -= beforePelunasan;
                 delta.piutangChange -= Math.max(0, beforePelunasan - beforeDibayar);
-                // Jika lunas HARI INI → target tetap ada untuk hari ini (buku: lunas hari ini masih dihitung)
-                const tglLunasCicilanAfter = (after.tanggalLunasCicilan || '').trim();
-                if (tglLunasCicilanAfter !== today) {
+                // Pindah ke menungguPencairan: target TIDAK dikurangi (masih dikunjungi admin)
+                // Target dikurangi hanya saat benar-benar selesai (simpanan dicairkan → 'lunas')
+                if (afterCategory !== 'menungguPencairan') {
                     delta.targetHariIniChange -= calculateTargetHariIni(before);
                 }
             } else if (beforeCategory === 'lunas') {
                 delta.lunasChange -= 1;
             } else if (beforeCategory === 'menungguPencairan') {
                 delta.nasabahMenungguPencairanChange -= 1;
+                // Keluar dari menungguPencairan → keluar dari target
+                delta.targetHariIniChange -= calculateTargetHariIni(before);
             } else if (beforeCategory === 'menunggu') {
                 delta.menungguChange -= 1;
             }
@@ -805,17 +807,11 @@ async function fullRecalculateAdminSummary(adminUid) {
                     if (statusPencairanSimpanan === 'Dicairkan') {
                         nasabahLunas++;
                         if (adaPembayaranPadaTanggal(p, today)) nasabahLunasHariIni++;
-                    }
-                    // Baru lunas hari ini? Cek dua cara:
-                    // 1. Pembayaran hari ini menyebabkan lunas (payment-based, paling umum)
-                    // 2. tanggalLunasCicilan >= today (admin-set, misal RISMAYANTI)
-                    if (!isHariLibur) {
-                        const pembayaranHariIni = hitungPembayaranPadaTanggal(p, today);
-                        const lunasViaPembayaran = pembayaranHariIni > 0
-                            && (totalDibayar - pembayaranHariIni) < totalPelunasan;
-                        const tglLunasDate = parseDateIndo((p.tanggalLunasCicilan || '').trim());
-                        const lunasViaDate = tglLunasDate && todayDate && tglLunasDate >= todayDate;
-                        if (lunasViaPembayaran || lunasViaDate) {
+                        // Simpanan sudah dikembalikan → tidak di target
+                    } else {
+                        // MENUNGGU_PENCAIRAN: cicilan selesai tapi simpanan belum dikembalikan
+                        // Admin masih mengunjungi untuk cairkan simpanan → masih di target (konsisten buku fisik)
+                        if (!isHariLibur) {
                             const tglAcuan = (p.tanggalPencairan || '').trim()
                                 || (p.tanggalPengajuan || '').trim()
                                 || (p.tanggalDaftar || '').trim();
@@ -852,12 +848,11 @@ async function fullRecalculateAdminSummary(adminUid) {
                 if (statusPencairanSimpanan === 'Dicairkan') {
                     nasabahLunas++;
                     if (adaPembayaranPadaTanggal(p, today)) nasabahLunasHariIni++;
-                }
-                // Lunas HARI INI atau sesudahnya → tetap masuk target (konsisten dengan web)
-                // Web menggunakan: tglLunasDate >= targetDate
-                if (!isHariLibur) {
-                    const tglLunasDate = parseDateIndo((p.tanggalLunasCicilan || '').trim());
-                    if (tglLunasDate && todayDate && tglLunasDate >= todayDate) {
+                    // Simpanan sudah dikembalikan → tidak di target
+                } else {
+                    // MENUNGGU_PENCAIRAN (raw status='lunas' tapi simpanan belum dicairkan)
+                    // Masih masuk target (konsisten buku fisik)
+                    if (!isHariLibur) {
                         const tglAcuan = (p.tanggalPencairan || '').trim()
                             || (p.tanggalPengajuan || '').trim()
                             || (p.tanggalDaftar || '').trim();
