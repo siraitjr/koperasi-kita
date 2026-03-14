@@ -3389,7 +3389,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     catatanStatusKhusus = "",
                     tanggalStatusKhusus = "",
                     diberiTandaOleh = "",
-                    pembayaranList = if (sudahLunas) emptyList() else existingPelanggan.pembayaranList,
+                    pembayaranList = emptyList(), // Selalu mulai fresh — riwayat lama disimpan di riwayatPembayaran/
                     hasilSimulasiCicilan = cicilanBaru,
 
                     // === Data Referensi ===
@@ -3431,6 +3431,36 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                 val index = daftarPelanggan.indexOfFirst { it.id == pelangganId }
                 if (index != -1) {
                     daftarPelanggan[index] = updatedPelanggan
+                }
+
+                // ========== SIMPAN RIWAYAT PEMBAYARAN LAMA (SEBELUM TOPUP) ==========
+                // Tulis ke path terpisah agar tidak terbawa ke pinjaman baru,
+                // tapi tetap tersimpan permanen untuk kebutuhan pembukuan.
+                if (existingPelanggan.pembayaranList.isNotEmpty()) {
+                    val pinjamanKeLama = existingPelanggan.pinjamanKe
+                    val riwayatData = mapOf(
+                        "pinjamanKe" to pinjamanKeLama,
+                        "besarPinjaman" to existingPelanggan.besarPinjaman,
+                        "totalPelunasan" to totalPelunasanLama,
+                        "totalBayar" to totalBayarSebelumnya,
+                        "sisaUtang" to sisaUtangLama,
+                        "tanggalTopUp" to tanggalPengajuanBaru,
+                        "pembayaranList" to existingPelanggan.pembayaranList.map { p ->
+                            mapOf(
+                                "jumlah" to p.jumlah,
+                                "tanggal" to p.tanggal,
+                                "subPembayaran" to p.subPembayaran.map { s ->
+                                    mapOf("jumlah" to s.jumlah, "tanggal" to s.tanggal, "keterangan" to s.keterangan)
+                                }
+                            )
+                        }
+                    )
+                    database.child("riwayatPembayaran")
+                        .child(existingPelanggan.adminUid)
+                        .child(pelangganId)
+                        .child("pinjaman$pinjamanKeLama")
+                        .setValue(riwayatData)
+                    Log.d("KelolaKredit", "📚 Riwayat pembayaran pinjaman ke-$pinjamanKeLama disimpan (${existingPelanggan.pembayaranList.size} entri)")
                 }
 
                 // ========== SIMPAN KE FIREBASE ==========
@@ -6415,7 +6445,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     catatanStatusKhusus = "",
                     tanggalStatusKhusus = "",
                     diberiTandaOleh = "",
-                    pembayaranList = if (sudahLunas) emptyList() else existingPelanggan.pembayaranList,
+                    pembayaranList = emptyList(), // Selalu mulai fresh — riwayat lama disimpan di riwayatPembayaran/
                     hasilSimulasiCicilan = cicilanBaru,
 
                     // Simpan data untuk referensi
@@ -6445,6 +6475,34 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                 val index = daftarPelanggan.indexOfFirst { it.id == pelangganId }
                 if (index != -1) {
                     daftarPelanggan[index] = updatedPelanggan
+                }
+
+                // ========== SIMPAN RIWAYAT PEMBAYARAN LAMA (SEBELUM TOPUP) ==========
+                if (existingPelanggan.pembayaranList.isNotEmpty()) {
+                    val pinjamanKeLama = existingPelanggan.pinjamanKe
+                    val riwayatData = mapOf(
+                        "pinjamanKe" to pinjamanKeLama,
+                        "besarPinjaman" to existingPelanggan.besarPinjaman,
+                        "totalPelunasan" to totalPelunasanLama,
+                        "totalBayar" to totalBayarSebelumnya,
+                        "sisaUtang" to sisaUtangLama,
+                        "tanggalTopUp" to tanggalPengajuanBaru,
+                        "pembayaranList" to existingPelanggan.pembayaranList.map { p ->
+                            mapOf(
+                                "jumlah" to p.jumlah,
+                                "tanggal" to p.tanggal,
+                                "subPembayaran" to p.subPembayaran.map { s ->
+                                    mapOf("jumlah" to s.jumlah, "tanggal" to s.tanggal, "keterangan" to s.keterangan)
+                                }
+                            )
+                        }
+                    )
+                    database.child("riwayatPembayaran")
+                        .child(existingPelanggan.adminUid)
+                        .child(pelangganId)
+                        .child("pinjaman$pinjamanKeLama")
+                        .setValue(riwayatData)
+                    Log.d("KelolaKredit", "📚 Riwayat pembayaran pinjaman ke-$pinjamanKeLama disimpan (${existingPelanggan.pembayaranList.size} entri)")
                 }
 
                 simpanPelangganKeFirebase(updatedPelanggan,
