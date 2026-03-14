@@ -15,8 +15,8 @@ import { formatRp, formatRpFull } from '../../lib/format';
 // CONSTANTS
 // =========================================================================
 const JENIS_OPTIONS = [
-  { value: 'uang_kas', label: 'Uang Kas' },
-  { value: 'penggajian', label: 'BU/Penggajian' },
+  { value: 'uang_kas', label: 'Kasbon Pagi' },
+  { value: 'penggajian', label: 'BU' },
   { value: 'transport', label: 'Transport' },
   { value: 'suntikan_dana', label: 'Suntikan Dana' },
   { value: 'pinjaman_kas', label: 'Pinjaman Kas' },
@@ -727,7 +727,7 @@ function FormModal({ cabangAdmins, onClose, onSuccess }) {
           </select>
         </div>
 
-        {/* Admin Lapangan yang dituju — hanya untuk Uang Kas */}
+        {/* Admin Lapangan yang dituju — hanya untuk Kasbon Pagi */}
         {jenis === 'uang_kas' && cabangAdmins.length > 0 && (
           <div style={{ marginBottom: 16 }}>
             <label style={{ fontSize: 13, fontWeight: 600, marginBottom: 6, display: 'block' }}>Admin Lapangan yang Dituju</label>
