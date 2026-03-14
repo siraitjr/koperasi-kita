@@ -1,0 +1,410 @@
+{
+  "rules": {
+    "pelanggan": {
+      "$adminUid": {
+        ".read": "auth != null && (auth.uid === $adminUid || 
+                  root.child('metadata/roles/pengawas').child(auth.uid).val() === true || 
+                  root.child('metadata/roles/koordinator').child(auth.uid).val() === true ||
+                  (root.child('metadata/admins').child($adminUid).child('cabang').exists() && 
+                   root.child('metadata/cabang').child(root.child('metadata/admins').child($adminUid).child('cabang').val()).child('pimpinanUid').val() === auth.uid))",
+        ".write": "auth != null && (auth.uid === $adminUid || 
+                  root.child('metadata/roles/pengawas').child(auth.uid).val() === true ||
+                  root.child('metadata/roles/koordinator').child(auth.uid).val() === true ||
+                  (root.child('metadata/admins').child($adminUid).child('cabang').exists() && 
+                   root.child('metadata/cabang').child(root.child('metadata/admins').child($adminUid).child('cabang').val()).child('pimpinanUid').val() === auth.uid))",
+        ".indexOn": ["nomorAnggota", "nik", "nikSuami", "nikIstri", "status", "pinjamanKe", "adminUid", "cabangId"]
+      }
+    },
+      
+    "nik_registry": {
+      ".read": "auth != null && root.child('metadata/admins').child(auth.uid).exists()",
+      ".indexOn": ["status", "cabangId", "adminUid"],
+      "$nik": {
+        ".write": "auth != null && root.child('metadata/admins').child(auth.uid).exists()",
+        ".validate": "newData.hasChildren(['adminUid', 'pelangganId', 'nama', 'status'])"
+      }
+    },
+    
+    "pengajuan_approval": {
+      "$cabangId": {
+        ".read": "auth != null && (
+          root.child('metadata/cabang').child($cabangId).child('pimpinanUid').val() === auth.uid || 
+          root.child('metadata/roles/pengawas').child(auth.uid).val() === true ||
+          root.child('metadata/roles/koordinator').child(auth.uid).val() === true
+        )",
+        ".write": "auth != null && (
+          (root.child('metadata/admins').child(auth.uid).child('cabang').val() === $cabangId && 
+           root.child('metadata/admins').child(auth.uid).child('role').val() === 'admin') ||
+          root.child('metadata/cabang').child($cabangId).child('pimpinanUid').val() === auth.uid ||
+          root.child('metadata/roles/pengawas').child(auth.uid).val() === true ||
+          root.child('metadata/roles/koordinator').child(auth.uid).val() === true
+        )",
+        ".indexOn": ["status", "timestamp", "besarPinjaman", "pelangganId"],
+        "$pengajuanId": {
+          ".validate": "newData.hasChildren(['adminUid', 'nama', 'namaPanggilan', 'tanggalPengajuan', 'status', 'jenisPinjaman', 'besarPinjaman', 'tenor', 'pinjamanKe', 'pelangganId', 'timestamp'])"
+        }
+      }
+    },
+
+    "deletion_requests": {
+      ".read": "auth != null && (
+        root.child('metadata/roles/pengawas').child(auth.uid).val() === true || 
+        root.child('metadata/roles/koordinator').child(auth.uid).val() === true ||
+        root.child('metadata/admins').child(auth.uid).exists()
+      )",
+      ".indexOn": ["status", "createdAt", "cabangId", "adminUid"],
+      "$requestId": {
+        ".read": "auth != null && (
+          root.child('metadata/roles/pengawas').child(auth.uid).val() === true ||
+          root.child('metadata/roles/koordinator').child(auth.uid).val() === true ||
+          data.child('requestedByUid').val() === auth.uid ||
+          (data.exists() && root.child('metadata/cabang').child(data.child('cabangId').val()).child('pimpinanUid').val() === auth.uid)
+        )",
+        ".write": "auth != null && (
+          root.child('metadata/roles/pengawas').child(auth.uid).val() === true ||
+          root.child('metadata/roles/koordinator').child(auth.uid).val() === true ||
+          (data.exists() && root.child('metadata/cabang').child(data.child('cabangId').val()).child('pimpinanUid').val() === auth.uid) ||
+          (!data.exists() && root.child('metadata/admins').child(auth.uid).exists())
+        )",
+        ".validate": "newData.hasChildren(['id', 'pelangganId', 'pelangganNama', 'requestedByUid', 'alasanPenghapusan', 'status', 'createdAt'])"
+      }
+    },
+      
+    "payment_deletion_requests": {
+      ".read": "auth != null && (
+        root.child('metadata/roles/pengawas').child(auth.uid).val() === true || 
+        root.child('metadata/roles/koordinator').child(auth.uid).val() === true ||
+        root.child('metadata/admins').child(auth.uid).exists()
+      )",
+      ".indexOn": ["status", "createdAt", "cabangId", "adminUid"],
+      "$requestId": {
+        ".read": "auth != null && (
+          root.child('metadata/roles/pengawas').child(auth.uid).val() === true ||
+          root.child('metadata/roles/koordinator').child(auth.uid).val() === true ||
+          data.child('requestedByUid').val() === auth.uid ||
+          (data.exists() && root.child('metadata/cabang').child(data.child('cabangId').val()).child('pimpinanUid').val() === auth.uid)
+        )",
+        ".write": "auth != null && (
+          root.child('metadata/roles/pengawas').child(auth.uid).val() === true ||
+          root.child('metadata/roles/koordinator').child(auth.uid).val() === true ||
+          (data.exists() && root.child('metadata/cabang').child(data.child('cabangId').val()).child('pimpinanUid').val() === auth.uid) ||
+          (!data.exists() && root.child('metadata/admins').child(auth.uid).exists())
+        )",
+        ".validate": "newData.hasChildren(['id', 'pelangganId', 'pelangganNama', 'pembayaranIndex', 'cicilanKe', 'jumlahPembayaran', 'requestedByUid', 'alasanPenghapusan', 'status', 'createdAt'])"
+      }
+    },
+      
+    "tenor_change_requests": {
+  		"$cabangId": {
+    		".read": "auth != null && (
+      		root.child('metadata/cabang').child($cabangId).child('pimpinanUid').val() === auth.uid ||
+      		root.child('metadata/admins').child(auth.uid).child('cabang').val() === $cabangId ||
+      		root.child('metadata/roles/pengawas').child(auth.uid).val() === true ||
+      		root.child('metadata/roles/koordinator').child(auth.uid).val() === true
+    		)",
+    		".write": "auth != null && (
+      		root.child('metadata/cabang').child($cabangId).child('pimpinanUid').val() === auth.uid ||
+      		root.child('metadata/admins').child(auth.uid).child('cabang').val() === $cabangId
+    		)",
+    		".indexOn": ["status", "timestamp", "pelangganId"],
+    		"$requestId": {
+      		".validate": "newData.hasChildren(['id', 'pelangganId', 'pelangganNama', 'tenorLama', 'tenorBaru', 'requestedByUid', 'status', 'createdAt'])"
+   		 	}
+  		}
+		},  
+    
+    "summary": {
+      ".read": "auth != null",
+      ".write": false,
+      "global": {
+        ".read": "auth != null && (root.child('metadata/roles/pengawas').child(auth.uid).val() === true || root.child('metadata/roles/koordinator').child(auth.uid).val() === true)",
+        ".indexOn": ["lastUpdated"]
+      },
+      "perCabang": {
+        "$cabangId": {
+          ".read": "auth != null && (root.child('metadata/cabang').child($cabangId).child('pimpinanUid').val() === auth.uid || root.child('metadata/roles/pengawas').child(auth.uid).val() === true || root.child('metadata/roles/koordinator').child(auth.uid).val() === true)",
+          ".indexOn": ["lastUpdated"]
+        }
+      },
+      "perAdmin": {
+        "$adminUid": {
+          ".read": "auth != null && auth.uid === $adminUid",
+          ".indexOn": ["lastUpdated"]
+        }
+      }
+    },
+
+    "metadata": {
+  		".read": "auth != null && (root.child('metadata/roles/pengawas').child(auth.uid).val() === true || root.child('metadata/roles/koordinator').child(auth.uid).val() === true || root.child('metadata/admins').child(auth.uid).exists())",
+  		".write": "auth != null && root.child('metadata/roles/pengawas').child(auth.uid).val() === true",
+  
+  		"admins": {
+    		"$uid": {
+      		"photoUrl": {
+        		".write": "auth != null && auth.uid === $uid"
+      		}
+    		}
+  		}
+		},
+
+    "admin_notifications": {
+      "$userUid": {
+        ".read": "auth != null && auth.uid === $userUid",
+        ".write": "auth != null && (
+          auth.uid === $userUid ||
+          root.child('metadata/admins').child(auth.uid).exists() ||
+          (root.child('metadata/cabang').exists() && 
+           root.child('metadata/cabang').child(root.child('metadata/admins').child($userUid).child('cabang').val()).child('pimpinanUid').val() === auth.uid) ||
+          root.child('metadata/roles/pengawas').child(auth.uid).val() === true ||
+          root.child('metadata/roles/koordinator').child(auth.uid).val() === true
+        )",
+        ".indexOn": ["timestamp", "read"]
+      }
+    },
+
+    "pengawas_notifications": {
+      "$pengawasUid": {
+        ".read": "auth != null && auth.uid === $pengawasUid",
+        ".write": "auth != null && (
+          auth.uid === $pengawasUid ||
+          root.child('metadata/cabang').child(root.child('metadata/admins').child(auth.uid).child('cabang').val()).child('pimpinanUid').exists() ||
+          root.child('metadata/admins').child(auth.uid).exists() ||
+          root.child('metadata/roles/pengawas').child(auth.uid).val() === true ||
+          root.child('metadata/roles/koordinator').child(auth.uid).val() === true
+        )",
+        ".indexOn": ["timestamp", "read", "type", "besarPinjaman"]
+      }
+    },
+
+    "koordinator_notifications": {
+      "$koordinatorUid": {
+        ".read": "auth != null && auth.uid === $koordinatorUid",
+        ".write": "auth != null && (
+          auth.uid === $koordinatorUid ||
+          root.child('metadata/cabang').child(root.child('metadata/admins').child(auth.uid).child('cabang').val()).child('pimpinanUid').exists() ||
+          root.child('metadata/admins').child(auth.uid).exists() ||
+          root.child('metadata/roles/pengawas').child(auth.uid).val() === true ||
+          root.child('metadata/roles/koordinator').child(auth.uid).val() === true
+        )",
+        ".indexOn": ["timestamp", "read", "type", "besarPinjaman", "approvalPhase"]
+      }
+    },
+      
+    "serah_terima_notifications": {
+      "$pimpinanUid": {
+        ".read": "auth != null && auth.uid === $pimpinanUid",
+        ".write": "auth != null && (
+          root.child('metadata/admins').child(auth.uid).exists() ||
+          auth.uid === $pimpinanUid ||
+          root.child('metadata/roles/pengawas').child(auth.uid).val() === true ||
+          root.child('metadata/roles/koordinator').child(auth.uid).val() === true
+        )",
+        ".indexOn": ["timestamp", "read"],
+        "$notificationId": {
+          ".read": "auth != null && auth.uid === $pimpinanUid",
+          ".write": "auth != null && (
+            root.child('metadata/admins').child(auth.uid).exists() ||
+            auth.uid === $pimpinanUid ||
+            root.child('metadata/roles/pengawas').child(auth.uid).val() === true ||
+            root.child('metadata/roles/koordinator').child(auth.uid).val() === true
+          )"
+        }
+      }
+    },
+
+    "pengawas_serah_terima_notifications": {
+      "$pengawasUid": {
+        ".read": "auth != null && auth.uid === $pengawasUid",
+        ".write": "auth != null && (
+          root.child('metadata/admins').child(auth.uid).exists() ||
+          auth.uid === $pengawasUid ||
+          root.child('metadata/roles/pengawas').child(auth.uid).val() === true ||
+          root.child('metadata/roles/koordinator').child(auth.uid).val() === true
+        )",
+        ".indexOn": ["timestamp", "read"],
+        "$notificationId": {
+          ".read": "auth != null && auth.uid === $pengawasUid",
+          ".write": "auth != null && (
+            root.child('metadata/admins').child(auth.uid).exists() ||
+            auth.uid === $pengawasUid ||
+            root.child('metadata/roles/pengawas').child(auth.uid).val() === true ||
+            root.child('metadata/roles/koordinator').child(auth.uid).val() === true
+          )"
+        }
+      }
+    },
+
+    "pelanggan_ditolak": {
+      "$adminUid": {
+        ".read": "auth != null && (auth.uid === $adminUid || root.child('metadata/roles/pengawas').child(auth.uid).val() === true || root.child('metadata/roles/koordinator').child(auth.uid).val() === true)",
+        ".write": "auth != null && (
+          root.child('metadata/roles/pengawas').child(auth.uid).val() === true ||
+          root.child('metadata/roles/koordinator').child(auth.uid).val() === true ||
+          (root.child('metadata/admins').child($adminUid).child('cabang').exists() && 
+           root.child('metadata/cabang').child(root.child('metadata/admins').child($adminUid).child('cabang').val()).child('pimpinanUid').val() === auth.uid)
+        )"
+      }
+    },
+
+    "fcm_tokens": {
+      ".read": "auth != null",
+      "$uid": {
+        ".read": "auth != null",
+        ".write": "$uid === auth.uid"
+      }
+    },
+    
+    "pelanggan_status_khusus": {
+      "$cabangId": {
+        ".read": "auth != null && (root.child('metadata/cabang/' + $cabangId + '/pimpinanUid').val() === auth.uid || root.child('metadata/roles/pengawas/' + auth.uid).val() === true || root.child('metadata/roles/koordinator/' + auth.uid).val() === true)",
+        ".write": "auth != null && root.child('metadata/admins/' + auth.uid + '/cabang').val() === $cabangId",
+        ".indexOn": ["statusKhusus", "adminUid", "timestamp"]
+      }
+    },
+
+    "pembayaran_harian": {
+      "$cabangId": {
+        ".read": "auth != null && (root.child('metadata/cabang/' + $cabangId + '/pimpinanUid').val() === auth.uid || root.child('metadata/roles/pengawas/' + auth.uid).val() === true || root.child('metadata/roles/koordinator/' + auth.uid).val() === true || root.child('metadata/admins/' + auth.uid + '/cabang').val() === $cabangId)",
+        "$tanggal": {
+          ".write": "auth != null && root.child('metadata/admins/' + auth.uid + '/cabang').val() === $cabangId",
+          ".indexOn": ["adminUid", "timestamp", "jenis"]
+        }
+      }
+    },
+
+    "event_harian": {
+      "$cabangId": {
+        ".read": "auth != null && (root.child('metadata/cabang/' + $cabangId + '/pimpinanUid').val() === auth.uid || root.child('metadata/roles/pengawas/' + auth.uid).val() === true || root.child('metadata/roles/koordinator/' + auth.uid).val() === true)",
+        "$tanggal": {
+          ".write": "auth != null && root.child('metadata/admins/' + auth.uid + '/cabang').val() === $cabangId",
+          "nasabah_baru": {
+            ".indexOn": ["adminUid", "timestamp"]
+          },
+          "nasabah_lunas": {
+            ".indexOn": ["adminUid", "timestamp"]
+          }
+        }
+      }
+    },
+      
+    "pelanggan_bermasalah": {
+      "$cabangId": {
+        ".read": "auth != null && (root.child('metadata/cabang/' + $cabangId + '/pimpinanUid').val() === auth.uid || root.child('metadata/roles/pengawas/' + auth.uid).val() === true || root.child('metadata/roles/koordinator/' + auth.uid).val() === true)",
+        ".write": false,
+        ".indexOn": ["kategori", "hariTunggakan", "adminUid", "timestamp"]
+      }
+    },
+
+    "force_logout": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        ".write": false
+      }
+    },
+
+    "password_reset_logs": {
+      ".read": "auth != null && (root.child('metadata/roles/pengawas').child(auth.uid).val() === true || root.child('metadata/roles/koordinator').child(auth.uid).val() === true)",
+      ".write": false
+    },
+
+    "pimpinan_final_notifications": {
+      "$pimpinanUid": {
+        ".read": "auth != null && auth.uid === $pimpinanUid",
+        ".write": "auth != null && (
+          auth.uid === $pimpinanUid ||
+          root.child('metadata/roles/pengawas').child(auth.uid).val() === true ||
+          root.child('metadata/roles/koordinator').child(auth.uid).val() === true
+        )",
+        ".indexOn": ["timestamp", "read", "approvalPhase"]
+      }
+    },
+
+    "koordinator_final_notifications": {
+      "$koordinatorUid": {
+        ".read": "auth != null && auth.uid === $koordinatorUid",
+        ".write": "auth != null && (
+          auth.uid === $koordinatorUid ||
+          root.child('metadata/roles/pengawas').child(auth.uid).val() === true ||
+          root.child('metadata/roles/koordinator').child(auth.uid).val() === true
+        )",
+        ".indexOn": ["timestamp", "read", "approvalPhase"]
+      }
+    },
+      
+    "location_tracking": {
+  		"$targetUid": {
+    		".read": "auth != null && (
+      		auth.uid === $targetUid ||
+      		root.child('metadata/roles/pengawas').child(auth.uid).val() === true
+    		)",
+    		".write": "auth != null && 
+      		root.child('metadata/roles/pengawas').child(auth.uid).val() === true"
+  		}
+		},
+      
+    "remote_takeover": {
+      "$adminUid": {
+        ".read": "auth != null",
+        ".write": "auth != null"
+      }
+    },
+      
+    "session_lock": {
+      "$adminUid": {
+        ".read": "auth != null",
+        ".write": "auth != null"
+      }
+    },
+      
+    "device_presence": {
+      "$uid": {
+        ".read": "auth != null",
+        ".write": "auth.uid === $uid"
+      }
+    },  
+
+		"user_locations": {
+  		"$targetUid": {
+    		".read": "auth != null && 
+      		root.child('metadata/roles/pengawas').child(auth.uid).val() === true",
+    		".write": "auth != null && auth.uid === $targetUid"
+  		}
+		},  
+      
+    "biaya_awal": {
+      "$adminUid": {
+        ".read": "auth != null && (
+          auth.uid === $adminUid || 
+          root.child('metadata/roles/pengawas').child(auth.uid).val() === true ||
+          root.child('metadata/roles/koordinator').child(auth.uid).val() === true ||
+          (root.child('metadata/admins').child($adminUid).child('cabang').exists() && 
+           root.child('metadata/cabang').child(root.child('metadata/admins').child($adminUid).child('cabang').val()).child('pimpinanUid').val() === auth.uid)
+        )",
+        ".write": "auth != null && auth.uid === $adminUid",
+        ".indexOn": ["tanggal", "timestamp"]
+      }
+    },
+      
+    "kasir_entries": {
+      "$cabangId": {
+        "$bulan": {
+          ".read": "auth != null",
+          "$entryId": {
+            ".write": "auth != null && root.child('metadata/admins/' + auth.uid + '/role').val() === 'kasir_unit' && root.child('metadata/admins/' + auth.uid + '/cabang').val() === $cabangId"
+          }
+        }
+      }
+    },
+      
+    "kasir_summary": {
+      ".read": "auth != null",
+      ".write": false
+    },
+
+    "broadcast_messages": {
+      ".read": "auth != null",
+      ".write": "auth != null && root.child('metadata/roles/pengawas').child(auth.uid).val() === true",
+      ".indexOn": ["timestamp", "active", "expiresAt"]
+    }
+  }
+}
