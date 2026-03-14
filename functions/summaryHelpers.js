@@ -806,7 +806,24 @@ async function fullRecalculateAdminSummary(adminUid) {
                         nasabahLunas++;
                         if (adaPembayaranPadaTanggal(p, today)) nasabahLunasHariIni++;
                     }
-                    // Nasabah sudah lunas → TIDAK masuk target (konsisten dengan Android)
+                    // Baru lunas hari ini? Cek dua cara:
+                    // 1. Pembayaran hari ini menyebabkan lunas (payment-based, paling umum)
+                    // 2. tanggalLunasCicilan >= today (admin-set, misal RISMAYANTI)
+                    if (!isHariLibur) {
+                        const pembayaranHariIni = hitungPembayaranPadaTanggal(p, today);
+                        const lunasViaPembayaran = pembayaranHariIni > 0
+                            && (totalDibayar - pembayaranHariIni) < totalPelunasan;
+                        const tglLunasDate = parseDateIndo((p.tanggalLunasCicilan || '').trim());
+                        const lunasViaDate = tglLunasDate && todayDate && tglLunasDate >= todayDate;
+                        if (lunasViaPembayaran || lunasViaDate) {
+                            const tglAcuan = (p.tanggalPencairan || '').trim()
+                                || (p.tanggalPengajuan || '').trim()
+                                || (p.tanggalDaftar || '').trim();
+                            if (!isOverThreeMonths(tglAcuan)) {
+                                targetHariIni += Math.floor((p.besarPinjaman || 0) * 3 / 100);
+                            }
+                        }
+                    }
                 } else {
                     if (!isMenungguPencairanManual) {
                         nasabahAktif++;
@@ -836,7 +853,19 @@ async function fullRecalculateAdminSummary(adminUid) {
                     nasabahLunas++;
                     if (adaPembayaranPadaTanggal(p, today)) nasabahLunasHariIni++;
                 }
-                // Nasabah lunas → TIDAK masuk target (konsisten dengan Android)
+                // Lunas HARI INI atau sesudahnya → tetap masuk target (konsisten dengan web)
+                // Web menggunakan: tglLunasDate >= targetDate
+                if (!isHariLibur) {
+                    const tglLunasDate = parseDateIndo((p.tanggalLunasCicilan || '').trim());
+                    if (tglLunasDate && todayDate && tglLunasDate >= todayDate) {
+                        const tglAcuan = (p.tanggalPencairan || '').trim()
+                            || (p.tanggalPengajuan || '').trim()
+                            || (p.tanggalDaftar || '').trim();
+                        if (!isOverThreeMonths(tglAcuan)) {
+                            targetHariIni += Math.floor((p.besarPinjaman || 0) * 3 / 100);
+                        }
+                    }
+                }
                 break;
                 
             case 'menunggu approval':

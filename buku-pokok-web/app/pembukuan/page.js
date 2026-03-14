@@ -707,14 +707,13 @@ function getKategoriNasabah(nasabah) {
         // Macet > 3 bulan → exclude (konsisten dengan CF & Android)
         if (acuanDate < threeMonthsBefore) return;
 
-        // Untuk nasabah Lunas: masuk target hanya jika lunas SETELAH targetDate
-        // (konsisten dengan Android & buku fisik: lunas hari ini tidak masuk target hari ini)
+        // Untuk nasabah Lunas: gunakan tanggalLunasCicilan sebagai penentu utama
         if (status === 'lunas') {
           const tglLunasCicilan = (n.tanggalLunasCicilan || '').trim();
           if (!tglLunasCicilan) return; // Lunas tanpa tanggal cicilan → pinjaman lama, skip
           const tglLunasDate = parseDateStr(tglLunasCicilan);
-          if (!tglLunasDate || tglLunasDate <= targetDate) return; // lunas hari ini atau sebelumnya → tidak masuk target
-          // tglLunasDate > targetDate → nasabah BELUM lunas pada targetDate → masuk target
+          if (!tglLunasDate || tglLunasDate < targetDate) return; // lunas sebelum hari ini
+          // tglLunasDate === targetDate → lunas HARI INI → langsung masuk target, skip payment check
           total += Math.floor(getEffectiveBesarPinjaman(n, targetDate) * 3 / 100);
           return;
         }
@@ -773,7 +772,8 @@ function getKategoriNasabah(nasabah) {
       });
 
       // Target Kini per tanggal — dihitung dari data nasabah untuk semua tanggal.
-      // Nasabah lunas hari ini TIDAK masuk target hari ini (konsisten dengan Android & buku fisik).
+      // Dengan payDate < targetDate, nasabah yang baru lunas/lanjut pinjaman HARI INI
+      // masih dihitung dalam target hari ini (konsisten dengan buku manual koperasi).
       const targetKini = calculateTargetForDate(dateStr);
 
       dropBerjalan += dropKini;

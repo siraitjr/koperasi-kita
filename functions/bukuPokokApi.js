@@ -321,9 +321,15 @@ exports.getBukuPokok = functions
                 if (!pelangganData) continue;
 
                 Object.entries(pelangganData).forEach(([pId, p]) => {
-                    // Filter by status (konsisten dengan Android — lunas tidak masuk buku aktif)
+                    // Filter by status
                     const pStatus = (p.status || '').toLowerCase();
-                    if (statusFilter === 'aktif' && pStatus !== 'aktif' && pStatus !== 'disetujui') return;
+                    if (statusFilter === 'aktif' && pStatus !== 'aktif' && pStatus !== 'disetujui') {
+                        // Exception: nasabah lunas HARI INI tetap masuk (keluar besok)
+                        // Konsisten dengan web: tglLunasDate >= targetDate
+                        if (pStatus !== 'lunas') return;
+                        const tglLunasDate = parseTglIndoDate((p.tanggalLunasCicilan || '').trim());
+                        if (!tglLunasDate || !todayDate || tglLunasDate < todayDate) return;
+                    }
                     if (statusFilter === 'lunas' && pStatus !== 'lunas') return;
                     if (statusFilter === 'semua' && pStatus === 'menunggu approval' && pStatus === 'ditolak') return;
 
@@ -404,8 +410,23 @@ exports.getBukuPokok = functions
                     const tglCair = (n.tanggalPencairan || '').trim();
                     if (tglCair === todayStr) return false;
 
-                    // Exclude sudah lunas cicilan (konsisten dengan Android — lunas = tidak masuk target)
-                    if (n.totalPelunasan > 0 && n.sisaUtang <= 0) return false;
+                    // Exclude sudah lunas cicilan — kecuali baru lunas HARI INI (keluar besok)
+                    if (n.totalPelunasan > 0 && n.sisaUtang <= 0) {
+                        // Lunas via status='lunas': sudah diverifikasi tanggalLunasCicilan >= today di line 316
+                        const nStatus = (n.status || '').toLowerCase();
+                        if (nStatus === 'lunas') {
+                            // pass through — already date-verified at early filter
+                        } else {
+                            // Lunas via pembayaran hari ini (status masih 'aktif', tapi cicilan selesai hari ini)
+                            const pembayaranHariIni = (n.pembayaran[todayStr] || {}).total || 0;
+                            const isLunasViaPayment = pembayaranHariIni > 0
+                                && (n.totalDibayar - pembayaranHariIni) < n.totalPelunasan;
+                            // Lunas via tanggalLunasCicilan >= hari ini (di-set admin, belum bayar hari ini)
+                            const tglLunasDate = parseTglIndoDate((n.tanggalLunasCicilan || '').trim());
+                            const isLunasViaDate = !!(tglLunasDate && todayDate && tglLunasDate >= todayDate);
+                            if (!isLunasViaPayment && !isLunasViaDate) return false;
+                        }
+                    }
 
                     return true;
                 });
