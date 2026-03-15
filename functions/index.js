@@ -37,6 +37,7 @@ const remoteTakeover = require('./remoteTakeover');
 const kasirApi = require('./kasirApi');
 const detectDuplicate = require('./detectDuplicateNasabah');
 const { cleanupDuplicateApprovals } = require('./cleanupDuplicateApprovals');
+const rekapSnapshot = require('./rekapSnapshot');
 
 // =========================================================================
 // PELANGGAN TRIGGERS
@@ -127,6 +128,8 @@ exports.migrateNikToRegistry = onNikRegistry.migrateNikToRegistry;
 exports.getRekeningKoran = rekeningKoran.getRekeningKoran;
 exports.repairAllSummaries = summaryRepair.repairAllSummaries;
 exports.repairAdminSummary = summaryRepair.repairAdminSummary;
+exports.saveRekapSnapshot = rekapSnapshot.saveRekapSnapshot;
+exports.getRekapHarian = rekapSnapshot.getRekapHarian;
 
 
 // =========================================================================

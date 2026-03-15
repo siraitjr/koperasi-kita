@@ -5,10 +5,10 @@
 // KASIR WEB - Jurnal Kasir & Akses Buku Pokok
 // =========================================================================
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { onAuthStateChanged, signInWithEmailAndPassword, signOut } from 'firebase/auth';
 import { auth } from '../../lib/firebase';
-import { getKasirSummary, getKasirEntries, addKasirEntry, deleteKasirEntry, getBukuPokok } from '../../lib/api';
+import { getKasirSummary, getKasirEntries, addKasirEntry, deleteKasirEntry, getBukuPokok, saveRekapSnapshot, getRekapHarian } from '../../lib/api';
 import { formatRp, formatRpFull } from '../../lib/format';
 
 // =========================================================================
@@ -959,11 +959,18 @@ function BukuRekapScreen({ user, cabang, cabangList, onBack, onLogout }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [selectedDate, setSelectedDate] = useState(null);
+
+  // Refs untuk auto-save snapshot (fire-and-forget)
+  const rekapRowsRef = useRef([]);
+  const totalsRef = useRef({});
+  const snapshotSavedRef = useRef(false);
 
   useEffect(() => {
     if (!activeCabang) return;
     setLoading(true);
     setError('');
+    snapshotSavedRef.current = false;
     getBukuPokok({
       cabangId: activeCabang.id,
       adminUid: '',
@@ -971,6 +978,7 @@ function BukuRekapScreen({ user, cabang, cabangList, onBack, onLogout }) {
     }).then(result => {
       if (result.success && result.type === 'buku_pokok') {
         setData(result.data);
+        setSelectedDate(result.data.today || getTodayIndo());
       }
     }).catch(err => {
       setError('Gagal memuat data: ' + err.message);
@@ -979,13 +987,27 @@ function BukuRekapScreen({ user, cabang, cabangList, onBack, onLogout }) {
     });
   }, [activeCabang?.id]);
 
+  // Auto-save snapshot untuk hari ini (fire-and-forget, idempotent di server)
+  useEffect(() => {
+    if (!data || !activeCabang || !selectedDate || snapshotSavedRef.current) return;
+    const today = data.today || getTodayIndo();
+    if (selectedDate !== today || !rekapRowsRef.current.length) return;
+    snapshotSavedRef.current = true;
+    saveRekapSnapshot({
+      cabangId: activeCabang.id,
+      tanggal: today,
+      snapshot: { rows: rekapRowsRef.current, totals: totalsRef.current },
+    }).catch(() => { snapshotSavedRef.current = false; });
+  }, [data?.today, selectedDate, activeCabang?.id]);
+
   // ==================== COMPUTE REKAP PER RESORT ====================
   const rekapRows = (() => {
     if (!data?.nasabah) return [];
 
     const allNasabah = data.nasabah;
     const admins = activeCabang?.admins || [];
-    const todayStr = data.today || getTodayIndo();
+    // Gunakan selectedDate agar bisa tampilkan data hari mana saja (7 hari terakhir)
+    const todayStr = selectedDate || data.today || getTodayIndo();
 
     // Helper: parse "07 Feb 2026" ke Date object
     const BULAN_MAP_REV = {};
@@ -1129,6 +1151,14 @@ function BukuRekapScreen({ user, cabang, cabangList, onBack, onLogout }) {
   });
   const totalPersen = totals.target > 0 ? Math.round(totals.storting / totals.target * 100) : 0;
 
+  // Simpan ke ref agar bisa dipakai oleh auto-save useEffect
+  rekapRowsRef.current = rekapRows;
+  totalsRef.current = totals;
+
+  // 7 hari kerja terakhir dari tanggalList (sudah urut: hari ini → mundur)
+  const dateTabs = data?.tanggalList?.slice(0, 7) || [];
+  const today = data?.today || getTodayIndo();
+
   const thStyle = { padding: '8px 6px', textAlign: 'center', fontWeight: 700, fontSize: 10, whiteSpace: 'nowrap', position: 'sticky', top: 0, background: '#f8f9fa', zIndex: 2, borderBottom: '2px solid var(--border)' };
   const tdStyle = { padding: '6px', textAlign: 'right', fontFamily: "'DM Mono', monospace", fontSize: 11 };
   const tdNameStyle = { padding: '6px 8px', textAlign: 'left', fontWeight: 600, fontSize: 12, whiteSpace: 'nowrap' };
@@ -1142,7 +1172,7 @@ function BukuRekapScreen({ user, cabang, cabangList, onBack, onLogout }) {
           </button>
           <div>
             <h1>Buku Rekap</h1>
-            <p>{activeCabang?.name || 'Pilih Cabang'} — {data?.today || getTodayIndo()}</p>
+            <p>{activeCabang?.name || 'Pilih Cabang'} — {selectedDate || getTodayIndo()}</p>
           </div>
         </div>
         <div className="top-bar-right">
@@ -1163,6 +1193,27 @@ function BukuRekapScreen({ user, cabang, cabangList, onBack, onLogout }) {
           </div>
         )}
 
+        {/* Date tabs — 7 hari kerja terakhir (data sudah tersedia in-memory) */}
+        {!loading && dateTabs.length > 0 && (
+          <div style={{ display: 'flex', gap: 6, marginBottom: 16, flexWrap: 'wrap' }}>
+            {dateTabs.map((tgl, idx) => {
+              const isToday = tgl === today;
+              const isSelected = tgl === selectedDate;
+              return (
+                <button key={tgl} onClick={() => setSelectedDate(tgl)} style={{
+                  padding: '6px 12px', borderRadius: 10, fontSize: 12, fontWeight: isSelected ? 700 : 400,
+                  border: isSelected ? '2px solid var(--primary)' : '1px solid var(--border)',
+                  background: isSelected ? 'var(--primary)' : 'var(--card)',
+                  color: isSelected ? '#fff' : 'var(--text)',
+                  cursor: 'pointer', whiteSpace: 'nowrap',
+                }}>
+                  {isToday ? `Hari Ini (${tgl.slice(0, 6)})` : tgl.slice(0, 6)}
+                </button>
+              );
+            })}
+          </div>
+        )}
+
         {loading ? (
           <div style={{ textAlign: 'center', padding: 60 }}>
             <div className="loading-spinner" />
@@ -1172,7 +1223,7 @@ function BukuRekapScreen({ user, cabang, cabangList, onBack, onLogout }) {
           <div style={{ textAlign: 'center', padding: 60, color: 'var(--danger)', fontSize: 14 }}>{error}</div>
         ) : rekapRows.length === 0 ? (
           <div style={{ textAlign: 'center', padding: 60 }}>
-            <p style={{ color: 'var(--text-muted)', fontSize: 14 }}>Tidak ada data resort</p>
+            <p style={{ color: 'var(--text-muted)', fontSize: 14 }}>Tidak ada data untuk {selectedDate || 'hari ini'}</p>
           </div>
         ) : (
           <>

@@ -127,3 +127,22 @@ export async function addKasirEntry({ jenis, arah, jumlah, keterangan, tanggal, 
 export async function deleteKasirEntry({ cabangId, bulan, entryId }) {
   return apiCall('deleteKasirEntry', { cabangId, bulan, entryId });
 }
+
+// =========================================================================
+// REKAP SNAPSHOT API
+// =========================================================================
+
+/**
+ * Simpan rekap snapshot harian ke RTDB (idempotent - skip jika sudah ada)
+ * Dipanggil fire-and-forget dari BukuRekapScreen saat kasir membuka hari ini.
+ */
+export async function saveRekapSnapshot({ cabangId, tanggal, snapshot }) {
+  return apiPost('saveRekapSnapshot', { cabangId, tanggal, snapshot });
+}
+
+/**
+ * Baca rekap harian tersimpan (N hari terakhir)
+ */
+export async function getRekapHarian({ cabangId, limit }) {
+  return apiCall('getRekapHarian', { cabangId, limit });
+}
