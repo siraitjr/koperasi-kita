@@ -1288,7 +1288,7 @@ function KasPenuntunScreen({ user, cabang, cabangList, onBack, onLogout }) {
     setLoading(true);
     setError('');
     Promise.all([
-      getBukuPokok({ cabangId: activeCabang.id, adminUid: '', status: 'aktif' }),
+      getBukuPokok({ cabangId: activeCabang.id, adminUid: '', status: 'semua' }),
       getKasirEntries({ cabangId: activeCabang.id, bulan }),
     ]).then(([bukuResult, kasirResult]) => {
       if (bukuResult.success && bukuResult.type === 'buku_pokok') {
@@ -1337,6 +1337,14 @@ function KasPenuntunScreen({ user, cabang, cabangList, onBack, onLogout }) {
         const date = parseDateStr(tglCair);
         if (date && date >= monthStart && date <= monthEnd) dateSet.add(tglCair);
       }
+    });
+
+    // Tambahkan tanggal dari kasir entries (suntikan_dana, BU, dll) ke dateSet
+    kasirEntries.forEach(e => {
+      const tgl = e.tanggal;
+      if (!tgl) return;
+      const date = parseDateStr(tgl);
+      if (date && date >= monthStart && date <= monthEnd) dateSet.add(tgl);
     });
 
     const sortedDates = Array.from(dateSet).sort((a, b) => {
