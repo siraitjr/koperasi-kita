@@ -12429,6 +12429,16 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
             val dateFormat = SimpleDateFormat("dd MMM yyyy", Locale("in", "ID"))
             val today = dateFormat.format(Date())
 
+            // Pre-compute batas 3 bulan (konsisten dengan calculateTargetHarian)
+            val threeMonthsAgo = Calendar.getInstance().apply {
+                add(Calendar.MONTH, -3)
+                set(Calendar.DAY_OF_MONTH, 1)
+                set(Calendar.HOUR_OF_DAY, 0)
+                set(Calendar.MINUTE, 0)
+                set(Calendar.SECOND, 0)
+                set(Calendar.MILLISECOND, 0)
+            }.time
+
             var totalNasabah = 0
             var nasabahAktif = 0
             var nasabahLunas = 0
@@ -12470,12 +12480,20 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                             totalPinjamanAktif += totalPelunasanValue
                             totalPiutang += (totalPelunasanValue - totalDibayar).coerceAtLeast(0)
 
-                            // Hitung target hari ini (60% dari cicilan)
-                            val nilaiCicilan = (pelanggan.hasilSimulasiCicilan
-                                .find { it.tanggal == today }?.jumlah
-                                ?: pelanggan.hasilSimulasiCicilan.firstOrNull()?.jumlah
-                                ?: (pelanggan.besarPinjaman * 5 / 100)).toLong()
-                            targetHariIni += nilaiCicilan * 60L / 100L
+                            // Hitung target hari ini: flat 3%, konsisten dengan calculateTargetHarian
+                            // Exclude nasabah cair hari ini dan > 3 bulan
+                            val tglCair = pelanggan.tanggalPencairan.trim()
+                            val isCairHariIni = tglCair.isNotBlank() && tglCair == today
+                            if (!isCairHariIni) {
+                                val tglAcuan = pelanggan.tanggalPencairan.ifBlank {
+                                    pelanggan.tanggalPengajuan.ifBlank { pelanggan.tanggalDaftar }
+                                }
+                                val acuanDate = try { dateFormat.parse(tglAcuan) } catch (_: Exception) { null }
+                                val isOverThreeMonths = acuanDate != null && acuanDate.before(threeMonthsAgo)
+                                if (!isOverThreeMonths) {
+                                    targetHariIni += pelanggan.besarPinjaman * 3L / 100L
+                                }
+                            }
 
                             // Cek nasabah baru hari ini
                             val tanggalDaftar = pelanggan.tanggalDaftar.ifBlank { pelanggan.tanggalPengajuan }
