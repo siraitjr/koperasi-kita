@@ -71,6 +71,50 @@ exports.onNewPengajuanCreated = functions.database
             // UPDATED: Tambah koordinatorApproval dan koordinatorFinalConfirmed
             // =========================================================================
             if (requiresDualApproval) {
+                // Cek jika dualApprovalInfo sudah ada dengan phase lebih lanjut dari awaiting_pimpinan.
+                // Ini terjadi ketika fallback di approvePengajuan() membuat entry baru
+                // dengan phase=awaiting_koordinator. Jangan overwrite phase yang sudah maju!
+                const existingDualInfo = pengajuanData.dualApprovalInfo;
+                const existingPhase = existingDualInfo?.approvalPhase;
+                const advancedPhases = [
+                    ApprovalPhase.AWAITING_KOORDINATOR,
+                    ApprovalPhase.AWAITING_PENGAWAS,
+                    ApprovalPhase.AWAITING_KOORDINATOR_FINAL,
+                    ApprovalPhase.AWAITING_PIMPINAN_FINAL
+                ];
+
+                if (existingPhase && advancedPhases.includes(existingPhase)) {
+                    console.log(`ℹ️ DualApprovalInfo sudah di phase: ${existingPhase}, skip init (entry dari fallback approval)`);
+                    // Kirim notifikasi ke koordinator jika sudah di phase awaiting_koordinator
+                    if (existingPhase === ApprovalPhase.AWAITING_KOORDINATOR) {
+                        const cabangSnap2 = await db.ref(`metadata/cabang/${cabangId}`).once('value');
+                        const koordinatorSnap = await db.ref('metadata/roles/koordinator').once('value');
+                        if (koordinatorSnap.exists()) {
+                            const koordinatorUids = Object.keys(koordinatorSnap.val());
+                            for (const koordinatorUid of koordinatorUids) {
+                                await db.ref(`koordinator_notifications/${koordinatorUid}`).push({
+                                    type: 'PIMPINAN_REVIEWED',
+                                    title: '📋 Review Pinjaman - Pimpinan DISETUJUI (Tahap 2/5)',
+                                    message: `${pengajuanData.namaPanggilan || 'Nasabah'} - Rp ${formatRupiah(besarPinjaman)}. Pimpinan: DISETUJUI. Menunggu keputusan Anda.`,
+                                    pelangganId: pengajuanData.pelangganId || '',
+                                    pelangganNama: pengajuanData.namaPanggilan || 'Nasabah',
+                                    adminUid: pengajuanData.adminUid || '',
+                                    besarPinjaman: besarPinjaman,
+                                    cabangId: cabangId,
+                                    pengajuanId: pengajuanId,
+                                    pimpinanApprovalStatus: existingDualInfo?.pimpinanApproval?.status || 'approved',
+                                    approvalPhase: ApprovalPhase.AWAITING_KOORDINATOR,
+                                    timestamp: admin.database.ServerValue.TIMESTAMP,
+                                    read: false
+                                });
+                            }
+                            console.log(`✅ Notifikasi fallback terkirim ke ${koordinatorUids.length} koordinator`);
+                        }
+                    }
+                    // Skip the dualApprovalInfo.set below - return early after notifications
+                    return { success: true, requiresDualApproval, phase: existingPhase, note: 'fallback_entry_skipped_init' };
+                }
+
                 await snapshot.ref.child('dualApprovalInfo').set({
                     requiresDualApproval: true,
                     approvalPhase: ApprovalPhase.AWAITING_PIMPINAN, // Phase 1

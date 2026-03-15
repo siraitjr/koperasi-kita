@@ -126,15 +126,30 @@ async function ensurePengajuanApprovalExists(adminUid, pelangganId, pelangganDat
                 if (dualInfo) {
                     const phase = dualInfo.approvalPhase || '';
                     const pimpinanStatus = dualInfo.pimpinanApproval?.status || 'pending';
-                    
-                    // Entry BASI jika: phase bukan awaiting_pimpinan, ATAU pimpinan sudah aksi
-                    if (phase !== 'awaiting_pimpinan' && phase !== '') {
+
+                    // Phase yang sedang aktif dalam proses multi-approval - JANGAN direset!
+                    // Mereset entry ini akan merusak alur approval yang sedang berjalan.
+                    const activeMultiPhases = [
+                        'awaiting_koordinator',
+                        'awaiting_pengawas',
+                        'awaiting_koordinator_final',
+                        'awaiting_pimpinan_final'
+                    ];
+
+                    if (activeMultiPhases.includes(phase)) {
+                        // Sedang dalam proses approval multi-phase - jangan direset
+                        if (!existingKey) existingKey = child.key;
+                    } else if (phase === 'completed') {
+                        // Siklus approval sudah selesai tapi pelanggan masih Menunggu Approval
+                        // (kemungkinan pengajuan ulang) - reset untuk pengajuan baru
                         needsReset = true;
                         existingKey = child.key;
                     } else if (pimpinanStatus !== 'pending') {
+                        // Phase awaiting_pimpinan tapi pimpinan sudah aksi - state tidak konsisten
                         needsReset = true;
                         existingKey = child.key;
                     }
+                    // Phase awaiting_pimpinan dengan pimpinan pending = fresh entry, biarkan
                 }
                 
                 if (!existingKey) {

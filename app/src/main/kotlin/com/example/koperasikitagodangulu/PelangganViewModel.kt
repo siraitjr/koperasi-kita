@@ -11267,6 +11267,35 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     }
                 }
 
+                // Fallback: juga scan pelanggan nodes untuk record yang entri pengajuan_approval-nya hilang
+                val foundPelangganIdsPengawas = pendingList.map { it.id }.toSet().toMutableSet()
+                for (cabangId in cabangIds) {
+                    try {
+                        val adminListSnap = database.child("metadata/cabang/$cabangId/adminList").get().await()
+                        val adminList = adminListSnap.children.mapNotNull { it.getValue(String::class.java) }
+                        for (adminUid in adminList) {
+                            val pelangganSnap = database.child("pelanggan/$adminUid")
+                                .orderByChild("status")
+                                .equalTo("Menunggu Approval")
+                                .get().await()
+                            pelangganSnap.children.forEach { child ->
+                                val pelangganId = child.key ?: return@forEach
+                                if (pelangganId in foundPelangganIdsPengawas) return@forEach
+                                val pelanggan = child.getValue(Pelanggan::class.java) ?: return@forEach
+                                val phase = pelanggan.dualApprovalInfo?.approvalPhase ?: return@forEach
+                                val besar = pelanggan.besarPinjaman
+                                if (besar >= DualApprovalThreshold.MINIMUM_AMOUNT && phase == ApprovalPhase.AWAITING_PENGAWAS) {
+                                    pendingList.add(pelanggan.copy(id = pelangganId, adminUid = adminUid, cabangId = cabangId))
+                                    foundPelangganIdsPengawas.add(pelangganId)
+                                    Log.d("PengawasApproval", "✅ Fallback found: ${pelanggan.namaPanggilan}")
+                                }
+                            }
+                        }
+                    } catch (e: Exception) {
+                        Log.e("PengawasApproval", "Error in fallback scan for $cabangId: ${e.message}")
+                    }
+                }
+
                 _pendingApprovalsPengawas.value = pendingList.sortedByDescending { it.tanggalPengajuan }
                 Log.d("PengawasApproval", "✅ Loaded ${pendingList.size} pending approvals for Pengawas")
             } catch (e: Exception) {
@@ -11321,6 +11350,35 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                         } catch (e: Exception) {
                             Log.e("KoordinatorApproval", "Error parsing pengajuan: ${e.message}")
                         }
+                    }
+                }
+
+                // Fallback: juga scan pelanggan nodes untuk record yang entri pengajuan_approval-nya hilang
+                val foundPelangganIdsKoordinator = pendingList.map { it.id }.toSet().toMutableSet()
+                for (cabangId in cabangIds) {
+                    try {
+                        val adminListSnap = database.child("metadata/cabang/$cabangId/adminList").get().await()
+                        val adminList = adminListSnap.children.mapNotNull { it.getValue(String::class.java) }
+                        for (adminUid in adminList) {
+                            val pelangganSnap = database.child("pelanggan/$adminUid")
+                                .orderByChild("status")
+                                .equalTo("Menunggu Approval")
+                                .get().await()
+                            pelangganSnap.children.forEach { child ->
+                                val pelangganId = child.key ?: return@forEach
+                                if (pelangganId in foundPelangganIdsKoordinator) return@forEach
+                                val pelanggan = child.getValue(Pelanggan::class.java) ?: return@forEach
+                                val phase = pelanggan.dualApprovalInfo?.approvalPhase ?: return@forEach
+                                val besar = pelanggan.besarPinjaman
+                                if (besar >= DualApprovalThreshold.MINIMUM_AMOUNT && phase == ApprovalPhase.AWAITING_KOORDINATOR) {
+                                    pendingList.add(pelanggan.copy(id = pelangganId, adminUid = adminUid, cabangId = cabangId))
+                                    foundPelangganIdsKoordinator.add(pelangganId)
+                                    Log.d("KoordinatorApproval", "✅ Fallback found: ${pelanggan.namaPanggilan}")
+                                }
+                            }
+                        }
+                    } catch (e: Exception) {
+                        Log.e("KoordinatorApproval", "Error in fallback scan for $cabangId: ${e.message}")
                     }
                 }
 
