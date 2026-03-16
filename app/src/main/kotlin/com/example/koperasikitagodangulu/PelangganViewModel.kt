@@ -3240,8 +3240,31 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                 val sudahLunas = sisaUtangLama <= 0 || isFromMenungguPencairan
                 val pinjamanKeBaru = existingPelanggan.pinjamanKe + 1
 
+                // ========== RESOLVE CABANG ID ==========
+                // Mencegah pengajuan_approval gagal dibuat (silent failure) akibat cabangId kosong.
+                // Nasabah lama yang didaftarkan sebelum field cabangId ada mungkin tidak punya nilai ini.
+                // Resolusi dilakukan di sini (dengan await) agar nilai sudah pasti tersedia saat
+                // disimpan ke updatedPelanggan — sehingga Prioritas 1 di simpanPelangganKeFirebase
+                // selalu berhasil dan simpanKePengajuanApproval selalu dipanggil.
+                val currentUidForCabang = existingPelanggan.adminUid.ifBlank { Firebase.auth.currentUser?.uid ?: "" }
+                var resolvedCabangId = existingPelanggan.cabangId
+                if (resolvedCabangId.isBlank()) {
+                    resolvedCabangId = _currentUserCabang.value ?: ""
+                }
+                if (resolvedCabangId.isBlank() && currentUidForCabang.isNotBlank()) {
+                    try {
+                        val adminMeta = database.child("metadata").child("admins")
+                            .child(currentUidForCabang).get().await()
+                        resolvedCabangId = adminMeta.child("cabang").getValue(String::class.java) ?: ""
+                        Log.d("KelolaKredit", "📌 CabangId dari metadata: '$resolvedCabangId'")
+                    } catch (e: Exception) {
+                        Log.w("KelolaKredit", "⚠️ Gagal ambil cabangId dari metadata: ${e.message}")
+                    }
+                }
+                Log.d("KelolaKredit", "📌 CabangId resolved: '$resolvedCabangId'")
+
                 // ========== UPLOAD FOTO ==========
-                val currentUid = existingPelanggan.adminUid.ifBlank { Firebase.auth.currentUser?.uid ?: "" }
+                val currentUid = currentUidForCabang
                 var newFotoKtpUrl = ""
                 var newFotoKtpSuamiUrl = ""
                 var newFotoKtpIstriUrl = ""
@@ -3395,7 +3418,10 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                             "isTopUpFromLunas=$sudahLunas",
 
                     // === Timestamp ===
-                    lastUpdated = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
+                    lastUpdated = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date()),
+
+                    // === CabangId (dipastikan terisi agar pengajuan_approval selalu terbuat) ===
+                    cabangId = if (resolvedCabangId.isNotBlank()) resolvedCabangId else existingPelanggan.cabangId
                 )
 
                 Log.d("KelolaKredit", "📝 DATA YANG AKAN DISIMPAN:")

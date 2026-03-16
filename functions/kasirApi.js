@@ -166,7 +166,7 @@ exports.getKasirSummary = functions
                 return;
             }
 
-            if (user.role !== 'kasir_unit' && user.role !== 'kasir_wilayah') {
+            if (user.role !== 'kasir_unit' && user.role !== 'kasir_wilayah' && user.role !== 'sekretaris') {
                 res.status(403).json({ success: false, error: 'Akses hanya untuk Kasir' });
                 return;
             }
@@ -267,7 +267,7 @@ exports.getKasirEntries = functions
                 return;
             }
 
-            if (user.role !== 'kasir_unit' && user.role !== 'kasir_wilayah') {
+            if (user.role !== 'kasir_unit' && user.role !== 'kasir_wilayah' && user.role !== 'sekretaris') {
                 res.status(403).json({ success: false, error: 'Akses hanya untuk Kasir' });
                 return;
             }

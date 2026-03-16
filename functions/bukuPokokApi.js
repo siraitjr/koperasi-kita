@@ -249,8 +249,8 @@ exports.getBukuPokok = functions
                 }
                 const cabangSnap = await db.ref(`metadata/cabang/${targetCabang}/adminList`).once('value');
                 adminUids = cabangSnap.val() || [];
-            } else if (user.role === 'kasir_wilayah') {
-                // Kasir wilayah sees all (seperti pengawas/koordinator)
+            } else if (user.role === 'kasir_wilayah' || user.role === 'sekretaris') {
+                // Kasir wilayah & Sekretaris sees all (seperti pengawas/koordinator)
                 if (cabangId) {
                     const cabangSnap = await db.ref(`metadata/cabang/${cabangId}/adminList`).once('value');
                     adminUids = cabangSnap.val() || [];
@@ -262,15 +262,15 @@ exports.getBukuPokok = functions
                         name: data.name || id,
                         adminCount: (data.adminList || []).length
                     }));
-                    res.status(200).json({ 
-                        success: true, 
+                    res.status(200).json({
+                        success: true,
                         type: 'cabang_selection',
-                        data: cabangList 
+                        data: cabangList
                     });
                     return;
                 }
             } else if (user.role === 'pengawas' || user.role === 'koordinator') {
-                // Pengawas/Koordinator sees all, but must specify cabang or admin
+                // Pengawas/Koordinator/Sekretaris sees all, but must specify cabang or admin
                 if (cabangId) {
                     const cabangSnap = await db.ref(`metadata/cabang/${cabangId}/adminList`).once('value');
                     adminUids = cabangSnap.val() || [];
@@ -283,10 +283,10 @@ exports.getBukuPokok = functions
                         name: data.name || id,
                         adminCount: (data.adminList || []).length
                     }));
-                    res.status(200).json({ 
-                        success: true, 
+                    res.status(200).json({
+                        success: true,
                         type: 'cabang_selection',
-                        data: cabangList 
+                        data: cabangList
                     });
                     return;
                 }
@@ -506,7 +506,7 @@ exports.getBukuPokokSummary = functions
             } else if (user.role === 'kasir_unit') {
                 visibleCabang = cabangList.filter(c => c.id === user.cabang);
             }
-            // kasir_wilayah, pengawas & koordinator see all
+            // kasir_wilayah, sekretaris, pengawas & koordinator see all
 
             res.status(200).json({
                 success: true,
