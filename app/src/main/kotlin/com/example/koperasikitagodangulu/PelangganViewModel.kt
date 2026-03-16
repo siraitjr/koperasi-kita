@@ -3838,7 +3838,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                                                     // ✅ Update dualApprovalInfo dengan phase baru
                                                     // Cloud function akan mendeteksi perubahan phase
                                                     // dan mengirim notifikasi ke Pengawas
-                                                    child.ref.child("dualApprovalInfo").setValue(updatedDualInfo)
+                                                    child.ref.child("dualApprovalInfo").setValue(buildDualApprovalInfoMap(updatedDualInfo))
                                                         .addOnSuccessListener {
                                                             Log.d("Approval", "✅ Phase 1 complete - moved to Phase 2 (AWAITING_KOORDINATOR)")
                                                             Log.d("Approval", "✅ Cloud function akan kirim notifikasi ke Koordinator")
@@ -4058,7 +4058,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                                         .addListenerForSingleValueEvent(object : ValueEventListener {
                                             override fun onDataChange(snapshot: DataSnapshot) {
                                                 snapshot.children.forEach { child ->
-                                                    child.ref.child("dualApprovalInfo").setValue(updatedDualInfo)
+                                                    child.ref.child("dualApprovalInfo").setValue(buildDualApprovalInfoMap(updatedDualInfo))
                                                         .addOnSuccessListener {
                                                             Log.d("Approval", "✅ Phase 3 complete - COMPLETED")
 
@@ -4900,7 +4900,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                                         .addListenerForSingleValueEvent(object : ValueEventListener {
                                             override fun onDataChange(snapshot: DataSnapshot) {
                                                 snapshot.children.forEach { child ->
-                                                    child.ref.child("dualApprovalInfo").setValue(updatedDualInfo)
+                                                    child.ref.child("dualApprovalInfo").setValue(buildDualApprovalInfoMap(updatedDualInfo))
                                                         .addOnSuccessListener {
                                                             Log.d("Rejection", "✅ Phase 1 REJECT - moved to Phase 2 (AWAITING_KOORDINATOR)")
                                                             Log.d("Rejection", "✅ Koordinator akan review berikutnya")
@@ -5063,7 +5063,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                                         .addListenerForSingleValueEvent(object : ValueEventListener {
                                             override fun onDataChange(snapshot: DataSnapshot) {
                                                 snapshot.children.forEach { child ->
-                                                    child.ref.child("dualApprovalInfo").setValue(updatedDualInfo)
+                                                    child.ref.child("dualApprovalInfo").setValue(buildDualApprovalInfoMap(updatedDualInfo))
                                                         .addOnSuccessListener {
                                                             Log.d("Rejection", "✅ Phase 3 complete - COMPLETED")
 
@@ -7873,36 +7873,46 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     "timestamp" to com.google.firebase.database.ServerValue.TIMESTAMP
                 )
 
-// ✅ KRITIS: Reset dualApprovalInfo ke Phase 1 untuk >= 3jt
-// Agar onUpdate cloud function tetap trigger saat Pimpinan approve
                 if (pelanggan.besarPinjaman >= DualApprovalThreshold.MINIMUM_AMOUNT) {
-                    pengajuanData["dualApprovalInfo"] = mapOf(
-                        "requiresDualApproval" to true,
-                        "approvalPhase" to ApprovalPhase.AWAITING_PIMPINAN,
-                        "pimpinanApproval" to mapOf(
-                            "status" to "pending", "by" to "", "uid" to "",
-                            "timestamp" to 0, "note" to "",
-                            "adjustedAmount" to 0, "adjustedTenor" to 0
-                        ),
-                        "koordinatorApproval" to mapOf(
-                            "status" to "pending", "by" to "", "uid" to "",
-                            "timestamp" to 0, "note" to "",
-                            "adjustedAmount" to 0, "adjustedTenor" to 0
-                        ),
-                        "pengawasApproval" to mapOf(
-                            "status" to "pending", "by" to "", "uid" to "",
-                            "timestamp" to 0, "note" to "",
-                            "adjustedAmount" to 0, "adjustedTenor" to 0
-                        ),
-                        "finalDecision" to "",
-                        "finalDecisionBy" to "",
-                        "finalDecisionTimestamp" to 0,
-                        "rejectionReason" to "",
-                        "koordinatorFinalConfirmed" to false,
-                        "koordinatorFinalTimestamp" to 0,
-                        "pimpinanFinalConfirmed" to false,
-                        "pimpinanFinalTimestamp" to 0
-                    )
+                    val existingDualInfo = pelanggan.dualApprovalInfo
+                    val existingPhase = existingDualInfo?.approvalPhase ?: ""
+                    // Hanya reset ke Phase 1 jika belum ada proses approval yang berjalan.
+                    // Jika sudah di phase lanjutan (pimpinan sudah aksi), jangan overwrite
+                    // karena bisa menyebabkan Cloud Function membaca status "pending" yang salah.
+                    val shouldReset = existingDualInfo == null ||
+                        existingPhase.isEmpty() || existingPhase == ApprovalPhase.AWAITING_PIMPINAN
+                    if (shouldReset) {
+                        pengajuanData["dualApprovalInfo"] = mapOf(
+                            "requiresDualApproval" to true,
+                            "approvalPhase" to ApprovalPhase.AWAITING_PIMPINAN,
+                            "pimpinanApproval" to mapOf(
+                                "status" to "pending", "by" to "", "uid" to "",
+                                "timestamp" to 0, "note" to "",
+                                "adjustedAmount" to 0, "adjustedTenor" to 0
+                            ),
+                            "koordinatorApproval" to mapOf(
+                                "status" to "pending", "by" to "", "uid" to "",
+                                "timestamp" to 0, "note" to "",
+                                "adjustedAmount" to 0, "adjustedTenor" to 0
+                            ),
+                            "pengawasApproval" to mapOf(
+                                "status" to "pending", "by" to "", "uid" to "",
+                                "timestamp" to 0, "note" to "",
+                                "adjustedAmount" to 0, "adjustedTenor" to 0
+                            ),
+                            "finalDecision" to "",
+                            "finalDecisionBy" to "",
+                            "finalDecisionTimestamp" to 0,
+                            "rejectionReason" to "",
+                            "koordinatorFinalConfirmed" to false,
+                            "koordinatorFinalTimestamp" to 0,
+                            "pimpinanFinalConfirmed" to false,
+                            "pimpinanFinalTimestamp" to 0
+                        )
+                    } else {
+                        // Sudah di phase lanjutan - pertahankan state approval yang ada
+                        pengajuanData["dualApprovalInfo"] = buildDualApprovalInfoMap(existingDualInfo!!)
+                    }
                 } else {
                     // Untuk < 3jt, hapus dualApprovalInfo lama jika ada
                     pengajuanData["dualApprovalInfo"] = null
@@ -7966,33 +7976,41 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                 )
 
                 if (pelanggan.besarPinjaman >= DualApprovalThreshold.MINIMUM_AMOUNT) {
-                    pengajuanData["dualApprovalInfo"] = mapOf(
-                        "requiresDualApproval" to true,
-                        "approvalPhase" to ApprovalPhase.AWAITING_PIMPINAN,
-                        "pimpinanApproval" to mapOf(
-                            "status" to "pending", "by" to "", "uid" to "",
-                            "timestamp" to 0, "note" to "",
-                            "adjustedAmount" to 0, "adjustedTenor" to 0
-                        ),
-                        "koordinatorApproval" to mapOf(
-                            "status" to "pending", "by" to "", "uid" to "",
-                            "timestamp" to 0, "note" to "",
-                            "adjustedAmount" to 0, "adjustedTenor" to 0
-                        ),
-                        "pengawasApproval" to mapOf(
-                            "status" to "pending", "by" to "", "uid" to "",
-                            "timestamp" to 0, "note" to "",
-                            "adjustedAmount" to 0, "adjustedTenor" to 0
-                        ),
-                        "finalDecision" to "",
-                        "finalDecisionBy" to "",
-                        "finalDecisionTimestamp" to 0,
-                        "rejectionReason" to "",
-                        "koordinatorFinalConfirmed" to false,
-                        "koordinatorFinalTimestamp" to 0,
-                        "pimpinanFinalConfirmed" to false,
-                        "pimpinanFinalTimestamp" to 0
-                    )
+                    val existingDualInfo2 = pelanggan.dualApprovalInfo
+                    val existingPhase2 = existingDualInfo2?.approvalPhase ?: ""
+                    val shouldReset2 = existingDualInfo2 == null ||
+                        existingPhase2.isEmpty() || existingPhase2 == ApprovalPhase.AWAITING_PIMPINAN
+                    if (shouldReset2) {
+                        pengajuanData["dualApprovalInfo"] = mapOf(
+                            "requiresDualApproval" to true,
+                            "approvalPhase" to ApprovalPhase.AWAITING_PIMPINAN,
+                            "pimpinanApproval" to mapOf(
+                                "status" to "pending", "by" to "", "uid" to "",
+                                "timestamp" to 0, "note" to "",
+                                "adjustedAmount" to 0, "adjustedTenor" to 0
+                            ),
+                            "koordinatorApproval" to mapOf(
+                                "status" to "pending", "by" to "", "uid" to "",
+                                "timestamp" to 0, "note" to "",
+                                "adjustedAmount" to 0, "adjustedTenor" to 0
+                            ),
+                            "pengawasApproval" to mapOf(
+                                "status" to "pending", "by" to "", "uid" to "",
+                                "timestamp" to 0, "note" to "",
+                                "adjustedAmount" to 0, "adjustedTenor" to 0
+                            ),
+                            "finalDecision" to "",
+                            "finalDecisionBy" to "",
+                            "finalDecisionTimestamp" to 0,
+                            "rejectionReason" to "",
+                            "koordinatorFinalConfirmed" to false,
+                            "koordinatorFinalTimestamp" to 0,
+                            "pimpinanFinalConfirmed" to false,
+                            "pimpinanFinalTimestamp" to 0
+                        )
+                    } else {
+                        pengajuanData["dualApprovalInfo"] = buildDualApprovalInfoMap(existingDualInfo2!!)
+                    }
                 } else {
                     pengajuanData["dualApprovalInfo"] = null
                 }
@@ -12028,6 +12046,50 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
         updatePengajuanApprovalDualStatusWithCallback(pelangganId, dualApprovalInfo, null)
     }
 
+    // Helper: konversi DualApprovalInfo ke Map untuk disimpan ke Firebase RTDB.
+    // Digunakan agar tidak ada field yang hilang saat Firebase serialisasi Kotlin data class.
+    private fun buildDualApprovalInfoMap(info: DualApprovalInfo): Map<String, Any?> {
+        return mapOf(
+            "requiresDualApproval" to info.requiresDualApproval,
+            "approvalPhase" to info.approvalPhase,
+            "pimpinanApproval" to mapOf(
+                "status" to info.pimpinanApproval.status,
+                "by" to info.pimpinanApproval.by,
+                "uid" to info.pimpinanApproval.uid,
+                "timestamp" to info.pimpinanApproval.timestamp,
+                "note" to info.pimpinanApproval.note,
+                "adjustedAmount" to info.pimpinanApproval.adjustedAmount,
+                "adjustedTenor" to info.pimpinanApproval.adjustedTenor
+            ),
+            "koordinatorApproval" to mapOf(
+                "status" to info.koordinatorApproval.status,
+                "by" to info.koordinatorApproval.by,
+                "uid" to info.koordinatorApproval.uid,
+                "timestamp" to info.koordinatorApproval.timestamp,
+                "note" to info.koordinatorApproval.note,
+                "adjustedAmount" to info.koordinatorApproval.adjustedAmount,
+                "adjustedTenor" to info.koordinatorApproval.adjustedTenor
+            ),
+            "pengawasApproval" to mapOf(
+                "status" to info.pengawasApproval.status,
+                "by" to info.pengawasApproval.by,
+                "uid" to info.pengawasApproval.uid,
+                "timestamp" to info.pengawasApproval.timestamp,
+                "note" to info.pengawasApproval.note,
+                "adjustedAmount" to info.pengawasApproval.adjustedAmount,
+                "adjustedTenor" to info.pengawasApproval.adjustedTenor
+            ),
+            "finalDecision" to info.finalDecision,
+            "finalDecisionBy" to info.finalDecisionBy,
+            "finalDecisionTimestamp" to info.finalDecisionTimestamp,
+            "rejectionReason" to info.rejectionReason,
+            "koordinatorFinalConfirmed" to info.koordinatorFinalConfirmed,
+            "koordinatorFinalTimestamp" to info.koordinatorFinalTimestamp,
+            "pimpinanFinalConfirmed" to info.pimpinanFinalConfirmed,
+            "pimpinanFinalTimestamp" to info.pimpinanFinalTimestamp
+        )
+    }
+
     // ✅ PERBAIKAN: Versi dengan callback untuk menunggu update selesai
     private fun updatePengajuanApprovalDualStatusWithCallback(
         pelangganId: String,
@@ -12054,7 +12116,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                         var updatedCount = 0
 
                         pengajuanSnap.children.forEach { child ->
-                            child.ref.child("dualApprovalInfo").setValue(dualApprovalInfo)
+                            child.ref.child("dualApprovalInfo").setValue(buildDualApprovalInfoMap(dualApprovalInfo))
                                 .addOnSuccessListener {
                                     updatedCount++
                                     if (updatedCount >= childCount) {
