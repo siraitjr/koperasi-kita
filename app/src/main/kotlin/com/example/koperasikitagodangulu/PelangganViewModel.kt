@@ -91,8 +91,6 @@ import com.example.koperasikitagodangulu.models.DeletionRequest
 import com.example.koperasikitagodangulu.models.DeletionRequestStatus
 import com.example.koperasikitagodangulu.models.PaymentDeletionRequest
 import com.example.koperasikitagodangulu.models.PaymentDeletionRequestStatus
-import com.example.koperasikitagodangulu.models.PencairanSimpananRequest
-import com.example.koperasikitagodangulu.models.PencairanSimpananRequestStatus
 import com.google.firebase.database.DatabaseReference
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withTimeoutOrNull
@@ -253,8 +251,6 @@ data class AdminNotification(
     val pelangganNama: String = "",
     val alasanPenolakan: String = "",
     val catatanPersetujuan: String = "",
-    val catatanPengawas: String = "",
-    val catatanPimpinan: String = "",
 
     val pinjamanDiajukan: Int = 0,
     val pinjamanDisetujui: Int = 0,
@@ -267,7 +263,7 @@ data class AdminNotification(
     val timestamp: Long = 0L,
     val read: Boolean = false
 ) {
-    constructor() : this("", "", "", "", "", "", "", "", "", "", 0, 0, 0, 0, false, "", "", 0L, false)
+    constructor() : this("", "", "", "", "", "", "", "", 0, 0, 0, 0, false, "", "", 0L, false)
 }
 
 data class DashboardData(
@@ -612,15 +608,6 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
 
     private val _unreadTenorChangeCount = MutableStateFlow(0)
     val unreadTenorChangeCount: StateFlow<Int> = _unreadTenorChangeCount
-
-    // =========================================================================
-    // PENCAIRAN SIMPANAN REQUESTS
-    // =========================================================================
-    private val _pendingPencairanSimpananRequests = MutableStateFlow<List<PencairanSimpananRequest>>(emptyList())
-    val pendingPencairanSimpananRequests: StateFlow<List<PencairanSimpananRequest>> = _pendingPencairanSimpananRequests
-
-    private val _unreadPencairanSimpananCount = MutableStateFlow(0)
-    val unreadPencairanSimpananCount: StateFlow<Int> = _unreadPencairanSimpananCount
 
     // Biaya Awal untuk Pengawas/Koordinator
     private val _pengawasBiayaAwal = MutableStateFlow<List<BiayaAwalItem>>(emptyList())
@@ -1189,84 +1176,64 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
     fun loadAdminNotifications() {
         val adminUid = Firebase.auth.currentUser?.uid ?: return
 
-        viewModelScope.launch {
-            try {
-                database.child("admin_notifications").child(adminUid)
-                    .addValueEventListener(object : ValueEventListener {
-                        override fun onDataChange(snapshot: DataSnapshot) {
-                            Log.d("Notification", "🔄 TOPBAR - REAL-TIME UPDATE")
-                            Log.d(
-                                "Notification",
-                                "📊 Data received: ${snapshot.childrenCount} items"
-                            )
+        // Jika listener sudah aktif untuk UID yang sama, skip
+        if (adminNotificationListener != null && adminNotificationListenerUid == adminUid) {
+            Log.d("Notification", "⏭️ Listener already active for $adminUid, skipping")
+            return
+        }
 
-                            val notifList = mutableListOf<AdminNotification>()
-
-                            for (notifSnapshot in snapshot.children) {
-                                try {
-                                    // ✅ PERBAIKAN: Cek apakah data adalah Map (object) sebelum deserialize
-                                    val rawValue = notifSnapshot.value
-
-                                    // Skip jika bukan Map (bisa Boolean, String, Number, dll)
-                                    if (rawValue !is Map<*, *>) {
-                                        Log.w(
-                                            "Notification",
-                                            "⚠️ Skipping non-object data: ${notifSnapshot.key} = $rawValue"
-                                        )
-                                        continue
-                                    }
-
-                                    // Safe deserialize dengan try-catch
-                                    val notification =
-                                        notifSnapshot.getValue(AdminNotification::class.java)
-                                    if (notification != null) {
-                                        // Simpan key sebagai ID menggunakan copy() karena id adalah val
-                                        val notifWithId = if (notification.id.isBlank()) {
-                                            notification.copy(id = notifSnapshot.key ?: "")
-                                        } else {
-                                            notification
-                                        }
-                                        notifList.add(notifWithId)
-                                    }
-                                } catch (e: Exception) {
-                                    // ✅ PERBAIKAN: Catch error per-item, tidak crash seluruh app
-                                    Log.e(
-                                        "Notification",
-                                        "❌ Error parsing notification ${notifSnapshot.key}: ${e.message}"
-                                    )
-                                    // Continue ke notifikasi berikutnya
-                                }
-                            }
-
-                            val sortedList = notifList.sortedByDescending { it.timestamp }
-                            adminNotifications.value = sortedList
-
-                            Log.d(
-                                "Notification",
-                                "✅ TopBar loaded ${sortedList.size} notifications"
-                            )
-                            Log.d("Notification", "   👁️ Unread: ${sortedList.count { !it.read }}")
-
-                            // DEBUG: Log detail notifikasi unread
-                            sortedList.forEach { notif ->
-                                if (!notif.read) {
-                                    Log.d(
-                                        "Notification",
-                                        "   🔴 UNREAD: ${notif.title} (${notif.type})"
-                                    )
-                                }
-                            }
-                        }
-
-                        override fun onCancelled(error: DatabaseError) {
-                            Log.e("Notification", "❌ TopBar error: ${error.message}")
-                        }
-                    })
-            } catch (e: Exception) {
-                Log.e("Notification", "❌ TopBar exception: ${e.message}")
+        // Hapus listener lama jika ada
+        adminNotificationListenerUid?.let { oldUid ->
+            adminNotificationListener?.let { oldListener ->
+                database.child("admin_notifications").child(oldUid).removeEventListener(oldListener)
+                Log.d("Notification", "🧹 Removed old listener for $oldUid")
             }
         }
+
+        val listener = object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                Log.d("Notification", "🔄 TOPBAR - REAL-TIME UPDATE")
+                Log.d("Notification", "📊 Data received: ${snapshot.childrenCount} items")
+
+                val notifList = mutableListOf<AdminNotification>()
+
+                for (notifSnapshot in snapshot.children) {
+                    try {
+                        val rawValue = notifSnapshot.value
+                        if (rawValue !is Map<*, *>) {
+                            Log.w("Notification", "⚠️ Skipping non-object data: ${notifSnapshot.key} = $rawValue")
+                            continue
+                        }
+
+                        val notification = notifSnapshot.getValue(AdminNotification::class.java)
+                        if (notification != null) {
+                            val notifWithId = if (notification.id.isBlank()) {
+                                notification.copy(id = notifSnapshot.key ?: "")
+                            } else {
+                                notification
+                            }
+                            notifList.add(notifWithId)
+                        }
+                    } catch (e: Exception) {
+                        Log.e("Notification", "❌ Error parsing notification ${notifSnapshot.key}: ${e.message}")
+                    }
+                }
+
+                val sortedList = notifList.sortedByDescending { it.timestamp }
+                adminNotifications.value = sortedList
+                Log.d("Notification", "✅ TopBar loaded ${sortedList.size} notifications, Unread: ${sortedList.count { !it.read }}")
+            }
+
+            override fun onCancelled(error: DatabaseError) {
+                Log.e("Notification", "❌ TopBar error: ${error.message}")
+            }
+        }
+
+        database.child("admin_notifications").child(adminUid).addValueEventListener(listener)
+        adminNotificationListener = listener
+        adminNotificationListenerUid = adminUid
     }
+
 
     fun markNotificationAsRead(notificationId: String) {
         val adminUid = Firebase.auth.currentUser?.uid ?: return
@@ -3274,6 +3241,11 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                 val pinjamanKeBaru = existingPelanggan.pinjamanKe + 1
 
                 // ========== RESOLVE CABANG ID ==========
+                // Mencegah pengajuan_approval gagal dibuat (silent failure) akibat cabangId kosong.
+                // Nasabah lama yang didaftarkan sebelum field cabangId ada mungkin tidak punya nilai ini.
+                // Resolusi dilakukan di sini (dengan await) agar nilai sudah pasti tersedia saat
+                // disimpan ke updatedPelanggan — sehingga Prioritas 1 di simpanPelangganKeFirebase
+                // selalu berhasil dan simpanKePengajuanApproval selalu dipanggil.
                 val currentUidForCabang = existingPelanggan.adminUid.ifBlank { Firebase.auth.currentUser?.uid ?: "" }
                 var resolvedCabangId = existingPelanggan.cabangId
                 if (resolvedCabangId.isBlank()) {
@@ -3293,7 +3265,6 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
 
                 // ========== UPLOAD FOTO ==========
                 val currentUid = currentUidForCabang
-
                 var newFotoKtpUrl = ""
                 var newFotoKtpSuamiUrl = ""
                 var newFotoKtpIstriUrl = ""
@@ -3421,7 +3392,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     catatanStatusKhusus = "",
                     tanggalStatusKhusus = "",
                     diberiTandaOleh = "",
-                    pembayaranList = emptyList(), // Selalu mulai fresh — riwayat lama disimpan di riwayatPembayaran/
+                    pembayaranList = if (sudahLunas) emptyList() else existingPelanggan.pembayaranList,
                     hasilSimulasiCicilan = cicilanBaru,
 
                     // === Data Referensi ===
@@ -3466,36 +3437,6 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                 val index = daftarPelanggan.indexOfFirst { it.id == pelangganId }
                 if (index != -1) {
                     daftarPelanggan[index] = updatedPelanggan
-                }
-
-                // ========== SIMPAN RIWAYAT PEMBAYARAN LAMA (SEBELUM TOPUP) ==========
-                // Tulis ke path terpisah agar tidak terbawa ke pinjaman baru,
-                // tapi tetap tersimpan permanen untuk kebutuhan pembukuan.
-                if (existingPelanggan.pembayaranList.isNotEmpty()) {
-                    val pinjamanKeLama = existingPelanggan.pinjamanKe
-                    val riwayatData = mapOf(
-                        "pinjamanKe" to pinjamanKeLama,
-                        "besarPinjaman" to existingPelanggan.besarPinjaman,
-                        "totalPelunasan" to totalPelunasanLama,
-                        "totalBayar" to totalBayarSebelumnya,
-                        "sisaUtang" to sisaUtangLama,
-                        "tanggalTopUp" to tanggalPengajuanBaru,
-                        "pembayaranList" to existingPelanggan.pembayaranList.map { p ->
-                            mapOf(
-                                "jumlah" to p.jumlah,
-                                "tanggal" to p.tanggal,
-                                "subPembayaran" to p.subPembayaran.map { s ->
-                                    mapOf("jumlah" to s.jumlah, "tanggal" to s.tanggal, "keterangan" to s.keterangan)
-                                }
-                            )
-                        }
-                    )
-                    database.child("riwayatPembayaran")
-                        .child(existingPelanggan.adminUid)
-                        .child(pelangganId)
-                        .child("pinjaman$pinjamanKeLama")
-                        .setValue(riwayatData)
-                    Log.d("KelolaKredit", "📚 Riwayat pembayaran pinjaman ke-$pinjamanKeLama disimpan (${existingPelanggan.pembayaranList.size} entri)")
                 }
 
                 // ========== SIMPAN KE FIREBASE ==========
@@ -3860,7 +3801,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                                                     // ✅ Update dualApprovalInfo dengan phase baru
                                                     // Cloud function akan mendeteksi perubahan phase
                                                     // dan mengirim notifikasi ke Pengawas
-                                                    child.ref.child("dualApprovalInfo").setValue(buildDualApprovalInfoMap(updatedDualInfo))
+                                                    child.ref.child("dualApprovalInfo").setValue(updatedDualInfo)
                                                         .addOnSuccessListener {
                                                             Log.d("Approval", "✅ Phase 1 complete - moved to Phase 2 (AWAITING_KOORDINATOR)")
                                                             Log.d("Approval", "✅ Cloud function akan kirim notifikasi ke Koordinator")
@@ -3869,11 +3810,23 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                                                         }
                                                 }
                                                 if (!snapshot.hasChildren()) {
-                                                    // ✅ PERBAIKAN: Jika pengajuan tidak ditemukan, buat baru lalu update
-                                                    Log.w("Approval", "⚠️ Pengajuan tidak ditemukan di pengajuan_approval, membuat entry baru...")
+                                                    // =================================================================
+                                                    // FALLBACK: Entry pengajuan_approval tidak ditemukan
+                                                    // SOLUSI: 2-Step Deterministik (TANPA delay)
+                                                    //
+                                                    // Step 1: Buat entry dengan phase AWAITING_PIMPINAN
+                                                    //         → onCreate fires → CF skip dualApprovalInfo (FIX 2)
+                                                    //         → CF kirim notifikasi ke Pimpinan (harmless duplicate)
+                                                    //
+                                                    // Step 2: Update approvalPhase ke AWAITING_KOORDINATOR
+                                                    //         → onUpdate fires → onPimpinanReviewed trigger
+                                                    //         → Koordinator PASTI dapat notifikasi
+                                                    // =================================================================
+                                                    Log.w("Approval", "⚠️ Pengajuan tidak ditemukan, 2-step approach")
 
-                                                    // Buat entry baru di pengajuan_approval dengan dualApprovalInfo
                                                     val newPengajuanRef = database.child("pengajuan_approval").child(branchId).push()
+
+                                                    // Step 1: Buat entry dengan Phase 1 (AWAITING_PIMPINAN) + pimpinan data
                                                     val pengajuanData = mapOf(
                                                         "adminUid" to updatedPelanggan.adminUid,
                                                         "nama" to updatedPelanggan.namaKtp,
@@ -3888,45 +3841,92 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                                                         "timestamp" to com.google.firebase.database.ServerValue.TIMESTAMP,
                                                         "dualApprovalInfo" to mapOf(
                                                             "requiresDualApproval" to true,
-                                                            "approvalPhase" to ApprovalPhase.AWAITING_KOORDINATOR,
+                                                            "approvalPhase" to ApprovalPhase.AWAITING_PIMPINAN,
                                                             "pimpinanApproval" to mapOf(
-                                                                "status" to updatedDualInfo.pimpinanApproval.status,
-                                                                "by" to updatedDualInfo.pimpinanApproval.by,
-                                                                "uid" to updatedDualInfo.pimpinanApproval.uid,
-                                                                "timestamp" to updatedDualInfo.pimpinanApproval.timestamp,
-                                                                "note" to updatedDualInfo.pimpinanApproval.note,
-                                                                "adjustedAmount" to updatedDualInfo.pimpinanApproval.adjustedAmount,
-                                                                "adjustedTenor" to updatedDualInfo.pimpinanApproval.adjustedTenor
+                                                                "status" to "pending", "by" to "", "uid" to "",
+                                                                "timestamp" to 0, "note" to "",
+                                                                "adjustedAmount" to 0, "adjustedTenor" to 0
                                                             ),
                                                             "koordinatorApproval" to mapOf(
-                                                                "status" to "pending",
-                                                                "by" to "",
-                                                                "uid" to "",
-                                                                "timestamp" to 0,
-                                                                "note" to ""
+                                                                "status" to "pending", "by" to "", "uid" to "",
+                                                                "timestamp" to 0, "note" to "",
+                                                                "adjustedAmount" to 0, "adjustedTenor" to 0
                                                             ),
                                                             "pengawasApproval" to mapOf(
-                                                                "status" to "pending",
-                                                                "by" to "",
-                                                                "uid" to "",
-                                                                "timestamp" to 0,
-                                                                "note" to ""
-                                                            )
+                                                                "status" to "pending", "by" to "", "uid" to "",
+                                                                "timestamp" to 0, "note" to "",
+                                                                "adjustedAmount" to 0, "adjustedTenor" to 0
+                                                            ),
+                                                            "finalDecision" to "",
+                                                            "finalDecisionBy" to "",
+                                                            "finalDecisionTimestamp" to 0,
+                                                            "rejectionReason" to "",
+                                                            "koordinatorFinalConfirmed" to false,
+                                                            "koordinatorFinalTimestamp" to 0,
+                                                            "pimpinanFinalConfirmed" to false,
+                                                            "pimpinanFinalTimestamp" to 0
                                                         )
                                                     )
 
                                                     newPengajuanRef.setValue(pengajuanData)
                                                         .addOnSuccessListener {
-                                                            Log.d("Approval", "✅ Entry pengajuan baru dibuat, cloud function akan trigger notifikasi ke Koordinator")
-                                                            updateLocalAndRefresh(pelangganId, updatedPelanggan, cabangId)
-                                                            onSuccess?.invoke()
+                                                            Log.d("Approval", "✅ Step 1 selesai: entry dibuat dengan Phase 1")
+
+                                                            // Step 2: UPDATE dualApprovalInfo ke phase sebenarnya
+                                                            // Ini DIJAMIN trigger onUpdate karena:
+                                                            // - approvalPhase berubah dari AWAITING_PIMPINAN → AWAITING_KOORDINATOR
+                                                            // - pimpinanApproval.status berubah dari pending → approved
+                                                            val updatedDualInfoMap = mapOf(
+                                                                "requiresDualApproval" to true,
+                                                                "approvalPhase" to updatedDualInfo.approvalPhase,
+                                                                "pimpinanApproval" to mapOf(
+                                                                    "status" to updatedDualInfo.pimpinanApproval.status,
+                                                                    "by" to updatedDualInfo.pimpinanApproval.by,
+                                                                    "uid" to updatedDualInfo.pimpinanApproval.uid,
+                                                                    "timestamp" to updatedDualInfo.pimpinanApproval.timestamp,
+                                                                    "note" to updatedDualInfo.pimpinanApproval.note,
+                                                                    "adjustedAmount" to updatedDualInfo.pimpinanApproval.adjustedAmount,
+                                                                    "adjustedTenor" to updatedDualInfo.pimpinanApproval.adjustedTenor
+                                                                ),
+                                                                "koordinatorApproval" to mapOf(
+                                                                    "status" to "pending", "by" to "", "uid" to "",
+                                                                    "timestamp" to 0, "note" to "",
+                                                                    "adjustedAmount" to 0, "adjustedTenor" to 0
+                                                                ),
+                                                                "pengawasApproval" to mapOf(
+                                                                    "status" to "pending", "by" to "", "uid" to "",
+                                                                    "timestamp" to 0, "note" to "",
+                                                                    "adjustedAmount" to 0, "adjustedTenor" to 0
+                                                                ),
+                                                                "finalDecision" to "",
+                                                                "finalDecisionBy" to "",
+                                                                "finalDecisionTimestamp" to 0,
+                                                                "rejectionReason" to "",
+                                                                "koordinatorFinalConfirmed" to false,
+                                                                "koordinatorFinalTimestamp" to 0,
+                                                                "pimpinanFinalConfirmed" to false,
+                                                                "pimpinanFinalTimestamp" to 0
+                                                            )
+
+                                                            newPengajuanRef.child("dualApprovalInfo").setValue(updatedDualInfoMap)
+                                                                .addOnSuccessListener {
+                                                                    Log.d("Approval", "✅ Step 2 selesai: phase updated ke ${updatedDualInfo.approvalPhase} → CF onUpdate PASTI trigger")
+                                                                    updateLocalAndRefresh(pelangganId, updatedPelanggan, cabangId)
+                                                                    onSuccess?.invoke()
+                                                                }
+                                                                .addOnFailureListener { e2 ->
+                                                                    Log.e("Approval", "❌ Step 2 gagal: ${e2.message}")
+                                                                    updateLocalAndRefresh(pelangganId, updatedPelanggan, cabangId)
+                                                                    onSuccess?.invoke()
+                                                                }
                                                         }
                                                         .addOnFailureListener { e ->
-                                                            Log.e("Approval", "❌ Gagal membuat entry pengajuan: ${e.message}")
+                                                            Log.e("Approval", "❌ Step 1 gagal: ${e.message}")
                                                             updateLocalAndRefresh(pelangganId, updatedPelanggan, cabangId)
                                                             onSuccess?.invoke()
                                                         }
                                                 }
+
                                             }
                                             override fun onCancelled(error: DatabaseError) {
                                                 Log.e("Approval", "❌ Error: ${error.message}")
@@ -4080,7 +4080,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                                         .addListenerForSingleValueEvent(object : ValueEventListener {
                                             override fun onDataChange(snapshot: DataSnapshot) {
                                                 snapshot.children.forEach { child ->
-                                                    child.ref.child("dualApprovalInfo").setValue(buildDualApprovalInfoMap(updatedDualInfo))
+                                                    child.ref.child("dualApprovalInfo").setValue(updatedDualInfo)
                                                         .addOnSuccessListener {
                                                             Log.d("Approval", "✅ Phase 3 complete - COMPLETED")
 
@@ -4922,7 +4922,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                                         .addListenerForSingleValueEvent(object : ValueEventListener {
                                             override fun onDataChange(snapshot: DataSnapshot) {
                                                 snapshot.children.forEach { child ->
-                                                    child.ref.child("dualApprovalInfo").setValue(buildDualApprovalInfoMap(updatedDualInfo))
+                                                    child.ref.child("dualApprovalInfo").setValue(updatedDualInfo)
                                                         .addOnSuccessListener {
                                                             Log.d("Rejection", "✅ Phase 1 REJECT - moved to Phase 2 (AWAITING_KOORDINATOR)")
                                                             Log.d("Rejection", "✅ Koordinator akan review berikutnya")
@@ -5085,7 +5085,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                                         .addListenerForSingleValueEvent(object : ValueEventListener {
                                             override fun onDataChange(snapshot: DataSnapshot) {
                                                 snapshot.children.forEach { child ->
-                                                    child.ref.child("dualApprovalInfo").setValue(buildDualApprovalInfoMap(updatedDualInfo))
+                                                    child.ref.child("dualApprovalInfo").setValue(updatedDualInfo)
                                                         .addOnSuccessListener {
                                                             Log.d("Rejection", "✅ Phase 3 complete - COMPLETED")
 
@@ -5675,24 +5675,33 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
     // =========================================================================
     fun startDevicePresence() {
         val uid = Firebase.auth.currentUser?.uid ?: return
+
+        // Jika sudah ada listener, skip
+        if (devicePresenceListener != null) return
+
         val presenceRef = database.child("device_presence").child(uid)
         val connectedRef = FirebaseDatabase.getInstance("https://koperasikitagodangulu-default-rtdb.asia-southeast1.firebasedatabase.app").getReference(".info/connected")
 
-        connectedRef.addValueEventListener(object : ValueEventListener {
+        val listener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
                 val connected = snapshot.getValue(Boolean::class.java) ?: false
                 if (connected) {
                     presenceRef.child("online").setValue(true)
-                    presenceRef.child("lastSeen").setValue(ServerValue.TIMESTAMP)
+                    presenceRef.child("lastSeen").setValue(com.google.firebase.database.ServerValue.TIMESTAMP)
                     presenceRef.child("online").onDisconnect().setValue(false)
-                    presenceRef.child("lastSeen").onDisconnect().setValue(ServerValue.TIMESTAMP)
+                    presenceRef.child("lastSeen").onDisconnect().setValue(com.google.firebase.database.ServerValue.TIMESTAMP)
                 }
             }
             override fun onCancelled(error: DatabaseError) {
                 Log.e("Presence", "Error: ${error.message}")
             }
-        })
+        }
+
+        connectedRef.addValueEventListener(listener)
+        devicePresenceListener = listener
+        devicePresenceConnectedRef = connectedRef
     }
+
 
     private suspend fun isAdminDeviceOnline(adminUid: String): Boolean {
         return try {
@@ -6480,7 +6489,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     catatanStatusKhusus = "",
                     tanggalStatusKhusus = "",
                     diberiTandaOleh = "",
-                    pembayaranList = emptyList(), // Selalu mulai fresh — riwayat lama disimpan di riwayatPembayaran/
+                    pembayaranList = if (sudahLunas) emptyList() else existingPelanggan.pembayaranList,
                     hasilSimulasiCicilan = cicilanBaru,
 
                     // Simpan data untuk referensi
@@ -6510,34 +6519,6 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                 val index = daftarPelanggan.indexOfFirst { it.id == pelangganId }
                 if (index != -1) {
                     daftarPelanggan[index] = updatedPelanggan
-                }
-
-                // ========== SIMPAN RIWAYAT PEMBAYARAN LAMA (SEBELUM TOPUP) ==========
-                if (existingPelanggan.pembayaranList.isNotEmpty()) {
-                    val pinjamanKeLama = existingPelanggan.pinjamanKe
-                    val riwayatData = mapOf(
-                        "pinjamanKe" to pinjamanKeLama,
-                        "besarPinjaman" to existingPelanggan.besarPinjaman,
-                        "totalPelunasan" to totalPelunasanLama,
-                        "totalBayar" to totalBayarSebelumnya,
-                        "sisaUtang" to sisaUtangLama,
-                        "tanggalTopUp" to tanggalPengajuanBaru,
-                        "pembayaranList" to existingPelanggan.pembayaranList.map { p ->
-                            mapOf(
-                                "jumlah" to p.jumlah,
-                                "tanggal" to p.tanggal,
-                                "subPembayaran" to p.subPembayaran.map { s ->
-                                    mapOf("jumlah" to s.jumlah, "tanggal" to s.tanggal, "keterangan" to s.keterangan)
-                                }
-                            )
-                        }
-                    )
-                    database.child("riwayatPembayaran")
-                        .child(existingPelanggan.adminUid)
-                        .child(pelangganId)
-                        .child("pinjaman$pinjamanKeLama")
-                        .setValue(riwayatData)
-                    Log.d("KelolaKredit", "📚 Riwayat pembayaran pinjaman ke-$pinjamanKeLama disimpan (${existingPelanggan.pembayaranList.size} entri)")
                 }
 
                 simpanPelangganKeFirebase(updatedPelanggan,
@@ -6906,7 +6887,33 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
         }
         cleanupRoleListeners()
 
-        // ✅ TAMBAHAN: Cleanup network callback
+        // Cleanup admin notification listener
+        adminNotificationListenerUid?.let { uid ->
+            adminNotificationListener?.let { listener ->
+                database.child("admin_notifications").child(uid).removeEventListener(listener)
+            }
+        }
+        adminNotificationListener = null
+        adminNotificationListenerUid = null
+
+        // Cleanup device presence listener
+        devicePresenceConnectedRef?.let { ref ->
+            devicePresenceListener?.let { listener ->
+                ref.removeEventListener(listener)
+            }
+        }
+        devicePresenceListener = null
+        devicePresenceConnectedRef = null
+
+        // Cleanup data update listener
+        Firebase.auth.currentUser?.uid?.let { uid ->
+            dataUpdateListener?.let { listener ->
+                database.child("data_updates").child(uid).child("lastUpdate").removeEventListener(listener)
+            }
+        }
+        dataUpdateListener = null
+
+        // Cleanup network callback
         try {
             networkCallbackVM?.let {
                 val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
@@ -6917,8 +6924,9 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
             Log.e("PelangganVM", "Error cleaning up network callback: ${e.message}")
         }
 
-        Log.d("PelangganVM", "🧹 ViewModel cleared, listeners removed")
+        Log.d("PelangganVM", "🧹 ViewModel cleared, ALL listeners removed")
     }
+
 
     fun getPinjamanInfoForApproval(pelanggan: Pelanggan): PinjamanApprovalInfo {
         // ✅ PERBAIKAN: Gunakan sisaUtangLamaSebelumTopUp yang sudah disimpan
@@ -6977,6 +6985,10 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     private var dataUpdateListener: ValueEventListener? = null
+    private var adminNotificationListener: ValueEventListener? = null
+    private var adminNotificationListenerUid: String? = null
+    private var devicePresenceListener: ValueEventListener? = null
+    private var devicePresenceConnectedRef: com.google.firebase.database.DatabaseReference? = null
 
     // ✅ TAMBAHKAN variabel baru di atas fungsi (di area deklarasi variabel class,
 //    misalnya dekat baris 439 di mana lastLoadedKey dideklarasikan):
@@ -7877,174 +7889,114 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
 
         val approvalRef = database.child("pengajuan_approval").child(cabangId)
 
-        // ✅ PERBAIKAN: Cek dulu apakah entry dengan pelangganId yang sama sudah ada
+        // Step 1: Cari entry lama untuk pelangganId yang sama
         approvalRef.orderByChild("pelangganId").equalTo(pelanggan.id)
             .get()
             .addOnSuccessListener { snapshot ->
-                val pengajuanData = mutableMapOf<String, Any?>(
-                    "adminUid" to pelanggan.adminUid,
-                    "nama" to pelanggan.namaKtp,
-                    "namaPanggilan" to pelanggan.namaPanggilan,
-                    "tanggalPengajuan" to pelanggan.tanggalPengajuan,
-                    "status" to "Menunggu Approval",
-                    "jenisPinjaman" to if (pelanggan.besarPinjaman >= 3000000) "diatas_3jt" else "dibawah_3jt",
-                    "besarPinjaman" to pelanggan.besarPinjaman,
-                    "tenor" to pelanggan.tenor,
-                    "pinjamanKe" to pelanggan.pinjamanKe,
-                    "pelangganId" to pelanggan.id,
-                    "timestamp" to com.google.firebase.database.ServerValue.TIMESTAMP
-                )
 
-                if (pelanggan.besarPinjaman >= DualApprovalThreshold.MINIMUM_AMOUNT) {
-                    val existingDualInfo = pelanggan.dualApprovalInfo
-                    val existingPhase = existingDualInfo?.approvalPhase ?: ""
-                    // Hanya reset ke Phase 1 jika belum ada proses approval yang berjalan.
-                    // Jika sudah di phase lanjutan (pimpinan sudah aksi), jangan overwrite
-                    // karena bisa menyebabkan Cloud Function membaca status "pending" yang salah.
-                    val shouldReset = existingDualInfo == null ||
-                        existingPhase.isEmpty() || existingPhase == ApprovalPhase.AWAITING_PIMPINAN
-                    if (shouldReset) {
-                        pengajuanData["dualApprovalInfo"] = mapOf(
-                            "requiresDualApproval" to true,
-                            "approvalPhase" to ApprovalPhase.AWAITING_PIMPINAN,
-                            "pimpinanApproval" to mapOf(
-                                "status" to "pending", "by" to "", "uid" to "",
-                                "timestamp" to 0, "note" to "",
-                                "adjustedAmount" to 0, "adjustedTenor" to 0
-                            ),
-                            "koordinatorApproval" to mapOf(
-                                "status" to "pending", "by" to "", "uid" to "",
-                                "timestamp" to 0, "note" to "",
-                                "adjustedAmount" to 0, "adjustedTenor" to 0
-                            ),
-                            "pengawasApproval" to mapOf(
-                                "status" to "pending", "by" to "", "uid" to "",
-                                "timestamp" to 0, "note" to "",
-                                "adjustedAmount" to 0, "adjustedTenor" to 0
-                            ),
-                            "finalDecision" to "",
-                            "finalDecisionBy" to "",
-                            "finalDecisionTimestamp" to 0,
-                            "rejectionReason" to "",
-                            "koordinatorFinalConfirmed" to false,
-                            "koordinatorFinalTimestamp" to 0,
-                            "pimpinanFinalConfirmed" to false,
-                            "pimpinanFinalTimestamp" to 0
-                        )
-                    } else {
-                        // Sudah di phase lanjutan - pertahankan state approval yang ada
-                        pengajuanData["dualApprovalInfo"] = buildDualApprovalInfoMap(existingDualInfo!!)
-                    }
-                } else {
-                    // Untuk < 3jt, hapus dualApprovalInfo lama jika ada
-                    pengajuanData["dualApprovalInfo"] = null
-                }
+                // Step 2: Siapkan data pengajuan LENGKAP (termasuk dualApprovalInfo)
+                val pengajuanData = buildPengajuanData(pelanggan)
 
                 if (snapshot.exists() && snapshot.childrenCount > 0) {
-                    // ✅ Entry sudah ada → update entry pertama yang ditemukan, abaikan duplikat
-                    val existingKey = snapshot.children.first().key
-                    if (existingKey != null) {
-                        approvalRef.child(existingKey).setValue(pengajuanData)
-                            .addOnSuccessListener {
-                                Log.d("Pengajuan", "✅ Updated existing pengajuan_approval/$cabangId/$existingKey")
-                            }
-                            .addOnFailureListener { e ->
-                                Log.e("Pengajuan", "❌ Gagal update pengajuan_approval: ${e.message}")
-                            }
-                    }
+                    // ================================================================
+                    // ENTRY LAMA ADA → HAPUS SEMUA, lalu buat baru dengan push()
+                    // Ini MENJAMIN onCreate trigger → notifikasi PASTI terkirim
+                    // ================================================================
+                    Log.d("Pengajuan", "🗑️ Hapus ${snapshot.childrenCount} entry lama untuk ${pelanggan.namaPanggilan}")
 
-                    // ✅ Bersihkan entry duplikat jika ada lebih dari 1
-                    if (snapshot.childrenCount > 1) {
-                        var isFirst = true
-                        snapshot.children.forEach { child ->
-                            if (isFirst) {
-                                isFirst = false
-                            } else {
-                                child.ref.removeValue()
-                                Log.d("Pengajuan", "🗑️ Hapus duplikat: ${child.key}")
+                    var deletedCount = 0
+                    val totalToDelete = snapshot.childrenCount.toInt()
+
+                    snapshot.children.forEach { child ->
+                        child.ref.removeValue().addOnCompleteListener {
+                            deletedCount++
+                            // Step 3: Setelah SEMUA entry lama terhapus, baru buat entry baru
+                            if (deletedCount >= totalToDelete) {
+                                createNewPengajuanEntry(approvalRef, pengajuanData, cabangId)
                             }
                         }
                     }
                 } else {
-                    // ✅ Belum ada → buat baru dengan push()
-                    val pengajuanRef = approvalRef.push()
-                    val pengajuanId = pengajuanRef.key ?: return@addOnSuccessListener
-
-                    pengajuanRef.setValue(pengajuanData)
-                        .addOnSuccessListener {
-                            Log.d("Pengajuan", "✅ Berhasil menyimpan ke pengajuan_approval/$cabangId/$pengajuanId")
-                        }
-                        .addOnFailureListener { e ->
-                            Log.e("Pengajuan", "❌ Gagal menyimpan ke pengajuan_approval: ${e.message}")
-                        }
+                    // BELUM ADA → langsung buat baru
+                    createNewPengajuanEntry(approvalRef, pengajuanData, cabangId)
                 }
             }
             .addOnFailureListener { e ->
-                // ✅ PERBAIKAN: Gunakan pelangganId sebagai key (bukan push) untuk mencegah duplikat
-                Log.w("Pengajuan", "⚠️ Gagal cek duplikat, gunakan pelangganId sebagai key: ${e.message}")
+                // Fallback: query gagal → langsung push (bisa duplikat, tapi CF tetap trigger)
+                Log.w("Pengajuan", "⚠️ Gagal cek duplikat: ${e.message}, langsung push")
+                val pengajuanData = buildPengajuanData(pelanggan)
+                createNewPengajuanEntry(approvalRef, pengajuanData, cabangId)
+            }
+    }
 
-                val pengajuanData = mutableMapOf<String, Any?>(
-                    "adminUid" to pelanggan.adminUid,
-                    "nama" to pelanggan.namaKtp,
-                    "namaPanggilan" to pelanggan.namaPanggilan,
-                    "tanggalPengajuan" to pelanggan.tanggalPengajuan,
-                    "status" to "Menunggu Approval",
-                    "jenisPinjaman" to if (pelanggan.besarPinjaman >= 3000000) "diatas_3jt" else "dibawah_3jt",
-                    "besarPinjaman" to pelanggan.besarPinjaman,
-                    "tenor" to pelanggan.tenor,
-                    "pinjamanKe" to pelanggan.pinjamanKe,
-                    "pelangganId" to pelanggan.id,
-                    "timestamp" to com.google.firebase.database.ServerValue.TIMESTAMP
-                )
+    // Helper: Buat map data pengajuan LENGKAP
+    private fun buildPengajuanData(pelanggan: Pelanggan): MutableMap<String, Any?> {
+        val data = mutableMapOf<String, Any?>(
+            "adminUid" to pelanggan.adminUid,
+            "nama" to pelanggan.namaKtp,
+            "namaPanggilan" to pelanggan.namaPanggilan,
+            "tanggalPengajuan" to pelanggan.tanggalPengajuan,
+            "status" to "Menunggu Approval",
+            "jenisPinjaman" to if (pelanggan.besarPinjaman >= 3000000) "diatas_3jt" else "dibawah_3jt",
+            "besarPinjaman" to pelanggan.besarPinjaman,
+            "tenor" to pelanggan.tenor,
+            "pinjamanKe" to pelanggan.pinjamanKe,
+            "pelangganId" to pelanggan.id,
+            "timestamp" to com.google.firebase.database.ServerValue.TIMESTAMP
+        )
 
-                if (pelanggan.besarPinjaman >= DualApprovalThreshold.MINIMUM_AMOUNT) {
-                    val existingDualInfo2 = pelanggan.dualApprovalInfo
-                    val existingPhase2 = existingDualInfo2?.approvalPhase ?: ""
-                    val shouldReset2 = existingDualInfo2 == null ||
-                        existingPhase2.isEmpty() || existingPhase2 == ApprovalPhase.AWAITING_PIMPINAN
-                    if (shouldReset2) {
-                        pengajuanData["dualApprovalInfo"] = mapOf(
-                            "requiresDualApproval" to true,
-                            "approvalPhase" to ApprovalPhase.AWAITING_PIMPINAN,
-                            "pimpinanApproval" to mapOf(
-                                "status" to "pending", "by" to "", "uid" to "",
-                                "timestamp" to 0, "note" to "",
-                                "adjustedAmount" to 0, "adjustedTenor" to 0
-                            ),
-                            "koordinatorApproval" to mapOf(
-                                "status" to "pending", "by" to "", "uid" to "",
-                                "timestamp" to 0, "note" to "",
-                                "adjustedAmount" to 0, "adjustedTenor" to 0
-                            ),
-                            "pengawasApproval" to mapOf(
-                                "status" to "pending", "by" to "", "uid" to "",
-                                "timestamp" to 0, "note" to "",
-                                "adjustedAmount" to 0, "adjustedTenor" to 0
-                            ),
-                            "finalDecision" to "",
-                            "finalDecisionBy" to "",
-                            "finalDecisionTimestamp" to 0,
-                            "rejectionReason" to "",
-                            "koordinatorFinalConfirmed" to false,
-                            "koordinatorFinalTimestamp" to 0,
-                            "pimpinanFinalConfirmed" to false,
-                            "pimpinanFinalTimestamp" to 0
-                        )
-                    } else {
-                        pengajuanData["dualApprovalInfo"] = buildDualApprovalInfoMap(existingDualInfo2!!)
-                    }
-                } else {
-                    pengajuanData["dualApprovalInfo"] = null
-                }
+        // TETAP sertakan dualApprovalInfo dari client sebagai BACKUP
+        // CF onNewPengajuanCreated (setelah FIX 2) akan skip jika sudah ada
+        if (pelanggan.besarPinjaman >= DualApprovalThreshold.MINIMUM_AMOUNT) {
+            data["dualApprovalInfo"] = mapOf(
+                "requiresDualApproval" to true,
+                "approvalPhase" to ApprovalPhase.AWAITING_PIMPINAN,
+                "pimpinanApproval" to mapOf(
+                    "status" to "pending", "by" to "", "uid" to "",
+                    "timestamp" to 0, "note" to "",
+                    "adjustedAmount" to 0, "adjustedTenor" to 0
+                ),
+                "koordinatorApproval" to mapOf(
+                    "status" to "pending", "by" to "", "uid" to "",
+                    "timestamp" to 0, "note" to "",
+                    "adjustedAmount" to 0, "adjustedTenor" to 0
+                ),
+                "pengawasApproval" to mapOf(
+                    "status" to "pending", "by" to "", "uid" to "",
+                    "timestamp" to 0, "note" to "",
+                    "adjustedAmount" to 0, "adjustedTenor" to 0
+                ),
+                "finalDecision" to "",
+                "finalDecisionBy" to "",
+                "finalDecisionTimestamp" to 0,
+                "rejectionReason" to "",
+                "koordinatorFinalConfirmed" to false,
+                "koordinatorFinalTimestamp" to 0,
+                "pimpinanFinalConfirmed" to false,
+                "pimpinanFinalTimestamp" to 0
+            )
+        } else {
+            data["dualApprovalInfo"] = null
+        }
 
-                // Gunakan pelangganId sebagai key — kalau sudah ada, di-overwrite (bukan duplikat baru)
-                approvalRef.child(pelanggan.id).setValue(pengajuanData)
-                    .addOnSuccessListener {
-                        Log.d("Pengajuan", "✅ Fallback berhasil: pengajuan_approval/$cabangId/${pelanggan.id}")
-                    }
-                    .addOnFailureListener { e2 ->
-                        Log.e("Pengajuan", "❌ Fallback gagal: ${e2.message}")
-                    }
+        return data
+    }
+
+    // Helper: Buat entry baru dengan push() — SELALU trigger onCreate
+    private fun createNewPengajuanEntry(
+        approvalRef: com.google.firebase.database.DatabaseReference,
+        data: Map<String, Any?>,
+        cabangId: String
+    ) {
+        val newRef = approvalRef.push()
+        val newKey = newRef.key ?: return
+
+        newRef.setValue(data)
+            .addOnSuccessListener {
+                Log.d("Pengajuan", "✅ Entry baru dibuat: pengajuan_approval/$cabangId/$newKey (onCreate PASTI trigger)")
+            }
+            .addOnFailureListener { e ->
+                Log.e("Pengajuan", "❌ Gagal buat entry: ${e.message}")
             }
     }
 
@@ -8933,20 +8885,10 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                         val nasabahAktif = summarySnap.child("nasabahAktif").getValue(Int::class.java) ?: 0
                         val totalPiutang = summarySnap.child("totalPiutang").getValue(Long::class.java) ?: 0L
 
-                        // ✅ FALLBACK: Jika summary ada tapi kosong, coba hitung dari raw data
+                        // Summary kosong = admin memang belum punya nasabah aktif,
+                        // atau Cloud Functions belum jalan. JANGAN load raw data (BOROS RTDB).
                         if (nasabahAktif == 0 && totalPiutang == 0L) {
-                            Log.w(TAG, "⚠️ Summary empty for $adminUid, checking raw data...")
-
-                            val calculatedSummary = calculateAdminSummaryFromRawData(adminUid)
-                            if (calculatedSummary != null && (calculatedSummary.nasabahAktif > 0 || calculatedSummary.totalPelanggan > 0)) {
-                                Log.d(TAG, "✅ Using calculated summary for $adminUid (aktif: ${calculatedSummary.nasabahAktif}, total: ${calculatedSummary.totalPelanggan})")
-                                adminSummaries.add(calculatedSummary)
-
-                                // Update Firebase untuk next time
-                                updateAdminSummaryInFirebase(adminUid, calculatedSummary)
-                                needsCabangUpdate = true
-                                continue
-                            }
+                            Log.w(TAG, "⚠️ Summary empty for $adminUid (CF mungkin belum recalc)")
                         }
 
                         // Gunakan data dari summary
@@ -8969,37 +8911,25 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                             )
                         )
                     } else {
-                        // ✅ Summary tidak ada sama sekali, hitung dari raw data
-                        Log.w(TAG, "⚠️ No summary node for $adminUid, calculating from raw data...")
-
-                        val calculatedSummary = calculateAdminSummaryFromRawData(adminUid)
-                        if (calculatedSummary != null) {
-                            Log.d(TAG, "✅ Created summary for $adminUid from raw data")
-                            adminSummaries.add(calculatedSummary)
-
-                            // Update Firebase untuk next time
-                            updateAdminSummaryInFirebase(adminUid, calculatedSummary)
-                            needsCabangUpdate = true
-                        } else {
-                            // Benar-benar tidak ada data
-                            adminSummaries.add(
-                                AdminSummary(
-                                    adminId = adminUid,
-                                    adminName = adminMeta.child("name").getValue(String::class.java)
-                                        ?: adminMeta.child("nama").getValue(String::class.java)
-                                        ?: "Admin",
-                                    adminEmail = adminMeta.child("email").getValue(String::class.java) ?: "",
-                                    cabang = cabangId,
-                                    totalPelanggan = 0,
-                                    nasabahAktif = 0,
-                                    nasabahLunas = 0,
-                                    nasabahMenunggu = 0,
-                                    totalPinjamanAktif = 0L,
-                                    totalPiutang = 0L,
-                                    pembayaranHariIni = 0L
-                                )
+                        // Summary tidak ada = CF belum pernah jalan untuk admin ini
+                        Log.w(TAG, "⚠️ No summary node for $adminUid (jalankan weeklyFullRecalc)")
+                        adminSummaries.add(
+                            AdminSummary(
+                                adminId = adminUid,
+                                adminName = adminMeta.child("name").getValue(String::class.java)
+                                    ?: adminMeta.child("nama").getValue(String::class.java)
+                                    ?: "Admin",
+                                adminEmail = adminMeta.child("email").getValue(String::class.java) ?: "",
+                                cabang = cabangId,
+                                totalPelanggan = 0,
+                                nasabahAktif = 0,
+                                nasabahLunas = 0,
+                                nasabahMenunggu = 0,
+                                totalPinjamanAktif = 0L,
+                                totalPiutang = 0L,
+                                pembayaranHariIni = 0L
                             )
-                        }
+                        )
                     }
                 } catch (e: Exception) {
                     Log.e(TAG, "Error loading summary for $adminUid: ${e.message}")
@@ -10810,56 +10740,9 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     // ✅ FALLBACK: Jika cabang summary kosong, hitung dari admin summaries
                     if (nasabahAktif == 0 && totalPiutang == 0L) {
                         Log.w(TAG, "⚠️ [Pengawas] Cabang summary empty for ${cabang.cabangId}, calculating...")
-
-                        // Hitung dari admin summaries yang sudah di-load
-                        var calculatedNasabahAktif = 0
-                        var calculatedTotalPiutang = 0L
-                        var calculatedTotalNasabah = 0
-                        var calculatedNasabahLunas = 0
-                        var calculatedNasabahMenunggu = 0
-                        var calculatedTotalPinjamanAktif = 0L
-                        var calculatedPembayaranHariIni = 0L
-                        var calculatedTargetHariIni = 0L
-                        var calculatedNasabahBaruHariIni = 0
-                        var calculatedNasabahLunasHariIni = 0
-
-                        for (adminUid in cabang.adminList) {
-                            val adminSummary = calculateAdminSummaryFromRawData(adminUid)
-                            if (adminSummary != null) {
-                                calculatedNasabahAktif += adminSummary.nasabahAktif
-                                calculatedTotalPiutang += adminSummary.totalPiutang
-                                calculatedTotalNasabah += adminSummary.totalPelanggan
-                                calculatedNasabahLunas += adminSummary.nasabahLunas
-                                calculatedNasabahMenunggu += adminSummary.nasabahMenunggu
-                                calculatedTotalPinjamanAktif += adminSummary.totalPinjamanAktif
-                                calculatedPembayaranHariIni += adminSummary.pembayaranHariIni
-                                calculatedTargetHariIni += adminSummary.targetHariIni
-                                calculatedNasabahBaruHariIni += adminSummary.nasabahBaruHariIni
-                                calculatedNasabahLunasHariIni += adminSummary.nasabahLunasHariIni
-                            }
-                        }
-
-                        if (calculatedNasabahAktif > 0 || calculatedTotalNasabah > 0) {
-                            summaries[cabang.cabangId] = PengawasCabangSummary(
-                                cabangId = cabang.cabangId,
-                                cabangName = cabang.name,
-                                totalNasabah = calculatedTotalNasabah,
-                                nasabahAktif = calculatedNasabahAktif,
-                                nasabahLunas = calculatedNasabahLunas,
-                                nasabahMenunggu = calculatedNasabahMenunggu,
-                                nasabahBaruHariIni = calculatedNasabahBaruHariIni,
-                                nasabahLunasHariIni = calculatedNasabahLunasHariIni,
-                                targetHariIni = calculatedTargetHariIni,
-                                pembayaranHariIni = calculatedPembayaranHariIni,
-                                totalPinjamanAktif = calculatedTotalPinjamanAktif,
-                                totalPiutang = calculatedTotalPiutang,
-                                adminCount = cabang.adminList.size,
-                                lastUpdated = System.currentTimeMillis()
-                            )
-
-                            Log.d(TAG, "✅ [Pengawas] Calculated cabang summary for ${cabang.cabangId}")
-                            continue  // ✅ Now works because we're in a for loop
-                        }
+                        // Summary ada tapi kosong = CF belum recalc
+                        Log.w(TAG, "⚠️ [Pengawas] Summary empty for ${cabang.cabangId} (jalankan weeklyFullRecalc)")
+                        // Tidak fallback ke raw data. Tetap gunakan summary apa adanya (lanjut ke bawah)
                     }
 
                     summaries[cabang.cabangId] = PengawasCabangSummary(
@@ -10879,49 +10762,11 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                         lastUpdated = summarySnap.child("lastUpdated").getValue(Long::class.java) ?: 0L
                     )
                 } else {
-                    // ✅ Cabang summary tidak ada, hitung dari raw data
-                    Log.w(TAG, "⚠️ [Pengawas] No cabang summary for ${cabang.cabangId}, calculating...")
-
-                    var totalNasabah = 0
-                    var nasabahAktif = 0
-                    var nasabahLunas = 0
-                    var nasabahMenunggu = 0
-                    var totalPinjamanAktif = 0L
-                    var totalPiutang = 0L
-                    var pembayaranHariIni = 0L
-                    var targetHariIni = 0L
-                    var nasabahBaruHariIni = 0
-                    var nasabahLunasHariIni = 0
-
-                    for (adminUid in cabang.adminList) {
-                        val adminSummary = calculateAdminSummaryFromRawData(adminUid)
-                        if (adminSummary != null) {
-                            totalNasabah += adminSummary.totalPelanggan
-                            nasabahAktif += adminSummary.nasabahAktif
-                            nasabahLunas += adminSummary.nasabahLunas
-                            nasabahMenunggu += adminSummary.nasabahMenunggu
-                            totalPinjamanAktif += adminSummary.totalPinjamanAktif
-                            totalPiutang += adminSummary.totalPiutang
-                            pembayaranHariIni += adminSummary.pembayaranHariIni
-                            targetHariIni += adminSummary.targetHariIni
-                            nasabahBaruHariIni += adminSummary.nasabahBaruHariIni
-                            nasabahLunasHariIni += adminSummary.nasabahLunasHariIni
-                        }
-                    }
-
+                    // Cabang summary tidak ada = CF belum pernah jalan
+                    Log.w(TAG, "⚠️ [Pengawas] No cabang summary for ${cabang.cabangId} (jalankan weeklyFullRecalc)")
                     summaries[cabang.cabangId] = PengawasCabangSummary(
                         cabangId = cabang.cabangId,
                         cabangName = cabang.name,
-                        totalNasabah = totalNasabah,
-                        nasabahAktif = nasabahAktif,
-                        nasabahLunas = nasabahLunas,
-                        nasabahMenunggu = nasabahMenunggu,
-                        nasabahBaruHariIni = nasabahBaruHariIni,
-                        nasabahLunasHariIni = nasabahLunasHariIni,
-                        targetHariIni = targetHariIni,
-                        pembayaranHariIni = pembayaranHariIni,
-                        totalPinjamanAktif = totalPinjamanAktif,
-                        totalPiutang = totalPiutang,
                         adminCount = cabang.adminList.size,
                         lastUpdated = System.currentTimeMillis()
                     )
@@ -10949,20 +10794,8 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                         val nasabahAktif = summarySnap.child("nasabahAktif").getValue(Int::class.java) ?: 0
                         val totalPiutang = summarySnap.child("totalPiutang").getValue(Long::class.java) ?: 0L
 
-                        // ✅ FALLBACK: Jika summary ada tapi kosong
                         if (nasabahAktif == 0 && totalPiutang == 0L) {
-                            Log.w(TAG, "⚠️ [Pengawas] Summary empty for $adminUid, checking raw data...")
-
-                            val calculatedSummary = calculateAdminSummaryFromRawData(adminUid)
-                            if (calculatedSummary != null && (calculatedSummary.nasabahAktif > 0 || calculatedSummary.totalPelanggan > 0)) {
-                                Log.d(TAG, "✅ [Pengawas] Using calculated summary for $adminUid")
-                                summaries[adminUid] = calculatedSummary
-
-                                // Update Firebase
-                                updateAdminSummaryInFirebase(adminUid, calculatedSummary)
-                                needsUpdate = true
-                                return@forEach  // ✅ FIXED: gunakan return@forEach bukan continue
-                            }
+                            Log.w(TAG, "⚠️ [Pengawas] Summary empty for $adminUid (CF mungkin belum recalc)")
                         }
 
                         summaries[adminUid] = AdminSummary(
@@ -10982,15 +10815,9 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                             pembayaranHariIni = summarySnap.child("pembayaranHariIni").getValue(Long::class.java) ?: 0L
                         )
                     } else {
-                        // ✅ Summary tidak ada, hitung dari raw data
-                        Log.w(TAG, "⚠️ [Pengawas] No summary for $adminUid, calculating...")
-
-                        val calculatedSummary = calculateAdminSummaryFromRawData(adminUid)
-                        if (calculatedSummary != null) {
-                            summaries[adminUid] = calculatedSummary
-                            updateAdminSummaryInFirebase(adminUid, calculatedSummary)
-                            needsUpdate = true
-                        }
+                        // Summary tidak ada = CF belum pernah jalan untuk admin ini
+                        Log.w(TAG, "⚠️ [Pengawas] No summary for $adminUid (jalankan weeklyFullRecalc)")
+                        // Tidak ditambahkan ke summaries - admin tanpa summary diabaikan
                     }
                 } catch (e: Exception) {
                     Log.e(TAG, "Error loading admin summary for $adminUid: ${e.message}")
@@ -11307,35 +11134,6 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     }
                 }
 
-                // Fallback: juga scan pelanggan nodes untuk record yang entri pengajuan_approval-nya hilang
-                val foundPelangganIdsPengawas = pendingList.map { it.id }.toSet().toMutableSet()
-                for (cabangId in cabangIds) {
-                    try {
-                        val adminListSnap = database.child("metadata/cabang/$cabangId/adminList").get().await()
-                        val adminList = adminListSnap.children.mapNotNull { it.getValue(String::class.java) }
-                        for (adminUid in adminList) {
-                            val pelangganSnap = database.child("pelanggan/$adminUid")
-                                .orderByChild("status")
-                                .equalTo("Menunggu Approval")
-                                .get().await()
-                            pelangganSnap.children.forEach { child ->
-                                val pelangganId = child.key ?: return@forEach
-                                if (pelangganId in foundPelangganIdsPengawas) return@forEach
-                                val pelanggan = child.getValue(Pelanggan::class.java) ?: return@forEach
-                                val phase = pelanggan.dualApprovalInfo?.approvalPhase ?: return@forEach
-                                val besar = pelanggan.besarPinjaman
-                                if (besar >= DualApprovalThreshold.MINIMUM_AMOUNT && phase == ApprovalPhase.AWAITING_PENGAWAS) {
-                                    pendingList.add(pelanggan.copy(id = pelangganId, adminUid = adminUid, cabangId = cabangId))
-                                    foundPelangganIdsPengawas.add(pelangganId)
-                                    Log.d("PengawasApproval", "✅ Fallback found: ${pelanggan.namaPanggilan}")
-                                }
-                            }
-                        }
-                    } catch (e: Exception) {
-                        Log.e("PengawasApproval", "Error in fallback scan for $cabangId: ${e.message}")
-                    }
-                }
-
                 _pendingApprovalsPengawas.value = pendingList.sortedByDescending { it.tanggalPengajuan }
                 Log.d("PengawasApproval", "✅ Loaded ${pendingList.size} pending approvals for Pengawas")
             } catch (e: Exception) {
@@ -11390,35 +11188,6 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                         } catch (e: Exception) {
                             Log.e("KoordinatorApproval", "Error parsing pengajuan: ${e.message}")
                         }
-                    }
-                }
-
-                // Fallback: juga scan pelanggan nodes untuk record yang entri pengajuan_approval-nya hilang
-                val foundPelangganIdsKoordinator = pendingList.map { it.id }.toSet().toMutableSet()
-                for (cabangId in cabangIds) {
-                    try {
-                        val adminListSnap = database.child("metadata/cabang/$cabangId/adminList").get().await()
-                        val adminList = adminListSnap.children.mapNotNull { it.getValue(String::class.java) }
-                        for (adminUid in adminList) {
-                            val pelangganSnap = database.child("pelanggan/$adminUid")
-                                .orderByChild("status")
-                                .equalTo("Menunggu Approval")
-                                .get().await()
-                            pelangganSnap.children.forEach { child ->
-                                val pelangganId = child.key ?: return@forEach
-                                if (pelangganId in foundPelangganIdsKoordinator) return@forEach
-                                val pelanggan = child.getValue(Pelanggan::class.java) ?: return@forEach
-                                val phase = pelanggan.dualApprovalInfo?.approvalPhase ?: return@forEach
-                                val besar = pelanggan.besarPinjaman
-                                if (besar >= DualApprovalThreshold.MINIMUM_AMOUNT && phase == ApprovalPhase.AWAITING_KOORDINATOR) {
-                                    pendingList.add(pelanggan.copy(id = pelangganId, adminUid = adminUid, cabangId = cabangId))
-                                    foundPelangganIdsKoordinator.add(pelangganId)
-                                    Log.d("KoordinatorApproval", "✅ Fallback found: ${pelanggan.namaPanggilan}")
-                                }
-                            }
-                        }
-                    } catch (e: Exception) {
-                        Log.e("KoordinatorApproval", "Error in fallback scan for $cabangId: ${e.message}")
                     }
                 }
 
@@ -11480,35 +11249,6 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                         } catch (e: Exception) {
                             Log.e("KoordinatorFinal", "Error parsing: ${e.message}")
                         }
-                    }
-                }
-
-                // Fallback: juga scan pelanggan nodes untuk record yang entri pengajuan_approval-nya hilang
-                val foundPelangganIdsKoordinatorFinal = addedPelangganIds.toMutableSet()
-                for (cabangId in cabangIds) {
-                    try {
-                        val adminListSnap = database.child("metadata/cabang/$cabangId/adminList").get().await()
-                        val adminList = adminListSnap.children.mapNotNull { it.getValue(String::class.java) }
-                        for (adminUid in adminList) {
-                            val pelangganSnap = database.child("pelanggan/$adminUid")
-                                .orderByChild("status")
-                                .equalTo("Menunggu Approval")
-                                .get().await()
-                            pelangganSnap.children.forEach { child ->
-                                val pelangganId = child.key ?: return@forEach
-                                if (pelangganId in foundPelangganIdsKoordinatorFinal) return@forEach
-                                val pelanggan = child.getValue(Pelanggan::class.java) ?: return@forEach
-                                val phase = pelanggan.dualApprovalInfo?.approvalPhase ?: return@forEach
-                                val besar = pelanggan.besarPinjaman
-                                if (besar >= DualApprovalThreshold.MINIMUM_AMOUNT && phase == ApprovalPhase.AWAITING_KOORDINATOR_FINAL) {
-                                    pendingList.add(pelanggan.copy(id = pelangganId, adminUid = adminUid, cabangId = cabangId))
-                                    foundPelangganIdsKoordinatorFinal.add(pelangganId)
-                                    Log.d("KoordinatorFinal", "✅ Fallback found: ${pelanggan.namaPanggilan}")
-                                }
-                            }
-                        }
-                    } catch (e: Exception) {
-                        Log.e("KoordinatorFinal", "Error in fallback scan for $cabangId: ${e.message}")
                     }
                 }
 
@@ -12097,50 +11837,6 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
         updatePengajuanApprovalDualStatusWithCallback(pelangganId, dualApprovalInfo, null)
     }
 
-    // Helper: konversi DualApprovalInfo ke Map untuk disimpan ke Firebase RTDB.
-    // Digunakan agar tidak ada field yang hilang saat Firebase serialisasi Kotlin data class.
-    private fun buildDualApprovalInfoMap(info: DualApprovalInfo): Map<String, Any?> {
-        return mapOf(
-            "requiresDualApproval" to info.requiresDualApproval,
-            "approvalPhase" to info.approvalPhase,
-            "pimpinanApproval" to mapOf(
-                "status" to info.pimpinanApproval.status,
-                "by" to info.pimpinanApproval.by,
-                "uid" to info.pimpinanApproval.uid,
-                "timestamp" to info.pimpinanApproval.timestamp,
-                "note" to info.pimpinanApproval.note,
-                "adjustedAmount" to info.pimpinanApproval.adjustedAmount,
-                "adjustedTenor" to info.pimpinanApproval.adjustedTenor
-            ),
-            "koordinatorApproval" to mapOf(
-                "status" to info.koordinatorApproval.status,
-                "by" to info.koordinatorApproval.by,
-                "uid" to info.koordinatorApproval.uid,
-                "timestamp" to info.koordinatorApproval.timestamp,
-                "note" to info.koordinatorApproval.note,
-                "adjustedAmount" to info.koordinatorApproval.adjustedAmount,
-                "adjustedTenor" to info.koordinatorApproval.adjustedTenor
-            ),
-            "pengawasApproval" to mapOf(
-                "status" to info.pengawasApproval.status,
-                "by" to info.pengawasApproval.by,
-                "uid" to info.pengawasApproval.uid,
-                "timestamp" to info.pengawasApproval.timestamp,
-                "note" to info.pengawasApproval.note,
-                "adjustedAmount" to info.pengawasApproval.adjustedAmount,
-                "adjustedTenor" to info.pengawasApproval.adjustedTenor
-            ),
-            "finalDecision" to info.finalDecision,
-            "finalDecisionBy" to info.finalDecisionBy,
-            "finalDecisionTimestamp" to info.finalDecisionTimestamp,
-            "rejectionReason" to info.rejectionReason,
-            "koordinatorFinalConfirmed" to info.koordinatorFinalConfirmed,
-            "koordinatorFinalTimestamp" to info.koordinatorFinalTimestamp,
-            "pimpinanFinalConfirmed" to info.pimpinanFinalConfirmed,
-            "pimpinanFinalTimestamp" to info.pimpinanFinalTimestamp
-        )
-    }
-
     // ✅ PERBAIKAN: Versi dengan callback untuk menunggu update selesai
     private fun updatePengajuanApprovalDualStatusWithCallback(
         pelangganId: String,
@@ -12167,7 +11863,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                         var updatedCount = 0
 
                         pengajuanSnap.children.forEach { child ->
-                            child.ref.child("dualApprovalInfo").setValue(buildDualApprovalInfoMap(dualApprovalInfo))
+                            child.ref.child("dualApprovalInfo").setValue(dualApprovalInfo)
                                 .addOnSuccessListener {
                                     updatedCount++
                                     if (updatedCount >= childCount) {
@@ -12600,16 +12296,6 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
             val dateFormat = SimpleDateFormat("dd MMM yyyy", Locale("in", "ID"))
             val today = dateFormat.format(Date())
 
-            // Pre-compute batas 3 bulan (konsisten dengan calculateTargetHarian)
-            val threeMonthsAgo = Calendar.getInstance().apply {
-                add(Calendar.MONTH, -3)
-                set(Calendar.DAY_OF_MONTH, 1)
-                set(Calendar.HOUR_OF_DAY, 0)
-                set(Calendar.MINUTE, 0)
-                set(Calendar.SECOND, 0)
-                set(Calendar.MILLISECOND, 0)
-            }.time
-
             var totalNasabah = 0
             var nasabahAktif = 0
             var nasabahLunas = 0
@@ -12651,20 +12337,34 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                             totalPinjamanAktif += totalPelunasanValue
                             totalPiutang += (totalPelunasanValue - totalDibayar).coerceAtLeast(0)
 
-                            // Hitung target hari ini: flat 3%, konsisten dengan calculateTargetHarian
-                            // Exclude nasabah cair hari ini dan > 3 bulan
-                            val tglCair = pelanggan.tanggalPencairan.trim()
-                            val isCairHariIni = tglCair.isNotBlank() && tglCair == today
-                            if (!isCairHariIni) {
-                                val tglAcuan = pelanggan.tanggalPencairan.ifBlank {
-                                    pelanggan.tanggalPengajuan.ifBlank { pelanggan.tanggalDaftar }
-                                }
-                                val acuanDate = try { dateFormat.parse(tglAcuan) } catch (_: Exception) { null }
-                                val isOverThreeMonths = acuanDate != null && acuanDate.before(threeMonthsAgo)
-                                if (!isOverThreeMonths) {
-                                    targetHariIni += pelanggan.besarPinjaman * 3L / 100L
-                                }
+                            // Hitung target hari ini — SAMA dengan calculateTargetHarian() admin lapangan:
+                            // 1. Skip jika statusKhusus == MENUNGGU_PENCAIRAN
+                            // 2. Skip jika > 3 bulan
+                            // 3. Skip jika cair hari ini
+                            // 4. Flat 3% dari besarPinjaman
+                            val skipTarget = pelanggan.statusKhusus == "MENUNGGU_PENCAIRAN"
+                            val tglAcuan = pelanggan.tanggalPencairan.ifBlank {
+                                pelanggan.tanggalPengajuan.ifBlank { pelanggan.tanggalDaftar }
                             }
+                            val dateFormatCheck = SimpleDateFormat("dd MMM yyyy", Locale("in", "ID"))
+                            val threeMonthsAgo = Calendar.getInstance().apply {
+                                add(Calendar.MONTH, -3)
+                                set(Calendar.DAY_OF_MONTH, 1)
+                                set(Calendar.HOUR_OF_DAY, 0)
+                                set(Calendar.MINUTE, 0)
+                                set(Calendar.SECOND, 0)
+                                set(Calendar.MILLISECOND, 0)
+                            }.time
+                            val isOverThreeMonths = try {
+                                val acuanDate = dateFormatCheck.parse(tglAcuan)
+                                acuanDate != null && acuanDate.before(threeMonthsAgo)
+                            } catch (_: Exception) { false }
+                            val isCairHariIni = pelanggan.tanggalPencairan.isNotBlank() && pelanggan.tanggalPencairan == today
+
+                            if (!skipTarget && !isOverThreeMonths && !isCairHariIni) {
+                                targetHariIni += pelanggan.besarPinjaman * 3L / 100L
+                            }
+
 
                             // Cek nasabah baru hari ini
                             val tanggalDaftar = pelanggan.tanggalDaftar.ifBlank { pelanggan.tanggalPengajuan }
@@ -12880,340 +12580,6 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
             } catch (e: Exception) {
                 Log.e("Pencairan", "❌ Error: ${e.message}")
                 onFailure?.invoke(e)
-            }
-        }
-    }
-
-    // =========================================================================
-    // PENCAIRAN SIMPANAN REQUEST FUNCTIONS
-    // =========================================================================
-
-    /**
-     * Admin lapangan membuat request pencairan simpanan (parsial atau penuh).
-     * Request dikirim ke Pengawas untuk disetujui.
-     * Path Firebase: pencairan_simpanan_requests/{requestId}
-     */
-    fun createPencairanSimpananRequest(
-        pelanggan: Pelanggan,
-        jumlahDicairkan: Int,
-        onSuccess: () -> Unit,
-        onFailure: (Exception) -> Unit
-    ) {
-        viewModelScope.launch {
-            try {
-                val currentUser = Firebase.auth.currentUser
-                if (currentUser == null) {
-                    onFailure(Exception("User belum login"))
-                    return@launch
-                }
-
-                if (jumlahDicairkan <= 0) {
-                    onFailure(Exception("Jumlah pencairan harus lebih dari 0"))
-                    return@launch
-                }
-                if (jumlahDicairkan > pelanggan.simpanan) {
-                    onFailure(Exception("Jumlah pencairan tidak boleh melebihi total simpanan"))
-                    return@launch
-                }
-
-                val requestedByName = database.child("metadata/admins/${currentUser.uid}/name")
-                    .get().await().getValue(String::class.java)
-                    ?: currentUser.email ?: "Admin"
-
-                val cabangId = _currentUserCabang.value ?: ""
-
-                val requestId = database.child("pencairan_simpanan_requests").push().key
-                    ?: throw Exception("Gagal membuat ID request")
-
-                val request = PencairanSimpananRequest(
-                    id = requestId,
-                    pelangganId = pelanggan.id,
-                    pelangganNama = pelanggan.namaKtp.ifBlank { pelanggan.namaPanggilan },
-                    pelangganNik = pelanggan.nik,
-                    pelangganWilayah = pelanggan.wilayah,
-                    pinjamanKe = pelanggan.pinjamanKe,
-                    besarPinjaman = pelanggan.besarPinjaman,
-                    totalSimpanan = pelanggan.simpanan,
-                    jumlahDicairkan = jumlahDicairkan,
-                    adminUid = pelanggan.adminUid.ifBlank { currentUser.uid },
-                    requestedByUid = currentUser.uid,
-                    requestedByName = requestedByName,
-                    requestedByEmail = currentUser.email ?: "",
-                    cabangId = cabangId,
-                    status = PencairanSimpananRequestStatus.PENDING,
-                    createdAt = System.currentTimeMillis(),
-                    read = false
-                )
-
-                database.child("pencairan_simpanan_requests").child(requestId)
-                    .setValue(request)
-                    .await()
-
-                Log.d("PencairanSimpanan", "✅ Request pencairan dibuat: ${pelanggan.namaKtp}, jumlah=$jumlahDicairkan")
-                onSuccess()
-
-            } catch (e: Exception) {
-                Log.e("PencairanSimpanan", "❌ Gagal membuat request: ${e.message}")
-                onFailure(e)
-            }
-        }
-    }
-
-    /**
-     * Load semua pending pencairan simpanan requests (dipanggil oleh Pengawas).
-     * Path Firebase: pencairan_simpanan_requests (filter status=pending, cabangId=current)
-     */
-    fun loadPendingPencairanSimpananRequests() {
-        viewModelScope.launch {
-            try {
-                val cabangId = _currentUserCabang.value
-                Log.d("PencairanSimpanan", "🔄 Loading pencairan simpanan requests, cabang=$cabangId")
-
-                val snapshot = database.child("pencairan_simpanan_requests")
-                    .orderByChild("status")
-                    .equalTo(PencairanSimpananRequestStatus.PENDING)
-                    .get()
-                    .await()
-
-                val requests = mutableListOf<PencairanSimpananRequest>()
-                var unreadCount = 0
-
-                for (child in snapshot.children) {
-                    try {
-                        val req = child.getValue(PencairanSimpananRequest::class.java)
-                        if (req != null) {
-                            // Filter by cabang jika ada
-                            if (cabangId.isNullOrBlank() || req.cabangId == cabangId) {
-                                requests.add(req)
-                                if (!req.read) unreadCount++
-                            }
-                        }
-                    } catch (e: Exception) {
-                        Log.e("PencairanSimpanan", "Error parsing request: ${e.message}")
-                    }
-                }
-
-                val sortedList = requests.sortedByDescending { it.createdAt }
-                _pendingPencairanSimpananRequests.value = sortedList
-                _unreadPencairanSimpananCount.value = unreadCount
-
-                Log.d("PencairanSimpanan", "✅ Loaded ${sortedList.size} requests, $unreadCount unread")
-
-            } catch (e: Exception) {
-                Log.e("PencairanSimpanan", "❌ Error loading: ${e.message}")
-            }
-        }
-    }
-
-    /**
-     * Pengawas menyetujui request pencairan simpanan.
-     * - Mengurangi simpanan nasabah sebesar jumlahDicairkan
-     * - Jika sisa simpanan <= 0: set statusPencairanSimpanan = "Dicairkan" (lunas sepenuhnya)
-     * - Hapus request dari Firebase
-     */
-    fun approvePencairanSimpananRequest(
-        requestId: String,
-        catatanPengawas: String = "",
-        onSuccess: () -> Unit,
-        onFailure: (Exception) -> Unit
-    ) {
-        viewModelScope.launch {
-            try {
-                val currentUser = Firebase.auth.currentUser
-                if (currentUser == null) {
-                    onFailure(Exception("User belum login"))
-                    return@launch
-                }
-
-                // Ambil request
-                val reqSnap = database.child("pencairan_simpanan_requests/$requestId").get().await()
-                val request = reqSnap.getValue(PencairanSimpananRequest::class.java)
-                    ?: run { onFailure(Exception("Request tidak ditemukan")); return@launch }
-
-                val reviewerName = database.child("metadata/admins/${currentUser.uid}/name")
-                    .get().await().getValue(String::class.java)
-                    ?: currentUser.email ?: "Pengawas"
-
-                val adminUid = request.adminUid.ifBlank { request.requestedByUid }
-                val pelangganId = request.pelangganId
-
-                // Ambil data simpanan terkini dari Firebase (bukan cache)
-                val simpananSnap = database.child("pelanggan/$adminUid/$pelangganId/simpanan")
-                    .get().await()
-                val simpananSaatIni = simpananSnap.getValue(Int::class.java) ?: request.totalSimpanan
-
-                val sisaSimpanan = maxOf(simpananSaatIni - request.jumlahDicairkan, 0)
-                val dateFormat = SimpleDateFormat("dd MMM yyyy", Locale("in", "ID"))
-                val tanggalSekarang = dateFormat.format(Date())
-
-                // Update pelanggan
-                val pelangganUpdates = mutableMapOf<String, Any>(
-                    "simpanan" to sisaSimpanan,
-                    "lastUpdated" to SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
-                )
-
-                if (sisaSimpanan <= 0) {
-                    // Pencairan penuh → status Dicairkan sama seperti cairkanSimpanan()
-                    pelangganUpdates["statusPencairanSimpanan"] = "Dicairkan"
-                    pelangganUpdates["tanggalPencairanSimpanan"] = tanggalSekarang
-                    pelangganUpdates["dicairkanOleh"] = reviewerName
-                    pelangganUpdates["status"] = "Lunas"
-                    pelangganUpdates["statusKhusus"] = ""
-                    pelangganUpdates["catatanStatusKhusus"] = ""
-                    pelangganUpdates["tanggalStatusKhusus"] = ""
-                    pelangganUpdates["diberiTandaOleh"] = ""
-                }
-
-                database.child("pelanggan/$adminUid/$pelangganId")
-                    .updateChildren(pelangganUpdates)
-                    .await()
-
-                // Update local list
-                val idx = daftarPelanggan.indexOfFirst { it.id == pelangganId }
-                if (idx != -1) {
-                    daftarPelanggan[idx] = daftarPelanggan[idx].copy(
-                        simpanan = sisaSimpanan,
-                        statusPencairanSimpanan = if (sisaSimpanan <= 0) "Dicairkan" else daftarPelanggan[idx].statusPencairanSimpanan,
-                        tanggalPencairanSimpanan = if (sisaSimpanan <= 0) tanggalSekarang else daftarPelanggan[idx].tanggalPencairanSimpanan,
-                        dicairkanOleh = if (sisaSimpanan <= 0) reviewerName else daftarPelanggan[idx].dicairkanOleh,
-                        status = if (sisaSimpanan <= 0) "Lunas" else daftarPelanggan[idx].status,
-                        statusKhusus = if (sisaSimpanan <= 0) "" else daftarPelanggan[idx].statusKhusus
-                    )
-                }
-
-                // Jika pencairan penuh, hapus dari pelanggan_status_khusus
-                if (sisaSimpanan <= 0) {
-                    val cabangId = request.cabangId.ifBlank { _currentUserCabang.value ?: "" }
-                    if (cabangId.isNotBlank()) {
-                        try {
-                            database.child("pelanggan_status_khusus/$cabangId/$pelangganId").removeValue().await()
-                        } catch (e: Exception) {
-                            Log.w("PencairanSimpanan", "Gagal hapus dari status_khusus: ${e.message}")
-                        }
-                    }
-                }
-
-                // Hapus request (selesai diproses)
-                database.child("pencairan_simpanan_requests/$requestId").removeValue().await()
-
-                // Kirim notifikasi ke Admin lapangan bahwa pencairan disetujui
-                try {
-                    val notificationId = UUID.randomUUID().toString()
-                    val tipeLabel = if (sisaSimpanan <= 0) "penuh" else "parsial"
-                    val adminNotification = mapOf(
-                        "id" to notificationId,
-                        "type" to "SIMPANAN_APPROVED",
-                        "title" to "Pencairan Simpanan Disetujui",
-                        "message" to "Pencairan simpanan ${request.pelangganNama} (${tipeLabel}, Rp ${formatRupiah(request.jumlahDicairkan)}) telah disetujui oleh $reviewerName",
-                        "pelangganId" to pelangganId,
-                        "pelangganNama" to request.pelangganNama,
-                        "catatanPengawas" to catatanPengawas,
-                        "catatanPersetujuan" to catatanPengawas,
-                        "timestamp" to System.currentTimeMillis(),
-                        "read" to false
-                    )
-                    database.child("admin_notifications")
-                        .child(request.requestedByUid)
-                        .child(notificationId)
-                        .setValue(adminNotification)
-                        .await()
-                } catch (e: Exception) {
-                    Log.w("PencairanSimpanan", "⚠️ Gagal kirim notifikasi approval: ${e.message}")
-                }
-
-                // Update state lokal
-                _pendingPencairanSimpananRequests.value = _pendingPencairanSimpananRequests.value
-                    .filter { it.id != requestId }
-
-                val tipeLabel = if (sisaSimpanan <= 0) "penuh" else "parsial (sisa Rp ${formatRupiah(sisaSimpanan)})"
-                Log.d("PencairanSimpanan", "✅ Request disetujui, pencairan $tipeLabel untuk ${request.pelangganNama}")
-                onSuccess()
-
-            } catch (e: Exception) {
-                Log.e("PencairanSimpanan", "❌ Error approving: ${e.message}")
-                onFailure(e)
-            }
-        }
-    }
-
-    /**
-     * Pengawas menolak request pencairan simpanan.
-     * Simpanan nasabah tidak berubah, request dihapus.
-     */
-    fun rejectPencairanSimpananRequest(
-        requestId: String,
-        catatanPengawas: String,
-        onSuccess: () -> Unit,
-        onFailure: (Exception) -> Unit
-    ) {
-        viewModelScope.launch {
-            try {
-                val currentUser = Firebase.auth.currentUser
-                    ?: run { onFailure(Exception("User belum login")); return@launch }
-
-                // Ambil data request sebelum dihapus
-                val reqSnap = database.child("pencairan_simpanan_requests/$requestId").get().await()
-                val request = reqSnap.getValue(PencairanSimpananRequest::class.java)
-
-                val reviewerName = database.child("metadata/admins/${currentUser.uid}/name")
-                    .get().await().getValue(String::class.java)
-                    ?: currentUser.email ?: "Pengawas"
-
-                // Hapus request (penolakan tidak perlu menyimpan arsip seperti approval)
-                database.child("pencairan_simpanan_requests/$requestId").removeValue().await()
-
-                // Kirim notifikasi ke Admin lapangan bahwa pencairan ditolak
-                if (request != null) {
-                    try {
-                        val notificationId = UUID.randomUUID().toString()
-                        val adminNotification = mapOf(
-                            "id" to notificationId,
-                            "type" to "SIMPANAN_REJECTED",
-                            "title" to "Pencairan Simpanan Ditolak",
-                            "message" to "Pencairan simpanan ${request.pelangganNama} ditolak oleh $reviewerName. Alasan: $catatanPengawas",
-                            "pelangganId" to request.pelangganId,
-                            "pelangganNama" to request.pelangganNama,
-                            "alasanPenolakan" to catatanPengawas,
-                            "catatanPengawas" to catatanPengawas,
-                            "timestamp" to System.currentTimeMillis(),
-                            "read" to false
-                        )
-                        database.child("admin_notifications")
-                            .child(request.requestedByUid)
-                            .child(notificationId)
-                            .setValue(adminNotification)
-                            .await()
-                    } catch (e: Exception) {
-                        Log.w("PencairanSimpanan", "⚠️ Gagal kirim notifikasi penolakan: ${e.message}")
-                    }
-                }
-
-                // Update state lokal
-                _pendingPencairanSimpananRequests.value = _pendingPencairanSimpananRequests.value
-                    .filter { it.id != requestId }
-
-                Log.d("PencairanSimpanan", "✅ Request pencairan ditolak")
-                onSuccess()
-
-            } catch (e: Exception) {
-                Log.e("PencairanSimpanan", "❌ Error rejecting: ${e.message}")
-                onFailure(e)
-            }
-        }
-    }
-
-    /** Mark all pencairan simpanan requests as read */
-    fun markAllPencairanSimpananAsRead() {
-        viewModelScope.launch {
-            try {
-                val unread = _pendingPencairanSimpananRequests.value.filter { !it.read }
-                for (req in unread) {
-                    database.child("pencairan_simpanan_requests/${req.id}/read")
-                        .setValue(true).await()
-                }
-                _unreadPencairanSimpananCount.value = 0
-            } catch (e: Exception) {
-                Log.e("PencairanSimpanan", "Error marking as read: ${e.message}")
             }
         }
     }
@@ -13719,7 +13085,6 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                         "message" to "Nasabah ${request.pelangganNama} telah dihapus dari sistem",
                         "pelangganId" to pelangganId,
                         "pelangganNama" to request.pelangganNama,
-                        "catatanPengawas" to catatanPengawas,
                         "timestamp" to System.currentTimeMillis(),
                         "read" to false
                     )
@@ -13874,7 +13239,6 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                         "pelangganId" to pelangganId,
                         "pelangganNama" to request.pelangganNama,
                         "reviewedBy" to pimpinanName,
-                        "catatanPimpinan" to catatanPimpinan,
                         "timestamp" to System.currentTimeMillis(),
                         "read" to false
                     )
@@ -13952,8 +13316,6 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                         "pelangganId" to request.pelangganId,
                         "pelangganNama" to request.pelangganNama,
                         "reviewedBy" to pimpinanName,
-                        "alasanPenolakan" to catatanPimpinan,
-                        "catatanPimpinan" to catatanPimpinan,
                         "timestamp" to System.currentTimeMillis(),
                         "read" to false
                     )
@@ -14051,10 +13413,6 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     return@launch
                 }
 
-                // Ambil data request sebelum dihapus (perlu requestedByUid untuk notifikasi)
-                val requestSnap = database.child("deletion_requests/$requestId").get().await()
-                val request = requestSnap.getValue(DeletionRequest::class.java)
-
                 // Ambil info pengawas
                 val pengawasSnap = database.child("metadata/admins/${currentUser.uid}").get().await()
                 val pengawasName = pengawasSnap.child("name").getValue(String::class.java)
@@ -14072,33 +13430,6 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
 
                 // Hapus request (nasabah tetap ada)
                 database.child("deletion_requests/$requestId").removeValue().await()
-
-                // Kirim notifikasi ke Admin bahwa penghapusan ditolak
-                if (request != null) {
-                    try {
-                        val notificationId = UUID.randomUUID().toString()
-                        val adminNotification = mapOf(
-                            "id" to notificationId,
-                            "type" to "DELETION_REJECTED",
-                            "title" to "Penghapusan Nasabah Ditolak",
-                            "message" to "Pengajuan penghapusan ${request.pelangganNama} ditolak oleh Pengawas. Alasan: $catatanPengawas",
-                            "pelangganId" to request.pelangganId,
-                            "pelangganNama" to request.pelangganNama,
-                            "reviewedBy" to pengawasName,
-                            "alasanPenolakan" to catatanPengawas,
-                            "catatanPengawas" to catatanPengawas,
-                            "timestamp" to System.currentTimeMillis(),
-                            "read" to false
-                        )
-                        database.child("admin_notifications")
-                            .child(request.requestedByUid)
-                            .child(notificationId)
-                            .setValue(adminNotification)
-                            .await()
-                    } catch (e: Exception) {
-                        Log.w("DeletionRequest", "⚠️ Gagal kirim notifikasi penolakan: ${e.message}")
-                    }
-                }
 
                 // Update state lokal
                 _pendingDeletionRequests.value = _pendingDeletionRequests.value
@@ -15143,10 +14474,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     "title" to "Perubahan Tenor Ditolak",
                     "message" to "Pengajuan perubahan tenor ${request.pelangganNama} ditolak. Alasan: $alasanPenolakan",
                     "pelangganId" to request.pelangganId,
-                    "pelangganNama" to request.pelangganNama,
                     "reviewedBy" to pimpinanName,
-                    "alasanPenolakan" to alasanPenolakan,
-                    "catatanPimpinan" to alasanPenolakan,
                     "timestamp" to System.currentTimeMillis(),
                     "read" to false
                 )
