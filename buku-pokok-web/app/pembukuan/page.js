@@ -56,13 +56,13 @@ export default function Home() {
             const urlParams = new URLSearchParams(window.location.search);
             const fromKasir = urlParams.get('from') === 'kasir';
 
-            if ((userRole === 'kasir_unit' || userRole === 'kasir_wilayah') && !fromKasir) {
+            if ((userRole === 'kasir_unit' || userRole === 'kasir_wilayah' || userRole === 'sekretaris') && !fromKasir) {
               window.location.href = '/kasir';
               return;
             }
 
             // Kasir dari /kasir: langsung ke Buku Pokok, skip home
-            if (fromKasir && (userRole === 'kasir_unit' || userRole === 'kasir_wilayah')) {
+            if (fromKasir && (userRole === 'kasir_unit' || userRole === 'kasir_wilayah' || userRole === 'sekretaris')) {
               if (userRole === 'kasir_unit' && result.data.cabangList.length === 1) {
                 setSelectedCabang(result.data.cabangList[0]);
                 setScreen('bukuPokok');
@@ -143,7 +143,7 @@ export default function Home() {
   };
 
   const handleBackToHome = () => {
-    if (userData?.role === 'kasir_unit' || userData?.role === 'kasir_wilayah') {
+    if (userData?.role === 'kasir_unit' || userData?.role === 'kasir_wilayah' || userData?.role === 'sekretaris') {
       window.location.href = '/kasir';
       return;
     }
