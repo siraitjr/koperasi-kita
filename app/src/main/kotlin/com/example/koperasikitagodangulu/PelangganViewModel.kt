@@ -11461,6 +11461,35 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     }
                 }
 
+                // Fallback: juga scan pelanggan nodes untuk record yang entri pengajuan_approval-nya hilang
+                val foundPelangganIdsKoordinatorFinal = addedPelangganIds.toMutableSet()
+                for (cabangId in cabangIds) {
+                    try {
+                        val adminListSnap = database.child("metadata/cabang/$cabangId/adminList").get().await()
+                        val adminList = adminListSnap.children.mapNotNull { it.getValue(String::class.java) }
+                        for (adminUid in adminList) {
+                            val pelangganSnap = database.child("pelanggan/$adminUid")
+                                .orderByChild("status")
+                                .equalTo("Menunggu Approval")
+                                .get().await()
+                            pelangganSnap.children.forEach { child ->
+                                val pelangganId = child.key ?: return@forEach
+                                if (pelangganId in foundPelangganIdsKoordinatorFinal) return@forEach
+                                val pelanggan = child.getValue(Pelanggan::class.java) ?: return@forEach
+                                val phase = pelanggan.dualApprovalInfo?.approvalPhase ?: return@forEach
+                                val besar = pelanggan.besarPinjaman
+                                if (besar >= DualApprovalThreshold.MINIMUM_AMOUNT && phase == ApprovalPhase.AWAITING_KOORDINATOR_FINAL) {
+                                    pendingList.add(pelanggan.copy(id = pelangganId, adminUid = adminUid, cabangId = cabangId))
+                                    foundPelangganIdsKoordinatorFinal.add(pelangganId)
+                                    Log.d("KoordinatorFinal", "✅ Fallback found: ${pelanggan.namaPanggilan}")
+                                }
+                            }
+                        }
+                    } catch (e: Exception) {
+                        Log.e("KoordinatorFinal", "Error in fallback scan for $cabangId: ${e.message}")
+                    }
+                }
+
                 _pendingKoordinatorFinal.value = pendingList.sortedByDescending { it.tanggalPengajuan }
                 Log.d("KoordinatorFinal", "✅ Loaded ${pendingList.size} pending final approvals for Koordinator")
             } catch (e: Exception) {
