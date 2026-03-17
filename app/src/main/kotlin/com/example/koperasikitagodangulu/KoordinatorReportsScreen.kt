@@ -33,7 +33,6 @@ import com.example.koperasikitagodangulu.models.PengawasCabangSummary
 import com.example.koperasikitagodangulu.models.PembayaranHarianItem
 import com.example.koperasikitagodangulu.models.NasabahBaruItem
 import com.example.koperasikitagodangulu.models.NasabahLunasItem
-import com.example.koperasikitagodangulu.models.PelangganBermasalahItem
 import java.text.NumberFormat
 import java.util.*
 import com.example.koperasikitagodangulu.models.BiayaAwalItem
@@ -72,7 +71,6 @@ fun KoordinatorReportsScreen(
     val pembayaranHarian by viewModel.pengawasPembayaranHarian.collectAsState()
     val nasabahBaru by viewModel.pengawasNasabahBaru.collectAsState()
     val nasabahLunas by viewModel.pengawasNasabahLunas.collectAsState()
-    val pelangganBermasalah by viewModel.pengawasPelangganBermasalah.collectAsState()
     val biayaAwalList by viewModel.pengawasBiayaAwal.collectAsState()
     val kasirUangKasList by viewModel.pengawasKasirUangKas.collectAsState()
     val systemUiController = rememberSystemUiController()
@@ -100,7 +98,6 @@ fun KoordinatorReportsScreen(
         KoordinatorReportTab("Drop", Icons.Rounded.PersonAdd),
         KoordinatorReportTab("Kasbon & Titipan", Icons.Rounded.AccountBalance),
         KoordinatorReportTab("Lunas", Icons.Rounded.CheckCircle),
-        KoordinatorReportTab("Bermasalah", Icons.Rounded.Warning),
         KoordinatorReportTab("Status Khusus", Icons.Rounded.Flag),
         KoordinatorReportTab("Pencairan", Icons.Rounded.Savings),
         KoordinatorReportTab("Semua Nasabah", Icons.Rounded.People)
@@ -218,22 +215,15 @@ fun KoordinatorReportsScreen(
                     nasabahLunasList = nasabahLunas,
                     currentSummary = currentSummary
                 )
-                5 -> BermasalahTab(
-                    isDark = isDark,
-                    pelangganBermasalahList = pelangganBermasalah
-                )
-                // ✅ BARU: Tab Status Khusus - navigasi ke screen terpisah
-                6 -> StatusKhususNavigationCard(
+                5 -> StatusKhususNavigationCard(
                     isDark = isDark,
                     onClick = { navController.navigate("koordinatorDaftarStatusKhusus") }
                 )
-                // ✅ BARU: Tab Menunggu Pencairan - navigasi ke screen terpisah
-                7 -> MenungguPencairanNavigationCard(
+                6 -> MenungguPencairanNavigationCard(
                     isDark = isDark,
                     onClick = { navController.navigate("koordinatorDaftarMenungguPencairan") }
                 )
-                // ✅ BARU: Tab Semua Nasabah - navigasi ke screen terpisah
-                8 -> SemuaNasabahNavigationCard(
+                7 -> SemuaNasabahNavigationCard(
                     isDark = isDark,
                     onClick = { navController.navigate("koordinator_daftar_semua_nasabah") }
                 )
@@ -1197,261 +1187,6 @@ private fun NasabahLunasDetailCard(nasabah: NasabahLunasItem, isDark: Boolean = 
                         color = KoordinatorColors.success
                     )
                 }
-            }
-        }
-    }
-}
-
-// =============================================================================
-// TAB 5: BERMASALAH
-// =============================================================================
-@Composable
-private fun BermasalahTab(
-    isDark: Boolean = false,
-    pelangganBermasalahList: List<PelangganBermasalahItem>
-) {
-    val grouped = pelangganBermasalahList.groupBy { it.kategori.lowercase() }
-    val berat = grouped["berat"] ?: emptyList()
-    val sedang = grouped["sedang"] ?: emptyList()
-    val ringan = grouped["ringan"] ?: emptyList()
-
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        // Summary card
-        item {
-            BermasalahSummaryCard(
-                isDark = isDark,
-                beratCount = berat.size,
-                sedangCount = sedang.size,
-                ringanCount = ringan.size,
-                totalTunggakan = pelangganBermasalahList.sumOf { it.jumlahTunggakan }
-            )
-        }
-
-        if (pelangganBermasalahList.isEmpty()) {
-            item {
-                EmptyContent(
-                    isDark = isDark,
-                    icon = Icons.Rounded.Warning,
-                    message = "Tidak ada pelanggan bermasalah"
-                )
-            }
-        } else {
-            // Berat section
-            if (berat.isNotEmpty()) {
-                item {
-                    SectionHeader(
-                        isDark = isDark,
-                        title = "Berat (>14 hari)",
-                        count = berat.size,
-                        color = KoordinatorColors.danger
-                    )
-                }
-                items(berat) { pelanggan ->
-                    BermasalahDetailCard(pelanggan, isDark = isDark)
-                }
-            }
-
-            // Sedang section
-            if (sedang.isNotEmpty()) {
-                item {
-                    SectionHeader(
-                        isDark = isDark,
-                        title = "Sedang (8-14 hari)",
-                        count = sedang.size,
-                        color = KoordinatorColors.warning
-                    )
-                }
-                items(sedang) { pelanggan ->
-                    BermasalahDetailCard(pelanggan, isDark = isDark)
-                }
-            }
-
-            // Ringan section
-            if (ringan.isNotEmpty()) {
-                item {
-                    SectionHeader(
-                        isDark = isDark,
-                        title = "Ringan (1-7 hari)",
-                        count = ringan.size,
-                        color = KoordinatorColors.info
-                    )
-                }
-                items(ringan) { pelanggan ->
-                    BermasalahDetailCard(pelanggan, isDark = isDark)
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun BermasalahSummaryCard(
-    isDark: Boolean = false,
-    beratCount: Int,
-    sedangCount: Int,
-    ringanCount: Int,
-    totalTunggakan: Long
-) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .shadow(8.dp, RoundedCornerShape(16.dp)),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = KoordinatorColors.getCard(isDark))
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text(
-                text = "Ringkasan Tunggakan",
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Bold,
-                color = KoordinatorColors.getTextPrimary(isDark)
-            )
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceEvenly
-            ) {
-                MiniStatItem(
-                    value = beratCount.toString(),
-                    label = "Berat",
-                    color = KoordinatorColors.danger
-                )
-                MiniStatItem(
-                    value = sedangCount.toString(),
-                    label = "Sedang",
-                    color = KoordinatorColors.warning
-                )
-                MiniStatItem(
-                    value = ringanCount.toString(),
-                    label = "Ringan",
-                    color = KoordinatorColors.info
-                )
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            HorizontalDivider(color = KoordinatorColors.getBorder(isDark))
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.Center
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("Total Tunggakan", fontSize = 12.sp, color = KoordinatorColors.getTextMuted(isDark))
-                    Text(
-                        formatRupiah(totalTunggakan.toInt()),
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = KoordinatorColors.danger
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun SectionHeader(isDark: Boolean = false, title: String, count: Int, color: Color) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(
-            text = title,
-            fontSize = 14.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = color
-        )
-        Surface(
-            shape = RoundedCornerShape(12.dp),
-            color = color.copy(alpha = 0.1f)
-        ) {
-            Text(
-                text = "$count orang",
-                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                fontSize = 12.sp,
-                color = color
-            )
-        }
-    }
-}
-
-@Composable
-private fun BermasalahDetailCard(pelanggan: PelangganBermasalahItem, isDark: Boolean = false) {
-    val kategoriColor = when (pelanggan.kategori.lowercase()) {
-        "berat" -> KoordinatorColors.danger
-        "sedang" -> KoordinatorColors.warning
-        else -> KoordinatorColors.info
-    }
-
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .shadow(2.dp, RoundedCornerShape(12.dp)),
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = KoordinatorColors.getCard(isDark))
-    ) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = pelanggan.namaPanggilan,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = KoordinatorColors.getTextPrimary(isDark)
-                    )
-                    Text(
-                        text = pelanggan.adminName,
-                        fontSize = 12.sp,
-                        color = KoordinatorColors.getTextSecondary(isDark)
-                    )
-                }
-
-                Column(horizontalAlignment = Alignment.End) {
-                    Surface(
-                        shape = RoundedCornerShape(6.dp),
-                        color = kategoriColor.copy(alpha = 0.1f)
-                    ) {
-                        Text(
-                            text = "${pelanggan.hariTunggakan} hari",
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = kategoriColor
-                        )
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text(
-                    text = "Tunggakan: ${formatRupiah(pelanggan.jumlahTunggakan.toInt())}",
-                    fontSize = 12.sp,
-                    color = KoordinatorColors.danger
-                )
-                Text(
-                    text = pelanggan.wilayah.ifBlank { "-" },
-                    fontSize = 12.sp,
-                    color = KoordinatorColors.getTextMuted(isDark)
-                )
             }
         }
     }

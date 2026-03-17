@@ -200,7 +200,6 @@ fun RingkasanDashboardScreen(
         0f
     }
 
-    val pelangganMacet = viewModel.getJumlahPelangganMacet()
     val pelangganMenungguPencairan = viewModel.getJumlahPelangganMenungguPencairan()
 
     Scaffold(
@@ -317,27 +316,14 @@ fun RingkasanDashboardScreen(
                         )
                     }
 
-                    Row(
+                    ModernStatCard(
+                        title = "Menunggu Pencairan",
+                        value = pelangganMenungguPencairan.toString(),
+                        icon = Icons.Rounded.Savings,
+                        gradient = DashboardColors.purpleGradient,
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        ModernStatCard(
-                            title = "Posisi Nasabah",
-                            value = pelangganMacet.toString(),
-                            icon = Icons.Rounded.Warning,
-                            gradient = DashboardColors.roseGradient,
-                            modifier = Modifier.weight(1f),
-                            onClick = { navController.navigate("daftarPelangganMacet") }
-                        )
-                        ModernStatCard(
-                            title = "Menunggu Pencairan",
-                            value = pelangganMenungguPencairan.toString(),
-                            icon = Icons.Rounded.Savings,
-                            gradient = DashboardColors.purpleGradient,
-                            modifier = Modifier.weight(1f),
-                            onClick = { navController.navigate("daftarMenungguPencairan") }
-                        )
-                    }
+                        onClick = { navController.navigate("daftarMenungguPencairan") }
+                    )
                 }
             }
         }
