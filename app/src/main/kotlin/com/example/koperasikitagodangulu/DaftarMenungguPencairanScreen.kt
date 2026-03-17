@@ -92,10 +92,15 @@ fun DaftarMenungguPencairanScreen(
         }
     }
 
-    // State untuk dialog konfirmasi
+    // State untuk dialog konfirmasi (Cairkan Semua - langsung)
     var showConfirmDialog by remember { mutableStateOf(false) }
     var selectedPelanggan by remember { mutableStateOf<Pelanggan?>(null) }
     var isProcessing by remember { mutableStateOf(false) }
+
+    // State untuk dialog Cairkan Setengah (butuh persetujuan koordinator)
+    var showSetengahDialog by remember { mutableStateOf(false) }
+    var selectedPelangganSetengah by remember { mutableStateOf<Pelanggan?>(null) }
+    var isSubmittingSetengah by remember { mutableStateOf(false) }
 
     Scaffold(
         containerColor = bgColor,
@@ -159,6 +164,10 @@ fun DaftarMenungguPencairanScreen(
                                         selectedPelanggan = pelanggan
                                         showConfirmDialog = true
                                     },
+                                    onCairkanSetengahClick = {
+                                        selectedPelangganSetengah = pelanggan
+                                        showSetengahDialog = true
+                                    },
                                     onLanjutPinjamanClick = {
                                         navController.navigate("kelolaKredit/${pelanggan.id}")
                                     },
@@ -203,6 +212,120 @@ fun DaftarMenungguPencairanScreen(
                         selectedPelanggan = null
                     }
                 }
+            )
+        }
+
+        // Dialog Konfirmasi Cairkan Setengah (butuh persetujuan koordinator)
+        if (showSetengahDialog && selectedPelangganSetengah != null) {
+            val pel = selectedPelangganSetengah!!
+            val jumlahSetengah = pel.simpanan / 2
+            AlertDialog(
+                onDismissRequest = {
+                    if (!isSubmittingSetengah) {
+                        showSetengahDialog = false
+                        selectedPelangganSetengah = null
+                    }
+                },
+                icon = {
+                    Icon(
+                        Icons.Rounded.AccountBalanceWallet,
+                        contentDescription = null,
+                        tint = PencairanColors.warning,
+                        modifier = Modifier.size(36.dp)
+                    )
+                },
+                title = {
+                    Text(
+                        text = "Cairkan Setengah Simpanan",
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Center
+                    )
+                },
+                text = {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = pel.namaPanggilan.ifBlank { pel.namaKtp },
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 15.sp,
+                            textAlign = TextAlign.Center
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Jumlah yang akan dicairkan:",
+                            fontSize = 13.sp,
+                            color = Color(0xFF64748B),
+                            textAlign = TextAlign.Center
+                        )
+                        Text(
+                            text = "Rp ${formatRupiah(jumlahSetengah)} (50%)",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 16.sp,
+                            color = PencairanColors.warning,
+                            textAlign = TextAlign.Center
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Surface(
+                            color = PencairanColors.warning.copy(alpha = 0.08f),
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Text(
+                                text = "Pengajuan ini akan dikirim ke koordinator untuk disetujui terlebih dahulu.",
+                                fontSize = 12.sp,
+                                color = PencairanColors.warning,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.padding(10.dp)
+                            )
+                        }
+                    }
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            isSubmittingSetengah = true
+                            viewModel.ajukanPencairanSetengahSimpanan(
+                                pelangganId = pel.id,
+                                onSuccess = {
+                                    isSubmittingSetengah = false
+                                    showSetengahDialog = false
+                                    selectedPelangganSetengah = null
+                                    Toast.makeText(context, "Pengajuan cairkan setengah berhasil dikirim ke koordinator", Toast.LENGTH_LONG).show()
+                                },
+                                onFailure = { e ->
+                                    isSubmittingSetengah = false
+                                    Toast.makeText(context, "Gagal: ${e.message}", Toast.LENGTH_SHORT).show()
+                                }
+                            )
+                        },
+                        enabled = !isSubmittingSetengah,
+                        colors = ButtonDefaults.buttonColors(containerColor = PencairanColors.warning),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        if (isSubmittingSetengah) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(18.dp),
+                                color = Color.White,
+                                strokeWidth = 2.dp
+                            )
+                        } else {
+                            Text("Ya, Ajukan", fontWeight = FontWeight.Bold)
+                        }
+                    }
+                },
+                dismissButton = {
+                    TextButton(
+                        onClick = {
+                            showSetengahDialog = false
+                            selectedPelangganSetengah = null
+                        },
+                        enabled = !isSubmittingSetengah
+                    ) {
+                        Text("Batal")
+                    }
+                },
+                shape = RoundedCornerShape(16.dp)
             )
         }
     }
@@ -348,7 +471,8 @@ private fun ModernPencairanCard(
     pelanggan: Pelanggan,
     viewModel: PelangganViewModel,
     onCairkanClick: () -> Unit,
-    onLanjutPinjamanClick: () -> Unit,  // ← TAMBAH INI
+    onCairkanSetengahClick: () -> Unit,
+    onLanjutPinjamanClick: () -> Unit,
     isDark: Boolean,
     cardColor: Color,
     borderColor: Color,
@@ -681,7 +805,42 @@ private fun ModernPencairanCard(
                     Spacer(modifier = Modifier.height(8.dp))
                 }
 
-                // Tombol Cairkan
+                // Tombol Cairkan Setengah (butuh persetujuan koordinator)
+                OutlinedButton(
+                    onClick = onCairkanSetengahClick,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    border = ButtonDefaults.outlinedButtonBorder.copy(
+                        brush = Brush.linearGradient(
+                            listOf(PencairanColors.warning, PencairanColors.warning)
+                        )
+                    ),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = PencairanColors.warning
+                    )
+                ) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Rounded.CallSplit,
+                            contentDescription = null,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Text(
+                            text = "Cairkan Setengah",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // Tombol Cairkan Semua (langsung, tanpa persetujuan)
                 Button(
                     onClick = onCairkanClick,
                     modifier = Modifier
@@ -713,7 +872,7 @@ private fun ModernPencairanCard(
                                 modifier = Modifier.size(20.dp)
                             )
                             Text(
-                                text = "Cairkan Simpanan",
+                                text = "Cairkan Semua",
                                 color = Color.White,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 15.sp

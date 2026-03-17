@@ -82,6 +82,13 @@ fun KoordinatorApprovalScreen(
     // Pending finalisasi untuk koordinator Phase 4 (AWAITING_KOORDINATOR_FINAL)
     val pendingKoordinatorFinal by viewModel.pendingKoordinatorFinal.collectAsState()
 
+    // Pengajuan cairkan setengah simpanan
+    val pendingCairanSimpanan by viewModel.pendingCairanSimpananKoordinator.collectAsState()
+    var showApproveCairanSimpananDialog by remember { mutableStateOf(false) }
+    var showRejectCairanSimpananDialog by remember { mutableStateOf(false) }
+    var selectedCairanSimpananItem by remember { mutableStateOf<PengajuanCairanSimpananItem?>(null) }
+    var cairanSimpananRejectNote by remember { mutableStateOf("") }
+
     var selectedPelanggan by remember { mutableStateOf<Pelanggan?>(null) }
     var showDetailSheet by remember { mutableStateOf(false) }
     var showRejectDialog by remember { mutableStateOf(false) }
@@ -109,6 +116,7 @@ fun KoordinatorApprovalScreen(
         Log.d("KoordinatorApproval", "🔄 Loading pending approvals for Koordinator")
         viewModel.loadPendingApprovalsForKoordinator()  // ✅ GANTI
         viewModel.loadPendingKoordinatorFinal()          // ✅ TAMBAH
+        viewModel.loadPendingCairanSimpananForKoordinator()
 
         viewModel.markAllPengawasPengajuanNotificationsAsRead()
         viewModel.loadSerahTerimaNotificationsForPengawas()
@@ -120,6 +128,7 @@ fun KoordinatorApprovalScreen(
             Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
             viewModel.loadPendingApprovalsForKoordinator()  // ✅ GANTI
             viewModel.loadPendingKoordinatorFinal()          // ✅ TAMBAH
+            viewModel.loadPendingCairanSimpananForKoordinator()
             operationMessage = null
         }
     }
@@ -220,6 +229,29 @@ fun KoordinatorApprovalScreen(
                         }
                     }
                 )
+
+                // Tab Cairkan Simpanan
+                Tab(
+                    selected = selectedTabIndex == 3,
+                    onClick = {
+                        selectedTabIndex = 3
+                        viewModel.loadPendingCairanSimpananForKoordinator()
+                    },
+                    text = { Text("Cairkan Simpanan") },
+                    icon = {
+                        Box {
+                            Icon(Icons.Default.AccountBalanceWallet, contentDescription = null)
+                            if (pendingCairanSimpanan.isNotEmpty()) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(8.dp)
+                                        .background(Color.Red, CircleShape)
+                                        .align(Alignment.TopEnd)
+                                )
+                            }
+                        }
+                    }
+                )
             }
 
             // ✅ KONTEN BERDASARKAN TAB
@@ -298,6 +330,21 @@ fun KoordinatorApprovalScreen(
                                 notificationId = notification.id,
                                 onSuccess = {}
                             )
+                        }
+                    )
+                }
+                3 -> {
+                    // TAB CAIRKAN SIMPANAN
+                    KoordinatorCairanSimpananTabContent(
+                        isDark = isDark,
+                        pendingItems = pendingCairanSimpanan,
+                        onApprove = { item ->
+                            selectedCairanSimpananItem = item
+                            showApproveCairanSimpananDialog = true
+                        },
+                        onReject = { item ->
+                            selectedCairanSimpananItem = item
+                            showRejectCairanSimpananDialog = true
                         }
                     )
                 }
@@ -427,6 +474,122 @@ fun KoordinatorApprovalScreen(
                 },
                 reason = rejectReason,
                 onReasonChange = { rejectReason = it }
+            )
+        }
+
+        // Dialog Setujui Cairkan Setengah Simpanan
+        if (showApproveCairanSimpananDialog && selectedCairanSimpananItem != null) {
+            val item = selectedCairanSimpananItem!!
+            AlertDialog(
+                onDismissRequest = {
+                    showApproveCairanSimpananDialog = false
+                    selectedCairanSimpananItem = null
+                },
+                title = { Text("Setujui Pencairan Simpanan", fontWeight = FontWeight.Bold) },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("Nasabah: ${item.pelangganNama}")
+                        Text("Jumlah dicairkan: Rp ${formatRupiah(item.jumlahDicairkan)}")
+                        Text(
+                            "Simpanan nasabah akan dikurangi dan status diubah menjadi Lunas.",
+                            fontSize = 13.sp
+                        )
+                    }
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            isLoading = true
+                            viewModel.approveCairanSimpananByKoordinator(
+                                item = item,
+                                onSuccess = {
+                                    isLoading = false
+                                    operationMessage = "Pencairan simpanan ${item.pelangganNama} disetujui"
+                                    showApproveCairanSimpananDialog = false
+                                    selectedCairanSimpananItem = null
+                                },
+                                onFailure = { e ->
+                                    isLoading = false
+                                    operationMessage = "Gagal menyetujui: ${e.message}"
+                                    showApproveCairanSimpananDialog = false
+                                    selectedCairanSimpananItem = null
+                                }
+                            )
+                        }
+                    ) {
+                        Text("Setujui")
+                    }
+                },
+                dismissButton = {
+                    OutlinedButton(onClick = {
+                        showApproveCairanSimpananDialog = false
+                        selectedCairanSimpananItem = null
+                    }) {
+                        Text("Batal")
+                    }
+                }
+            )
+        }
+
+        // Dialog Tolak Cairkan Setengah Simpanan
+        if (showRejectCairanSimpananDialog && selectedCairanSimpananItem != null) {
+            val item = selectedCairanSimpananItem!!
+            AlertDialog(
+                onDismissRequest = {
+                    showRejectCairanSimpananDialog = false
+                    selectedCairanSimpananItem = null
+                    cairanSimpananRejectNote = ""
+                },
+                title = { Text("Tolak Pencairan Simpanan", fontWeight = FontWeight.Bold) },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("Nasabah: ${item.pelangganNama}")
+                        OutlinedTextField(
+                            value = cairanSimpananRejectNote,
+                            onValueChange = { cairanSimpananRejectNote = it },
+                            label = { Text("Alasan penolakan") },
+                            modifier = Modifier.fillMaxWidth(),
+                            maxLines = 3
+                        )
+                    }
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            isLoading = true
+                            viewModel.rejectCairanSimpananByKoordinator(
+                                item = item,
+                                catatan = cairanSimpananRejectNote.ifBlank { "Ditolak oleh Koordinator" },
+                                onSuccess = {
+                                    isLoading = false
+                                    operationMessage = "Pencairan simpanan ${item.pelangganNama} ditolak"
+                                    showRejectCairanSimpananDialog = false
+                                    selectedCairanSimpananItem = null
+                                    cairanSimpananRejectNote = ""
+                                },
+                                onFailure = { e ->
+                                    isLoading = false
+                                    operationMessage = "Gagal menolak: ${e.message}"
+                                    showRejectCairanSimpananDialog = false
+                                    selectedCairanSimpananItem = null
+                                    cairanSimpananRejectNote = ""
+                                }
+                            )
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444))
+                    ) {
+                        Text("Tolak")
+                    }
+                },
+                dismissButton = {
+                    OutlinedButton(onClick = {
+                        showRejectCairanSimpananDialog = false
+                        selectedCairanSimpananItem = null
+                        cairanSimpananRejectNote = ""
+                    }) {
+                        Text("Batal")
+                    }
+                }
             )
         }
 
@@ -2300,4 +2463,186 @@ fun KoordinatorFinalisasiTarikTabunganDialog(
             }
         }
     )
+}
+
+// =========================================================================
+// CAIRKAN SIMPANAN TAB CONTENT
+// =========================================================================
+
+@Composable
+private fun KoordinatorCairanSimpananTabContent(
+    isDark: Boolean,
+    pendingItems: List<PengajuanCairanSimpananItem>,
+    onApprove: (PengajuanCairanSimpananItem) -> Unit,
+    onReject: (PengajuanCairanSimpananItem) -> Unit
+) {
+    if (pendingItems.isEmpty()) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(32.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Icon(
+                    Icons.Default.AccountBalanceWallet,
+                    contentDescription = null,
+                    modifier = Modifier.size(64.dp),
+                    tint = KoordinatorColors.getTextMuted(isDark)
+                )
+                Text(
+                    "Tidak ada pengajuan pencairan simpanan",
+                    fontSize = 16.sp,
+                    color = KoordinatorColors.getTextMuted(isDark),
+                    textAlign = TextAlign.Center
+                )
+            }
+        }
+    } else {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            items(pendingItems) { item ->
+                CairanSimpananItemCard(
+                    item = item,
+                    isDark = isDark,
+                    onApprove = { onApprove(item) },
+                    onReject = { onReject(item) }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun CairanSimpananItemCard(
+    item: PengajuanCairanSimpananItem,
+    isDark: Boolean,
+    onApprove: () -> Unit,
+    onReject: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = KoordinatorColors.getCard(isDark)
+        ),
+        border = BorderStroke(1.dp, KoordinatorColors.getBorder(isDark))
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            // Header
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = item.pelangganNama,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp,
+                    color = KoordinatorColors.getTextPrimary(isDark),
+                    modifier = Modifier.weight(1f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = Color(0xFFF59E0B).copy(alpha = 0.15f)
+                ) {
+                    Text(
+                        text = "MENUNGGU",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFFF59E0B),
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
+                }
+            }
+
+            // Admin
+            Text(
+                text = "Diajukan oleh: ${item.adminName}",
+                fontSize = 13.sp,
+                color = KoordinatorColors.getTextMuted(isDark)
+            )
+
+            // Tanggal
+            if (item.requestDate.isNotBlank()) {
+                Text(
+                    text = "Tanggal: ${item.requestDate}",
+                    fontSize = 12.sp,
+                    color = KoordinatorColors.getTextMuted(isDark)
+                )
+            }
+
+            HorizontalDivider(color = KoordinatorColors.getBorder(isDark))
+
+            // Jumlah
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column {
+                    Text(
+                        "Total Simpanan",
+                        fontSize = 12.sp,
+                        color = KoordinatorColors.getTextMuted(isDark)
+                    )
+                    Text(
+                        "Rp ${formatRupiah(item.simpananTotal)}",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = KoordinatorColors.getTextPrimary(isDark)
+                    )
+                }
+                Column(horizontalAlignment = Alignment.End) {
+                    Text(
+                        "Dicairkan (\u00bd)",
+                        fontSize = 12.sp,
+                        color = KoordinatorColors.getTextMuted(isDark)
+                    )
+                    Text(
+                        "Rp ${formatRupiah(item.jumlahDicairkan)}",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF10B981)
+                    )
+                }
+            }
+
+            // Buttons
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedButton(
+                    onClick = onReject,
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.dp, Color(0xFFEF4444)),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFEF4444))
+                ) {
+                    Text("Tolak", fontWeight = FontWeight.Bold)
+                }
+                Button(
+                    onClick = onApprove,
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981))
+                ) {
+                    Text("Setujui", fontWeight = FontWeight.Bold, color = Color.White)
+                }
+            }
+        }
+    }
 }
