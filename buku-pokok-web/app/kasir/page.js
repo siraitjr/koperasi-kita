@@ -181,6 +181,18 @@ export default function KasirPage() {
     );
   }
 
+  if (screen === 'bukuTunai') {
+    return (
+      <BukuTunaiScreen
+        user={userData}
+        cabang={selectedCabang}
+        cabangList={cabangList}
+        onBack={() => setScreen('home')}
+        onLogout={handleLogout}
+      />
+    );
+  }
+
   if (screen === 'ringkasan') {
     return (
       <RingkasanScreen
@@ -335,6 +347,15 @@ function HomeScreen({ user, cabangList, summaryData, selectedCabang, onSelectCab
       icon: (
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
           <path d="M3 3h18v18H3zM3 9h18M3 15h18M9 3v18M15 3v18"/>
+        </svg>
+      ),
+    },
+    {
+      id: 'bukuTunai', name: 'Buku Tunai', desc: 'Rekap kasbon & tunai harian per resort',
+      icon: (
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+          <rect width="20" height="14" x="2" y="5" rx="2"/><line x1="2" x2="22" y1="10" y2="10"/>
+          <path d="M12 15h.01M8 15h.01M16 15h.01"/>
         </svg>
       ),
     },
@@ -1239,6 +1260,272 @@ function BukuRekapScreen({ user, cabang, cabangList, onBack, onLogout }) {
     </div>
   );
 }
+
+// ============================================================
+// BUKU TUNAI SCREEN
+// Kolom: Nama Resort | Kasbon Pagi | Kas Pakai | Kembali Kasbon | Tunai Pasar | Titipan | +/-
+// Data: getBukuPokok (nasabah) + getKasirEntries (uang_kas per admin)
+// ============================================================
+function BukuTunaiScreen({ user, cabang, cabangList, onBack, onLogout }) {
+  const isUnit = user?.role === 'kasir_unit';
+  const [activeCabang, setActiveCabang] = useState(cabang || cabangList[0] || null);
+  const [bukuData, setBukuData] = useState(null);
+  const [kasirEntries, setKasirEntries] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [selectedDate, setSelectedDate] = useState(null);
+
+  useEffect(() => {
+    if (!activeCabang) return;
+    setLoading(true);
+    setError('');
+    setBukuData(null);
+    setKasirEntries([]);
+    setSelectedDate(null);
+
+    // Tentukan bulan-bulan yang perlu di-fetch untuk kasir entries
+    const now = new Date();
+    const wibOffset = 7 * 60 * 60 * 1000;
+    const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
+    const wib = new Date(utc + wibOffset);
+    const bulanCurrent = `${wib.getFullYear()}-${String(wib.getMonth() + 1).padStart(2, '0')}`;
+    // Fetch bulan sebelumnya hanya jika tanggal <= 10 (7 hari kerja bisa lintas bulan)
+    const needPrevMonth = wib.getDate() <= 10;
+    const bulanPrev = (() => {
+      const d = new Date(wib.getFullYear(), wib.getMonth() - 1, 1);
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    })();
+
+    const promises = [
+      getBukuPokok({ cabangId: activeCabang.id, adminUid: '', status: 'aktif' }),
+      getKasirEntries({ cabangId: activeCabang.id, bulan: bulanCurrent }),
+    ];
+    if (needPrevMonth) {
+      promises.push(getKasirEntries({ cabangId: activeCabang.id, bulan: bulanPrev }));
+    }
+
+    Promise.all(promises)
+      .then(([bukuResult, kasirCurrent, kasirPrev]) => {
+        if (bukuResult.success && bukuResult.type === 'buku_pokok') {
+          setBukuData(bukuResult.data);
+        }
+        const allEntries = [
+          ...(kasirCurrent?.success ? kasirCurrent.data.entries || [] : []),
+          ...(kasirPrev?.success ? kasirPrev?.data?.entries || [] : []),
+        ];
+        setKasirEntries(allEntries);
+      })
+      .catch(err => setError('Gagal memuat data: ' + err.message))
+      .finally(() => setLoading(false));
+  }, [activeCabang?.id]);
+
+  // 7 tanggal terakhir dari buku pokok
+  const dates = (bukuData?.tanggalList || []).slice(0, 7);
+  const currentDate = selectedDate || dates[0] || null;
+
+  // Helper parse tanggal "07 Feb 2026"
+  const BULAN_MAP_REV_T = {};
+  BULAN_INDO.forEach((b, i) => { BULAN_MAP_REV_T[b] = i; });
+
+  // Hitung baris per resort untuk tanggal terpilih
+  const tunaiRows = (() => {
+    if (!bukuData?.nasabah || !currentDate) return [];
+    const allNasabah = bukuData.nasabah;
+    const admins = activeCabang?.admins || [];
+    const dateStr = currentDate;
+
+    // Bangun peta kasbon: { adminUid: totalKasbon } untuk tanggal ini
+    const kasbonMap = {};
+    kasirEntries.forEach(e => {
+      if (e.jenis === 'uang_kas' && e.tanggal === dateStr && e.targetAdminUid) {
+        kasbonMap[e.targetAdminUid] = (kasbonMap[e.targetAdminUid] || 0) + (e.jumlah || 0);
+      }
+    });
+
+    const isDropBaru = (n) => (n.pinjamanKe || 1) <= 1;
+
+    const rows = [];
+    for (const adm of admins) {
+      const resortNasabah = allNasabah.filter(n => n.adminUid === adm.uid);
+
+      // Kasbon Pagi = total uang_kas yang dikirim kasir ke admin ini pada tanggal ini
+      const kasbonPagi = kasbonMap[adm.uid] || 0;
+
+      // Kas Pakai (sesuai Buku Rekap, saat ini belum diimplementasikan = 0)
+      const kasPakai = 0;
+
+      // Kembali Kasbon = Kasbon Pagi - Kas Pakai
+      const kembaliKasbon = kasbonPagi - kasPakai;
+
+      // Hitung Tunai Pasar menggunakan rumus yang sama dengan Buku Rekap untuk tanggal ini
+      const droppedOnDate = resortNasabah.filter(n => (n.tanggalPencairan || '').trim() === dateStr);
+      const totalDrop = droppedOnDate.reduce((s, n) => s + (n.besarPinjaman || 0), 0);
+      const adminFee = Math.round(totalDrop * 0.05);
+      const tabungan = Math.round(totalDrop * 0.05);
+      let storting = 0;
+      resortNasabah.forEach(n => {
+        const pay = n.pembayaran?.[dateStr];
+        if (pay) storting += pay.total || 0;
+      });
+      const debit = storting + adminFee + tabungan;
+      const kredit = totalDrop; // pencairanTabungan = 0
+      const tunaiPasar = debit - kredit;
+
+      // Titipan (belum diimplementasikan, placeholder = 0)
+      const titipan = 0;
+
+      // +/- = Kembali Kasbon + Tunai Pasar + Titipan
+      const plusMinus = kembaliKasbon + tunaiPasar + titipan;
+
+      rows.push({ resortName: adm.name, kasbonPagi, kasPakai, kembaliKasbon, tunaiPasar, titipan, plusMinus });
+    }
+    return rows;
+  })();
+
+  // Total semua resort
+  const totals = tunaiRows.reduce((acc, r) => ({
+    kasbonPagi: acc.kasbonPagi + r.kasbonPagi,
+    kasPakai: acc.kasPakai + r.kasPakai,
+    kembaliKasbon: acc.kembaliKasbon + r.kembaliKasbon,
+    tunaiPasar: acc.tunaiPasar + r.tunaiPasar,
+    titipan: acc.titipan + r.titipan,
+    plusMinus: acc.plusMinus + r.plusMinus,
+  }), { kasbonPagi: 0, kasPakai: 0, kembaliKasbon: 0, tunaiPasar: 0, titipan: 0, plusMinus: 0 });
+
+  const thStyle = { padding: '8px 6px', textAlign: 'center', fontWeight: 700, fontSize: 11, whiteSpace: 'nowrap', position: 'sticky', top: 0, background: '#f8f9fa', zIndex: 2, borderBottom: '2px solid var(--border)' };
+  const tdStyle = { padding: '8px 6px', textAlign: 'right', fontFamily: "'DM Mono', monospace", fontSize: 12 };
+  const tdNameStyle = { padding: '8px', textAlign: 'left', fontWeight: 600, fontSize: 12, whiteSpace: 'nowrap' };
+
+  return (
+    <div className="page-container">
+      <header className="top-bar">
+        <div className="top-bar-left">
+          <button onClick={onBack} className="btn-back">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg>
+          </button>
+          <div>
+            <h1>Buku Tunai</h1>
+            <p>{activeCabang?.name || 'Pilih Cabang'}{currentDate ? ` — ${currentDate}` : ''}</p>
+          </div>
+        </div>
+        <div className="top-bar-right">
+          <button onClick={onLogout} className="btn-icon" title="Keluar">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></svg>
+          </button>
+        </div>
+      </header>
+
+      <main style={{ padding: 20 }} className="fade-in">
+        {/* Cabang selector untuk kasir_wilayah */}
+        {!isUnit && cabangList.length > 1 && (
+          <div style={{ marginBottom: 16 }}>
+            <select value={activeCabang?.id || ''} onChange={(e) => { setActiveCabang(cabangList.find(c => c.id === e.target.value)); }}
+              style={{ padding: '8px 12px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 13, background: 'var(--card)' }}>
+              {cabangList.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </div>
+        )}
+
+        {/* Tab tanggal — 7 hari terakhir */}
+        {!loading && dates.length > 0 && (
+          <div style={{ display: 'flex', gap: 6, marginBottom: 16, overflowX: 'auto', paddingBottom: 4 }}>
+            {dates.map(d => {
+              const isActive = currentDate === d;
+              return (
+                <button key={d} onClick={() => setSelectedDate(d)} style={{
+                  padding: '6px 14px', borderRadius: 20, fontSize: 12, fontWeight: 600,
+                  whiteSpace: 'nowrap', cursor: 'pointer',
+                  border: `1px solid ${isActive ? 'var(--primary)' : 'var(--border)'}`,
+                  background: isActive ? 'var(--primary)' : 'var(--card)',
+                  color: isActive ? '#fff' : 'var(--text)',
+                  transition: 'all 0.15s',
+                }}>
+                  {d.slice(0, 6)}
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        {loading ? (
+          <div style={{ textAlign: 'center', padding: 60 }}>
+            <div className="loading-spinner" />
+            <p style={{ color: 'var(--text-muted)', marginTop: 12, fontSize: 13 }}>Memuat Buku Tunai...</p>
+          </div>
+        ) : error ? (
+          <div style={{ textAlign: 'center', padding: 60, color: 'var(--danger)', fontSize: 14 }}>{error}</div>
+        ) : tunaiRows.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: 60 }}>
+            <p style={{ color: 'var(--text-muted)', fontSize: 14 }}>Tidak ada data resort</p>
+          </div>
+        ) : (
+          <>
+            {/* Kartu ringkasan */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10, marginBottom: 20 }}>
+              <div style={{ background: 'var(--primary-light)', borderRadius: 12, padding: '12px 16px' }}>
+                <p style={{ fontSize: 11, color: 'var(--text-muted)' }}>Kasbon Pagi</p>
+                <p style={{ fontSize: 15, fontWeight: 700, color: 'var(--primary)' }}>{formatRpFull(totals.kasbonPagi)}</p>
+              </div>
+              <div style={{ background: '#e8f8f0', borderRadius: 12, padding: '12px 16px' }}>
+                <p style={{ fontSize: 11, color: 'var(--text-muted)' }}>Kembali Kasbon</p>
+                <p style={{ fontSize: 15, fontWeight: 700, color: 'var(--success)' }}>{formatRpFull(totals.kembaliKasbon)}</p>
+              </div>
+              <div style={{ background: '#f0f4ff', borderRadius: 12, padding: '12px 16px' }}>
+                <p style={{ fontSize: 11, color: 'var(--text-muted)' }}>Tunai Pasar</p>
+                <p style={{ fontSize: 15, fontWeight: 700, color: totals.tunaiPasar >= 0 ? 'var(--success)' : 'var(--danger)' }}>{formatRpFull(totals.tunaiPasar)}</p>
+              </div>
+              <div style={{ background: totals.plusMinus >= 0 ? '#e8f8f0' : '#fef2f0', borderRadius: 12, padding: '12px 16px' }}>
+                <p style={{ fontSize: 11, color: 'var(--text-muted)' }}>+/-</p>
+                <p style={{ fontSize: 15, fontWeight: 700, color: totals.plusMinus >= 0 ? 'var(--success)' : 'var(--danger)' }}>{formatRpFull(totals.plusMinus)}</p>
+              </div>
+            </div>
+
+            {/* Tabel */}
+            <div style={{ overflow: 'auto', border: '1px solid var(--border)', borderRadius: 12, background: 'var(--card)' }}>
+              <table style={{ width: '100%', minWidth: 680, fontSize: 12, borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ background: '#f8f9fa' }}>
+                    <th style={{ ...thStyle, textAlign: 'left', paddingLeft: 10 }}>Nama Resort</th>
+                    <th style={{ ...thStyle, background: 'var(--primary-light)' }}>Kasbon Pagi</th>
+                    <th style={thStyle}>Kas Pakai</th>
+                    <th style={{ ...thStyle, background: '#e8f8f0' }}>Kembali Kasbon</th>
+                    <th style={{ ...thStyle, background: '#f0f4ff' }}>Tunai Pasar</th>
+                    <th style={thStyle}>Titipan</th>
+                    <th style={{ ...thStyle, background: '#f3e8ff' }}>+/-</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {tunaiRows.map((row, idx) => (
+                    <tr key={idx} style={{ borderBottom: '1px solid var(--border-light)' }}>
+                      <td style={tdNameStyle}>{row.resortName}</td>
+                      <td style={{ ...tdStyle, color: 'var(--primary)', fontWeight: 600 }}>{row.kasbonPagi > 0 ? formatRp(row.kasbonPagi) : '-'}</td>
+                      <td style={tdStyle}>{row.kasPakai > 0 ? formatRp(row.kasPakai) : '-'}</td>
+                      <td style={{ ...tdStyle, fontWeight: 600, color: row.kembaliKasbon >= 0 ? 'var(--success)' : 'var(--danger)' }}>{row.kembaliKasbon !== 0 ? formatRp(row.kembaliKasbon) : '-'}</td>
+                      <td style={{ ...tdStyle, fontWeight: 700, color: row.tunaiPasar >= 0 ? 'var(--success)' : 'var(--danger)' }}>{row.tunaiPasar !== 0 ? formatRp(row.tunaiPasar) : '-'}</td>
+                      <td style={tdStyle}>{row.titipan > 0 ? formatRp(row.titipan) : '-'}</td>
+                      <td style={{ ...tdStyle, fontWeight: 700, color: row.plusMinus >= 0 ? 'var(--success)' : 'var(--danger)' }}>{row.plusMinus !== 0 ? formatRp(row.plusMinus) : '-'}</td>
+                    </tr>
+                  ))}
+                  {/* Baris total */}
+                  <tr style={{ borderTop: '2px solid var(--border)', background: '#f8f9fa' }}>
+                    <td style={{ ...tdNameStyle, fontWeight: 800 }}>TOTAL</td>
+                    <td style={{ ...tdStyle, fontWeight: 800, color: 'var(--primary)' }}>{totals.kasbonPagi > 0 ? formatRp(totals.kasbonPagi) : '-'}</td>
+                    <td style={{ ...tdStyle, fontWeight: 800 }}>{totals.kasPakai > 0 ? formatRp(totals.kasPakai) : '-'}</td>
+                    <td style={{ ...tdStyle, fontWeight: 800, color: totals.kembaliKasbon >= 0 ? 'var(--success)' : 'var(--danger)' }}>{formatRp(totals.kembaliKasbon)}</td>
+                    <td style={{ ...tdStyle, fontWeight: 800, color: totals.tunaiPasar >= 0 ? 'var(--success)' : 'var(--danger)' }}>{formatRp(totals.tunaiPasar)}</td>
+                    <td style={{ ...tdStyle, fontWeight: 800 }}>{totals.titipan > 0 ? formatRp(totals.titipan) : '-'}</td>
+                    <td style={{ ...tdStyle, fontWeight: 800, color: totals.plusMinus >= 0 ? 'var(--success)' : 'var(--danger)' }}>{formatRp(totals.plusMinus)}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+      </main>
+    </div>
+  );
+}
+
 
 // ============================================================
 // RINGKASAN SCREEN
