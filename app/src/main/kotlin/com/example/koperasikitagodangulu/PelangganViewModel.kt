@@ -3263,6 +3263,18 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                 }
                 Log.d("KelolaKredit", "📌 CabangId resolved: '$resolvedCabangId'")
 
+                // ========== VALIDASI CABANG ID ==========
+                // Pastikan cabangId tersedia sebelum menyimpan data apapun.
+                // Jika kosong setelah semua prioritas dicoba, gagalkan operasi sekarang
+                // agar tidak terjadi inkonsistensi: pelanggan tersimpan tapi pengajuan_approval tidak dibuat.
+                val finalCabangId = if (resolvedCabangId.isNotBlank()) resolvedCabangId else existingPelanggan.cabangId
+                if (finalCabangId.isBlank()) {
+                    Log.e("KelolaKredit", "❌ GAGAL: cabangId tidak bisa di-resolve untuk ${existingPelanggan.namaPanggilan}")
+                    onFailure?.invoke(Exception("ID Cabang tidak ditemukan. Pastikan koneksi internet aktif dan coba lagi."))
+                    return@launch
+                }
+                resolvedCabangId = finalCabangId
+
                 // ========== UPLOAD FOTO ==========
                 val currentUid = currentUidForCabang
                 var newFotoKtpUrl = ""
