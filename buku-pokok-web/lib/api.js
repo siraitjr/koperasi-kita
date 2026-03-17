@@ -117,8 +117,8 @@ export async function getKasirEntries({ cabangId, bulan }) {
 /**
  * Add kasir entry (POST - kasir_unit only)
  */
-export async function addKasirEntry({ jenis, arah, jumlah, keterangan, tanggal, targetAdminUid, targetAdminName }) {
-  return apiPost('addKasirEntry', { jenis, arah, jumlah, keterangan, tanggal, targetAdminUid, targetAdminName });
+export async function addKasirEntry({ jenis, arah, jumlah, keterangan, tanggal, targetAdminUid, targetAdminName, targetBuku }) {
+  return apiPost('addKasirEntry', { jenis, arah, jumlah, keterangan, tanggal, targetAdminUid, targetAdminName, targetBuku });
 }
 
 /**

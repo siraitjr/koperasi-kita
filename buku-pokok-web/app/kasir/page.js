@@ -15,8 +15,8 @@ import { formatRp, formatRpFull } from '../../lib/format';
 // CONSTANTS
 // =========================================================================
 const JENIS_OPTIONS = [
-  { value: 'uang_kas', label: 'Uang Kas' },
-  { value: 'penggajian', label: 'BU/Penggajian' },
+  { value: 'uang_kas', label: 'Kasbon Pagi' },
+  { value: 'penggajian', label: 'BU' },
   { value: 'transport', label: 'Transport' },
   { value: 'suntikan_dana', label: 'Suntikan Dana' },
   { value: 'pinjaman_kas', label: 'Pinjaman Kas' },
@@ -733,6 +733,7 @@ function FormModal({ cabangAdmins, onClose, onSuccess }) {
   const [keterangan, setKeterangan] = useState('');
   const [tanggal] = useState(getTodayIndo());
   const [targetAdmin, setTargetAdmin] = useState('');
+  const [targetBuku, setTargetBuku] = useState(['kas_penuntun', 'ekspedisi']);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -740,6 +741,7 @@ function FormModal({ cabangAdmins, onClose, onSuccess }) {
     const nominal = parseInt(jumlah.replace(/\D/g, ''), 10);
     if (!nominal || nominal <= 0) { setError('Jumlah harus diisi'); return; }
     if (jenis === 'uang_kas' && !targetAdmin) { setError('Pilih admin lapangan yang dituju'); return; }
+    if (jenis === 'penggajian' && targetBuku.length === 0) { setError('Pilih minimal satu buku tujuan BU'); return; }
     setLoading(true);
     setError('');
     try {
@@ -748,6 +750,7 @@ function FormModal({ cabangAdmins, onClose, onSuccess }) {
         jenis, arah, jumlah: nominal, keterangan, tanggal,
         targetAdminUid: jenis === 'uang_kas' ? targetAdmin : '',
         targetAdminName: jenis === 'uang_kas' ? (selectedAdm?.name || '') : '',
+        targetBuku: jenis === 'penggajian' ? targetBuku : [],
       });
       onSuccess();
     } catch (err) {
@@ -775,11 +778,38 @@ function FormModal({ cabangAdmins, onClose, onSuccess }) {
         {/* Jenis */}
         <div style={{ marginBottom: 16 }}>
           <label style={{ fontSize: 13, fontWeight: 600, marginBottom: 6, display: 'block' }}>Jenis Transaksi</label>
-            <select value={jenis} onChange={(e) => { const v = e.target.value; setJenis(v); setArah(JENIS_ARAH[v] || 'keluar'); setTargetAdmin(''); }}
+            <select value={jenis} onChange={(e) => { const v = e.target.value; setJenis(v); setArah(JENIS_ARAH[v] || 'keluar'); setTargetAdmin(''); if (v === 'penggajian') setTargetBuku(['kas_penuntun', 'ekspedisi']); }}
             style={{ width: '100%', padding: '10px 14px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 14, background: 'var(--card)' }}>
             {JENIS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
         </div>
+
+        {/* Pilihan Buku Tujuan — hanya untuk BU */}
+        {jenis === 'penggajian' && (
+          <div style={{ marginBottom: 16 }}>
+            <label style={{ fontSize: 13, fontWeight: 600, marginBottom: 6, display: 'block' }}>Buku Tujuan BU</label>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, cursor: 'pointer', padding: '8px 12px', borderRadius: 10, border: '1px solid var(--border)', background: targetBuku.includes('kas_penuntun') ? '#e8f8f0' : 'var(--card)' }}>
+                <input type="checkbox" checked={targetBuku.includes('kas_penuntun')}
+                  onChange={(e) => {
+                    if (e.target.checked) setTargetBuku(prev => [...prev, 'kas_penuntun']);
+                    else setTargetBuku(prev => prev.filter(b => b !== 'kas_penuntun'));
+                  }}
+                  style={{ width: 18, height: 18, accentColor: 'var(--primary)' }} />
+                Buku Kas Penuntun
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, cursor: 'pointer', padding: '8px 12px', borderRadius: 10, border: '1px solid var(--border)', background: targetBuku.includes('ekspedisi') ? '#e8f8f0' : 'var(--card)' }}>
+                <input type="checkbox" checked={targetBuku.includes('ekspedisi')}
+                  onChange={(e) => {
+                    if (e.target.checked) setTargetBuku(prev => [...prev, 'ekspedisi']);
+                    else setTargetBuku(prev => prev.filter(b => b !== 'ekspedisi'));
+                  }}
+                  style={{ width: 18, height: 18, accentColor: 'var(--primary)' }} />
+                Buku Ekspedisi
+              </label>
+            </div>
+          </div>
+        )}
 
         {/* Admin Lapangan yang dituju — hanya untuk Uang Kas */}
         {jenis === 'uang_kas' && cabangAdmins.length > 0 && (
@@ -1410,7 +1440,11 @@ function KasPenuntunScreen({ user, cabang, cabangList, onBack, onLogout }) {
         dropPusatPerDate[tgl] = (dropPusatPerDate[tgl] || 0) + (e.jumlah || 0);
       }
       if (e.jenis === 'penggajian' && e.arah === 'keluar') {
-        buPerDate[tgl] = (buPerDate[tgl] || 0) + (e.jumlah || 0);
+        // Hanya hitung BU yang targetnya kas_penuntun, atau entry lama tanpa targetBuku
+        const buku = e.targetBuku;
+        if (!buku || (Array.isArray(buku) && buku.includes('kas_penuntun'))) {
+          buPerDate[tgl] = (buPerDate[tgl] || 0) + (e.jumlah || 0);
+        }
       }
     });
 
@@ -1930,7 +1964,11 @@ function BukuEkspedisiScreen({ user, cabang, cabangList, onBack, onLogout }) {
       } else if (e.jenis === 'transport' && e.arah === 'keluar') {
         transportPerDate[tgl] = (transportPerDate[tgl] || 0) + jumlah;
       } else if (e.jenis === 'penggajian' && e.arah === 'keluar') {
-        buPerDate[tgl] = (buPerDate[tgl] || 0) + jumlah;
+        // Hanya hitung BU yang targetnya ekspedisi, atau entry lama tanpa targetBuku
+        const buku = e.targetBuku;
+        if (!buku || (Array.isArray(buku) && buku.includes('ekspedisi'))) {
+          buPerDate[tgl] = (buPerDate[tgl] || 0) + jumlah;
+        }
       } else if (e.jenis === 'pengembalian_kas' && e.arah === 'keluar') {
         pengembalianPerDate[tgl] = (pengembalianPerDate[tgl] || 0) + jumlah;
       } else if (e.jenis === 'sp' && e.arah === 'keluar') {

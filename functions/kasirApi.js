@@ -24,8 +24,8 @@ const JENIS_VALID = ['uang_kas', 'penggajian', 'transport', 'suntikan_dana', 'pi
 const ARAH_VALID = ['masuk', 'keluar'];
 
 const JENIS_LABELS = {
-    uang_kas: 'Uang Kas',
-    penggajian: 'BU/Penggajian',
+    uang_kas: 'Kasbon Pagi',
+    penggajian: 'BU',
     transport: 'Transport',
     suntikan_dana: 'Suntikan Dana',
     pinjaman_kas: 'Pinjaman Kas',
@@ -365,7 +365,7 @@ exports.addKasirEntry = functions
             }
 
             // Parse body
-            const { jenis, arah, jumlah, keterangan, tanggal, targetAdminUid, targetAdminName } = req.body || {};
+            const { jenis, arah, jumlah, keterangan, tanggal, targetAdminUid, targetAdminName, targetBuku } = req.body || {};
 
             // Validasi
             if (!jenis || !JENIS_VALID.includes(jenis)) {
@@ -422,6 +422,11 @@ exports.addKasirEntry = functions
             if (jenis === 'uang_kas' && targetAdminUid) {
                 newEntry.targetAdminUid = targetAdminUid;
                 newEntry.targetAdminName = targetAdminName || '';
+            }
+
+            // Simpan target buku untuk BU (penggajian)
+            if (jenis === 'penggajian' && Array.isArray(targetBuku) && targetBuku.length > 0) {
+                newEntry.targetBuku = targetBuku;
             }
 
             // Push ke RTDB
