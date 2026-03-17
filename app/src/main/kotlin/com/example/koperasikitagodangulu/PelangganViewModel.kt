@@ -2375,8 +2375,19 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
 
                     val totalPelanggan = pelangganList.size
 
-                    // ✅ v4: HITUNG nasabahAktif - SAMA PERSIS dengan RingkasanDashboardScreen.kt
-                    // Nasabah aktif = status Aktif DAN belum lunas cicilan DAN bukan MENUNGGU_PENCAIRAN
+                    // Batas 3 bulan (konsisten dengan calculateTargetHarian & Cloud Functions)
+                    val summaryDateFormat = SimpleDateFormat("dd MMM yyyy", Locale("in", "ID"))
+                    val summaryThreeMonthsAgo = Calendar.getInstance().apply {
+                        add(Calendar.MONTH, -3)
+                        set(Calendar.DAY_OF_MONTH, 1)
+                        set(Calendar.HOUR_OF_DAY, 0)
+                        set(Calendar.MINUTE, 0)
+                        set(Calendar.SECOND, 0)
+                        set(Calendar.MILLISECOND, 0)
+                    }.time
+
+                    // ✅ v5: HITUNG nasabahAktif - exclude nasabah Macet Lama (> 3 bulan)
+                    // Konsisten dengan RingkasanDashboardScreen.kt & Cloud Functions
                     val nasabahAktif = pelangganList.count { pelanggan ->
                         val totalBayar = pelanggan.pembayaranList.sumOf { pay ->
                             pay.jumlah.toLong() + pay.subPembayaran.sumOf { sub -> sub.jumlah.toLong() }
@@ -2386,8 +2397,15 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                         val isStatusAktif = pelanggan.status == "Aktif" ||
                                 pelanggan.status.equals("aktif", ignoreCase = true) ||
                                 pelanggan.status == "Active"
+                        val tglAcuan = pelanggan.tanggalPencairan.ifBlank {
+                            pelanggan.tanggalPengajuan.ifBlank { pelanggan.tanggalDaftar }
+                        }
+                        val isMacetLama = try {
+                            val acuanDate = summaryDateFormat.parse(tglAcuan)
+                            acuanDate != null && acuanDate.before(summaryThreeMonthsAgo)
+                        } catch (_: Exception) { false }
 
-                        isBelumLunas && !isMenungguPencairan && isStatusAktif
+                        isBelumLunas && !isMenungguPencairan && isStatusAktif && !isMacetLama
                     }
 
                     // ✅ v4: HITUNG nasabahLunas - SAMA PERSIS dengan RingkasanDashboardScreen.kt
@@ -2410,7 +2428,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                         isMenungguPencairanManual || (isLunasCicilan && isBelumDicairkan)
                     }
 
-                    // ✅ v4: HITUNG Pinjaman aktif HANYA dari nasabah aktif (exclude MENUNGGU_PENCAIRAN)
+                    // ✅ v5: HITUNG Pinjaman aktif HANYA dari nasabah aktif (exclude MENUNGGU_PENCAIRAN & Macet Lama)
                     val totalPinjamanAktif = pelangganList
                         .filter { pelanggan ->
                             val totalBayar = pelanggan.pembayaranList.sumOf { pay ->
@@ -2421,8 +2439,15 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                             val isStatusAktif = pelanggan.status == "Aktif" ||
                                     pelanggan.status.equals("aktif", ignoreCase = true) ||
                                     pelanggan.status == "Active"
+                            val tglAcuan = pelanggan.tanggalPencairan.ifBlank {
+                                pelanggan.tanggalPengajuan.ifBlank { pelanggan.tanggalDaftar }
+                            }
+                            val isMacetLama = try {
+                                val acuanDate = summaryDateFormat.parse(tglAcuan)
+                                acuanDate != null && acuanDate.before(summaryThreeMonthsAgo)
+                            } catch (_: Exception) { false }
 
-                            isBelumLunas && !isMenungguPencairan && isStatusAktif
+                            isBelumLunas && !isMenungguPencairan && isStatusAktif && !isMacetLama
                         }
                         .sumOf { it.totalPelunasan.toLong() }
 
@@ -2436,8 +2461,15 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                             val isStatusAktif = pelanggan.status == "Aktif" ||
                                     pelanggan.status.equals("aktif", ignoreCase = true) ||
                                     pelanggan.status == "Active"
+                            val tglAcuan = pelanggan.tanggalPencairan.ifBlank {
+                                pelanggan.tanggalPengajuan.ifBlank { pelanggan.tanggalDaftar }
+                            }
+                            val isMacetLama = try {
+                                val acuanDate = summaryDateFormat.parse(tglAcuan)
+                                acuanDate != null && acuanDate.before(summaryThreeMonthsAgo)
+                            } catch (_: Exception) { false }
 
-                            isBelumLunas && !isMenungguPencairan && isStatusAktif
+                            isBelumLunas && !isMenungguPencairan && isStatusAktif && !isMacetLama
                         }
                         .sumOf { pelanggan ->
                             pelanggan.pembayaranList.sumOf { pembayaran ->
