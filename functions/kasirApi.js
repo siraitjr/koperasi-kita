@@ -166,8 +166,9 @@ exports.getKasirSummary = functions
                 return;
             }
 
-            if (user.role !== 'kasir_unit' && user.role !== 'kasir_wilayah' && user.role !== 'sekretaris') {
-                res.status(403).json({ success: false, error: 'Akses hanya untuk Kasir' });
+            const KASIR_ALLOWED_ROLES = ['kasir_unit', 'kasir_wilayah', 'sekretaris', 'pimpinan', 'koordinator', 'pengawas'];
+            if (!KASIR_ALLOWED_ROLES.includes(user.role)) {
+                res.status(403).json({ success: false, error: 'Akses tidak diizinkan' });
                 return;
             }
 
@@ -176,8 +177,6 @@ exports.getKasirSummary = functions
             const metadata = metadataSnap.val() || {};
             const cabangData = metadata.cabang || {};
             const adminsData = metadata.admins || {};
-
-
 
             // Build cabang list
             const cabangList = [];
@@ -202,6 +201,8 @@ exports.getKasirSummary = functions
             let visibleCabang = cabangList;
             if (user.role === 'kasir_unit') {
                 visibleCabang = cabangList.filter(c => c.id === user.cabang);
+            } else if (user.role === 'pimpinan') {
+                visibleCabang = cabangList.filter(c => c.pimpinanUid === user.uid);
             }
 
             // Get kasir summary bulan ini
@@ -267,8 +268,9 @@ exports.getKasirEntries = functions
                 return;
             }
 
-            if (user.role !== 'kasir_unit' && user.role !== 'kasir_wilayah' && user.role !== 'sekretaris') {
-                res.status(403).json({ success: false, error: 'Akses hanya untuk Kasir' });
+            const KASIR_READ_ROLES = ['kasir_unit', 'kasir_wilayah', 'sekretaris', 'pimpinan', 'koordinator', 'pengawas'];
+            if (!KASIR_READ_ROLES.includes(user.role)) {
+                res.status(403).json({ success: false, error: 'Akses tidak diizinkan' });
                 return;
             }
 
@@ -278,9 +280,19 @@ exports.getKasirEntries = functions
                 return;
             }
 
+            // Kasir unit hanya bisa akses cabang sendiri
             if (user.role === 'kasir_unit' && user.cabang !== cabangId) {
                 res.status(403).json({ success: false, error: 'Tidak memiliki akses ke cabang ini' });
                 return;
+            }
+
+            // Pimpinan hanya bisa akses cabang yang dipimpin
+            if (user.role === 'pimpinan') {
+                const cabSnap = await db.ref(`metadata/cabang/${cabangId}/pimpinanUid`).once('value');
+                if (cabSnap.val() !== user.uid) {
+                    res.status(403).json({ success: false, error: 'Tidak memiliki akses ke cabang ini' });
+                    return;
+                }
             }
 
             if (!/^\d{4}-\d{2}$/.test(bulan)) {

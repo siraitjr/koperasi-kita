@@ -8,8 +8,66 @@
 import { useState, useEffect, useRef } from 'react';
 import { onAuthStateChanged, signInWithEmailAndPassword, signOut } from 'firebase/auth';
 import { auth } from '../../lib/firebase';
-import { getSummary, getBukuPokok } from '../../lib/api';
+import { getSummary, getBukuPokok, getKasirSummary, getKasirEntries } from '../../lib/api';
 import { formatRp, formatRpFull, formatRpShort } from '../../lib/format';
+
+// =========================================================================
+// KASIR CONSTANTS & HELPERS (untuk screen kasir di pembukuan)
+// =========================================================================
+const JENIS_OPTIONS_KASIR = [
+  { value: 'uang_kas', label: 'Kasbon Pagi' },
+  { value: 'penggajian', label: 'BU' },
+  { value: 'transport', label: 'Transport' },
+  { value: 'suntikan_dana', label: 'Suntikan Dana' },
+  { value: 'pinjaman_kas', label: 'Pinjaman Kas' },
+  { value: 'sp', label: 'SP' },
+  { value: 'pengembalian_kas', label: 'Pengembalian Kas' },
+];
+
+const BULAN_INDO_KASIR = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+
+function getCurrentMonthKey() {
+  const now = new Date();
+  const jakartaOffset = 7 * 60;
+  const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
+  const jakarta = new Date(utc + (jakartaOffset * 60000));
+  const yyyy = jakarta.getFullYear();
+  const mm = String(jakarta.getMonth() + 1).padStart(2, '0');
+  return `${yyyy}-${mm}`;
+}
+
+function getTodayIndoKasir() {
+  const now = new Date();
+  const jakartaOffset = 7 * 60;
+  const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
+  const jakarta = new Date(utc + (jakartaOffset * 60000));
+  const dd = String(jakarta.getDate()).padStart(2, '0');
+  const mmm = BULAN_INDO_KASIR[jakarta.getMonth()];
+  const yyyy = jakarta.getFullYear();
+  return `${dd} ${mmm} ${yyyy}`;
+}
+
+function formatBulanLabel(bulanKey) {
+  const [y, m] = bulanKey.split('-');
+  return `${BULAN_INDO_KASIR[parseInt(m) - 1]} ${y}`;
+}
+
+function generateBulanOptions() {
+  const options = [];
+  const now = new Date();
+  const jakartaOffset = 7 * 60;
+  const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
+  const jakarta = new Date(utc + (jakartaOffset * 60000));
+  for (let i = 0; i < 12; i++) {
+    const d = new Date(jakarta.getFullYear(), jakarta.getMonth() - i, 1);
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    const label = `${BULAN_INDO_KASIR[d.getMonth()]} ${d.getFullYear()}`;
+    options.push({ key, label });
+  }
+  return options;
+}
+
+const KASIR_VIEW_ROLES = ['pimpinan', 'koordinator', 'pengawas'];
 
 export default function Home() {
   const [user, setUser] = useState(null);
@@ -18,6 +76,8 @@ export default function Home() {
   const [cabangList, setCabangList] = useState([]);
   const [selectedCabang, setSelectedCabang] = useState(null);
   const [selectedAdmin, setSelectedAdmin] = useState(null);
+  const [kasirCabangList, setKasirCabangList] = useState([]);
+  const [kasirSelectedCabang, setKasirSelectedCabang] = useState(null);
 
   // ==================== HELPERS: Save/Restore navigation ====================
   const saveNav = (scr, cabang, admin) => {
@@ -72,6 +132,22 @@ export default function Home() {
               return;
             }
 
+            // Fetch kasir cabang list untuk pimpinan/koordinator/pengawas
+            if (KASIR_VIEW_ROLES.includes(userRole)) {
+              try {
+                const kasirResult = await getKasirSummary();
+                if (kasirResult.success) {
+                  setKasirCabangList(kasirResult.data.cabangList || []);
+                  if (kasirResult.data.cabangList?.length === 1) {
+                    setKasirSelectedCabang(kasirResult.data.cabangList[0]);
+                  }
+                }
+              } catch (e) {
+                // Kasir data optional, tidak blocking
+                console.error('Failed to get kasir summary:', e);
+              }
+            }
+
             // Restore previous screen after refresh
             const saved = restoreNav();
             if (saved && saved.screen) {
@@ -116,6 +192,9 @@ export default function Home() {
     if (book === 'bukuPokok') {
       setScreen('dashboard');
       saveNav('dashboard', null, null);
+    } else if (['jurnalKasir', 'bukuRekap', 'kasPenuntun', 'bukuTunai', 'bukuEkspedisi', 'ringkasanKas'].includes(book)) {
+      setScreen(book);
+      saveNav(book, null, null);
     }
   };
 
@@ -173,7 +252,81 @@ export default function Home() {
     return (
       <HomeScreen
         user={userData}
+        kasirCabangList={kasirCabangList}
         onSelectBook={handleSelectBook}
+        onLogout={handleLogout}
+      />
+    );
+  }
+
+  // ==================== KASIR SCREENS (read-only untuk pimpinan/koordinator/pengawas) ====================
+  if (screen === 'jurnalKasir' && KASIR_VIEW_ROLES.includes(userData?.role)) {
+    return (
+      <JurnalKasirViewScreen
+        user={userData}
+        cabang={kasirSelectedCabang}
+        cabangList={kasirCabangList}
+        onBack={handleBackToHome}
+        onLogout={handleLogout}
+      />
+    );
+  }
+
+  if (screen === 'bukuRekap' && KASIR_VIEW_ROLES.includes(userData?.role)) {
+    return (
+      <BukuRekapViewScreen
+        user={userData}
+        cabang={kasirSelectedCabang}
+        cabangList={kasirCabangList}
+        onBack={handleBackToHome}
+        onLogout={handleLogout}
+      />
+    );
+  }
+
+  if (screen === 'kasPenuntun' && KASIR_VIEW_ROLES.includes(userData?.role)) {
+    return (
+      <KasPenuntunViewScreen
+        user={userData}
+        cabang={kasirSelectedCabang}
+        cabangList={kasirCabangList}
+        onBack={handleBackToHome}
+        onLogout={handleLogout}
+      />
+    );
+  }
+
+  if (screen === 'bukuTunai' && KASIR_VIEW_ROLES.includes(userData?.role)) {
+    return (
+      <BukuTunaiViewScreen
+        user={userData}
+        cabang={kasirSelectedCabang}
+        cabangList={kasirCabangList}
+        onBack={handleBackToHome}
+        onLogout={handleLogout}
+      />
+    );
+  }
+
+  if (screen === 'bukuEkspedisi' && KASIR_VIEW_ROLES.includes(userData?.role)) {
+    return (
+      <BukuEkspedisiViewScreen
+        user={userData}
+        cabang={kasirSelectedCabang}
+        cabangList={kasirCabangList}
+        onBack={handleBackToHome}
+        onLogout={handleLogout}
+      />
+    );
+  }
+
+  if (screen === 'ringkasanKas' && KASIR_VIEW_ROLES.includes(userData?.role)) {
+    return (
+      <RingkasanKasViewScreen
+        user={userData}
+        cabang={kasirSelectedCabang}
+        cabangList={kasirCabangList}
+        onBack={handleBackToHome}
         onLogout={handleLogout}
       />
     );
@@ -326,7 +479,9 @@ function LoginScreen({ onLogin }) {
 // ============================================================
 // HOME SCREEN (Menu Buku)
 // ============================================================
-function HomeScreen({ user, onSelectBook, onLogout }) {
+function HomeScreen({ user, kasirCabangList, onSelectBook, onLogout }) {
+  const showKasirMenus = KASIR_VIEW_ROLES.includes(user?.role) && kasirCabangList?.length > 0;
+
   const books = [
     {
       id: 'bukuPokok',
@@ -342,10 +497,65 @@ function HomeScreen({ user, onSelectBook, onLogout }) {
       ),
       ready: true,
     },
-    // Buku-buku lain nanti ditambahkan di sini:
-    // { id: 'bukuTaksasi', name: 'Buku Taksasi', desc: '...', icon: ..., ready: false },
-    // { id: 'neraca', name: 'Neraca', desc: '...', icon: ..., ready: false },
   ];
+
+  const kasirMenus = showKasirMenus ? [
+    {
+      id: 'jurnalKasir', name: 'Jurnal Kasir', desc: 'Catatan transaksi kas harian',
+      icon: (
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+          <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><line x1="16" x2="8" y1="13" y2="13"/><line x1="16" x2="8" y1="17" y2="17"/><line x1="10" x2="8" y1="9" y2="9"/>
+        </svg>
+      ),
+      ready: true,
+    },
+    {
+      id: 'bukuRekap', name: 'Buku Rekap', desc: 'Rekap harian per resort',
+      icon: (
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+          <path d="M3 3h18v18H3zM3 9h18M3 15h18M9 3v18M15 3v18"/>
+        </svg>
+      ),
+      ready: true,
+    },
+    {
+      id: 'kasPenuntun', name: 'Kas Penuntun', desc: 'Buku kas harian penuntun',
+      icon: (
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+          <path d="M3 3h18v18H3zM3 9h18M3 15h18M9 3v18M15 3v18"/>
+        </svg>
+      ),
+      ready: true,
+    },
+    {
+      id: 'bukuTunai', name: 'Buku Tunai', desc: 'Rekap kasbon & tunai harian per resort',
+      icon: (
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+          <rect width="20" height="14" x="2" y="5" rx="2"/><line x1="2" x2="22" y1="10" y2="10"/>
+          <path d="M12 15h.01M8 15h.01M16 15h.01"/>
+        </svg>
+      ),
+      ready: true,
+    },
+    {
+      id: 'bukuEkspedisi', name: 'Buku Ekspedisi', desc: 'Kas harian masuk & keluar ekspedisi',
+      icon: (
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" x2="8" y1="13" y2="13"/><line x1="16" x2="8" y1="17" y2="17"/><polyline points="10 9 9 9 8 9"/>
+        </svg>
+      ),
+      ready: true,
+    },
+    {
+      id: 'ringkasanKas', name: 'Ringkasan Kas', desc: 'Rekapitulasi pemasukan & pengeluaran',
+      icon: (
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+          <path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/>
+        </svg>
+      ),
+      ready: true,
+    },
+  ] : [];
 
   return (
     <div className="page-container">
@@ -409,6 +619,29 @@ function HomeScreen({ user, onSelectBook, onLogout }) {
             </button>
           ))}
         </div>
+
+        {/* Kasir menus untuk pimpinan/koordinator/pengawas */}
+        {kasirMenus.length > 0 && (
+          <>
+            <div className="home-section-label" style={{ marginTop: 24 }}>Menu Kasir</div>
+            <div className="book-grid">
+              {kasirMenus.map((menu) => (
+                <button
+                  key={menu.id}
+                  onClick={() => onSelectBook(menu.id)}
+                  className="book-card"
+                >
+                  <div className="book-card-icon">{menu.icon}</div>
+                  <div className="book-card-info">
+                    <h3>{menu.name}</h3>
+                    <p>{menu.desc}</p>
+                  </div>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><polyline points="9 18 15 12 9 6"/></svg>
+                </button>
+              ))}
+            </div>
+          </>
+        )}
       </main>
     </div>
   );
