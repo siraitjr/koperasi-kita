@@ -5,11 +5,38 @@
 // KASIR WEB - Jurnal Kasir & Akses Buku Pokok
 // =========================================================================
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { onAuthStateChanged, signInWithEmailAndPassword, signOut } from 'firebase/auth';
-import { auth } from '../../lib/firebase';
+import { auth, storage, database } from '../../lib/firebase';
+import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { ref as dbRef, update } from 'firebase/database';
 import { getKasirSummary, getKasirEntries, addKasirEntry, deleteKasirEntry, getBukuPokok } from '../../lib/api';
 import { formatRp, formatRpFull } from '../../lib/format';
+
+// =========================================================================
+// HELPER: Compress image for upload (max 1024px, JPEG quality 0.6)
+// =========================================================================
+function compressImage(file, maxSize = 1024, quality = 0.6) {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let w = img.width, h = img.height;
+        if (w > h && w > maxSize) { h = Math.round(h * maxSize / w); w = maxSize; }
+        else if (h > maxSize) { w = Math.round(w * maxSize / h); h = maxSize; }
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, w, h);
+        canvas.toBlob((blob) => resolve(blob), 'image/jpeg', quality);
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
 
 // =========================================================================
 // CONSTANTS
@@ -692,6 +719,7 @@ function JurnalScreen({ user, cabang, cabangList, onBack, onLogout }) {
       {showForm && (
         <FormModal
           cabangAdmins={activeCabang?.admins || []}
+          cabangId={activeCabang?.id || ''}
           onClose={() => setShowForm(false)}
           onSuccess={handleEntryAdded}
         />
@@ -726,7 +754,7 @@ function JurnalScreen({ user, cabang, cabangList, onBack, onLogout }) {
 // ============================================================
 // FORM MODAL (Input transaksi kasir)
 // ============================================================
-function FormModal({ cabangAdmins, onClose, onSuccess }) {
+function FormModal({ cabangAdmins, cabangId, onClose, onSuccess }) {
   const [jenis, setJenis] = useState('uang_kas');
   const [arah, setArah] = useState('keluar');
   const [jumlah, setJumlah] = useState('');
@@ -734,8 +762,20 @@ function FormModal({ cabangAdmins, onClose, onSuccess }) {
   const [tanggal] = useState(getTodayIndo());
   const [targetAdmin, setTargetAdmin] = useState('');
   const [targetBuku, setTargetBuku] = useState(['kas_penuntun', 'ekspedisi']);
+  const [fakturFile, setFakturFile] = useState(null);
+  const [fakturPreview, setFakturPreview] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const fakturInputRef = useRef(null);
+
+  const handleFakturCapture = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setFakturFile(file);
+    const reader = new FileReader();
+    reader.onload = (ev) => setFakturPreview(ev.target.result);
+    reader.readAsDataURL(file);
+  };
 
   const handleSubmit = async () => {
     const nominal = parseInt(jumlah.replace(/\D/g, ''), 10);
@@ -746,12 +786,31 @@ function FormModal({ cabangAdmins, onClose, onSuccess }) {
     setError('');
     try {
       const selectedAdm = cabangAdmins.find(a => a.uid === targetAdmin);
-      await addKasirEntry({
+      const result = await addKasirEntry({
         jenis, arah, jumlah: nominal, keterangan, tanggal,
         targetAdminUid: jenis === 'uang_kas' ? targetAdmin : '',
         targetAdminName: jenis === 'uang_kas' ? (selectedAdm?.name || '') : '',
         targetBuku: jenis === 'penggajian' ? targetBuku : [],
       });
+
+      // Upload faktur photo if exists (BU only)
+      if (fakturFile && jenis === 'penggajian' && result?.data?.id && cabangId) {
+        try {
+          const entryId = result.data.id;
+          const bulanKey = result.data.bulan;
+          const compressed = await compressImage(fakturFile);
+          const photoRef = storageRef(storage, `faktur_bu/${cabangId}/${bulanKey}/${entryId}.jpg`);
+          await uploadBytes(photoRef, compressed, { contentType: 'image/jpeg' });
+          const downloadUrl = await getDownloadURL(photoRef);
+          // Update RTDB entry with fakturUrl
+          const entryDbRef = dbRef(database, `kasir_entries/${cabangId}/${bulanKey}/${entryId}/fakturUrl`);
+          await update(dbRef(database, `kasir_entries/${cabangId}/${bulanKey}/${entryId}`), { fakturUrl: downloadUrl });
+        } catch (uploadErr) {
+          console.error('Gagal upload faktur:', uploadErr);
+          // Entry sudah tersimpan, foto gagal — tidak blocking
+        }
+      }
+
       onSuccess();
     } catch (err) {
       setError('Gagal menyimpan: ' + err.message);
@@ -826,8 +885,30 @@ function FormModal({ cabangAdmins, onClose, onSuccess }) {
         {/* Jumlah */}
         <div style={{ marginBottom: 16 }}>
           <label style={{ fontSize: 13, fontWeight: 600, marginBottom: 6, display: 'block' }}>Jumlah (Rp)</label>
-          <input type="text" value={jumlah} onChange={handleJumlahChange} placeholder="0" inputMode="numeric"
-            style={{ width: '100%', padding: '10px 14px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 18, fontWeight: 700, fontFamily: "'DM Mono', monospace", boxSizing: 'border-box' }} />
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <input type="text" value={jumlah} onChange={handleJumlahChange} placeholder="0" inputMode="numeric"
+              style={{ flex: 1, padding: '10px 14px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 18, fontWeight: 700, fontFamily: "'DM Mono', monospace", boxSizing: 'border-box' }} />
+            {jenis === 'penggajian' && (
+              <button type="button" onClick={() => fakturInputRef.current?.click()}
+                style={{ width: 44, height: 44, borderRadius: 10, border: fakturPreview ? '2px solid var(--primary)' : '1px solid var(--border)', background: fakturPreview ? '#e8f8f0' : 'var(--card)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
+                title="Foto Faktur BU">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={fakturPreview ? 'var(--primary)' : '#666'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+                  <circle cx="12" cy="13" r="4"/>
+                </svg>
+              </button>
+            )}
+            <input ref={fakturInputRef} type="file" accept="image/*" capture="environment"
+              style={{ display: 'none' }} onChange={handleFakturCapture} />
+          </div>
+          {/* Faktur preview */}
+          {jenis === 'penggajian' && fakturPreview && (
+            <div style={{ marginTop: 8, position: 'relative', display: 'inline-block' }}>
+              <img src={fakturPreview} alt="Faktur" style={{ width: 80, height: 80, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--border)' }} />
+              <button type="button" onClick={() => { setFakturFile(null); setFakturPreview(null); if (fakturInputRef.current) fakturInputRef.current.value = ''; }}
+                style={{ position: 'absolute', top: -6, right: -6, width: 20, height: 20, borderRadius: '50%', background: 'var(--danger)', color: '#fff', border: 'none', fontSize: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1 }}>×</button>
+            </div>
+          )}
         </div>
 
         {/* Tanggal */}
@@ -852,6 +933,54 @@ function FormModal({ cabangAdmins, onClose, onSuccess }) {
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+
+// ============================================================
+// FAKTUR PHOTO MODAL (View faktur BU with zoom)
+// ============================================================
+function FakturModal({ fakturList, onClose }) {
+  const [zoomedUrl, setZoomedUrl] = useState(null);
+
+  if (!fakturList || fakturList.length === 0) return null;
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 300, padding: 20 }}
+      onClick={onClose}>
+      <div style={{ background: '#fff', borderRadius: 16, padding: 20, maxWidth: 480, width: '100%', maxHeight: '80vh', overflow: 'auto' }}
+        onClick={e => e.stopPropagation()} className="slide-up">
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+          <h3 style={{ fontSize: 16, fontWeight: 700 }}>Faktur BU</h3>
+          <button onClick={onClose} style={{ width: 32, height: 32, borderRadius: '50%', border: '1px solid var(--border)', background: 'var(--card)', cursor: 'pointer', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
+        </div>
+        {fakturList.map((item, idx) => (
+          <div key={idx} style={{ marginBottom: 16, borderBottom: idx < fakturList.length - 1 ? '1px solid var(--border-light)' : 'none', paddingBottom: 12 }}>
+            <p style={{ fontSize: 13, fontWeight: 600, marginBottom: 8, color: 'var(--text-muted)' }}>
+              {formatRpFull(item.jumlah)} {item.keterangan ? `— ${item.keterangan}` : ''}
+            </p>
+            {item.fakturUrl ? (
+              <img src={item.fakturUrl} alt="Faktur BU"
+                onClick={() => setZoomedUrl(item.fakturUrl)}
+                style={{ width: '100%', maxWidth: 400, borderRadius: 10, border: '1px solid var(--border)', cursor: 'pointer' }} />
+            ) : (
+              <p style={{ fontSize: 12, color: 'var(--text-light)', fontStyle: 'italic' }}>Tidak ada foto faktur</p>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {/* Zoomed view */}
+      {zoomedUrl && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 400, cursor: 'pointer' }}
+          onClick={(e) => { e.stopPropagation(); setZoomedUrl(null); }}>
+          <img src={zoomedUrl} alt="Faktur BU (zoom)"
+            style={{ maxWidth: '95vw', maxHeight: '95vh', objectFit: 'contain', borderRadius: 8 }} />
+          <button onClick={(e) => { e.stopPropagation(); setZoomedUrl(null); }}
+            style={{ position: 'absolute', top: 20, right: 20, width: 40, height: 40, borderRadius: '50%', background: 'rgba(255,255,255,0.2)', border: 'none', color: '#fff', fontSize: 24, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
+        </div>
+      )}
     </div>
   );
 }
@@ -1344,6 +1473,7 @@ function KasPenuntunScreen({ user, cabang, cabangList, onBack, onLogout }) {
   const [kasirEntries, setKasirEntries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [showFaktur, setShowFaktur] = useState(null);
 
   const bulanOptions = generateBulanOptions();
 
@@ -1433,6 +1563,7 @@ function KasPenuntunScreen({ user, cabang, cabangList, onBack, onLogout }) {
 
     const dropPusatPerDate = {};
     const buPerDate = {};
+    const buFakturPerDate = {};
     kasirEntries.forEach(e => {
       const tgl = e.tanggal;
       if (!tgl) return;
@@ -1444,6 +1575,8 @@ function KasPenuntunScreen({ user, cabang, cabangList, onBack, onLogout }) {
         const buku = e.targetBuku;
         if (!buku || (Array.isArray(buku) && buku.includes('kas_penuntun'))) {
           buPerDate[tgl] = (buPerDate[tgl] || 0) + (e.jumlah || 0);
+          if (!buFakturPerDate[tgl]) buFakturPerDate[tgl] = [];
+          buFakturPerDate[tgl].push({ jumlah: e.jumlah || 0, fakturUrl: e.fakturUrl || null, keterangan: e.keterangan || '' });
         }
       }
     });
@@ -1457,6 +1590,7 @@ function KasPenuntunScreen({ user, cabang, cabangList, onBack, onLogout }) {
       const dropPusat = dropPusatPerDate[dateStr] || 0;
       const kasPakai = kasPakaiPerDate[dateStr] || 0;
       const bu = buPerDate[dateStr] || 0;
+      const buFaktur = buFakturPerDate[dateStr] || [];
 
       const saldoKas = runningBalance + dropPusat;
       const tunaiPasarKemarin = tunaiPasarAccum;
@@ -1465,7 +1599,7 @@ function KasPenuntunScreen({ user, cabang, cabangList, onBack, onLogout }) {
       const kredit = kasPakai + bu;
       const saldoKasAkhir = debit - kredit;
 
-      result.push({ tanggal: dateStr, tunaiPasarHariIni, tunaiPasarKemarin, tunaiPasarTotal, dropPusat, saldoKas, debit, kasPakai, shu: 0, bu, kredit, saldoKasAkhir });
+      result.push({ tanggal: dateStr, tunaiPasarHariIni, tunaiPasarKemarin, tunaiPasarTotal, dropPusat, saldoKas, debit, kasPakai, shu: 0, bu, buFaktur, kredit, saldoKasAkhir });
 
       runningBalance = saldoKasAkhir;
       tunaiPasarAccum = tunaiPasarTotal;
@@ -1557,7 +1691,9 @@ function KasPenuntunScreen({ user, cabang, cabangList, onBack, onLogout }) {
                       <td rowSpan={3} style={{ ...tdR, background: '#eff6ff', fontWeight: 700, color: '#1d4ed8' }}>{formatRp(row.debit)}</td>
                       <td rowSpan={3} style={{ ...tdR, background: '#fefce8' }}>{row.kasPakai > 0 ? formatRp(row.kasPakai) : '-'}</td>
                       <td rowSpan={3} style={{ ...tdR }}>-</td>
-                      <td rowSpan={3} style={{ ...tdR, background: '#fff1f2' }}>{row.bu > 0 ? formatRp(row.bu) : '-'}</td>
+                      <td rowSpan={3} style={{ ...tdR, background: '#fff1f2', cursor: row.bu > 0 ? 'pointer' : 'default', textDecoration: row.bu > 0 ? 'underline' : 'none' }}
+                        onClick={() => { if (row.bu > 0 && row.buFaktur?.length > 0) setShowFaktur(row.buFaktur); }}
+                      >{row.bu > 0 ? formatRp(row.bu) : '-'}</td>
                       <td rowSpan={3} style={{ ...tdR, background: '#fff7ed', color: '#b45309', fontWeight: 700 }}>{row.kredit > 0 ? formatRp(row.kredit) : '-'}</td>
                       <td rowSpan={3} style={{ ...tdR, background: '#faf5ff', fontWeight: 800, color: row.saldoKasAkhir >= 0 ? '#7e22ce' : 'var(--danger)' }}>{formatRp(row.saldoKasAkhir)}</td>
                     </tr>
@@ -1578,6 +1714,9 @@ function KasPenuntunScreen({ user, cabang, cabangList, onBack, onLogout }) {
           </div>
         )}
       </main>
+
+      {/* Faktur Modal */}
+      {showFaktur && <FakturModal fakturList={showFaktur} onClose={() => setShowFaktur(null)} />}
     </div>
   );
 }
@@ -1862,6 +2001,7 @@ function BukuEkspedisiScreen({ user, cabang, cabangList, onBack, onLogout }) {
   const [kasirEntries, setKasirEntries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [showFaktur, setShowFaktur] = useState(null);
 
   const bulanOptions = generateBulanOptions();
 
@@ -1948,6 +2088,7 @@ function BukuEkspedisiScreen({ user, cabang, cabangList, onBack, onLogout }) {
     const dropPusatPerDate = {};    // suntikan_dana / pinjaman_kas masuk
     const transportPerDate = {};    // transport keluar
     const buPerDate = {};           // penggajian keluar
+    const buFakturPerDate = {};     // faktur data for BU entries
     const pengembalianPerDate = {}; // pengembalian_kas keluar
     const spPerDate = {};           // sp keluar
 
@@ -1968,6 +2109,8 @@ function BukuEkspedisiScreen({ user, cabang, cabangList, onBack, onLogout }) {
         const buku = e.targetBuku;
         if (!buku || (Array.isArray(buku) && buku.includes('ekspedisi'))) {
           buPerDate[tgl] = (buPerDate[tgl] || 0) + jumlah;
+          if (!buFakturPerDate[tgl]) buFakturPerDate[tgl] = [];
+          buFakturPerDate[tgl].push({ jumlah, fakturUrl: e.fakturUrl || null, keterangan: e.keterangan || '' });
         }
       } else if (e.jenis === 'pengembalian_kas' && e.arah === 'keluar') {
         pengembalianPerDate[tgl] = (pengembalianPerDate[tgl] || 0) + jumlah;
@@ -1983,11 +2126,12 @@ function BukuEkspedisiScreen({ user, cabang, cabangList, onBack, onLogout }) {
       const dropPusat = dropPusatPerDate[dateStr] || 0;
       const transport = transportPerDate[dateStr] || 0;
       const bu = buPerDate[dateStr] || 0;
+      const buFaktur = buFakturPerDate[dateStr] || [];
       const pengembalianKas = pengembalianPerDate[dateStr] || 0;
       const sp = spPerDate[dateStr] || 0;
       const pengembalianSP = pengembalianKas + sp;
       const tunaiKas = (kembaliKasbon + tunaiPasar + dropPusat) - (kasbonPagi + transport + bu + pengembalianKas + sp);
-      return { tanggal: dateStr, kembaliKasbon, tunaiPasar, dropPusat, kasbonPagi, transport, bu, pengembalianKas, sp, pengembalianSP, tunaiKas };
+      return { tanggal: dateStr, kembaliKasbon, tunaiPasar, dropPusat, kasbonPagi, transport, bu, buFaktur, pengembalianKas, sp, pengembalianSP, tunaiKas };
     });
   })();
 
@@ -2093,7 +2237,8 @@ function BukuEkspedisiScreen({ user, cabang, cabangList, onBack, onLogout }) {
                     <td style={{ ...tdR, background: '#fefce8' }}>
                       {row.transport > 0 ? formatRp(row.transport) : '-'}
                     </td>
-                    <td style={{ ...tdR, background: '#fff1f2' }}>
+                    <td style={{ ...tdR, background: '#fff1f2', cursor: row.bu > 0 ? 'pointer' : 'default', textDecoration: row.bu > 0 ? 'underline' : 'none' }}
+                      onClick={() => { if (row.bu > 0 && row.buFaktur?.length > 0) setShowFaktur(row.buFaktur); }}>
                       {row.bu > 0 ? formatRp(row.bu) : '-'}
                     </td>
                     <td style={{ ...tdR, background: '#fff1f2' }}>
@@ -2121,6 +2266,9 @@ function BukuEkspedisiScreen({ user, cabang, cabangList, onBack, onLogout }) {
           </div>
         )}
       </main>
+
+      {/* Faktur Modal */}
+      {showFaktur && <FakturModal fakturList={showFaktur} onClose={() => setShowFaktur(null)} />}
     </div>
   );
 }

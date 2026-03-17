@@ -8,6 +8,8 @@
 
 import { initializeApp, getApps } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
+import { getStorage } from 'firebase/storage';
+import { getDatabase } from 'firebase/database';
 
 const firebaseConfig = {
   apiKey: "AIzaSyDPVVlPksKLL9PIfcxx8tlGViftddwVrCE",
@@ -22,5 +24,7 @@ const firebaseConfig = {
 // Initialize Firebase (prevent re-initialization on hot reload)
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
 const auth = getAuth(app);
+const storage = getStorage(app);
+const database = getDatabase(app);
 
-export { app, auth };
+export { app, auth, storage, database };
