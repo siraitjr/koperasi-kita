@@ -33,7 +33,6 @@ import com.example.koperasikitagodangulu.models.PengawasCabangSummary
 import com.example.koperasikitagodangulu.models.PembayaranHarianItem
 import com.example.koperasikitagodangulu.models.NasabahBaruItem
 import com.example.koperasikitagodangulu.models.NasabahLunasItem
-import com.example.koperasikitagodangulu.models.PelangganBermasalahItem
 import java.text.NumberFormat
 import java.util.*
 import com.example.koperasikitagodangulu.models.BiayaAwalItem
@@ -78,7 +77,6 @@ fun PengawasReportsScreen(
     val pembayaranHarian by viewModel.pengawasPembayaranHarian.collectAsState()
     val nasabahBaru by viewModel.pengawasNasabahBaru.collectAsState()
     val nasabahLunas by viewModel.pengawasNasabahLunas.collectAsState()
-    val pelangganBermasalah by viewModel.pengawasPelangganBermasalah.collectAsState()
     val biayaAwalList by viewModel.pengawasBiayaAwal.collectAsState()
     val kasirUangKasList by viewModel.pengawasKasirUangKas.collectAsState()
 
@@ -100,9 +98,8 @@ fun PengawasReportsScreen(
         ReportTab("Drop", Icons.Rounded.PersonAdd),
         ReportTab("Kasbon & Titipan", Icons.Rounded.AccountBalance),
         ReportTab("Lunas", Icons.Rounded.CheckCircle),
-        ReportTab("Bermasalah", Icons.Rounded.Warning),
-        ReportTab("Status Khusus", Icons.Rounded.Flag),           // ✅ BARU
-        ReportTab("Pencairan", Icons.Rounded.Savings)             // ✅ BARU
+        ReportTab("Status Khusus", Icons.Rounded.Flag),
+        ReportTab("Pencairan", Icons.Rounded.Savings)
     )
 
     // ✅ BARU: Load foto admin saat filteredAdminSummaries tersedia
@@ -217,17 +214,11 @@ fun PengawasReportsScreen(
                     currentSummary = currentSummary,
                     isDark = isDark
                 )
-                5 -> BermasalahTab(
-                    pelangganBermasalahList = pelangganBermasalah,
-                    isDark = isDark
-                )
-                // ✅ BARU: Tab Status Khusus - navigasi ke screen terpisah
-                6 -> StatusKhususNavigationCard(
+                5 -> StatusKhususNavigationCard(
                     onClick = { navController.navigate("pengawasDaftarStatusKhusus") },
                     isDark = isDark
                 )
-                // ✅ BARU: Tab Menunggu Pencairan - navigasi ke screen terpisah
-                7 -> MenungguPencairanNavigationCard(
+                6 -> MenungguPencairanNavigationCard(
                     onClick = { navController.navigate("pengawasDaftarMenungguPencairan") },
                     isDark = isDark
                 )
@@ -1191,261 +1182,6 @@ private fun NasabahLunasDetailCard(nasabah: NasabahLunasItem, isDark: Boolean = 
                         color = PengawasColors.success
                     )
                 }
-            }
-        }
-    }
-}
-
-// =============================================================================
-// TAB 5: BERMASALAH
-// =============================================================================
-@Composable
-private fun BermasalahTab(
-    pelangganBermasalahList: List<PelangganBermasalahItem>,
-    isDark: Boolean = false
-) {
-    val grouped = pelangganBermasalahList.groupBy { it.kategori.lowercase() }
-    val berat = grouped["berat"] ?: emptyList()
-    val sedang = grouped["sedang"] ?: emptyList()
-    val ringan = grouped["ringan"] ?: emptyList()
-
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        // Summary card
-        item {
-            BermasalahSummaryCard(
-                beratCount = berat.size,
-                sedangCount = sedang.size,
-                ringanCount = ringan.size,
-                totalTunggakan = pelangganBermasalahList.sumOf { it.jumlahTunggakan },
-                isDark = isDark
-            )
-        }
-
-        if (pelangganBermasalahList.isEmpty()) {
-            item {
-                EmptyContent(
-                    icon = Icons.Rounded.Warning,
-                    message = "Tidak ada pelanggan bermasalah",
-                    isDark = isDark
-                )
-            }
-        } else {
-            // Berat section
-            if (berat.isNotEmpty()) {
-                item {
-                    SectionHeader(
-                        title = "Berat (>14 hari)",
-                        count = berat.size,
-                        color = PengawasColors.danger,
-                        isDark = isDark
-                    )
-                }
-                items(berat) { pelanggan ->
-                    BermasalahDetailCard(pelanggan, isDark = isDark)
-                }
-            }
-
-            // Sedang section
-            if (sedang.isNotEmpty()) {
-                item {
-                    SectionHeader(
-                        title = "Sedang (8-14 hari)",
-                        count = sedang.size,
-                        color = PengawasColors.warning,
-                        isDark = isDark
-                    )
-                }
-                items(sedang) { pelanggan ->
-                    BermasalahDetailCard(pelanggan, isDark = isDark)
-                }
-            }
-
-            // Ringan section
-            if (ringan.isNotEmpty()) {
-                item {
-                    SectionHeader(
-                        title = "Ringan (1-7 hari)",
-                        count = ringan.size,
-                        color = PengawasColors.info,
-                        isDark = isDark
-                    )
-                }
-                items(ringan) { pelanggan ->
-                    BermasalahDetailCard(pelanggan, isDark = isDark)
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun BermasalahSummaryCard(
-    beratCount: Int,
-    sedangCount: Int,
-    ringanCount: Int,
-    totalTunggakan: Long,
-    isDark: Boolean = false
-) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .shadow(8.dp, RoundedCornerShape(16.dp)),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = PengawasColors.getCard(isDark))
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text(
-                text = "Ringkasan Tunggakan",
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Bold,
-                color = PengawasColors.getTextPrimary(isDark)
-            )
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceEvenly
-            ) {
-                MiniStatItem(
-                    value = beratCount.toString(),
-                    label = "Berat",
-                    color = PengawasColors.danger
-                )
-                MiniStatItem(
-                    value = sedangCount.toString(),
-                    label = "Sedang",
-                    color = PengawasColors.warning
-                )
-                MiniStatItem(
-                    value = ringanCount.toString(),
-                    label = "Ringan",
-                    color = PengawasColors.info
-                )
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            HorizontalDivider(color = PengawasColors.getBorder(isDark))
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.Center
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("Total Tunggakan", fontSize = 12.sp, color = PengawasColors.getTextMuted(isDark))
-                    Text(
-                        formatRupiah(totalTunggakan.toInt()),
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = PengawasColors.danger
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun SectionHeader(title: String, count: Int, color: Color, isDark: Boolean = false) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(
-            text = title,
-            fontSize = 14.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = color
-        )
-        Surface(
-            shape = RoundedCornerShape(12.dp),
-            color = color.copy(alpha = if (isDark) 0.2f else 0.1f)
-        ) {
-            Text(
-                text = "$count orang",
-                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                fontSize = 12.sp,
-                color = color
-            )
-        }
-    }
-}
-
-@Composable
-private fun BermasalahDetailCard(pelanggan: PelangganBermasalahItem, isDark: Boolean = false) {
-    val kategoriColor = when (pelanggan.kategori.lowercase()) {
-        "berat" -> PengawasColors.danger
-        "sedang" -> PengawasColors.warning
-        else -> PengawasColors.info
-    }
-
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .shadow(2.dp, RoundedCornerShape(12.dp)),
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = PengawasColors.getCard(isDark))
-    ) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = pelanggan.namaPanggilan,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = PengawasColors.getTextPrimary(isDark)
-                    )
-                    Text(
-                        text = pelanggan.adminName,
-                        fontSize = 12.sp,
-                        color = PengawasColors.getTextSecondary(isDark)
-                    )
-                }
-
-                Column(horizontalAlignment = Alignment.End) {
-                    Surface(
-                        shape = RoundedCornerShape(6.dp),
-                        color = kategoriColor.copy(alpha = 0.1f)
-                    ) {
-                        Text(
-                            text = "${pelanggan.hariTunggakan} hari",
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = kategoriColor
-                        )
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text(
-                    text = "Tunggakan: ${formatRupiah(pelanggan.jumlahTunggakan.toInt())}",
-                    fontSize = 12.sp,
-                    color = PengawasColors.danger
-                )
-                Text(
-                    text = pelanggan.wilayah.ifBlank { "-" },
-                    fontSize = 12.sp,
-                    color = PengawasColors.getTextMuted(isDark)
-                )
             }
         }
     }
