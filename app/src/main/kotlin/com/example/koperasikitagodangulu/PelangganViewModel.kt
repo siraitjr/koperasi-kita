@@ -525,6 +525,9 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
     private val _pengawasPelangganBermasalah = MutableStateFlow<List<PelangganBermasalahItem>>(emptyList())
     val pengawasPelangganBermasalah: StateFlow<List<PelangganBermasalahItem>> = _pengawasPelangganBermasalah
 
+    private val _pendingCairanSimpananKoordinator = MutableStateFlow<List<PengajuanCairanSimpananItem>>(emptyList())
+    val pendingCairanSimpananKoordinator: StateFlow<List<PengajuanCairanSimpananItem>> = _pendingCairanSimpananKoordinator
+
     // Flag untuk tracking initialization
     private val _pengawasDataLoaded = MutableStateFlow(false)
     val pengawasDataLoaded: StateFlow<Boolean> = _pengawasDataLoaded
@@ -15195,4 +15198,217 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     fun formatRupiahPublic(amount: Int): String = formatRupiah(amount)
+
+    // =========================================================================
+    // FUNGSI: Pengajuan Cairkan Setengah Simpanan (Butuh Persetujuan Koordinator)
+    // =========================================================================
+    fun ajukanPencairanSetengahSimpanan(
+        pelangganId: String,
+        onSuccess: (() -> Unit)? = null,
+        onFailure: ((Exception) -> Unit)? = null
+    ) {
+        viewModelScope.launch {
+            try {
+                val pelanggan = daftarPelanggan.find { it.id == pelangganId }
+                if (pelanggan == null) {
+                    onFailure?.invoke(Exception("Pelanggan tidak ditemukan"))
+                    return@launch
+                }
+                val adminUid = pelanggan.adminUid.ifBlank { Firebase.auth.currentUser?.uid }
+                if (adminUid.isNullOrBlank()) {
+                    onFailure?.invoke(Exception("Admin UID tidak valid"))
+                    return@launch
+                }
+                val cabangId = _currentUserCabang.value
+                    ?: pelanggan.cabangId.ifBlank { null }
+                if (cabangId.isNullOrBlank()) {
+                    onFailure?.invoke(Exception("Cabang ID tidak ditemukan"))
+                    return@launch
+                }
+                val pencairUid = Firebase.auth.currentUser?.uid ?: ""
+                val adminNameSnap = database.child("metadata/admins/$pencairUid/name").get().await()
+                val adminName = adminNameSnap.getValue(String::class.java)
+                    ?: Firebase.auth.currentUser?.email ?: "Admin"
+                val dateFormat = SimpleDateFormat("dd MMM yyyy", Locale("in", "ID"))
+                val requestDate = dateFormat.format(Date())
+                val jumlahDicairkan = pelanggan.simpanan / 2
+                val request = mapOf(
+                    "pelangganId" to pelangganId,
+                    "adminUid" to adminUid,
+                    "adminName" to adminName,
+                    "pelangganNama" to (pelanggan.namaPanggilan.ifBlank { pelanggan.namaKtp }),
+                    "cabangId" to cabangId,
+                    "simpananTotal" to pelanggan.simpanan,
+                    "jumlahDicairkan" to jumlahDicairkan,
+                    "status" to "MENUNGGU",
+                    "catatan" to "",
+                    "requestDate" to requestDate,
+                    "tanggalKeputusan" to ""
+                )
+                database.child("pengajuan_pencairan_simpanan")
+                    .child(cabangId)
+                    .child(pelangganId)
+                    .setValue(request)
+                    .await()
+                Log.d("PencairanSimpanan", "✅ Pengajuan cairkan setengah berhasil diajukan")
+                onSuccess?.invoke()
+            } catch (e: Exception) {
+                Log.e("PencairanSimpanan", "❌ Gagal mengajukan: ${e.message}")
+                onFailure?.invoke(e)
+            }
+        }
+    }
+
+    fun loadPendingCairanSimpananForKoordinator() {
+        viewModelScope.launch {
+            try {
+                val cabangId = _pengawasSelectedCabangId.value
+                    ?: _currentUserCabang.value
+                    ?: return@launch
+                val snapshot = database.child("pengajuan_pencairan_simpanan")
+                    .child(cabangId)
+                    .get().await()
+                val list = mutableListOf<PengajuanCairanSimpananItem>()
+                snapshot.children.forEach { child ->
+                    val status = child.child("status").getValue(String::class.java) ?: ""
+                    if (status == "MENUNGGU") {
+                        list.add(
+                            PengajuanCairanSimpananItem(
+                                pelangganId = child.child("pelangganId").getValue(String::class.java) ?: "",
+                                adminUid = child.child("adminUid").getValue(String::class.java) ?: "",
+                                adminName = child.child("adminName").getValue(String::class.java) ?: "",
+                                pelangganNama = child.child("pelangganNama").getValue(String::class.java) ?: "",
+                                cabangId = child.child("cabangId").getValue(String::class.java) ?: "",
+                                simpananTotal = child.child("simpananTotal").getValue(Int::class.java) ?: 0,
+                                jumlahDicairkan = child.child("jumlahDicairkan").getValue(Int::class.java) ?: 0,
+                                status = status,
+                                catatan = child.child("catatan").getValue(String::class.java) ?: "",
+                                requestDate = child.child("requestDate").getValue(String::class.java) ?: "",
+                                tanggalKeputusan = child.child("tanggalKeputusan").getValue(String::class.java) ?: ""
+                            )
+                        )
+                    }
+                }
+                _pendingCairanSimpananKoordinator.value = list
+                Log.d("PencairanSimpanan", "✅ Loaded ${list.size} pending cairan simpanan")
+            } catch (e: Exception) {
+                Log.e("PencairanSimpanan", "❌ Error loading: ${e.message}")
+            }
+        }
+    }
+
+    fun approveCairanSimpananByKoordinator(
+        item: PengajuanCairanSimpananItem,
+        onSuccess: (() -> Unit)? = null,
+        onFailure: ((Exception) -> Unit)? = null
+    ) {
+        viewModelScope.launch {
+            try {
+                val koordinatorUid = Firebase.auth.currentUser?.uid ?: ""
+                val koordinatorNameSnap = database.child("metadata/admins/$koordinatorUid/name").get().await()
+                val koordinatorName = koordinatorNameSnap.getValue(String::class.java)
+                    ?: Firebase.auth.currentUser?.email ?: "Koordinator"
+                val dateFormat = SimpleDateFormat("dd MMM yyyy", Locale("in", "ID"))
+                val tanggalSekarang = dateFormat.format(Date())
+                // 1. Update pelanggan (mark sebagai Dicairkan + Lunas)
+                val pelangganUpdates = mapOf(
+                    "statusPencairanSimpanan" to "Dicairkan",
+                    "tanggalPencairanSimpanan" to tanggalSekarang,
+                    "dicairkanOleh" to koordinatorName,
+                    "status" to "Lunas",
+                    "lastUpdated" to SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date()),
+                    "statusKhusus" to "",
+                    "catatanStatusKhusus" to "",
+                    "tanggalStatusKhusus" to "",
+                    "diberiTandaOleh" to ""
+                )
+                database.child("pelanggan").child(item.adminUid).child(item.pelangganId)
+                    .updateChildren(pelangganUpdates).await()
+                // 2. Update status request menjadi DISETUJUI
+                database.child("pengajuan_pencairan_simpanan")
+                    .child(item.cabangId)
+                    .child(item.pelangganId)
+                    .updateChildren(mapOf(
+                        "status" to "DISETUJUI",
+                        "tanggalKeputusan" to tanggalSekarang,
+                        "koordinatorName" to koordinatorName
+                    )).await()
+                // 3. Hapus dari pelanggan_status_khusus jika ada
+                database.child("pelanggan_status_khusus")
+                    .child(item.cabangId)
+                    .child(item.pelangganId)
+                    .removeValue()
+                // 4. Update local state
+                _pendingCairanSimpananKoordinator.value = _pendingCairanSimpananKoordinator.value
+                    .filter { it.pelangganId != item.pelangganId }
+                // 5. Update local daftarPelanggan cache jika ada
+                val index = daftarPelanggan.indexOfFirst { it.id == item.pelangganId }
+                if (index != -1) {
+                    daftarPelanggan[index] = daftarPelanggan[index].copy(
+                        statusPencairanSimpanan = "Dicairkan",
+                        tanggalPencairanSimpanan = tanggalSekarang,
+                        dicairkanOleh = koordinatorName,
+                        status = "Lunas",
+                        statusKhusus = "",
+                        catatanStatusKhusus = "",
+                        tanggalStatusKhusus = "",
+                        diberiTandaOleh = ""
+                    )
+                }
+                Log.d("PencairanSimpanan", "✅ Disetujui koordinator: ${item.pelangganNama}")
+                onSuccess?.invoke()
+            } catch (e: Exception) {
+                Log.e("PencairanSimpanan", "❌ Gagal menyetujui: ${e.message}")
+                onFailure?.invoke(e)
+            }
+        }
+    }
+
+    fun rejectCairanSimpananByKoordinator(
+        item: PengajuanCairanSimpananItem,
+        catatan: String,
+        onSuccess: (() -> Unit)? = null,
+        onFailure: ((Exception) -> Unit)? = null
+    ) {
+        viewModelScope.launch {
+            try {
+                val koordinatorUid = Firebase.auth.currentUser?.uid ?: ""
+                val koordinatorNameSnap = database.child("metadata/admins/$koordinatorUid/name").get().await()
+                val koordinatorName = koordinatorNameSnap.getValue(String::class.java)
+                    ?: Firebase.auth.currentUser?.email ?: "Koordinator"
+                val dateFormat = SimpleDateFormat("dd MMM yyyy", Locale("in", "ID"))
+                val tanggalSekarang = dateFormat.format(Date())
+                database.child("pengajuan_pencairan_simpanan")
+                    .child(item.cabangId)
+                    .child(item.pelangganId)
+                    .updateChildren(mapOf(
+                        "status" to "DITOLAK",
+                        "catatan" to catatan,
+                        "tanggalKeputusan" to tanggalSekarang,
+                        "koordinatorName" to koordinatorName
+                    )).await()
+                _pendingCairanSimpananKoordinator.value = _pendingCairanSimpananKoordinator.value
+                    .filter { it.pelangganId != item.pelangganId }
+                Log.d("PencairanSimpanan", "✅ Ditolak koordinator: ${item.pelangganNama}")
+                onSuccess?.invoke()
+            } catch (e: Exception) {
+                Log.e("PencairanSimpanan", "❌ Gagal menolak: ${e.message}")
+                onFailure?.invoke(e)
+            }
+        }
+    }
 }
+
+data class PengajuanCairanSimpananItem(
+    val pelangganId: String = "",
+    val adminUid: String = "",
+    val adminName: String = "",
+    val pelangganNama: String = "",
+    val cabangId: String = "",
+    val simpananTotal: Int = 0,
+    val jumlahDicairkan: Int = 0,
+    val status: String = "",
+    val catatan: String = "",
+    val requestDate: String = "",
+    val tanggalKeputusan: String = ""
+)
