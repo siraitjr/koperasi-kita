@@ -70,6 +70,13 @@
       }
     },
       
+    "pencairan_simpanan_requests": {
+      "$requestId": {
+        ".read": "auth != null",
+        ".write": "auth != null"
+      }
+    },
+      
     "payment_deletion_requests": {
       ".read": "auth != null && (
         root.child('metadata/roles/pengawas').child(auth.uid).val() === true || 
