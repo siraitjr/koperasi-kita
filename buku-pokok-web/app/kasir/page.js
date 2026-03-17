@@ -132,11 +132,20 @@ export default function KasirPage() {
             setSummaryData(d.summary);
             setJenisLabels(d.jenisLabels || {});
 
-            // Kasir unit langsung set cabang
-            if (d.user.role === 'kasir_unit' && d.cabangList.length === 1) {
+            // Auto-select cabang jika hanya ada 1
+            if (d.cabangList.length === 1) {
               setSelectedCabang(d.cabangList[0]);
             }
-            setScreen('home');
+
+            // Cek parameter ?screen= dari pembukuan (untuk pimpinan/koordinator/pengawas)
+            const urlParams = new URLSearchParams(window.location.search);
+            const targetScreen = urlParams.get('screen');
+            const validScreens = ['jurnal', 'bukuRekap', 'kasPenuntun', 'bukuTunai', 'bukuEkspedisi', 'ringkasan'];
+            if (targetScreen && validScreens.includes(targetScreen)) {
+              setScreen(targetScreen);
+            } else {
+              setScreen('home');
+            }
           }
         } catch (err) {
           console.error('Failed to get kasir summary:', err);
@@ -166,6 +175,19 @@ export default function KasirPage() {
     await signOut(auth);
   };
 
+  // Untuk pimpinan/koordinator/pengawas yang datang dari pembukuan
+  const isFromPembukuan = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('screen');
+  const VIEWER_ROLES = ['pimpinan', 'koordinator', 'pengawas'];
+  const isViewer = VIEWER_ROLES.includes(userData?.role);
+
+  const handleBack = () => {
+    if (isViewer && isFromPembukuan) {
+      window.location.href = '/pembukuan';
+    } else {
+      setScreen('home');
+    }
+  };
+
   // ==================== RENDER ====================
   if (screen === 'loading') {
     return (
@@ -192,7 +214,7 @@ export default function KasirPage() {
         user={userData}
         cabang={selectedCabang}
         cabangList={cabangList}
-        onBack={() => setScreen('home')}
+        onBack={handleBack}
         onLogout={handleLogout}
       />
     );
@@ -204,7 +226,7 @@ export default function KasirPage() {
         user={userData}
         cabang={selectedCabang}
         cabangList={cabangList}
-        onBack={() => setScreen('home')}
+        onBack={handleBack}
         onLogout={handleLogout}
       />
     );
@@ -216,7 +238,7 @@ export default function KasirPage() {
         user={userData}
         cabang={selectedCabang}
         cabangList={cabangList}
-        onBack={() => setScreen('home')}
+        onBack={handleBack}
         onLogout={handleLogout}
       />
     );
@@ -228,7 +250,7 @@ export default function KasirPage() {
         user={userData}
         cabang={selectedCabang}
         cabangList={cabangList}
-        onBack={() => setScreen('home')}
+        onBack={handleBack}
         onLogout={handleLogout}
       />
     );
@@ -240,7 +262,7 @@ export default function KasirPage() {
         user={userData}
         cabang={selectedCabang}
         cabangList={cabangList}
-        onBack={() => setScreen('home')}
+        onBack={handleBack}
         onLogout={handleLogout}
       />
     );
@@ -252,7 +274,7 @@ export default function KasirPage() {
         user={userData}
         cabang={selectedCabang}
         cabangList={cabangList}
-        onBack={() => setScreen('home')}
+        onBack={handleBack}
         onLogout={handleLogout}
       />
     );
@@ -372,10 +394,13 @@ function ForbiddenScreen({ onLogout }) {
 // ============================================================
 function HomeScreen({ user, cabangList, summaryData, selectedCabang, onSelectCabang, onNavigate, onLogout }) {
   const isUnit = user?.role === 'kasir_unit';
-  const cabId = selectedCabang?.id || (isUnit && cabangList[0]?.id);
+  const VIEWER_ROLES = ['pimpinan', 'koordinator', 'pengawas'];
+  const isViewer = VIEWER_ROLES.includes(user?.role);
+  const cabId = selectedCabang?.id || (cabangList.length === 1 && cabangList[0]?.id);
   const summary = cabId ? (summaryData[cabId] || {}) : {};
 
-  const roleLabel = isUnit ? 'Kasir Unit' : 'Kasir Wilayah';
+  const roleLabels = { kasir_unit: 'Kasir Unit', kasir_wilayah: 'Kasir Wilayah', sekretaris: 'Sekretaris', pimpinan: 'Pimpinan', koordinator: 'Koordinator', pengawas: 'Pengawas' };
+  const roleLabel = roleLabels[user?.role] || user?.role;
 
   const menus = [
     {
@@ -457,11 +482,17 @@ function HomeScreen({ user, cabangList, summaryData, selectedCabang, onSelectCab
               <span className="user-role">{roleLabel}</span>
             </div>
           )}
-          <button onClick={onLogout} className="btn-icon" title="Keluar">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/>
-            </svg>
-          </button>
+          {isViewer ? (
+            <button onClick={() => { window.location.href = '/pembukuan'; }} className="btn-icon" title="Kembali ke Pembukuan">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg>
+            </button>
+          ) : (
+            <button onClick={onLogout} className="btn-icon" title="Keluar">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/>
+              </svg>
+            </button>
+          )}
         </div>
       </header>
 

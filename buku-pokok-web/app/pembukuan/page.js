@@ -8,64 +8,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { onAuthStateChanged, signInWithEmailAndPassword, signOut } from 'firebase/auth';
 import { auth } from '../../lib/firebase';
-import { getSummary, getBukuPokok, getKasirSummary, getKasirEntries } from '../../lib/api';
+import { getSummary, getBukuPokok, getKasirSummary } from '../../lib/api';
 import { formatRp, formatRpFull, formatRpShort } from '../../lib/format';
-
-// =========================================================================
-// KASIR CONSTANTS & HELPERS (untuk screen kasir di pembukuan)
-// =========================================================================
-const JENIS_OPTIONS_KASIR = [
-  { value: 'uang_kas', label: 'Kasbon Pagi' },
-  { value: 'penggajian', label: 'BU' },
-  { value: 'transport', label: 'Transport' },
-  { value: 'suntikan_dana', label: 'Suntikan Dana' },
-  { value: 'pinjaman_kas', label: 'Pinjaman Kas' },
-  { value: 'sp', label: 'SP' },
-  { value: 'pengembalian_kas', label: 'Pengembalian Kas' },
-];
-
-const BULAN_INDO_KASIR = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
-
-function getCurrentMonthKey() {
-  const now = new Date();
-  const jakartaOffset = 7 * 60;
-  const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
-  const jakarta = new Date(utc + (jakartaOffset * 60000));
-  const yyyy = jakarta.getFullYear();
-  const mm = String(jakarta.getMonth() + 1).padStart(2, '0');
-  return `${yyyy}-${mm}`;
-}
-
-function getTodayIndoKasir() {
-  const now = new Date();
-  const jakartaOffset = 7 * 60;
-  const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
-  const jakarta = new Date(utc + (jakartaOffset * 60000));
-  const dd = String(jakarta.getDate()).padStart(2, '0');
-  const mmm = BULAN_INDO_KASIR[jakarta.getMonth()];
-  const yyyy = jakarta.getFullYear();
-  return `${dd} ${mmm} ${yyyy}`;
-}
-
-function formatBulanLabel(bulanKey) {
-  const [y, m] = bulanKey.split('-');
-  return `${BULAN_INDO_KASIR[parseInt(m) - 1]} ${y}`;
-}
-
-function generateBulanOptions() {
-  const options = [];
-  const now = new Date();
-  const jakartaOffset = 7 * 60;
-  const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
-  const jakarta = new Date(utc + (jakartaOffset * 60000));
-  for (let i = 0; i < 12; i++) {
-    const d = new Date(jakarta.getFullYear(), jakarta.getMonth() - i, 1);
-    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-    const label = `${BULAN_INDO_KASIR[d.getMonth()]} ${d.getFullYear()}`;
-    options.push({ key, label });
-  }
-  return options;
-}
 
 const KASIR_VIEW_ROLES = ['pimpinan', 'koordinator', 'pengawas'];
 
@@ -77,7 +21,6 @@ export default function Home() {
   const [selectedCabang, setSelectedCabang] = useState(null);
   const [selectedAdmin, setSelectedAdmin] = useState(null);
   const [kasirCabangList, setKasirCabangList] = useState([]);
-  const [kasirSelectedCabang, setKasirSelectedCabang] = useState(null);
 
   // ==================== HELPERS: Save/Restore navigation ====================
   const saveNav = (scr, cabang, admin) => {
@@ -138,9 +81,6 @@ export default function Home() {
                 const kasirResult = await getKasirSummary();
                 if (kasirResult.success) {
                   setKasirCabangList(kasirResult.data.cabangList || []);
-                  if (kasirResult.data.cabangList?.length === 1) {
-                    setKasirSelectedCabang(kasirResult.data.cabangList[0]);
-                  }
                 }
               } catch (e) {
                 // Kasir data optional, tidak blocking
@@ -193,8 +133,16 @@ export default function Home() {
       setScreen('dashboard');
       saveNav('dashboard', null, null);
     } else if (['jurnalKasir', 'bukuRekap', 'kasPenuntun', 'bukuTunai', 'bukuEkspedisi', 'ringkasanKas'].includes(book)) {
-      setScreen(book);
-      saveNav(book, null, null);
+      // Pimpinan/koordinator/pengawas: buka halaman kasir langsung (read-only)
+      const kasirScreenMap = {
+        jurnalKasir: 'jurnal',
+        bukuRekap: 'bukuRekap',
+        kasPenuntun: 'kasPenuntun',
+        bukuTunai: 'bukuTunai',
+        bukuEkspedisi: 'bukuEkspedisi',
+        ringkasanKas: 'ringkasan',
+      };
+      window.location.href = `/kasir?screen=${kasirScreenMap[book]}`;
     }
   };
 
@@ -254,79 +202,6 @@ export default function Home() {
         user={userData}
         kasirCabangList={kasirCabangList}
         onSelectBook={handleSelectBook}
-        onLogout={handleLogout}
-      />
-    );
-  }
-
-  // ==================== KASIR SCREENS (read-only untuk pimpinan/koordinator/pengawas) ====================
-  if (screen === 'jurnalKasir' && KASIR_VIEW_ROLES.includes(userData?.role)) {
-    return (
-      <JurnalKasirViewScreen
-        user={userData}
-        cabang={kasirSelectedCabang}
-        cabangList={kasirCabangList}
-        onBack={handleBackToHome}
-        onLogout={handleLogout}
-      />
-    );
-  }
-
-  if (screen === 'bukuRekap' && KASIR_VIEW_ROLES.includes(userData?.role)) {
-    return (
-      <BukuRekapViewScreen
-        user={userData}
-        cabang={kasirSelectedCabang}
-        cabangList={kasirCabangList}
-        onBack={handleBackToHome}
-        onLogout={handleLogout}
-      />
-    );
-  }
-
-  if (screen === 'kasPenuntun' && KASIR_VIEW_ROLES.includes(userData?.role)) {
-    return (
-      <KasPenuntunViewScreen
-        user={userData}
-        cabang={kasirSelectedCabang}
-        cabangList={kasirCabangList}
-        onBack={handleBackToHome}
-        onLogout={handleLogout}
-      />
-    );
-  }
-
-  if (screen === 'bukuTunai' && KASIR_VIEW_ROLES.includes(userData?.role)) {
-    return (
-      <BukuTunaiViewScreen
-        user={userData}
-        cabang={kasirSelectedCabang}
-        cabangList={kasirCabangList}
-        onBack={handleBackToHome}
-        onLogout={handleLogout}
-      />
-    );
-  }
-
-  if (screen === 'bukuEkspedisi' && KASIR_VIEW_ROLES.includes(userData?.role)) {
-    return (
-      <BukuEkspedisiViewScreen
-        user={userData}
-        cabang={kasirSelectedCabang}
-        cabangList={kasirCabangList}
-        onBack={handleBackToHome}
-        onLogout={handleLogout}
-      />
-    );
-  }
-
-  if (screen === 'ringkasanKas' && KASIR_VIEW_ROLES.includes(userData?.role)) {
-    return (
-      <RingkasanKasViewScreen
-        user={userData}
-        cabang={kasirSelectedCabang}
-        cabangList={kasirCabangList}
-        onBack={handleBackToHome}
         onLogout={handleLogout}
       />
     );
