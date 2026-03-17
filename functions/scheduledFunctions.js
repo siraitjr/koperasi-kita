@@ -184,10 +184,10 @@ exports.dailyTargetRecalc = functions.pubsub
 // WEEKLY RECALCULATION (MINGGU 02:00 WIB) - OTOMATIS SETIAP MINGGU
 // =========================================================================
 exports.weeklyFullRecalc = functions.pubsub
-    .schedule('0 2 * * 0')
+    .schedule('0 2 * * *')
     .timeZone('Asia/Jakarta')
     .onRun(async (context) => {
-        console.log(`🔄 [AUTO] Weekly recalculation started`);
+        console.log(`🔄 [AUTO] Daily recalculation started`);
         
         try {
             // 1. Recalculate semua admin
@@ -292,7 +292,7 @@ exports.weeklyFullRecalc = functions.pubsub
                 lastUpdated: admin.database.ServerValue.TIMESTAMP
             });
             
-            console.log(`✅ [AUTO] Weekly recalc done: ${globalNasabah} nasabah, target: ${globalTargetHariIni}`);
+            console.log(`✅ [AUTO] Daily recalc done: ${globalNasabah} nasabah, target: ${globalTargetHariIni}`);
             return null;
         } catch (error) {
             console.error(`❌ Error: ${error.message}`);
