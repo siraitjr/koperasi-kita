@@ -10,6 +10,8 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
@@ -20,6 +22,7 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavHostController
@@ -83,6 +86,7 @@ fun PimpinanDaftarBermasalahScreen(
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var selectedFilter by remember { mutableStateOf("Semua") }
     var isVisible by remember { mutableStateOf(false) }
+    var searchQuery by remember { mutableStateOf("") }
 
     val filterOptions = listOf("Semua", "Ringan", "Sedang", "Berat", "Macet")
 
@@ -142,14 +146,22 @@ fun PimpinanDaftarBermasalahScreen(
     }
 
     // Filter list
-    val filteredList = remember(nasabahBermasalahList, selectedFilter) {
-        if (selectedFilter == "Semua") {
+    val filteredList = remember(nasabahBermasalahList, selectedFilter, searchQuery) {
+        var result = if (selectedFilter == "Semua") {
             nasabahBermasalahList
         } else {
             nasabahBermasalahList.filter {
                 it.kategori.equals(selectedFilter, ignoreCase = true)
             }
         }
+        if (searchQuery.isNotBlank()) {
+            val query = searchQuery.lowercase().trim()
+            result = result.filter {
+                it.namaPanggilan.lowercase().contains(query) ||
+                    it.namaKtp.lowercase().contains(query)
+            }
+        }
+        result
     }
 
     val totalPiutang = filteredList.sumOf { it.totalPiutang }
@@ -208,7 +220,53 @@ fun PimpinanDaftarBermasalahScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Search Bar
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
+                placeholder = {
+                    Text(
+                        "Cari nama panggilan atau nama KTP...",
+                        color = PimpinanColors.getTextSecondary(isDark)
+                    )
+                },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Rounded.Search,
+                        contentDescription = null,
+                        tint = PimpinanColors.getTextSecondary(isDark)
+                    )
+                },
+                trailingIcon = {
+                    if (searchQuery.isNotBlank()) {
+                        IconButton(onClick = { searchQuery = "" }) {
+                            Icon(
+                                imageVector = Icons.Rounded.Close,
+                                contentDescription = "Hapus pencarian",
+                                tint = PimpinanColors.getTextSecondary(isDark)
+                            )
+                        }
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = PimpinanColors.danger,
+                    unfocusedBorderColor = PimpinanColors.getBorder(isDark),
+                    focusedContainerColor = if (isDark) PimpinanColors.darkCard else Color.White,
+                    unfocusedContainerColor = if (isDark) PimpinanColors.darkCard else Color.White,
+                    cursorColor = PimpinanColors.danger,
+                    focusedTextColor = txtColor,
+                    unfocusedTextColor = txtColor
+                ),
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                keyboardActions = KeyboardActions(onSearch = { })
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
 
             // Loading / Error / Content
             when {
@@ -225,11 +283,15 @@ fun PimpinanDaftarBermasalahScreen(
                 }
                 filteredList.isEmpty() -> {
                     ModernEmptyBermasalahState(
-                        message = if (selectedFilter == "Semua")
-                            "Tidak ada nasabah bermasalah"
-                        else
-                            "Tidak ada nasabah dengan kategori $selectedFilter",
-                        isDark = isDark // ✅ UBAH: Tambah isDark
+                        message = when {
+                            searchQuery.isNotBlank() ->
+                                "Tidak ditemukan nasabah dengan kata kunci \"$searchQuery\""
+                            selectedFilter != "Semua" ->
+                                "Tidak ada nasabah dengan kategori $selectedFilter"
+                            else ->
+                                "Tidak ada nasabah bermasalah"
+                        },
+                        isDark = isDark
                     )
                 }
                 else -> {
