@@ -1752,7 +1752,11 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     var cabangId = toSave.cabangId // Prioritas 1: dari objek pelanggan
 
                     if (cabangId.isBlank()) {
-                        cabangId = _currentUserCabang.value ?: "" // Prioritas 2: dari cache
+                        cabangId = _currentUserCabang.value ?: "" // Prioritas 2: StateFlow memory
+                    }
+
+                    if (cabangId.isBlank()) {
+                        cabangId = sharedPrefs.getString("cached_cabang_id", "") ?: "" // Prioritas 2.5: SharedPreferences (offline-safe)
                     }
 
                     if (cabangId.isBlank()) {
@@ -3249,7 +3253,10 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                 val currentUidForCabang = existingPelanggan.adminUid.ifBlank { Firebase.auth.currentUser?.uid ?: "" }
                 var resolvedCabangId = existingPelanggan.cabangId
                 if (resolvedCabangId.isBlank()) {
-                    resolvedCabangId = _currentUserCabang.value ?: ""
+                    resolvedCabangId = _currentUserCabang.value ?: "" // Prioritas 2: StateFlow memory
+                }
+                if (resolvedCabangId.isBlank()) {
+                    resolvedCabangId = sharedPrefs.getString("cached_cabang_id", "") ?: "" // Prioritas 2.5: SharedPreferences (offline-safe)
                 }
                 if (resolvedCabangId.isBlank() && currentUidForCabang.isNotBlank()) {
                     try {
@@ -3270,7 +3277,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                 val finalCabangId = if (resolvedCabangId.isNotBlank()) resolvedCabangId else existingPelanggan.cabangId
                 if (finalCabangId.isBlank()) {
                     Log.e("KelolaKredit", "❌ GAGAL: cabangId tidak bisa di-resolve untuk ${existingPelanggan.namaPanggilan}")
-                    onFailure?.invoke(Exception("ID Cabang tidak ditemukan. Pastikan koneksi internet aktif dan coba lagi."))
+                    onFailure?.invoke(Exception("Konfigurasi cabang admin tidak ditemukan. Silakan logout lalu login kembali, kemudian coba lagi."))
                     return@launch
                 }
                 resolvedCabangId = finalCabangId
@@ -7265,6 +7272,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     val valUid = cabang.getValue(String::class.java)
                     if (valUid == uid) {
                         _currentUserCabang.value = cabang.key
+                        sharedPrefs.edit().putString("cached_cabang_id", cabang.key).apply()
                         return UserRole.PIMPINAN
                     }
                 }
@@ -7279,6 +7287,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     val pimpinanUid = cabang.child("pimpinanUid").getValue(String::class.java)
                     if (pimpinanUid == uid) {
                         _currentUserCabang.value = cabang.key
+                        sharedPrefs.edit().putString("cached_cabang_id", cabang.key).apply()
                         Log.d("RoleDetect", "✅ Pimpinan detected from metadata/cabang: ${cabang.key}")
                         return UserRole.PIMPINAN
                     }
@@ -7296,7 +7305,10 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
             if (adminMeta.exists()) {
                 val role = adminMeta.child("role").getValue(String::class.java)
                 val cabang = adminMeta.child("cabang").getValue(String::class.java)
-                if (!cabang.isNullOrBlank()) _currentUserCabang.value = cabang
+                if (!cabang.isNullOrBlank()) {
+                    _currentUserCabang.value = cabang
+                    sharedPrefs.edit().putString("cached_cabang_id", cabang).apply()
+                }
                 return when (role) {
                     "pengawas" -> UserRole.PENGAWAS
                     "koordinator" -> UserRole.KOORDINATOR
