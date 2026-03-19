@@ -1183,11 +1183,13 @@ function BukuRekapScreen({ user, cabang, cabangList, onBack, onLogout }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [selectedDate, setSelectedDate] = useState(null);
 
   useEffect(() => {
     if (!activeCabang) return;
     setLoading(true);
     setError('');
+    setSelectedDate(null);
     getBukuPokok({
       cabangId: activeCabang.id,
       adminUid: '',
@@ -1203,13 +1205,17 @@ function BukuRekapScreen({ user, cabang, cabangList, onBack, onLogout }) {
     });
   }, [activeCabang?.id]);
 
+  // 7 tanggal terakhir dari buku pokok
+  const dates = (data?.tanggalList || []).slice(0, 7);
+  const currentDate = selectedDate || dates[0] || null;
+
   // ==================== COMPUTE REKAP PER RESORT ====================
   const rekapRows = (() => {
     if (!data?.nasabah) return [];
 
     const allNasabah = data.nasabah;
     const admins = activeCabang?.admins || [];
-    const todayStr = data.today || getTodayIndo();
+    const todayStr = currentDate || data.today || getTodayIndo();
 
     // Helper: parse "07 Feb 2026" ke Date object
     const BULAN_MAP_REV = {};
@@ -1367,7 +1373,7 @@ function BukuRekapScreen({ user, cabang, cabangList, onBack, onLogout }) {
           </button>
           <div>
             <h1>Buku Rekap</h1>
-            <p>{activeCabang?.name || 'Pilih Cabang'} — {data?.today || getTodayIndo()}</p>
+            <p>{activeCabang?.name || 'Pilih Cabang'}{currentDate ? ` — ${currentDate}` : ''}</p>
           </div>
         </div>
         <div className="top-bar-right">
@@ -1385,6 +1391,27 @@ function BukuRekapScreen({ user, cabang, cabangList, onBack, onLogout }) {
               style={{ padding: '8px 12px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 13, background: 'var(--card)' }}>
               {cabangList.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
+          </div>
+        )}
+
+        {/* Tab tanggal — 7 hari terakhir */}
+        {!loading && dates.length > 0 && (
+          <div style={{ display: 'flex', gap: 6, marginBottom: 16, overflowX: 'auto', paddingBottom: 4 }}>
+            {dates.map(d => {
+              const isActive = currentDate === d;
+              return (
+                <button key={d} onClick={() => setSelectedDate(d)} style={{
+                  padding: '6px 14px', borderRadius: 20, fontSize: 12, fontWeight: 600,
+                  whiteSpace: 'nowrap', cursor: 'pointer',
+                  border: `1px solid ${isActive ? 'var(--primary)' : 'var(--border)'}`,
+                  background: isActive ? 'var(--primary)' : 'var(--card)',
+                  color: isActive ? '#fff' : 'var(--text)',
+                  transition: 'all 0.15s',
+                }}>
+                  {d.slice(0, 6)}
+                </button>
+              );
+            })}
           </div>
         )}
 
