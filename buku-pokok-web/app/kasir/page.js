@@ -1292,8 +1292,8 @@ function BukuRekapScreen({ user, cabang, cabangList, onBack, onLogout }) {
       // Tabungan = 5% dari total besar pinjaman hari ini
       const tabungan = Math.round(totalDrop * 0.05);
 
-      // Debit = Storting + Admin + Tabungan
-      const debit = storting + adminFee + tabungan;
+      // Debit asli = Storting + Admin + Tabungan
+      const debitAsli = storting + adminFee + tabungan;
 
       // Pencairan Tabungan
       const pencairanTabungan = 0;
@@ -1301,11 +1301,12 @@ function BukuRekapScreen({ user, cabang, cabangList, onBack, onLogout }) {
       // Kredit = Total Drop + Pencairan Tabungan
       const kredit = totalDrop + pencairanTabungan;
 
-      // Kas Pakai
-      const kasPakai = 0;
-
-      // Tunai Pasar = Debit - Kredit
-      const tunaiPasar = debit - kredit;
+      // Kas Pakai & Tunai Pasar:
+      // Jika kredit > debit asli, kas pakai = selisih, debit disamakan dengan kredit, tunai pasar = 0
+      // Jika debit asli >= kredit, kas pakai = 0, debit tetap, tunai pasar = debit - kredit
+      const kasPakai = kredit > debitAsli ? kredit - debitAsli : 0;
+      const debit = kredit > debitAsli ? kredit : debitAsli;
+      const tunaiPasar = debitAsli >= kredit ? debitAsli - kredit : 0;
 
       rows.push({
         resortName: adm.name,
@@ -1586,10 +1587,12 @@ function KasPenuntunScreen({ user, cabang, cabangList, onBack, onLogout }) {
       });
       const adminFee = Math.round(totalDrop * 0.05);
       const tabungan = Math.round(totalDrop * 0.05);
-      const debit = totalStorting + adminFee + tabungan;
+      const debitAsli = totalStorting + adminFee + tabungan;
       const kredit = totalDrop;
-      tunaiPasarPerDate[dateStr] = debit - kredit;
-      kasPakaiPerDate[dateStr] = 0;
+      // Jika kredit > debit asli, kas pakai = selisih, tunai pasar = 0
+      // Jika debit asli >= kredit, kas pakai = 0, tunai pasar = debit - kredit
+      tunaiPasarPerDate[dateStr] = debitAsli >= kredit ? debitAsli - kredit : 0;
+      kasPakaiPerDate[dateStr] = kredit > debitAsli ? kredit - debitAsli : 0;
     });
 
     const suntikanDanaPerDate = {};
@@ -1851,13 +1854,7 @@ function BukuTunaiScreen({ user, cabang, cabangList, onBack, onLogout }) {
       // Kasbon Pagi = total uang_kas yang dikirim kasir ke admin ini pada tanggal ini
       const kasbonPagi = kasbonMap[adm.uid] || 0;
 
-      // Kas Pakai (sesuai Buku Rekap, saat ini belum diimplementasikan = 0)
-      const kasPakai = 0;
-
-      // Kembali Kasbon = Kasbon Pagi - Kas Pakai
-      const kembaliKasbon = kasbonPagi - kasPakai;
-
-      // Hitung Tunai Pasar menggunakan rumus yang sama dengan Buku Rekap untuk tanggal ini
+      // Hitung Tunai Pasar & Kas Pakai menggunakan rumus yang sama dengan Buku Rekap untuk tanggal ini
       const droppedOnDate = resortNasabah.filter(n => (n.tanggalPencairan || '').trim() === dateStr);
       const totalDrop = droppedOnDate.reduce((s, n) => s + (n.besarPinjaman || 0), 0);
       const adminFee = Math.round(totalDrop * 0.05);
@@ -1867,9 +1864,15 @@ function BukuTunaiScreen({ user, cabang, cabangList, onBack, onLogout }) {
         const pay = n.pembayaran?.[dateStr];
         if (pay) storting += pay.total || 0;
       });
-      const debit = storting + adminFee + tabungan;
+      const debitAsli = storting + adminFee + tabungan;
       const kredit = totalDrop; // pencairanTabungan = 0
-      const tunaiPasar = debit - kredit;
+      // Jika kredit > debit asli, kas pakai = selisih, tunai pasar = 0
+      // Jika debit asli >= kredit, kas pakai = 0, tunai pasar = debit - kredit
+      const kasPakai = kredit > debitAsli ? kredit - debitAsli : 0;
+      const tunaiPasar = debitAsli >= kredit ? debitAsli - kredit : 0;
+
+      // Kembali Kasbon = Kasbon Pagi - Kas Pakai
+      const kembaliKasbon = kasbonPagi - kasPakai;
 
       // Titipan (belum diimplementasikan, placeholder = 0)
       const titipan = 0;
