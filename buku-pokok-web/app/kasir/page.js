@@ -1576,18 +1576,25 @@ function KasPenuntunScreen({ user, cabang, cabangList, onBack, onLogout }) {
     const monthStart = new Date(parseInt(yyyy), parseInt(mm) - 1, 1);
     const monthEnd = new Date(parseInt(yyyy), parseInt(mm), 0);
 
+    // Batas: tidak boleh lebih dari hari ini (WIB)
+    const nowKP = new Date();
+    const wibOffKP = 7 * 60 * 60 * 1000;
+    const wibKP = new Date(nowKP.getTime() + (nowKP.getTimezoneOffset() * 60000) + wibOffKP);
+    const todayLimit = new Date(wibKP.getFullYear(), wibKP.getMonth(), wibKP.getDate());
+    const effectiveEnd = monthEnd <= todayLimit ? monthEnd : todayLimit;
+
     const dateSet = new Set();
     allNasabah.forEach(n => {
       if (n.pembayaran) {
         Object.keys(n.pembayaran).forEach(d => {
           const date = parseDateStr(d);
-          if (date && date >= monthStart && date <= monthEnd) dateSet.add(d);
+          if (date && date >= monthStart && date <= effectiveEnd) dateSet.add(d);
         });
       }
       const tglCair = (n.tanggalPencairan || '').trim();
       if (tglCair) {
         const date = parseDateStr(tglCair);
-        if (date && date >= monthStart && date <= monthEnd) dateSet.add(tglCair);
+        if (date && date >= monthStart && date <= effectiveEnd) dateSet.add(tglCair);
       }
     });
 
@@ -1595,7 +1602,7 @@ function KasPenuntunScreen({ user, cabang, cabangList, onBack, onLogout }) {
       const tgl = e.tanggal;
       if (!tgl) return;
       const date = parseDateStr(tgl);
-      if (date && date >= monthStart && date <= monthEnd) dateSet.add(tgl);
+      if (date && date >= monthStart && date <= effectiveEnd) dateSet.add(tgl);
     });
 
     const sortedDates = Array.from(dateSet).sort((a, b) => {
@@ -2114,26 +2121,33 @@ function BukuEkspedisiScreen({ user, cabang, cabangList, onBack, onLogout }) {
     const monthStart = new Date(parseInt(yyyy), parseInt(mm) - 1, 1);
     const monthEnd = new Date(parseInt(yyyy), parseInt(mm), 0);
 
-    // Kumpulkan semua tanggal aktif dalam bulan ini
+    // Batas: tidak boleh lebih dari hari ini (WIB)
+    const nowEK = new Date();
+    const wibOffEK = 7 * 60 * 60 * 1000;
+    const wibEK = new Date(nowEK.getTime() + (nowEK.getTimezoneOffset() * 60000) + wibOffEK);
+    const todayLimitEK = new Date(wibEK.getFullYear(), wibEK.getMonth(), wibEK.getDate());
+    const effectiveEndEK = monthEnd <= todayLimitEK ? monthEnd : todayLimitEK;
+
+    // Kumpulkan semua tanggal aktif dalam bulan ini (sampai hari ini)
     const dateSet = new Set();
     allNasabah.forEach(n => {
       if (n.pembayaran) {
         Object.keys(n.pembayaran).forEach(d => {
           const date = parseDateStr(d);
-          if (date && date >= monthStart && date <= monthEnd) dateSet.add(d);
+          if (date && date >= monthStart && date <= effectiveEndEK) dateSet.add(d);
         });
       }
       const tglCair = (n.tanggalPencairan || '').trim();
       if (tglCair) {
         const date = parseDateStr(tglCair);
-        if (date && date >= monthStart && date <= monthEnd) dateSet.add(tglCair);
+        if (date && date >= monthStart && date <= effectiveEndEK) dateSet.add(tglCair);
       }
     });
     kasirEntries.forEach(e => {
       const tgl = e.tanggal;
       if (!tgl) return;
       const date = parseDateStr(tgl);
-      if (date && date >= monthStart && date <= monthEnd) dateSet.add(tgl);
+      if (date && date >= monthStart && date <= effectiveEndEK) dateSet.add(tgl);
     });
 
     const sortedDates = Array.from(dateSet).sort((a, b) => parseDateStr(a) - parseDateStr(b));
