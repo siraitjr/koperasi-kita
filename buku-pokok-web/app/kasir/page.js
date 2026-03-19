@@ -429,19 +429,19 @@ function HomeScreen({ user, cabangList, summaryData, selectedCabang, onSelectCab
       ),
     },
     {
-      id: 'kasPenuntun', name: 'Kas Penuntun', desc: 'Buku kas harian penuntun',
-      icon: (
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-          <path d="M3 3h18v18H3zM3 9h18M3 15h18M9 3v18M15 3v18"/>
-        </svg>
-      ),
-    },
-    {
       id: 'bukuTunai', name: 'Buku Tunai', desc: 'Rekap kasbon & tunai harian per resort',
       icon: (
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
           <rect width="20" height="14" x="2" y="5" rx="2"/><line x1="2" x2="22" y1="10" y2="10"/>
           <path d="M12 15h.01M8 15h.01M16 15h.01"/>
+        </svg>
+      ),
+    },
+    {
+      id: 'kasPenuntun', name: 'Kas Penuntun', desc: 'Buku kas harian penuntun',
+      icon: (
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+          <path d="M3 3h18v18H3zM3 9h18M3 15h18M9 3v18M15 3v18"/>
         </svg>
       ),
     },
@@ -1592,14 +1592,18 @@ function KasPenuntunScreen({ user, cabang, cabangList, onBack, onLogout }) {
       kasPakaiPerDate[dateStr] = 0;
     });
 
-    const dropPusatPerDate = {};
+    const suntikanDanaPerDate = {};
+    const pinjamanKasPerDate = {};
     const buPerDate = {};
     const buFakturPerDate = {};
     kasirEntries.forEach(e => {
       const tgl = e.tanggal;
       if (!tgl) return;
-      if ((e.jenis === 'suntikan_dana' || e.jenis === 'pinjaman_kas') && e.arah === 'masuk') {
-        dropPusatPerDate[tgl] = (dropPusatPerDate[tgl] || 0) + (e.jumlah || 0);
+      if (e.jenis === 'suntikan_dana' && e.arah === 'masuk') {
+        suntikanDanaPerDate[tgl] = (suntikanDanaPerDate[tgl] || 0) + (e.jumlah || 0);
+      }
+      if (e.jenis === 'pinjaman_kas' && e.arah === 'masuk') {
+        pinjamanKasPerDate[tgl] = (pinjamanKasPerDate[tgl] || 0) + (e.jumlah || 0);
       }
       if (e.jenis === 'penggajian' && e.arah === 'keluar') {
         // Hanya hitung BU yang targetnya kas_penuntun, atau entry lama tanpa targetBuku
@@ -1618,7 +1622,9 @@ function KasPenuntunScreen({ user, cabang, cabangList, onBack, onLogout }) {
 
     sortedDates.forEach(dateStr => {
       const tunaiPasarHariIni = tunaiPasarPerDate[dateStr] || 0;
-      const dropPusat = dropPusatPerDate[dateStr] || 0;
+      const suntikanDana = suntikanDanaPerDate[dateStr] || 0;
+      const pinjamanKas = pinjamanKasPerDate[dateStr] || 0;
+      const dropPusat = suntikanDana + pinjamanKas;
       const kasPakai = kasPakaiPerDate[dateStr] || 0;
       const bu = buPerDate[dateStr] || 0;
       const buFaktur = buFakturPerDate[dateStr] || [];
@@ -1630,7 +1636,7 @@ function KasPenuntunScreen({ user, cabang, cabangList, onBack, onLogout }) {
       const kredit = kasPakai + bu;
       const saldoKasAkhir = debit - kredit;
 
-      result.push({ tanggal: dateStr, tunaiPasarHariIni, tunaiPasarKemarin, tunaiPasarTotal, dropPusat, saldoKas, debit, kasPakai, shu: 0, bu, buFaktur, kredit, saldoKasAkhir });
+      result.push({ tanggal: dateStr, tunaiPasarHariIni, tunaiPasarKemarin, tunaiPasarTotal, suntikanDana, pinjamanKas, dropPusat, saldoKas, debit, kasPakai, shu: 0, bu, buFaktur, kredit, saldoKasAkhir });
 
       runningBalance = saldoKasAkhir;
       tunaiPasarAccum = tunaiPasarTotal;
@@ -1689,16 +1695,17 @@ function KasPenuntunScreen({ user, cabang, cabangList, onBack, onLogout }) {
           </div>
         ) : (
           <div style={{ overflow: 'auto', border: '1px solid var(--border)', borderRadius: 12, background: 'var(--card)' }}>
-            <table style={{ width: '100%', minWidth: 1000, fontSize: 12, borderCollapse: 'collapse' }}>
+            <table style={{ width: '100%', minWidth: 1100, fontSize: 12, borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ background: '#f8f9fa' }}>
                   <th style={{ ...thS, textAlign: 'left', paddingLeft: 10 }} rowSpan={2}>Tanggal</th>
                   <th style={{ ...thS, background: '#e8f8f0' }} colSpan={1}>Tunai Pasar</th>
-                  <th style={{ ...thS, background: '#e0f0ff' }} rowSpan={2}>Drop Pusat</th>
+                  <th style={{ ...thS, background: '#e0f0ff' }} rowSpan={2}>Suntikan Dana</th>
+                  <th style={{ ...thS, background: '#e0f0ff' }} rowSpan={2}>Pinjaman Kas</th>
                   <th style={{ ...thS }} rowSpan={2}>Saldo Kas</th>
                   <th style={{ ...thS, background: '#dbeafe' }} rowSpan={2}>Debit</th>
                   <th style={{ ...thS, background: '#fef9c3' }} rowSpan={2}>Kas Pakai</th>
-                  <th style={{ ...thS }} rowSpan={2}>SHU</th>
+                  <th style={{ ...thS }} rowSpan={2}>SHU/SP</th>
                   <th style={{ ...thS, background: '#ffe4e6' }} rowSpan={2}>BU</th>
                   <th style={{ ...thS, background: '#fde8c8' }} rowSpan={2}>Kredit</th>
                   <th style={{ ...thS, background: '#f3e8ff' }} rowSpan={2}>Saldo Kas</th>
@@ -1717,7 +1724,8 @@ function KasPenuntunScreen({ user, cabang, cabangList, onBack, onLogout }) {
                       <td style={{ ...tdR, background: '#f0fdf4', color: row.tunaiPasarHariIni >= 0 ? '#166534' : 'var(--danger)', fontWeight: 600 }}>
                         {row.tunaiPasarHariIni !== 0 ? formatRp(row.tunaiPasarHariIni) : '-'}
                       </td>
-                      <td rowSpan={3} style={{ ...tdR, background: '#eff6ff' }}>{row.dropPusat > 0 ? formatRp(row.dropPusat) : '-'}</td>
+                      <td rowSpan={3} style={{ ...tdR, background: '#eff6ff' }}>{row.suntikanDana > 0 ? formatRp(row.suntikanDana) : '-'}</td>
+                      <td rowSpan={3} style={{ ...tdR, background: '#eff6ff' }}>{row.pinjamanKas > 0 ? formatRp(row.pinjamanKas) : '-'}</td>
                       <td rowSpan={3} style={{ ...tdR }}>{row.saldoKas !== 0 ? formatRp(row.saldoKas) : '-'}</td>
                       <td rowSpan={3} style={{ ...tdR, background: '#eff6ff', fontWeight: 700, color: '#1d4ed8' }}>{formatRp(row.debit)}</td>
                       <td rowSpan={3} style={{ ...tdR, background: '#fefce8' }}>{row.kasPakai > 0 ? formatRp(row.kasPakai) : '-'}</td>
@@ -2116,7 +2124,8 @@ function BukuEkspedisiScreen({ user, cabang, cabangList, onBack, onLogout }) {
 
     // Hitung nilai dari jurnal kasir per tanggal
     const kasbonPerDate = {};       // uang_kas keluar
-    const dropPusatPerDate = {};    // suntikan_dana / pinjaman_kas masuk
+    const suntikanDanaPerDate = {}; // suntikan_dana masuk
+    const pinjamanKasPerDate = {};  // pinjaman_kas masuk
     const transportPerDate = {};    // transport keluar
     const buPerDate = {};           // penggajian keluar
     const buFakturPerDate = {};     // faktur data for BU entries
@@ -2131,8 +2140,10 @@ function BukuEkspedisiScreen({ user, cabang, cabangList, onBack, onLogout }) {
       const jumlah = e.jumlah || 0;
       if (e.jenis === 'uang_kas' && e.arah === 'keluar') {
         kasbonPerDate[tgl] = (kasbonPerDate[tgl] || 0) + jumlah;
-      } else if ((e.jenis === 'suntikan_dana' || e.jenis === 'pinjaman_kas') && e.arah === 'masuk') {
-        dropPusatPerDate[tgl] = (dropPusatPerDate[tgl] || 0) + jumlah;
+      } else if (e.jenis === 'suntikan_dana' && e.arah === 'masuk') {
+        suntikanDanaPerDate[tgl] = (suntikanDanaPerDate[tgl] || 0) + jumlah;
+      } else if (e.jenis === 'pinjaman_kas' && e.arah === 'masuk') {
+        pinjamanKasPerDate[tgl] = (pinjamanKasPerDate[tgl] || 0) + jumlah;
       } else if (e.jenis === 'transport' && e.arah === 'keluar') {
         transportPerDate[tgl] = (transportPerDate[tgl] || 0) + jumlah;
       } else if (e.jenis === 'penggajian' && e.arah === 'keluar') {
@@ -2154,15 +2165,16 @@ function BukuEkspedisiScreen({ user, cabang, cabangList, onBack, onLogout }) {
       const tunaiPasar = tunaiPasarPerDate[dateStr] || 0;
       const kasbonPagi = kasbonPerDate[dateStr] || 0;
       const kembaliKasbon = kasbonPagi; // kasPakai = 0
-      const dropPusat = dropPusatPerDate[dateStr] || 0;
+      const suntikanDana = suntikanDanaPerDate[dateStr] || 0;
+      const pinjamanKas = pinjamanKasPerDate[dateStr] || 0;
+      const dropPusat = suntikanDana + pinjamanKas;
       const transport = transportPerDate[dateStr] || 0;
       const bu = buPerDate[dateStr] || 0;
       const buFaktur = buFakturPerDate[dateStr] || [];
       const pengembalianKas = pengembalianPerDate[dateStr] || 0;
       const sp = spPerDate[dateStr] || 0;
-      const pengembalianSP = pengembalianKas + sp;
       const tunaiKas = (kembaliKasbon + tunaiPasar + dropPusat) - (kasbonPagi + transport + bu + pengembalianKas + sp);
-      return { tanggal: dateStr, kembaliKasbon, tunaiPasar, dropPusat, kasbonPagi, transport, bu, buFaktur, pengembalianKas, sp, pengembalianSP, tunaiKas };
+      return { tanggal: dateStr, kembaliKasbon, tunaiPasar, suntikanDana, pinjamanKas, dropPusat, kasbonPagi, transport, bu, buFaktur, pengembalianKas, sp, tunaiKas };
     });
   })();
 
@@ -2170,13 +2182,15 @@ function BukuEkspedisiScreen({ user, cabang, cabangList, onBack, onLogout }) {
   const totals = ekspedisiRows.reduce((acc, r) => ({
     kembaliKasbon: acc.kembaliKasbon + r.kembaliKasbon,
     tunaiPasar: acc.tunaiPasar + r.tunaiPasar,
-    dropPusat: acc.dropPusat + r.dropPusat,
+    suntikanDana: acc.suntikanDana + r.suntikanDana,
+    pinjamanKas: acc.pinjamanKas + r.pinjamanKas,
     kasbonPagi: acc.kasbonPagi + r.kasbonPagi,
     transport: acc.transport + r.transport,
     bu: acc.bu + r.bu,
-    pengembalianSP: acc.pengembalianSP + r.pengembalianSP,
+    sp: acc.sp + r.sp,
+    pengembalianKas: acc.pengembalianKas + r.pengembalianKas,
     tunaiKas: acc.tunaiKas + r.tunaiKas,
-  }), { kembaliKasbon: 0, tunaiPasar: 0, dropPusat: 0, kasbonPagi: 0, transport: 0, bu: 0, pengembalianSP: 0, tunaiKas: 0 });
+  }), { kembaliKasbon: 0, tunaiPasar: 0, suntikanDana: 0, pinjamanKas: 0, kasbonPagi: 0, transport: 0, bu: 0, sp: 0, pengembalianKas: 0, tunaiKas: 0 });
 
   const thS = {
     padding: '7px 6px', textAlign: 'center', fontWeight: 700, fontSize: 10,
@@ -2233,17 +2247,19 @@ function BukuEkspedisiScreen({ user, cabang, cabangList, onBack, onLogout }) {
           </div>
         ) : (
           <div style={{ overflow: 'auto', border: '1px solid var(--border)', borderRadius: 12, background: 'var(--card)' }}>
-            <table style={{ width: '100%', minWidth: 900, fontSize: 12, borderCollapse: 'collapse' }}>
+            <table style={{ width: '100%', minWidth: 1100, fontSize: 12, borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ background: '#f8f9fa' }}>
                   <th style={{ ...thS, textAlign: 'left', paddingLeft: 10 }}>Tanggal</th>
                   <th style={{ ...thS, background: '#e8f8f0' }}>Kembali Kasbon</th>
                   <th style={{ ...thS, background: '#e8f8f0' }}>Tunai Pasar</th>
-                  <th style={{ ...thS, background: '#e0f0ff' }}>Drop Pusat</th>
+                  <th style={{ ...thS, background: '#e0f0ff' }}>Suntikan Dana</th>
+                  <th style={{ ...thS, background: '#e0f0ff' }}>Pinjaman Kas</th>
                   <th style={{ ...thS, background: '#fef9c3' }}>Kasbon Pagi</th>
                   <th style={{ ...thS, background: '#fef9c3' }}>Transport</th>
                   <th style={{ ...thS, background: '#ffe4e6' }}>BU</th>
-                  <th style={{ ...thS, background: '#ffe4e6' }}>Pengembalian Kas & SP</th>
+                  <th style={{ ...thS, background: '#ffe4e6' }}>SP</th>
+                  <th style={{ ...thS, background: '#ffe4e6' }}>Pengembalian Kas</th>
                   <th style={{ ...thS, background: '#f3e8ff' }}>Tunai Kas</th>
                 </tr>
               </thead>
@@ -2260,7 +2276,10 @@ function BukuEkspedisiScreen({ user, cabang, cabangList, onBack, onLogout }) {
                       {row.tunaiPasar !== 0 ? formatRp(row.tunaiPasar) : '-'}
                     </td>
                     <td style={{ ...tdR, background: '#eff6ff' }}>
-                      {row.dropPusat > 0 ? formatRp(row.dropPusat) : '-'}
+                      {row.suntikanDana > 0 ? formatRp(row.suntikanDana) : '-'}
+                    </td>
+                    <td style={{ ...tdR, background: '#eff6ff' }}>
+                      {row.pinjamanKas > 0 ? formatRp(row.pinjamanKas) : '-'}
                     </td>
                     <td style={{ ...tdR, background: '#fefce8' }}>
                       {row.kasbonPagi > 0 ? formatRp(row.kasbonPagi) : '-'}
@@ -2273,7 +2292,10 @@ function BukuEkspedisiScreen({ user, cabang, cabangList, onBack, onLogout }) {
                       {row.bu > 0 ? formatRp(row.bu) : '-'}
                     </td>
                     <td style={{ ...tdR, background: '#fff1f2' }}>
-                      {row.pengembalianSP > 0 ? formatRp(row.pengembalianSP) : '-'}
+                      {row.sp > 0 ? formatRp(row.sp) : '-'}
+                    </td>
+                    <td style={{ ...tdR, background: '#fff1f2' }}>
+                      {row.pengembalianKas > 0 ? formatRp(row.pengembalianKas) : '-'}
                     </td>
                     <td style={{ ...tdRBold, background: '#faf5ff', color: row.tunaiKas >= 0 ? '#7e22ce' : 'var(--danger)' }}>
                       {formatRp(row.tunaiKas)}
@@ -2285,11 +2307,13 @@ function BukuEkspedisiScreen({ user, cabang, cabangList, onBack, onLogout }) {
                   <td style={{ padding: '8px 10px', fontWeight: 800, fontSize: 12, borderRight: '1px solid var(--border)' }}>TOTAL</td>
                   <td style={{ ...tdRBold, background: '#e8f8f0', color: '#166534' }}>{totals.kembaliKasbon > 0 ? formatRp(totals.kembaliKasbon) : '-'}</td>
                   <td style={{ ...tdRBold, background: '#e8f8f0', color: totals.tunaiPasar >= 0 ? '#166534' : 'var(--danger)' }}>{totals.tunaiPasar !== 0 ? formatRp(totals.tunaiPasar) : '-'}</td>
-                  <td style={{ ...tdRBold, background: '#dbeafe' }}>{totals.dropPusat > 0 ? formatRp(totals.dropPusat) : '-'}</td>
+                  <td style={{ ...tdRBold, background: '#dbeafe' }}>{totals.suntikanDana > 0 ? formatRp(totals.suntikanDana) : '-'}</td>
+                  <td style={{ ...tdRBold, background: '#dbeafe' }}>{totals.pinjamanKas > 0 ? formatRp(totals.pinjamanKas) : '-'}</td>
                   <td style={{ ...tdRBold, background: '#fef9c3' }}>{totals.kasbonPagi > 0 ? formatRp(totals.kasbonPagi) : '-'}</td>
                   <td style={{ ...tdRBold, background: '#fef9c3' }}>{totals.transport > 0 ? formatRp(totals.transport) : '-'}</td>
                   <td style={{ ...tdRBold, background: '#ffe4e6' }}>{totals.bu > 0 ? formatRp(totals.bu) : '-'}</td>
-                  <td style={{ ...tdRBold, background: '#ffe4e6' }}>{totals.pengembalianSP > 0 ? formatRp(totals.pengembalianSP) : '-'}</td>
+                  <td style={{ ...tdRBold, background: '#ffe4e6' }}>{totals.sp > 0 ? formatRp(totals.sp) : '-'}</td>
+                  <td style={{ ...tdRBold, background: '#ffe4e6' }}>{totals.pengembalianKas > 0 ? formatRp(totals.pengembalianKas) : '-'}</td>
                   <td style={{ ...tdRBold, background: '#f3e8ff', color: totals.tunaiKas >= 0 ? '#7e22ce' : 'var(--danger)' }}>{formatRp(totals.tunaiKas)}</td>
                 </tr>
               </tbody>

@@ -394,20 +394,20 @@ function HomeScreen({ user, kasirCabangList, onSelectBook, onLogout }) {
       ready: true,
     },
     {
-      id: 'kasPenuntun', name: 'Kas Penuntun', desc: 'Buku kas harian penuntun',
-      icon: (
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-          <path d="M3 3h18v18H3zM3 9h18M3 15h18M9 3v18M15 3v18"/>
-        </svg>
-      ),
-      ready: true,
-    },
-    {
       id: 'bukuTunai', name: 'Buku Tunai', desc: 'Rekap kasbon & tunai harian per resort',
       icon: (
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
           <rect width="20" height="14" x="2" y="5" rx="2"/><line x1="2" x2="22" y1="10" y2="10"/>
           <path d="M12 15h.01M8 15h.01M16 15h.01"/>
+        </svg>
+      ),
+      ready: true,
+    },
+    {
+      id: 'kasPenuntun', name: 'Kas Penuntun', desc: 'Buku kas harian penuntun',
+      icon: (
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+          <path d="M3 3h18v18H3zM3 9h18M3 15h18M9 3v18M15 3v18"/>
         </svg>
       ),
       ready: true,
