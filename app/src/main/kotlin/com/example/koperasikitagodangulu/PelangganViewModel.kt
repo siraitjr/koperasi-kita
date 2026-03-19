@@ -260,10 +260,21 @@ data class AdminNotification(
     val catatanPerubahanPinjaman: String = "",
     val disetujuiOleh: String = "",
 
+    // Catatan dari setiap approver (untuk dual approval >= 3jt)
+    val pimpinanNote: String = "",
+    val koordinatorNote: String = "",
+    val pengawasNote: String = "",
+    val pimpinanStatus: String = "",
+    val koordinatorStatus: String = "",
+    val pengawasStatus: String = "",
+    val pimpinanBy: String = "",
+    val koordinatorBy: String = "",
+    val pengawasBy: String = "",
+
     val timestamp: Long = 0L,
     val read: Boolean = false
 ) {
-    constructor() : this("", "", "", "", "", "", "", "", 0, 0, 0, 0, false, "", "", 0L, false)
+    constructor() : this("", "", "", "", "", "", "", "", 0, 0, 0, 0, false, "", "", "", "", "", "", "", "", "", "", "", 0L, false)
 }
 
 data class DashboardData(
@@ -4179,13 +4190,25 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                                                                 tenorDiajukan = tenorYangDiajukan,
                                                                 tenorDisetujui = tenorYangDisetujui,
                                                                 isPinjamanDiubah = adaPenyesuaian,
-                                                                catatanPerubahanPinjaman = catatanPenyesuaian
+                                                                catatanPerubahanPinjaman = catatanPenyesuaian,
+                                                                // Catatan lengkap dari setiap approver
+                                                                pimpinanNote = currentDualInfo.pimpinanApproval.note,
+                                                                koordinatorNote = currentDualInfo.koordinatorApproval.note,
+                                                                pengawasNote = currentDualInfo.pengawasApproval.note,
+                                                                pimpinanApprovalStatus = currentDualInfo.pimpinanApproval.status,
+                                                                koordinatorApprovalStatus = currentDualInfo.koordinatorApproval.status,
+                                                                pengawasApprovalStatus = currentDualInfo.pengawasApproval.status,
+                                                                pimpinanByName = currentDualInfo.pimpinanApproval.by,
+                                                                koordinatorByName = currentDualInfo.koordinatorApproval.by,
+                                                                pengawasByName = currentDualInfo.pengawasApproval.by
                                                             )
 
                                                             Log.d("Approval", "✅ Notifikasi terkirim ke Admin: $adminUid")
 
-                                                            // BARU hapus setelah notifikasi terkirim
-                                                            child.ref.removeValue()
+                                                            // Hapus setelah delay agar CF onDualApprovalComplete sempat membaca data
+                                                            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                                                                child.ref.removeValue()
+                                                            }, 3000)
 
                                                             updateLocalAndRefresh(pelangganId, updatedPelanggan, cabangId)
                                                             onSuccess?.invoke()
@@ -5186,13 +5209,25 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                                                                 tenorDiajukan = tenorYangDiajukan,
                                                                 tenorDisetujui = tenorYangDisetujui,
                                                                 isPinjamanDiubah = adaPenyesuaian,
-                                                                catatanPerubahanPinjaman = catatanPenyesuaian
+                                                                catatanPerubahanPinjaman = catatanPenyesuaian,
+                                                                // Catatan lengkap dari setiap approver
+                                                                pimpinanNote = currentDualInfo.pimpinanApproval.note,
+                                                                koordinatorNote = currentDualInfo.koordinatorApproval.note,
+                                                                pengawasNote = currentDualInfo.pengawasApproval.note,
+                                                                pimpinanApprovalStatus = currentDualInfo.pimpinanApproval.status,
+                                                                koordinatorApprovalStatus = currentDualInfo.koordinatorApproval.status,
+                                                                pengawasApprovalStatus = currentDualInfo.pengawasApproval.status,
+                                                                pimpinanByName = currentDualInfo.pimpinanApproval.by,
+                                                                koordinatorByName = currentDualInfo.koordinatorApproval.by,
+                                                                pengawasByName = currentDualInfo.pengawasApproval.by
                                                             )
 
                                                             Log.d("Rejection", "✅ Notifikasi terkirim ke Admin: $adminUidForNotif")
 
-                                                            // BARU hapus setelah notifikasi terkirim
-                                                            child.ref.removeValue()
+                                                            // Hapus setelah delay agar CF onDualApprovalComplete sempat membaca data
+                                                            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                                                                child.ref.removeValue()
+                                                            }, 3000)
 
                                                             if (index != -1) {
                                                                 daftarPelanggan[index] = updatedPelanggan
@@ -5625,7 +5660,17 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
         tenorDiajukan: Int = 0,
         tenorDisetujui: Int = 0,
         isPinjamanDiubah: Boolean = false,
-        catatanPerubahanPinjaman: String = ""
+        catatanPerubahanPinjaman: String = "",
+        // Catatan dari setiap approver (untuk dual approval >= 3jt)
+        pimpinanNote: String = "",
+        koordinatorNote: String = "",
+        pengawasNote: String = "",
+        pimpinanApprovalStatus: String = "",
+        koordinatorApprovalStatus: String = "",
+        pengawasApprovalStatus: String = "",
+        pimpinanByName: String = "",
+        koordinatorByName: String = "",
+        pengawasByName: String = ""
 
     ) {
         try {
@@ -5676,6 +5721,15 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                 isPinjamanDiubah = isPinjamanDiubah,
                 catatanPerubahanPinjaman = catatanPerubahanPinjaman,
                 disetujuiOleh = pimpinanName,
+                pimpinanNote = pimpinanNote,
+                koordinatorNote = koordinatorNote,
+                pengawasNote = pengawasNote,
+                pimpinanStatus = pimpinanApprovalStatus,
+                koordinatorStatus = koordinatorApprovalStatus,
+                pengawasStatus = pengawasApprovalStatus,
+                pimpinanBy = pimpinanByName,
+                koordinatorBy = koordinatorByName,
+                pengawasBy = pengawasByName,
                 timestamp = System.currentTimeMillis(),
                 read = false
             )

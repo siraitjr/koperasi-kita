@@ -523,8 +523,8 @@ fun DetailNotifikasiScreen(
                         DetailItem(
                             "Status",
                             when (notification.type) {
-                                "REJECTION" -> "Ditolak"
-                                "APPROVAL" -> "Disetujui"
+                                "REJECTION", "DUAL_APPROVAL_REJECTED" -> "Ditolak"
+                                "APPROVAL", "DUAL_APPROVAL_APPROVED" -> "Disetujui"
                                 else -> "Diproses"
                             },
                             txtColor
