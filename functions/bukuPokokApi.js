@@ -393,6 +393,11 @@ exports.getBukuPokok = functions
                         simpanan: p.simpanan || 0,
                         totalDiterima: p.totalDiterima || 0,
                         pembayaran: pembayaranPerTanggal,
+                        // Foto nasabah & KTP (sudah ada di data pelanggan, tanpa tambahan RTDB read)
+                        fotoKtpUrl: p.fotoKtpUrl || '',
+                        fotoKtpSuamiUrl: p.fotoKtpSuamiUrl || '',
+                        fotoKtpIstriUrl: p.fotoKtpIstriUrl || '',
+                        fotoNasabahUrl: p.fotoNasabahUrl || '',
                         // Riwayat pinjaman lama
                         sisaUtangLama: sisaUtangLama,
                         sisaUtangLamaSebelumTopUp: p.sisaUtangLamaSebelumTopUp || 0,

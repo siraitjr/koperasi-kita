@@ -1416,18 +1416,30 @@ function DetailModal({ nasabah, onClose }) {
 
         <div className="modal-body">
           {/* Foto KTP & Foto Nasabah */}
-          {(nasabah.fotoKtpUrl || nasabah.fotoNasabahUrl) && (
+          {(nasabah.fotoKtpUrl || nasabah.fotoKtpSuamiUrl || nasabah.fotoKtpIstriUrl || nasabah.fotoNasabahUrl) && (
             <div className="detail-photos">
+              {nasabah.fotoNasabahUrl && (
+                <div className="detail-photo-card" onClick={() => setZoomImage(nasabah.fotoNasabahUrl)}>
+                  <img src={nasabah.fotoNasabahUrl} alt="Foto Nasabah" loading="lazy" />
+                  <span className="detail-photo-label">Foto Nasabah</span>
+                </div>
+              )}
               {nasabah.fotoKtpUrl && (
                 <div className="detail-photo-card" onClick={() => setZoomImage(nasabah.fotoKtpUrl)}>
                   <img src={nasabah.fotoKtpUrl} alt="Foto KTP" loading="lazy" />
                   <span className="detail-photo-label">Foto KTP</span>
                 </div>
               )}
-              {nasabah.fotoNasabahUrl && (
-                <div className="detail-photo-card" onClick={() => setZoomImage(nasabah.fotoNasabahUrl)}>
-                  <img src={nasabah.fotoNasabahUrl} alt="Foto Nasabah" loading="lazy" />
-                  <span className="detail-photo-label">Foto Nasabah</span>
+              {nasabah.fotoKtpSuamiUrl && (
+                <div className="detail-photo-card" onClick={() => setZoomImage(nasabah.fotoKtpSuamiUrl)}>
+                  <img src={nasabah.fotoKtpSuamiUrl} alt="Foto KTP Suami" loading="lazy" />
+                  <span className="detail-photo-label">KTP Suami</span>
+                </div>
+              )}
+              {nasabah.fotoKtpIstriUrl && (
+                <div className="detail-photo-card" onClick={() => setZoomImage(nasabah.fotoKtpIstriUrl)}>
+                  <img src={nasabah.fotoKtpIstriUrl} alt="Foto KTP Istri" loading="lazy" />
+                  <span className="detail-photo-label">KTP Istri</span>
                 </div>
               )}
             </div>
