@@ -29,6 +29,7 @@ package com.example.koperasikitagodangulu.models
  * =========================================================================
  */
 
+import com.google.firebase.database.Exclude
 import com.google.firebase.database.PropertyName
 import com.example.koperasikitagodangulu.models.BroadcastMessage
 
@@ -141,6 +142,7 @@ data class DualApprovalInfo(
     /**
      * Cek apakah sudah mendapat persetujuan penuh DAN sudah difinalisasi
      */
+    @Exclude
     fun isFullyApproved(): Boolean {
         if (!requiresDualApproval) {
             return pimpinanApproval.status == ApprovalStatus.APPROVED
@@ -154,6 +156,7 @@ data class DualApprovalInfo(
     /**
      * Cek apakah sudah ditolak (keputusan final dari pengawas)
      */
+    @Exclude
     fun isRejected(): Boolean {
         // Dalam alur baru, keputusan final ada di pengawas
         return pengawasApproval.status == ApprovalStatus.REJECTED &&
@@ -164,6 +167,7 @@ data class DualApprovalInfo(
     /**
      * Cek apakah masih dalam proses approval
      */
+    @Exclude
     fun isPending(): Boolean {
         return approvalPhase != ApprovalPhase.COMPLETED
     }
@@ -171,6 +175,7 @@ data class DualApprovalInfo(
     /**
      * Cek apakah menunggu review Pimpinan (Phase 1)
      */
+    @Exclude
     fun isAwaitingPimpinan(): Boolean {
         return approvalPhase == ApprovalPhase.AWAITING_PIMPINAN
     }
@@ -178,6 +183,7 @@ data class DualApprovalInfo(
     /**
      * Cek apakah menunggu review Pengawas (Phase 3)
      */
+    @Exclude
     fun isAwaitingPengawas(): Boolean {
         return approvalPhase == ApprovalPhase.AWAITING_PENGAWAS
     }
@@ -185,6 +191,7 @@ data class DualApprovalInfo(
     /**
      * Cek apakah menunggu review Koordinator (Phase 2)
      */
+    @Exclude
     fun isAwaitingKoordinator(): Boolean {
         return approvalPhase == ApprovalPhase.AWAITING_KOORDINATOR
     }
@@ -192,6 +199,7 @@ data class DualApprovalInfo(
     /**
      * Cek apakah menunggu finalisasi Koordinator (Phase 4)
      */
+    @Exclude
     fun isAwaitingKoordinatorFinal(): Boolean {
         return approvalPhase == ApprovalPhase.AWAITING_KOORDINATOR_FINAL
     }
@@ -199,6 +207,7 @@ data class DualApprovalInfo(
     /**
      * Cek apakah menunggu finalisasi Pimpinan (Phase 5)
      */
+    @Exclude
     fun isAwaitingPimpinanFinal(): Boolean {
         return approvalPhase == ApprovalPhase.AWAITING_PIMPINAN_FINAL
     }
@@ -206,6 +215,7 @@ data class DualApprovalInfo(
     /**
      * Dapatkan siapa yang sudah approve
      */
+    @Exclude
     fun getApprovedBy(): List<String> {
         val list = mutableListOf<String>()
         if (pimpinanApproval.status == ApprovalStatus.APPROVED) {
@@ -220,6 +230,7 @@ data class DualApprovalInfo(
     /**
      * Dapatkan status display untuk UI
      */
+    @Exclude
     fun getDisplayStatus(): String {
         return when (approvalPhase) {
             ApprovalPhase.AWAITING_PIMPINAN -> "Menunggu Review Pimpinan (1/5)"
@@ -258,6 +269,7 @@ data class DualApprovalInfo(
     /**
      * Dapatkan status singkat untuk card UI
      */
+    @Exclude
     fun getShortStatus(): String {
         return when (approvalPhase) {
             ApprovalPhase.AWAITING_PIMPINAN -> "Tahap 1/5"

@@ -1790,8 +1790,15 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                             database.child("pelanggan").child(targetAdminUid).child(id)
                                 .child("cabangId").setValue(cabangId)
                         }
-                        simpanKePengajuanApproval(toSave.copy(cabangId = cabangId), cabangId)
-                        Log.d("Pengajuan", "✅ Pengajuan disimpan untuk: ${toSave.namaPanggilan}")
+                        // ✅ GUARD: Hanya buat pengajuan_approval jika masih Phase 1 atau belum ada
+                        val savePhase = toSave.dualApprovalInfo?.approvalPhase ?: ""
+                        val isPhase1OrNew = savePhase.isEmpty() || savePhase == ApprovalPhase.AWAITING_PIMPINAN
+                        if (isPhase1OrNew) {
+                            simpanKePengajuanApproval(toSave.copy(cabangId = cabangId), cabangId)
+                            Log.d("Pengajuan", "✅ Pengajuan disimpan untuk: ${toSave.namaPanggilan}")
+                        } else {
+                            Log.d("Pengajuan", "⏭️ Skip simpanKePengajuanApproval - sudah dalam phase: $savePhase untuk ${toSave.namaPanggilan}")
+                        }
                     } else {
                         Log.e("Pengajuan", "❌ CABANG ID KOSONG - pengajuan_approval tidak bisa dibuat untuk: ${toSave.namaPanggilan}")
                         // ✅ PERBAIKAN: Simpan ke pending queue agar bisa di-retry saat cabangId tersedia
@@ -2729,12 +2736,20 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                 }
 
                 // ✅ TAMBAHAN: Buat pengajuan approval jika status "Menunggu Approval"
+                // ✅ GUARD: Hanya buat jika masih Phase 1 atau belum ada dualApprovalInfo
+                // Jangan panggil untuk approval yang sudah in-progress (Phase 2+)
                 if (pelToUpload.status == "Menunggu Approval" && pelToUpload.cabangId.isNotBlank()) {
-                    try {
-                        simpanKePengajuanApproval(pelToUpload, pelToUpload.cabangId)
-                        Log.d("Sync", "✅ Pengajuan approval dibuat untuk: ${pelToUpload.namaPanggilan}")
-                    } catch (e: Exception) {
-                        Log.e("Sync", "⚠️ Gagal buat pengajuan approval: ${e.message}")
+                    val phase = pelToUpload.dualApprovalInfo?.approvalPhase ?: ""
+                    val isPhase1OrNew = phase.isEmpty() || phase == ApprovalPhase.AWAITING_PIMPINAN
+                    if (isPhase1OrNew) {
+                        try {
+                            simpanKePengajuanApproval(pelToUpload, pelToUpload.cabangId)
+                            Log.d("Sync", "✅ Pengajuan approval dibuat untuk: ${pelToUpload.namaPanggilan}")
+                        } catch (e: Exception) {
+                            Log.e("Sync", "⚠️ Gagal buat pengajuan approval: ${e.message}")
+                        }
+                    } else {
+                        Log.d("Sync", "⏭️ Skip simpanKePengajuanApproval - sudah dalam phase: $phase untuk ${pelToUpload.namaPanggilan}")
                     }
                 }
 
@@ -8012,7 +8027,22 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
 
                 if (snapshot.exists() && snapshot.childrenCount > 0) {
                     // ================================================================
-                    // ENTRY LAMA ADA → HAPUS SEMUA, lalu buat baru dengan push()
+                    // GUARD: Cek apakah entry sudah melewati Phase 1 (approval in progress)
+                    // Jika sudah, JANGAN hapus karena akan menghancurkan progress approval
+                    // ================================================================
+                    val hasProgressedEntry = snapshot.children.any { child ->
+                        val phase = child.child("dualApprovalInfo/approvalPhase")
+                            .getValue(String::class.java) ?: ""
+                        phase.isNotEmpty() && phase != ApprovalPhase.AWAITING_PIMPINAN
+                    }
+
+                    if (hasProgressedEntry) {
+                        Log.d("Pengajuan", "⚠️ Entry sudah dalam proses approval lanjutan (Phase 2+), SKIP recreate untuk ${pelanggan.namaPanggilan}")
+                        return@addOnSuccessListener
+                    }
+
+                    // ================================================================
+                    // ENTRY LAMA ADA (Phase 1 atau tanpa phase) → HAPUS, lalu buat baru
                     // Ini MENJAMIN onCreate trigger → notifikasi PASTI terkirim
                     // ================================================================
                     Log.d("Pengajuan", "🗑️ Hapus ${snapshot.childrenCount} entry lama untuk ${pelanggan.namaPanggilan}")
