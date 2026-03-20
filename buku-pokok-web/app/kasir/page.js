@@ -544,10 +544,6 @@ function HomeScreen({ user, cabangList, summaryData, selectedCabang, onSelectCab
               <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 4 }}>Total Keluar (Bulan Ini)</p>
               <p style={{ fontSize: 18, fontWeight: 700, color: 'var(--danger)' }}>{formatRpFull(summary.totalKeluar || 0)}</p>
             </div>
-            <div style={{ background: 'var(--card)', borderRadius: 14, padding: '16px 20px', border: '1px solid var(--border)' }}>
-              <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 4 }}>Saldo Kas (Bulan Ini)</p>
-              <p style={{ fontSize: 18, fontWeight: 700, color: 'var(--primary)' }}>{formatRpFull(summary.saldo || 0)}</p>
-            </div>
           </div>
         )}
 
@@ -2484,16 +2480,6 @@ function RingkasanScreen({ user, cabang, cabangList, onBack, onLogout }) {
               </table>
             </div>
 
-            {/* Saldo card */}
-            <div style={{
-              marginTop: 20, background: 'var(--primary-light)', borderRadius: 16,
-              padding: '20px 24px', textAlign: 'center', border: '1px solid var(--primary)'
-            }}>
-              <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 4 }}>Saldo Kas {formatBulanLabel(bulan)}</p>
-              <p style={{ fontSize: 28, fontWeight: 800, color: 'var(--primary)', fontFamily: "'DM Mono', monospace" }}>
-                {formatRpFull(summary?.saldo || 0)}
-              </p>
-            </div>
           </>
         )}
       </main>
