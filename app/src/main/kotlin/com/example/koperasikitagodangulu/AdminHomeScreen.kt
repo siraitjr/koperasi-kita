@@ -117,9 +117,7 @@ fun AdminHomeScreen(navController: NavController, viewModel: PelangganViewModel)
     // Animation states
     var isVisible by remember { mutableStateOf(false) }
 
-    // State untuk dialog biaya awal
-    var showBiayaAwalDialog by remember { mutableStateOf(false) }
-    var biayaAwalInput by remember { mutableStateOf("") }
+    // State dialog biaya awal dihapus - kasbon pagi sudah diinput oleh kasir via web
 
     // State untuk foto profil
     val adminPhotoUrl by viewModel.adminPhotoUrl.collectAsState()
@@ -228,7 +226,7 @@ fun AdminHomeScreen(navController: NavController, viewModel: PelangganViewModel)
                         }
                     },
                     onManualSync = { viewModel.manualSync() },
-                    onWelcomeCardClick = { showBiayaAwalDialog = true },
+                    onWelcomeCardClick = { /* tidak ada aksi - kasbon pagi diinput kasir via web */ },
                     onAvatarClick = {
                         if (!adminPhotoUrl.isNullOrBlank()) {
                             // Jika sudah ada foto, tampilkan dialog pilihan
@@ -392,77 +390,7 @@ fun AdminHomeScreen(navController: NavController, viewModel: PelangganViewModel)
                     }
                 }
             }
-            // Dialog Input Biaya Awal
-            if (showBiayaAwalDialog) {
-                AlertDialog(
-                    onDismissRequest = { showBiayaAwalDialog = false },
-                    title = {
-                        Text(
-                            text = "Masukkan Biaya Awal",
-                            fontWeight = FontWeight.Bold
-                        )
-                    },
-                    text = {
-                        Column {
-                            Text(
-                                text = "Masukkan jumlah biaya awal hari ini",
-                                color = subtitleColor,
-                                fontSize = 14.sp
-                            )
-                            Spacer(modifier = Modifier.height(16.dp))
-                            OutlinedTextField(
-                                value = biayaAwalInput,
-                                onValueChange = { input ->
-                                    val clean = input.filter { it.isDigit() }
-                                    biayaAwalInput = if (clean.isNotEmpty()) {
-                                        NumberFormat.getNumberInstance(Locale("id", "ID"))
-                                            .format(clean.toLongOrNull() ?: 0)
-                                    } else ""
-                                },
-                                label = { Text("Jumlah (Rp)") },
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                singleLine = true,
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(12.dp)
-                            )
-                        }
-                    },
-                    confirmButton = {
-                        Button(
-                            onClick = {
-                                val jumlah = biayaAwalInput.replace("[^\\d]".toRegex(), "").toIntOrNull() ?: 0
-                                if (jumlah > 0) {
-                                    viewModel.simpanBiayaAwal(jumlah) { success, message ->
-                                        Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
-                                        if (success) {
-                                            showBiayaAwalDialog = false
-                                            biayaAwalInput = ""
-                                        }
-                                    }
-                                } else {
-                                    Toast.makeText(context, "Masukkan jumlah yang valid", Toast.LENGTH_SHORT).show()
-                                }
-                            },
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = Color(0xFF6366F1)
-                            )
-                        ) {
-                            Text("OK")
-                        }
-                    },
-                    dismissButton = {
-                        TextButton(onClick = {
-                            showBiayaAwalDialog = false
-                            biayaAwalInput = ""
-                        }) {
-                            Text("Batal")
-                        }
-                    },
-                    containerColor = cardColor,
-                    titleContentColor = txtColor,
-                    textContentColor = txtColor
-                )
-            }
+            // Dialog Biaya Awal dihapus - kasbon pagi sudah diinput oleh kasir via web
             // Dialog Pilihan Foto (Lihat / Ubah)
             if (showPhotoOptionsDialog) {
                 AlertDialog(
@@ -716,7 +644,6 @@ private fun ModernHeader(
         Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable { onWelcomeCardClick() }
                 .shadow(
                     elevation = 20.dp,
                     shape = RoundedCornerShape(24.dp),
