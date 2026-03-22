@@ -317,7 +317,7 @@ fun RingkasanDashboardScreen(
                     }
 
                     ModernStatCard(
-                        title = "Menunggu Pencairan",
+                        title = "Sisa Tabungan",
                         value = pelangganMenungguPencairan.toString(),
                         icon = Icons.Rounded.Savings,
                         gradient = DashboardColors.purpleGradient,
@@ -426,7 +426,7 @@ private fun ModernProgressCard(
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "Pencapaian Hari Ini",
+                        text = "Storting Hari Ini",
                         color = Color.White.copy(alpha = 0.7f),
                         fontSize = 14.sp
                     )
