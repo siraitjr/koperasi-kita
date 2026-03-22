@@ -186,10 +186,13 @@ fun RingkasanDashboardScreen(
         }
         val isLunasCicilan = totalBayar >= p.totalPelunasan.toLong() && p.totalPelunasan > 0
 
-        // ✅ PERBAIKAN: Juga hitung nasabah dengan status "Lunas" yang sudah dicairkan
-        val isLunasManual = p.status.lowercase() == "lunas" && p.statusPencairanSimpanan == "Dicairkan"
-
-        (isLunasCicilan && p.statusPencairanSimpanan == "Dicairkan") || isLunasManual
+        // ✅ Nasabah lunas cicilan tapi masih memiliki tabungan (belum dicairkan)
+        // Exclude nasabah yang ditandai manual sebagai Sisa Tabungan (tampil di card tersendiri)
+        // Exclude nasabah yang sedang proses lanjut pinjaman
+        isLunasCicilan &&
+                p.statusPencairanSimpanan != "Dicairkan" &&
+                p.statusKhusus != "MENUNGGU_PENCAIRAN" &&
+                p.status != "Menunggu Approval"
     }
 
     val pelangganAktif = nasabahAktif.size

@@ -94,18 +94,17 @@ fun DaftarPelangganLunasScreen(
     val daftarPelanggan = viewModel.daftarPelanggan
     val context = LocalContext.current
 
-    // Filter hanya pelanggan yang lunas
+    // Filter: nasabah lunas cicilan tapi masih punya tabungan (belum dicairkan)
     val pelangganLunas = remember(daftarPelanggan.size) {
         daftarPelanggan.filter { pelanggan ->
             val totalBayar = pelanggan.pembayaranList.sumOf { it.jumlah + it.subPembayaran.sumOf { sub -> sub.jumlah } }
             val sudahLunasCicilan = totalBayar >= pelanggan.totalPelunasan && pelanggan.totalPelunasan > 0
 
-            // ✅ PERBAIKAN: Juga termasuk yang status = "Lunas" dan sudah dicairkan
-            val isLunasManual = pelanggan.status.lowercase() == "lunas" && pelanggan.statusPencairanSimpanan == "Dicairkan"
-
-            val isLunas = (sudahLunasCicilan && pelanggan.statusPencairanSimpanan == "Dicairkan") || isLunasManual
-
-            isLunas && pelanggan.status != "Menunggu Approval"
+            // ✅ Nasabah lunas cicilan, masih punya tabungan, belum ditandai manual Sisa Tabungan
+            sudahLunasCicilan &&
+                    pelanggan.statusPencairanSimpanan != "Dicairkan" &&
+                    pelanggan.statusKhusus != "MENUNGGU_PENCAIRAN" &&
+                    pelanggan.status != "Menunggu Approval"
         }
     }
 

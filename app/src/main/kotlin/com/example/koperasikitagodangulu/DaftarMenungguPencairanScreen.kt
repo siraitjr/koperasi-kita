@@ -360,7 +360,7 @@ private fun ModernPencairanTopBar(
 
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "Menunggu Pencairan",
+                    text = "Sisa Tabungan",
                     fontSize = 20.sp,
                     fontWeight = FontWeight.Bold,
                     color = txtColor

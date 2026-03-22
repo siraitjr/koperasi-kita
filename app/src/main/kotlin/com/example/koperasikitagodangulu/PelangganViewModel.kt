@@ -1608,7 +1608,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
             "MELARIKAN_DIRI" -> "Melarikan Diri"
             "MENOLAK_BAYAR" -> "Menolak Bayar"
             "SAKIT" -> "Sakit"
-            "MENUNGGU_PENCAIRAN" -> "Menunggu Pencairan"
+            "MENUNGGU_PENCAIRAN" -> "Sisa Tabungan"
             "LAINNYA" -> "Lainnya"
             else -> ""
         }
@@ -12616,19 +12616,10 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
             // ✅ EXCLUDE: Nasabah yang sedang proses lanjut pinjaman (Menunggu Approval)
             if (pelanggan.status == "Menunggu Approval") return@filter false
 
-            // KONDISI 1: Ditandai manual sebagai Menunggu Pencairan (belum lunas tapi tidak mau bayar)
-            val isMenungguPencairanManual = pelanggan.statusKhusus == "MENUNGGU_PENCAIRAN" &&
+            // ✅ Hanya nasabah yang ditandai manual oleh admin lapangan dari "Tandai Status Khusus"
+            // Artinya nasabah yang jumlah tabungan >= sisa cicilan
+            pelanggan.statusKhusus == "MENUNGGU_PENCAIRAN" &&
                     pelanggan.statusPencairanSimpanan != "Dicairkan"
-
-            // KONDISI 2: Lunas cicilan otomatis (sudah bayar semua)
-            val totalBayar = pelanggan.pembayaranList.sumOf { pay ->
-                pay.jumlah.toLong() + pay.subPembayaran.sumOf { sub -> sub.jumlah.toLong() }
-            }
-            val isLunasCicilan = totalBayar >= pelanggan.totalPelunasan.toLong() && pelanggan.totalPelunasan > 0
-            val isLunasOtomatis = isLunasCicilan && pelanggan.statusPencairanSimpanan != "Dicairkan"
-
-            // Masuk jika salah satu kondisi terpenuhi
-            isMenungguPencairanManual || isLunasOtomatis
         }
     }
 
@@ -12658,48 +12649,22 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     return@launch
                 }
 
-                val dateFormat = SimpleDateFormat("dd MMM yyyy", Locale("in", "ID"))
-                val tanggalSekarang = dateFormat.format(Date())
-                val pencairUid = Firebase.auth.currentUser?.uid ?: ""
-                val pencairSnap = database.child("metadata/admins/$pencairUid/name").get().await()
-                val pencairOleh = pencairSnap.getValue(String::class.java)
-                    ?: Firebase.auth.currentUser?.email
-                    ?: "Admin"
-
-                val updates = mapOf(
-                    "statusPencairanSimpanan" to "Dicairkan",
-                    "tanggalPencairanSimpanan" to tanggalSekarang,
-                    "dicairkanOleh" to pencairOleh,
-                    "status" to "Lunas",
-                    "lastUpdated" to SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date()),
-                    "statusKhusus" to "",
-                    "catatanStatusKhusus" to "",
-                    "tanggalStatusKhusus" to "",
-                    "diberiTandaOleh" to ""
-                )
-
+                // ✅ Nasabah lunas cicilan + tabungan dicairkan → hapus dari database
+                // Tidak perlu disimpan lagi karena sudah selesai semua kewajiban
                 database.child("pelanggan").child(adminUid).child(pelangganId)
-                    .updateChildren(updates)
+                    .removeValue()
                     .addOnSuccessListener {
-                        // Update local list
+                        // Hapus dari local list
                         val index = daftarPelanggan.indexOfFirst { it.id == pelangganId }
                         if (index != -1) {
-                            daftarPelanggan[index] = daftarPelanggan[index].copy(
-                                statusPencairanSimpanan = "Dicairkan",
-                                tanggalPencairanSimpanan = tanggalSekarang,
-                                dicairkanOleh = pencairOleh,
-                                status = "Lunas",
-                                statusKhusus = "",
-                                catatanStatusKhusus = "",
-                                tanggalStatusKhusus = "",
-                                diberiTandaOleh = ""
-                            )
+                            daftarPelanggan.removeAt(index)
                         }
-                        Log.d("Pencairan", "✅ Simpanan berhasil dicairkan untuk: ${pelanggan.namaPanggilan}")
+                        Log.d("Pencairan", "✅ Nasabah dihapus dari database (lunas total): ${pelanggan.namaPanggilan}")
                         viewModelScope.launch {
                             try {
                                 val cabangId = _currentUserCabang.value ?: ""
                                 if (cabangId.isNotBlank()) {
+                                    // Hapus dari node pelanggan_status_khusus
                                     database.child("pelanggan_status_khusus")
                                         .child(cabangId)
                                         .child(pelangganId)
@@ -12716,7 +12681,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                         onSuccess?.invoke()
                     }
                     .addOnFailureListener { e ->
-                        Log.e("Pencairan", "❌ Gagal mencairkan simpanan: ${e.message}")
+                        Log.e("Pencairan", "❌ Gagal menghapus nasabah: ${e.message}")
                         onFailure?.invoke(e)
                     }
 
@@ -15394,20 +15359,9 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     ?: Firebase.auth.currentUser?.email ?: "Koordinator"
                 val dateFormat = SimpleDateFormat("dd MMM yyyy", Locale("in", "ID"))
                 val tanggalSekarang = dateFormat.format(Date())
-                // 1. Update pelanggan (mark sebagai Dicairkan + Lunas)
-                val pelangganUpdates = mapOf(
-                    "statusPencairanSimpanan" to "Dicairkan",
-                    "tanggalPencairanSimpanan" to tanggalSekarang,
-                    "dicairkanOleh" to koordinatorName,
-                    "status" to "Lunas",
-                    "lastUpdated" to SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date()),
-                    "statusKhusus" to "",
-                    "catatanStatusKhusus" to "",
-                    "tanggalStatusKhusus" to "",
-                    "diberiTandaOleh" to ""
-                )
+                // 1. ✅ Nasabah lunas total → hapus dari database
                 database.child("pelanggan").child(item.adminUid).child(item.pelangganId)
-                    .updateChildren(pelangganUpdates).await()
+                    .removeValue().await()
                 // 2. Update status request menjadi DISETUJUI
                 database.child("pengajuan_pencairan_simpanan")
                     .child(item.cabangId)
@@ -15425,19 +15379,10 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                 // 4. Update local state
                 _pendingCairanSimpananKoordinator.value = _pendingCairanSimpananKoordinator.value
                     .filter { it.pelangganId != item.pelangganId }
-                // 5. Update local daftarPelanggan cache jika ada
+                // 5. Hapus dari local daftarPelanggan cache
                 val index = daftarPelanggan.indexOfFirst { it.id == item.pelangganId }
                 if (index != -1) {
-                    daftarPelanggan[index] = daftarPelanggan[index].copy(
-                        statusPencairanSimpanan = "Dicairkan",
-                        tanggalPencairanSimpanan = tanggalSekarang,
-                        dicairkanOleh = koordinatorName,
-                        status = "Lunas",
-                        statusKhusus = "",
-                        catatanStatusKhusus = "",
-                        tanggalStatusKhusus = "",
-                        diberiTandaOleh = ""
-                    )
+                    daftarPelanggan.removeAt(index)
                 }
                 Log.d("PencairanSimpanan", "✅ Disetujui koordinator: ${item.pelangganNama}")
                 onSuccess?.invoke()
