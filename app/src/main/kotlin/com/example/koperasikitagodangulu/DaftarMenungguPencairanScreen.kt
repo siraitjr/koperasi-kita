@@ -770,40 +770,38 @@ private fun ModernPencairanCard(
                     }
                 }
 
-                // ✅ BARU: Tombol Lanjut Pinjaman (hanya tampil jika sudah lunas cicilan)
-                if (isLunasCicilan) {
-                    OutlinedButton(
-                        onClick = onLanjutPinjamanClick,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(48.dp),
-                        shape = RoundedCornerShape(12.dp),
-                        border = ButtonDefaults.outlinedButtonBorder.copy(
-                            brush = Brush.linearGradient(PencairanColors.infoGradient)
-                        ),
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            contentColor = PencairanColors.infoGradient.first()
-                        )
+                // Tombol Lanjut Pinjaman (selalu tampil untuk semua nasabah di screen ini)
+                OutlinedButton(
+                    onClick = onLanjutPinjamanClick,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    border = ButtonDefaults.outlinedButtonBorder.copy(
+                        brush = Brush.linearGradient(PencairanColors.infoGradient)
+                    ),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = PencairanColors.infoGradient.first()
+                    )
+                ) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                Icons.Rounded.AddCard,
-                                contentDescription = null,
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Text(
-                                text = "Lanjut Pinjaman",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 15.sp
-                            )
-                        }
+                        Icon(
+                            Icons.Rounded.AddCard,
+                            contentDescription = null,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Text(
+                            text = "Lanjut Pinjaman",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp
+                        )
                     }
-
-                    Spacer(modifier = Modifier.height(8.dp))
                 }
+
+                Spacer(modifier = Modifier.height(8.dp))
 
                 // Tombol Cairkan Setengah (butuh persetujuan koordinator)
                 OutlinedButton(
