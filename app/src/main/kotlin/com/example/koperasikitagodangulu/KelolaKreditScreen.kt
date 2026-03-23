@@ -281,7 +281,10 @@ fun KelolaKreditScreen(
     } ?: 0
     val totalPelunasanLama = pelanggan?.totalPelunasan ?: 0
     val sisaUtangLama = totalPelunasanLama - totalBayar
-    val sudahLunas = sisaUtangLama <= 0
+    // Nasabah dari Sisa Tabungan (MENUNGGU_PENCAIRAN) dianggap lunas - tabungan sudah menutup sisa hutang
+    val isFromSisaTabungan = pelanggan?.statusKhusus == "MENUNGGU_PENCAIRAN" ||
+            pelanggan?.statusPencairanSimpanan == "Menunggu Pencairan"
+    val sudahLunas = sisaUtangLama <= 0 || isFromSisaTabungan
     val namaPanggilanDisplay = pelanggan?.namaPanggilan ?: ""
 
     LaunchedEffect(totalBayar, totalPelunasanLama, sisaUtangLama, sudahLunas) {
@@ -717,15 +720,26 @@ fun KelolaKreditScreen(
                                             0
                                         }
 
-                                        if (sisaUtangLama > 0 || tabunganLama > 0) {
-                                            if (sisaUtangLama > 0) {
-                                                ModernInfoRowLoanDetail("Sisa Utang Lama (otomatis terbayar)", "- Rp ${formatRupiah(sisaUtangLama)}", LoanManageColors.warning, FontWeight.Medium)
-                                            }
+                                        if (isFromMenungguPencairan) {
+                                            // Sisa Tabungan: sisa hutang sudah lunas via tabungan.
+                                            // Hanya potong tabungan lama dari uang diserahkan, TIDAK potong sisa hutang lagi.
                                             if (tabunganLama > 0) {
-                                                ModernInfoRowLoanDetail("Tabungan Sebelumnya (tetap tersimpan)", "- Rp ${formatRupiah(tabunganLama)}", LoanManageColors.info, FontWeight.Medium)
+                                                ModernInfoRowLoanDetail("Tabungan Sebelumnya (jadi tabungan baru)", "- Rp ${formatRupiah(tabunganLama)}", LoanManageColors.info, FontWeight.Medium)
+                                                val uangDiserahkan = calculation.totalDiterima - tabunganLama
+                                                ModernInfoRowLoanDetail("Uang Diserahkan ke Nasabah", "Rp ${formatRupiah(uangDiserahkan)}", LoanManageColors.success, FontWeight.Bold)
                                             }
-                                            val uangDiserahkan = calculation.totalDiterima - sisaUtangLama - tabunganLama
-                                            ModernInfoRowLoanDetail("Uang Diserahkan ke Nasabah", "Rp ${formatRupiah(uangDiserahkan)}", LoanManageColors.success, FontWeight.Bold)
+                                        } else {
+                                            // Lanjut pinjaman biasa: potong sisa hutang lama jika ada
+                                            if (sisaUtangLama > 0 || tabunganLama > 0) {
+                                                if (sisaUtangLama > 0) {
+                                                    ModernInfoRowLoanDetail("Sisa Utang Lama (otomatis terbayar)", "- Rp ${formatRupiah(sisaUtangLama)}", LoanManageColors.warning, FontWeight.Medium)
+                                                }
+                                                if (tabunganLama > 0) {
+                                                    ModernInfoRowLoanDetail("Tabungan Sebelumnya (tetap tersimpan)", "- Rp ${formatRupiah(tabunganLama)}", LoanManageColors.info, FontWeight.Medium)
+                                                }
+                                                val uangDiserahkan = calculation.totalDiterima - sisaUtangLama - tabunganLama
+                                                ModernInfoRowLoanDetail("Uang Diserahkan ke Nasabah", "Rp ${formatRupiah(uangDiserahkan)}", LoanManageColors.success, FontWeight.Bold)
+                                            }
                                         }
 
                                         HorizontalDivider(
