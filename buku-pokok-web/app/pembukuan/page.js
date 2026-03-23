@@ -866,11 +866,12 @@ function getKategoriNasabah(nasabah) {
   const displayDates = isTabelMode ? tabelDates : visibleDates;
   const todayStr = dates[0] || '';
 
-  // Stats
+  // Stats — hitung dari data.nasabah langsung agar semua kategori (PB/L1/CM/MB/ML) termasuk
+  const allNasabahList = data?.nasabah || [];
   const stats = {
-    totalNasabah: data?.totalNasabah || 0,
-    totalSisaUtang: data?.totalSisaUtang || 0,
-    totalPinjaman: data?.totalPinjaman || 0,
+    totalNasabah: allNasabahList.length,
+    totalSisaUtang: allNasabahList.reduce((s, n) => s + (n.sisaUtang || 0), 0),
+    totalPinjaman: allNasabahList.reduce((s, n) => s + (n.besarPinjaman || 0), 0),
     bayarHariIni: data?.pembayaranHariIni || 0,
   };
 
