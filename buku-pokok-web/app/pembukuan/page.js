@@ -1341,7 +1341,10 @@ function getKategoriNasabah(nasabah) {
                 {filtered.length > 0 && (
                   <tfoot>
                     <tr>
-                      <td colSpan={8} style={{ fontWeight: 700 }}>TOTAL</td>
+                      <td colSpan={7} style={{ fontWeight: 700 }}>TOTAL</td>
+                      <td style={{ textAlign: 'right', fontWeight: 700, fontFamily: "'DM Mono', monospace" }}>
+                        {formatRp(filtered.reduce((s, n) => s + (n.besarPinjaman || 0), 0))}
+                      </td>
                       {isTabelMode && (
                         <td style={{ textAlign: 'right', fontWeight: 700, fontFamily: "'DM Mono', monospace", color: '#2d7dd2' }}>
                           {formatRp(filtered.reduce((s, n) => s + (n.simpanan || 0), 0))}
