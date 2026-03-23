@@ -3414,7 +3414,17 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                 }
                 val tanggalPengajuanBaru = SimpleDateFormat("dd MMM yyyy", Locale("in", "ID")).format(Date())
                 val cicilanBaru = generateCicilanKonsisten(tanggalPengajuanBaru, tenorBaru, totalPelunasanBaru)
-                val totalDiterimaBaru = calculation.totalDiterima
+
+                // ✅ Potong tabungan lama dari totalDiterima untuk nasabah dari Sisa Tabungan
+                // Tabungan lama tetap tersimpan (akumulasi), tapi dipotong dari uang yang diserahkan
+                val tabunganLamaDipotong = if (isFromMenungguPencairan && existingPelanggan.statusPencairanSimpanan != "Dicairkan") {
+                    totalSimpananLama
+                } else {
+                    0
+                }
+                val totalDiterimaBaru = calculation.totalDiterima - tabunganLamaDipotong
+
+                Log.d("KelolaKredit", "💰 PERHITUNGAN TABUNGAN: tabunganLama=$totalSimpananLama, dipotong=$tabunganLamaDipotong, totalDiterima=${calculation.totalDiterima}, totalDiterimaBaru=$totalDiterimaBaru")
 
                 // ========== BUILD UPDATED PELANGGAN ==========
                 val updatedPelanggan = existingPelanggan.copy(
@@ -6559,8 +6569,17 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                 }
 
                 val totalPelunasanLama = existingPelanggan.totalPelunasan
-                val sisaUtangLama = max(totalPelunasanLama - totalBayarSebelumnya, 0)
-                val sudahLunas = sisaUtangLama <= 0
+
+                // ✅ Cek apakah nasabah dari "Menunggu Pencairan" (sudah lunas cicilan)
+                val isFromMenungguPencairan = existingPelanggan.statusKhusus == "MENUNGGU_PENCAIRAN" ||
+                        existingPelanggan.statusPencairanSimpanan == "Menunggu Pencairan"
+
+                val sisaUtangLama = if (isFromMenungguPencairan) {
+                    0
+                } else {
+                    max(totalPelunasanLama - totalBayarSebelumnya, 0)
+                }
+                val sudahLunas = sisaUtangLama <= 0 || isFromMenungguPencairan
 
                 // ✅ PERBAIKAN: Simpan pinjamanKe yang akan digunakan
                 // pinjamanKe saat ini + 1 untuk pinjaman baru
@@ -6572,6 +6591,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                 Log.d("KelolaKredit", "   Total Pelunasan Lama: $totalPelunasanLama")
                 Log.d("KelolaKredit", "   Total Bayar: $totalBayarSebelumnya")
                 Log.d("KelolaKredit", "   Sisa Utang Lama: $sisaUtangLama")
+                Log.d("KelolaKredit", "   IsFromMenungguPencairan: $isFromMenungguPencairan")
 
                 val calculation = calculatePinjamanValues(pinjamanBaru)
                 val totalPelunasanBaru = calculation.totalPelunasan
@@ -6583,7 +6603,14 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                 }
                 val tanggalPengajuanBaru = SimpleDateFormat("dd MMM yyyy", Locale("in", "ID")).format(Date())
                 val cicilanBaru = generateCicilanKonsisten(tanggalPengajuanBaru, tenorBaru, totalPelunasanBaru)
-                val totalDiterimaBaru = calculation.totalDiterima
+
+                // ✅ Potong tabungan lama dari totalDiterima untuk nasabah dari Sisa Tabungan
+                val tabunganLamaDipotong = if (isFromMenungguPencairan && existingPelanggan.statusPencairanSimpanan != "Dicairkan") {
+                    totalSimpananLama
+                } else {
+                    0
+                }
+                val totalDiterimaBaru = calculation.totalDiterima - tabunganLamaDipotong
 
                 val updatedPelanggan = existingPelanggan.copy(
                     namaKtp = namaKtp,

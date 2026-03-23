@@ -708,9 +708,23 @@ fun KelolaKreditScreen(
 
                                         ModernInfoRowLoanDetail("Total Diterima", "Rp ${formatRupiah(calculation.totalDiterima)}", subtitleColor)
 
-                                        if (sisaUtangLama > 0) {
-                                            ModernInfoRowLoanDetail("Sisa Utang Lama (otomatis terbayar)", "- Rp ${formatRupiah(sisaUtangLama)}", LoanManageColors.warning, FontWeight.Medium)
-                                            val uangDiserahkan = calculation.totalDiterima - sisaUtangLama
+                                        // Deteksi nasabah dari Sisa Tabungan (MENUNGGU_PENCAIRAN)
+                                        val isFromMenungguPencairan = pelanggan.statusKhusus == "MENUNGGU_PENCAIRAN" ||
+                                                pelanggan.statusPencairanSimpanan == "Menunggu Pencairan"
+                                        val tabunganLama = if (isFromMenungguPencairan && pelanggan.statusPencairanSimpanan != "Dicairkan") {
+                                            totalSimpananAkumulasi
+                                        } else {
+                                            0
+                                        }
+
+                                        if (sisaUtangLama > 0 || tabunganLama > 0) {
+                                            if (sisaUtangLama > 0) {
+                                                ModernInfoRowLoanDetail("Sisa Utang Lama (otomatis terbayar)", "- Rp ${formatRupiah(sisaUtangLama)}", LoanManageColors.warning, FontWeight.Medium)
+                                            }
+                                            if (tabunganLama > 0) {
+                                                ModernInfoRowLoanDetail("Tabungan Sebelumnya (tetap tersimpan)", "- Rp ${formatRupiah(tabunganLama)}", LoanManageColors.info, FontWeight.Medium)
+                                            }
+                                            val uangDiserahkan = calculation.totalDiterima - sisaUtangLama - tabunganLama
                                             ModernInfoRowLoanDetail("Uang Diserahkan ke Nasabah", "Rp ${formatRupiah(uangDiserahkan)}", LoanManageColors.success, FontWeight.Bold)
                                         }
 
@@ -1327,6 +1341,21 @@ fun KelolaKreditScreen(
                         totalSimpananAkumulasiKonfirmasi + (calculation?.simpanan ?: 0)
                     }
                     Text("Total Simpanan: Rp ${formatRupiah(totalSimpananKonfirmasi)}")
+
+                    // Tampilkan potongan tabungan lama untuk nasabah dari Sisa Tabungan
+                    val isFromMenungguPencairanKonfirmasi = pelanggan?.statusKhusus == "MENUNGGU_PENCAIRAN" ||
+                            pelanggan?.statusPencairanSimpanan == "Menunggu Pencairan"
+                    val tabunganLamaKonfirmasi = if (isFromMenungguPencairanKonfirmasi && pelanggan?.statusPencairanSimpanan != "Dicairkan") {
+                        totalSimpananAkumulasiKonfirmasi
+                    } else {
+                        0
+                    }
+                    if (tabunganLamaKonfirmasi > 0) {
+                        Text("Tabungan Sebelumnya (tetap tersimpan): - Rp ${formatRupiah(tabunganLamaKonfirmasi)}", color = LoanManageColors.info)
+                        val uangDiserahkanKonfirmasi = (calculation?.totalDiterima ?: 0) - tabunganLamaKonfirmasi
+                        Text("Uang Diserahkan ke Nasabah: Rp ${formatRupiah(uangDiserahkanKonfirmasi)}", fontWeight = FontWeight.Bold, color = LoanManageColors.success)
+                    }
+
                     Text("Tenor: $tenorBaruInt hari")
                     Text("Total Pelunasan Baru: Rp ${formatRupiah(calculation?.totalPelunasan ?: 0)}", fontWeight = FontWeight.Bold, color = LoanManageColors.primary)
 
