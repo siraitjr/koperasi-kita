@@ -698,7 +698,7 @@ function getKategoriNasabah(nasabah) {
   }) || [];
 
   const dates = data?.tanggalList || [];
-  const visibleDates = dates.slice(0, visibleDateCount);
+  const visibleDates = dates.slice(0, visibleDateCount).reverse(); // Urut dari tanggal awal ke akhir
   const admins = cabang.admins || [];
 
   // ==================== TABEL MODE (PB/L1/CM/MB/ML) ====================
