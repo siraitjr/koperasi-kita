@@ -803,78 +803,82 @@ private fun ModernPencairanCard(
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                // Tombol Cairkan Setengah (butuh persetujuan koordinator)
-                OutlinedButton(
-                    onClick = onCairkanSetengahClick,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(48.dp),
-                    shape = RoundedCornerShape(12.dp),
-                    border = ButtonDefaults.outlinedButtonBorder.copy(
-                        brush = Brush.linearGradient(
-                            listOf(PencairanColors.warning, PencairanColors.warning)
-                        )
-                    ),
-                    colors = ButtonDefaults.outlinedButtonColors(
-                        contentColor = PencairanColors.warning
-                    )
+                // Tombol Cairkan Setengah & Cairkan Semua berdampingan
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            Icons.Rounded.CallSplit,
-                            contentDescription = null,
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Text(
-                            text = "Cairkan Setengah",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 15.sp
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                // Tombol Cairkan Semua (langsung, tanpa persetujuan)
-                Button(
-                    onClick = onCairkanClick,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(48.dp),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Color.Transparent
-                    ),
-                    contentPadding = PaddingValues(0.dp)
-                ) {
-                    Box(
+                    // Cairkan Setengah (butuh persetujuan koordinator)
+                    OutlinedButton(
+                        onClick = onCairkanSetengahClick,
                         modifier = Modifier
-                            .fillMaxSize()
-                            .background(
-                                Brush.linearGradient(PencairanColors.successGradient),
-                                RoundedCornerShape(12.dp)
-                            ),
-                        contentAlignment = Alignment.Center
+                            .weight(1f)
+                            .height(48.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        border = ButtonDefaults.outlinedButtonBorder.copy(
+                            brush = Brush.linearGradient(
+                                listOf(PencairanColors.warning, PencairanColors.warning)
+                            )
+                        ),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = PencairanColors.warning
+                        )
                     ) {
                         Row(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Icon(
-                                Icons.Rounded.AccountBalanceWallet,
+                                Icons.Rounded.CallSplit,
                                 contentDescription = null,
-                                tint = Color.White,
-                                modifier = Modifier.size(20.dp)
+                                modifier = Modifier.size(18.dp)
                             )
                             Text(
-                                text = "Cairkan Semua",
-                                color = Color.White,
+                                text = "Setengah",
                                 fontWeight = FontWeight.Bold,
-                                fontSize = 15.sp
+                                fontSize = 13.sp
                             )
+                        }
+                    }
+
+                    // Cairkan Semua (langsung, tanpa persetujuan)
+                    Button(
+                        onClick = onCairkanClick,
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(48.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color.Transparent
+                        ),
+                        contentPadding = PaddingValues(0.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(
+                                    Brush.linearGradient(PencairanColors.successGradient),
+                                    RoundedCornerShape(12.dp)
+                                ),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    Icons.Rounded.AccountBalanceWallet,
+                                    contentDescription = null,
+                                    tint = Color.White,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Text(
+                                    text = "Cairkan Semua",
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp
+                                )
+                            }
                         }
                     }
                 }
