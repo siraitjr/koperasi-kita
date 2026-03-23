@@ -1281,6 +1281,10 @@ function getKategoriNasabah(nasabah) {
                       const rowTotal = isTabelMode
                         ? displayDates.reduce((s, d) => s + (n.pembayaran?.[d]?.total || 0), 0)
                         : 0;
+                      // Nama bewarna merah untuk nasabah Sisa Tabungan atau Nasabah Lunas
+                      const isSisaTabungan = n.statusKhusus === 'MENUNGGU_PENCAIRAN';
+                      const isLunasCicilan = n.sisaUtang <= 0 && n.totalPelunasan > 0;
+                      const namaColor = (isSisaTabungan || isLunasCicilan) ? '#e53e3e' : undefined;
                       return (
                         <tr key={n.id} onClick={() => setShowDetail(n)}>
                           <td style={{ textAlign: 'center', color: '#8a9ba8', fontSize: 12 }}>{idx + 1}</td>
@@ -1291,11 +1295,11 @@ function getKategoriNasabah(nasabah) {
                           <td className="sticky-col" style={{ left: 0, textAlign: 'center' }}>
                             <span className="pinjaman-ke-badge">{n.pinjamanKe}</span>
                           </td>
-                          <td className="sticky-col" style={{ left: stickyOffsets.nama, fontWeight: 600 }}>
+                          <td className="sticky-col" style={{ left: stickyOffsets.nama, fontWeight: 600, color: namaColor }}>
                             {n.namaKtp}
                             {!selectedAdmin && <div className="admin-tag">{n.adminName?.replace('Resort ', '')}</div>}
                           </td>
-                          <td className="sticky-col" style={{ left: stickyOffsets.panggilan, color: '#5a6b7c' }}>{n.namaPanggilan}</td>
+                          <td className="sticky-col" style={{ left: stickyOffsets.panggilan, color: namaColor || '#5a6b7c' }}>{n.namaPanggilan}</td>
                           <td className="nik-cell">{n.nik}</td>
                           <td style={{ textAlign: 'right', fontFamily: "'DM Mono', monospace" }}>{formatRp(n.besarPinjaman)}</td>
                           {isTabelMode && (
