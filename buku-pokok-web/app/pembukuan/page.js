@@ -681,7 +681,7 @@ function getKategoriNasabah(nasabah) {
   }, [cabang.id, selectedAdmin?.uid, statusFilter]);
 
   // ==================== FILTER ====================
-  const filtered = data?.nasabah?.filter((n) => {
+  const filtered = (data?.nasabah?.filter((n) => {
     // Filter tabel (PB/L1/CM/MB/ML) — skip for stortingGlobal
     if (tabelFilter !== 'semua' && tabelFilter !== 'stortingGlobal') {
       if (getKategoriNasabah(n) !== tabelFilter) return false;
@@ -695,10 +695,27 @@ function getKategoriNasabah(nasabah) {
       n.nik.includes(q) ||
       n.nomorAnggota.includes(q)
     );
-  }) || [];
+  }) || []).sort((a, b) => {
+    // Urutkan berdasarkan tanggal pencairan dari awal ke akhir
+    const BULAN_MAP = { Jan: 0, Feb: 1, Mar: 2, Apr: 3, Mei: 4, Jun: 5, Jul: 6, Agu: 7, Sep: 8, Okt: 9, Nov: 10, Des: 11 };
+    const parseDate = (s) => {
+      if (!s) return null;
+      const p = s.split(' ');
+      if (p.length !== 3) return null;
+      return new Date(parseInt(p[2]), BULAN_MAP[p[1]] ?? 0, parseInt(p[0]));
+    };
+    const tglA = a.tanggalPencairan || a.tanggalPengajuan || a.tanggalDaftar || '';
+    const tglB = b.tanggalPencairan || b.tanggalPengajuan || b.tanggalDaftar || '';
+    const dateA = parseDate(tglA);
+    const dateB = parseDate(tglB);
+    if (!dateA && !dateB) return 0;
+    if (!dateA) return 1;
+    if (!dateB) return -1;
+    return dateA - dateB;
+  });
 
   const dates = data?.tanggalList || [];
-  const visibleDates = dates.slice(0, visibleDateCount).reverse(); // Urut dari tanggal awal ke akhir
+  const visibleDates = dates.slice(0, visibleDateCount);
   const admins = cabang.admins || [];
 
   // ==================== TABEL MODE (PB/L1/CM/MB/ML) ====================
