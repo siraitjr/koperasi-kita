@@ -15280,6 +15280,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
     // =========================================================================
     fun ajukanPencairanSetengahSimpanan(
         pelangganId: String,
+        jumlahDicairkan: Int,
         onSuccess: (() -> Unit)? = null,
         onFailure: ((Exception) -> Unit)? = null
     ) {
@@ -15307,7 +15308,6 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     ?: Firebase.auth.currentUser?.email ?: "Admin"
                 val dateFormat = SimpleDateFormat("dd MMM yyyy", Locale("in", "ID"))
                 val requestDate = dateFormat.format(Date())
-                val jumlahDicairkan = pelanggan.simpanan / 2
                 val request = mapOf(
                     "pelangganId" to pelangganId,
                     "adminUid" to adminUid,

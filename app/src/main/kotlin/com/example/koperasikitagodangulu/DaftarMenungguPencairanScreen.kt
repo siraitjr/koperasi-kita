@@ -23,6 +23,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -101,6 +102,7 @@ fun DaftarMenungguPencairanScreen(
     var showSetengahDialog by remember { mutableStateOf(false) }
     var selectedPelangganSetengah by remember { mutableStateOf<Pelanggan?>(null) }
     var isSubmittingSetengah by remember { mutableStateOf(false) }
+    var nominalCairanInput by remember { mutableStateOf("") }
 
     Scaffold(
         containerColor = bgColor,
@@ -215,15 +217,17 @@ fun DaftarMenungguPencairanScreen(
             )
         }
 
-        // Dialog Konfirmasi Cairkan Setengah (butuh persetujuan koordinator)
+        // Dialog Konfirmasi Cairkan Sebagian Simpanan (butuh persetujuan koordinator)
         if (showSetengahDialog && selectedPelangganSetengah != null) {
             val pel = selectedPelangganSetengah!!
-            val jumlahSetengah = pel.simpanan / 2
+            val nominalInt = nominalCairanInput.toIntOrNull() ?: 0
+            val isNominalValid = nominalInt in 1..pel.simpanan
             AlertDialog(
                 onDismissRequest = {
                     if (!isSubmittingSetengah) {
                         showSetengahDialog = false
                         selectedPelangganSetengah = null
+                        nominalCairanInput = ""
                     }
                 },
                 icon = {
@@ -236,7 +240,7 @@ fun DaftarMenungguPencairanScreen(
                 },
                 title = {
                     Text(
-                        text = "Cairkan Setengah Simpanan",
+                        text = "Cairkan Sebagian Simpanan",
                         fontWeight = FontWeight.Bold,
                         textAlign = TextAlign.Center
                     )
@@ -252,21 +256,56 @@ fun DaftarMenungguPencairanScreen(
                             fontSize = 15.sp,
                             textAlign = TextAlign.Center
                         )
-                        Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "Jumlah yang akan dicairkan:",
-                            fontSize = 13.sp,
+                            text = "Total simpanan: Rp ${formatRupiah(pel.simpanan)}",
+                            fontSize = 12.sp,
                             color = Color(0xFF64748B),
                             textAlign = TextAlign.Center
                         )
-                        Text(
-                            text = "Rp ${formatRupiah(jumlahSetengah)} (50%)",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 16.sp,
-                            color = PencairanColors.warning,
-                            textAlign = TextAlign.Center
-                        )
                         Spacer(modifier = Modifier.height(4.dp))
+                        OutlinedTextField(
+                            value = nominalCairanInput,
+                            onValueChange = { input ->
+                                // Hanya angka, max sepanjang simpanan
+                                val filtered = input.filter { it.isDigit() }
+                                nominalCairanInput = filtered
+                            },
+                            label = { Text("Jumlah yang dicairkan (Rp)") },
+                            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                                keyboardType = KeyboardType.Number
+                            ),
+                            singleLine = true,
+                            isError = nominalCairanInput.isNotEmpty() && !isNominalValid,
+                            supportingText = {
+                                when {
+                                    nominalCairanInput.isEmpty() -> Text(
+                                        "Kosongkan untuk default 50% (Rp ${formatRupiah(pel.simpanan / 2)})",
+                                        fontSize = 11.sp,
+                                        color = Color(0xFF64748B)
+                                    )
+                                    nominalInt > pel.simpanan -> Text(
+                                        "Melebihi total simpanan",
+                                        color = MaterialTheme.colorScheme.error,
+                                        fontSize = 11.sp
+                                    )
+                                    nominalInt <= 0 -> Text(
+                                        "Nominal harus lebih dari 0",
+                                        color = MaterialTheme.colorScheme.error,
+                                        fontSize = 11.sp
+                                    )
+                                    else -> {
+                                        val persen = (nominalInt * 100.0 / pel.simpanan).toInt()
+                                        Text("$persen% dari total simpanan", fontSize = 11.sp, color = PencairanColors.warning)
+                                    }
+                                }
+                            },
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = PencairanColors.warning,
+                                focusedLabelColor = PencairanColors.warning
+                            ),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        )
                         Surface(
                             color = PencairanColors.warning.copy(alpha = 0.08f),
                             shape = RoundedCornerShape(10.dp)
@@ -284,14 +323,17 @@ fun DaftarMenungguPencairanScreen(
                 confirmButton = {
                     Button(
                         onClick = {
+                            val jumlahFinal = if (nominalCairanInput.isEmpty()) pel.simpanan / 2 else nominalInt
                             isSubmittingSetengah = true
                             viewModel.ajukanPencairanSetengahSimpanan(
                                 pelangganId = pel.id,
+                                jumlahDicairkan = jumlahFinal,
                                 onSuccess = {
                                     isSubmittingSetengah = false
                                     showSetengahDialog = false
                                     selectedPelangganSetengah = null
-                                    Toast.makeText(context, "Pengajuan cairkan setengah berhasil dikirim ke koordinator", Toast.LENGTH_LONG).show()
+                                    nominalCairanInput = ""
+                                    Toast.makeText(context, "Pengajuan berhasil dikirim ke koordinator", Toast.LENGTH_LONG).show()
                                 },
                                 onFailure = { e ->
                                     isSubmittingSetengah = false
@@ -299,7 +341,7 @@ fun DaftarMenungguPencairanScreen(
                                 }
                             )
                         },
-                        enabled = !isSubmittingSetengah,
+                        enabled = !isSubmittingSetengah && (nominalCairanInput.isEmpty() || isNominalValid),
                         colors = ButtonDefaults.buttonColors(containerColor = PencairanColors.warning),
                         shape = RoundedCornerShape(10.dp)
                     ) {
@@ -319,6 +361,7 @@ fun DaftarMenungguPencairanScreen(
                         onClick = {
                             showSetengahDialog = false
                             selectedPelangganSetengah = null
+                            nominalCairanInput = ""
                         },
                         enabled = !isSubmittingSetengah
                     ) {
