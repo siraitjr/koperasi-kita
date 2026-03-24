@@ -1,8 +1,13 @@
 package com.example.koperasikitagodangulu
 
+import android.content.ActivityNotFoundException
+import android.content.Intent
+import android.net.Uri
+import android.util.Log
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -14,25 +19,28 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavHostController
-import com.example.koperasikitagodangulu.utils.formatRupiah
-import android.util.Log
-import com.example.koperasikitagodangulu.models.AdminSummary
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.foundation.border
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.platform.LocalContext
+import com.example.koperasikitagodangulu.models.AdminSummary
+import com.example.koperasikitagodangulu.utils.formatRupiah
 import com.google.accompanist.systemuicontroller.rememberSystemUiController
+import com.google.firebase.auth.FirebaseAuth
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -45,11 +53,11 @@ fun PimpinanReportsScreen(
 
     var isVisible by remember { mutableStateOf(false) }
 
-    // =========================================================================
-    // ✅ BARU: Ambil state dark mode dari viewModel
-    // =========================================================================
     val isDark by viewModel.isDarkMode
-    // ✅ Set status bar & navigation bar sesuai tema dashboard
+    val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
+
+    // Set status bar & navigation bar sesuai tema
     val systemUiController = rememberSystemUiController()
     val bgColor = PimpinanColors.getBackground(isDark)
     SideEffect {
@@ -89,20 +97,83 @@ fun PimpinanReportsScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            // SECTION 0: HERO SUMMARY
+            item {
+                AnimatedVisibility(
+                    visible = isVisible,
+                    enter = fadeIn(tween(350)) + slideInVertically(
+                        initialOffsetY = { -40 },
+                        animationSpec = tween(350)
+                    )
+                ) {
+                    PimpinanHeroSummaryCard(
+                        totalAktif = adminSummary.sumOf { it.nasabahAktif },
+                        totalPiutang = adminSummary.sumOf { it.totalPiutang },
+                        jumlahPdl = adminSummary.size,
+                        isDark = isDark
+                    )
+                }
+            }
+
+            // SECTION AKSES: PEMBUKUAN
+            item {
+                AnimatedVisibility(
+                    visible = isVisible,
+                    enter = fadeIn(tween(400, delayMillis = 100)) + slideInVertically(
+                        initialOffsetY = { 30 },
+                        animationSpec = tween(400, delayMillis = 100)
+                    )
+                ) {
+                    Column {
+                        ModernReportSectionHeader(
+                            title = "Akses Pembukuan",
+                            icon = Icons.Rounded.MenuBook,
+                            isDark = isDark
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        PembukuanCardClickable(
+                            onClick = {
+                                coroutineScope.launch {
+                                    val baseUrl = "https://www.koperasi-kita.com/pembukuan"
+                                    val currentUser = FirebaseAuth.getInstance().currentUser
+                                    val url = if (currentUser != null) {
+                                        try {
+                                            val idToken = currentUser.getIdToken(false).await().token
+                                            if (idToken != null) "$baseUrl?idToken=${Uri.encode(idToken)}"
+                                            else baseUrl
+                                        } catch (_: Exception) { baseUrl }
+                                    } else { baseUrl }
+                                    withContext(Dispatchers.Main) {
+                                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+                                            setPackage("com.android.chrome")
+                                        }
+                                        try {
+                                            context.startActivity(intent)
+                                        } catch (_: ActivityNotFoundException) {
+                                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                                        }
+                                    }
+                                }
+                            }
+                        )
+                    }
+                }
+            }
+
             // SECTION 1: RINGKASAN CABANG
             item {
                 AnimatedVisibility(
                     visible = isVisible,
-                    enter = fadeIn(tween(400)) + slideInVertically(
+                    enter = fadeIn(tween(400, delayMillis = 150)) + slideInVertically(
                         initialOffsetY = { -30 },
-                        animationSpec = tween(400)
+                        animationSpec = tween(400, delayMillis = 150)
                     )
                 ) {
                     Column {
                         ModernReportSectionHeader(
                             title = "Ringkasan Cabang",
                             icon = Icons.Rounded.Business,
-                            isDark = isDark // ✅ UBAH: Tambah isDark
+                            isDark = isDark
                         )
 
                         Spacer(modifier = Modifier.height(12.dp))
@@ -182,9 +253,9 @@ fun PimpinanReportsScreen(
             item {
                 AnimatedVisibility(
                     visible = isVisible,
-                    enter = fadeIn(tween(400, delayMillis = 200)) + slideInVertically(
+                    enter = fadeIn(tween(400, delayMillis = 300)) + slideInVertically(
                         initialOffsetY = { 30 },
-                        animationSpec = tween(400, delayMillis = 200)
+                        animationSpec = tween(400, delayMillis = 300)
                     )
                 ) {
                     Column {
@@ -842,6 +913,244 @@ private fun DaftarSemuaNasabahCardClickable(
                         contentDescription = null,
                         tint = Color.White,
                         modifier = Modifier.size(28.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+// =========================================================================
+// KOMPONEN: Pimpinan Hero Summary Card
+// =========================================================================
+@Composable
+private fun PimpinanHeroSummaryCard(
+    totalAktif: Int,
+    totalPiutang: Double,
+    jumlahPdl: Int,
+    isDark: Boolean = false
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .shadow(
+                elevation = 12.dp,
+                shape = RoundedCornerShape(24.dp),
+                ambientColor = PimpinanColors.primary.copy(alpha = 0.25f)
+            ),
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.Transparent)
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(
+                    Brush.linearGradient(
+                        listOf(Color(0xFF1E1B4B), Color(0xFF312E81), Color(0xFF4338CA))
+                    )
+                )
+        ) {
+            // Dekorasi lingkaran di sudut kanan atas
+            Box(
+                modifier = Modifier
+                    .size(140.dp)
+                    .offset(x = 260.dp, y = (-40).dp)
+                    .background(Color.White.copy(alpha = 0.05f), CircleShape)
+            )
+            Box(
+                modifier = Modifier
+                    .size(90.dp)
+                    .offset(x = 300.dp, y = 20.dp)
+                    .background(Color.White.copy(alpha = 0.05f), CircleShape)
+            )
+
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 18.dp)
+            ) {
+                Text(
+                    text = "Ringkasan Cabang",
+                    fontSize = 12.sp,
+                    color = Color.White.copy(alpha = 0.65f),
+                    fontWeight = FontWeight.Medium
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = formatRupiah(totalPiutang.toInt()),
+                    fontSize = 26.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+                Text(
+                    text = "Total Saldo Berjalan",
+                    fontSize = 11.sp,
+                    color = Color.White.copy(alpha = 0.55f)
+                )
+
+                Spacer(modifier = Modifier.height(18.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    HeroStatItem(
+                        label = "Nasabah Aktif",
+                        value = totalAktif.toString(),
+                        icon = Icons.Rounded.People
+                    )
+                    // Divider vertikal
+                    Box(
+                        modifier = Modifier
+                            .width(1.dp)
+                            .height(40.dp)
+                            .background(Color.White.copy(alpha = 0.2f))
+                    )
+                    HeroStatItem(
+                        label = "Jumlah PDL",
+                        value = jumlahPdl.toString(),
+                        icon = Icons.Rounded.Groups
+                    )
+                    // Divider vertikal
+                    Box(
+                        modifier = Modifier
+                            .width(1.dp)
+                            .height(40.dp)
+                            .background(Color.White.copy(alpha = 0.2f))
+                    )
+                    HeroStatItem(
+                        label = "Resmi",
+                        value = "Aktif",
+                        icon = Icons.Rounded.Verified
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun HeroStatItem(
+    label: String,
+    value: String,
+    icon: ImageVector
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = Color.White.copy(alpha = 0.8f),
+            modifier = Modifier.size(18.dp)
+        )
+        Text(
+            text = value,
+            fontSize = 16.sp,
+            fontWeight = FontWeight.Bold,
+            color = Color.White
+        )
+        Text(
+            text = label,
+            fontSize = 10.sp,
+            color = Color.White.copy(alpha = 0.6f)
+        )
+    }
+}
+
+// =========================================================================
+// KOMPONEN: Card Pembukuan (buka di Chrome dengan Firebase auto-login)
+// =========================================================================
+@Composable
+private fun PembukuanCardClickable(
+    onClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .shadow(
+                elevation = 10.dp,
+                shape = RoundedCornerShape(20.dp),
+                ambientColor = Color(0xFFF43F5E).copy(alpha = 0.3f)
+            )
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.Transparent)
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(
+                    Brush.linearGradient(
+                        listOf(Color(0xFFF43F5E), Color(0xFFFB7185))
+                    )
+                )
+        ) {
+            // Dekorasi lingkaran
+            Box(
+                modifier = Modifier
+                    .size(90.dp)
+                    .offset(x = (-22).dp, y = (-22).dp)
+                    .background(Color.White.copy(alpha = 0.1f), CircleShape)
+            )
+            Box(
+                modifier = Modifier
+                    .size(50.dp)
+                    .offset(x = (-5).dp, y = 30.dp)
+                    .background(Color.White.copy(alpha = 0.07f), CircleShape)
+            )
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 18.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column {
+                    Text(
+                        text = "Buku Pokok",
+                        fontSize = 13.sp,
+                        color = Color.White.copy(alpha = 0.8f)
+                    )
+                    Spacer(modifier = Modifier.height(3.dp))
+                    Text(
+                        text = "Buka Pembukuan",
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.OpenInNew,
+                            contentDescription = null,
+                            tint = Color.White.copy(alpha = 0.75f),
+                            modifier = Modifier.size(13.dp)
+                        )
+                        Text(
+                            text = "koperasi-kita.com/pembukuan",
+                            fontSize = 11.sp,
+                            color = Color.White.copy(alpha = 0.75f)
+                        )
+                    }
+                }
+
+                Box(
+                    modifier = Modifier
+                        .size(54.dp)
+                        .background(Color.White.copy(alpha = 0.2f), CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.MenuBook,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(30.dp)
                     )
                 }
             }
