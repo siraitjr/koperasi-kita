@@ -153,8 +153,8 @@ fun PimpinanReportsScreen(
                                     }
                                 )
                                 PimpinanQuickCard(
-                                    title = "Menunggu Pencairan",
-                                    subtitle = "Simpanan",
+                                    title = "Sisa Tabungan",
+                                    subtitle = "Belum Dicairkan",
                                     icon = Icons.Rounded.Savings,
                                     gradient = listOf(Color(0xFF10B981), Color(0xFF34D399)),
                                     modifier = Modifier.weight(1f),
@@ -178,7 +178,7 @@ fun PimpinanReportsScreen(
                                     icon = Icons.Rounded.CheckCircle,
                                     gradient = PimpinanColors.purpleGradient,
                                     modifier = Modifier.weight(1f),
-                                    onClick = {}
+                                    onClick = { navController.navigate("pimpinanDaftarNasabahLunasTotal") }
                                 )
                             }
 
