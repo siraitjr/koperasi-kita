@@ -3288,8 +3288,10 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
 
                 // ========== HITUNG SISA UTANG ==========
                 // ✅ PERBAIKAN: Cek apakah nasabah dari "Menunggu Pencairan" (sudah lunas cicilan)
-                val isFromMenungguPencairan = existingPelanggan.statusKhusus == "MENUNGGU_PENCAIRAN" ||
-                        existingPelanggan.statusPencairanSimpanan == "Menunggu Pencairan"
+                // Cek nasabah Sisa Tabungan: hanya dari statusKhusus (statusPencairanSimpanan bisa "Menunggu Pencairan" di kasus Nasabah Lunas biasa)
+                val isFromMenungguPencairan = existingPelanggan.statusKhusus == "MENUNGGU_PENCAIRAN"
+
+
 
                 val totalBayarSebelumnya = existingPelanggan.pembayaranList.sumOf { pembayaran ->
                     pembayaran.jumlah + pembayaran.subPembayaran.sumOf { sub -> sub.jumlah }
@@ -6571,8 +6573,9 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                 val totalPelunasanLama = existingPelanggan.totalPelunasan
 
                 // ✅ Cek apakah nasabah dari "Menunggu Pencairan" (sudah lunas cicilan)
-                val isFromMenungguPencairan = existingPelanggan.statusKhusus == "MENUNGGU_PENCAIRAN" ||
-                        existingPelanggan.statusPencairanSimpanan == "Menunggu Pencairan"
+                val isFromMenungguPencairan = existingPelanggan.statusKhusus == "MENUNGGU_PENCAIRAN"
+
+
 
                 val sisaUtangLama = if (isFromMenungguPencairan) {
                     0

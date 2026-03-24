@@ -282,8 +282,8 @@ fun KelolaKreditScreen(
     val totalPelunasanLama = pelanggan?.totalPelunasan ?: 0
     val sisaUtangLama = totalPelunasanLama - totalBayar
     // Nasabah dari Sisa Tabungan (MENUNGGU_PENCAIRAN) dianggap lunas - tabungan sudah menutup sisa hutang
-    val isFromSisaTabungan = pelanggan?.statusKhusus == "MENUNGGU_PENCAIRAN" ||
-            pelanggan?.statusPencairanSimpanan == "Menunggu Pencairan"
+    // Hanya cek statusKhusus karena statusPencairanSimpanan bisa "Menunggu Pencairan" juga untuk Nasabah Lunas biasa
+    val isFromSisaTabungan = pelanggan?.statusKhusus == "MENUNGGU_PENCAIRAN"
     val sudahLunas = sisaUtangLama <= 0 || isFromSisaTabungan
     val namaPanggilanDisplay = pelanggan?.namaPanggilan ?: ""
 
@@ -711,9 +711,8 @@ fun KelolaKreditScreen(
 
                                         ModernInfoRowLoanDetail("Total Diterima", "Rp ${formatRupiah(calculation.totalDiterima)}", subtitleColor)
 
-                                        // Deteksi nasabah dari Sisa Tabungan (MENUNGGU_PENCAIRAN)
-                                        val isFromMenungguPencairan = pelanggan.statusKhusus == "MENUNGGU_PENCAIRAN" ||
-                                                pelanggan.statusPencairanSimpanan == "Menunggu Pencairan"
+                                        // Deteksi nasabah dari Sisa Tabungan (MENUNGGU_PENCAIRAN) - hanya cek statusKhusus
+                                        val isFromMenungguPencairan = pelanggan.statusKhusus == "MENUNGGU_PENCAIRAN"
                                         val tabunganLama = if (isFromMenungguPencairan && pelanggan.statusPencairanSimpanan != "Dicairkan") {
                                             totalSimpananAkumulasi
                                         } else {
