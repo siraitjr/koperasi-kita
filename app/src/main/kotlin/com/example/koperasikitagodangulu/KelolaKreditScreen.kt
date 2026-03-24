@@ -729,8 +729,15 @@ fun KelolaKreditScreen(
                                                 ModernInfoRowLoanDetail("Uang Diserahkan ke Nasabah", "Rp ${formatRupiah(uangDiserahkan)}", LoanManageColors.success, FontWeight.Bold)
                                             }
                                         } else {
-                                            // Lanjut pinjaman biasa: potong sisa hutang lama jika ada
-                                            if (sisaUtangLama > 0 || tabunganLama > 0) {
+                                            // Nasabah Lunas: sisa utang = 0, tabungan lama diakumulasi (tidak dipotong dari uang diserahkan)
+                                            val isNasabahLunas = sisaUtangLama <= 0 &&
+                                                    totalSimpananAkumulasi > 0 &&
+                                                    pelanggan.statusPencairanSimpanan != "Dicairkan"
+                                            if (isNasabahLunas) {
+                                                ModernInfoRowLoanDetail("Tabungan Sebelumnya (diakumulasi)", "Rp ${formatRupiah(totalSimpananAkumulasi)}", LoanManageColors.info, FontWeight.Medium)
+                                                ModernInfoRowLoanDetail("Uang Diserahkan ke Nasabah", "Rp ${formatRupiah(calculation.totalDiterima)}", LoanManageColors.success, FontWeight.Bold)
+                                            } else if (sisaUtangLama > 0 || tabunganLama > 0) {
+                                                // Lanjut pinjaman biasa dari DaftarPelangganScreen: potong sisa hutang lama jika ada
                                                 if (sisaUtangLama > 0) {
                                                     ModernInfoRowLoanDetail("Sisa Utang Lama (otomatis terbayar)", "- Rp ${formatRupiah(sisaUtangLama)}", LoanManageColors.warning, FontWeight.Medium)
                                                 }
