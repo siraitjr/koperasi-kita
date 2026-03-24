@@ -32,6 +32,15 @@ import java.util.Calendar
 import java.text.SimpleDateFormat
 import java.util.Locale
 import androidx.compose.foundation.clickable
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.foundation.border
+import androidx.compose.ui.draw.clip
 
 // Modern Color Palette
 private object EditCustomerColors {
@@ -90,9 +99,25 @@ fun EditPelangganScreen(
     var wilayah by remember { mutableStateOf(pelanggan?.wilayah ?: "") }
     var noHp by remember { mutableStateOf(pelanggan?.noHp ?: "") }
     var jenisUsaha by remember { mutableStateOf(pelanggan?.jenisUsaha ?: "") }
+    // State baru: Data Pinjaman & Foto KTP
+    var tanggalPencairan by remember { mutableStateOf(pelanggan?.tanggalPencairan ?: "") }
+    var tanggalPengajuan by remember { mutableStateOf(pelanggan?.tanggalPengajuan ?: "") }
+    var pinjamanKe by remember { mutableStateOf(pelanggan?.pinjamanKe?.toString() ?: "") }
+    var simpanan by remember { mutableStateOf(pelanggan?.simpanan?.toString() ?: "") }
+    var newFotoKtpUri by remember { mutableStateOf<Uri?>(null) }
     var isLoading by remember { mutableStateOf(false) }
     var showError by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf("") }
+
+    // Gallery launcher untuk foto KTP
+    val ktpGalleryLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia()
+    ) { uri ->
+        uri?.let { newFotoKtpUri = it }
+    }
+
+    // Date format untuk date picker
+    val dateFormat = remember { SimpleDateFormat("dd MMM yyyy", Locale("in", "ID")) }
 
     // Animation state
     var isVisible by remember { mutableStateOf(false) }
@@ -145,6 +170,11 @@ fun EditPelangganScreen(
                         wilayah = wilayah,
                         noHp = noHp,
                         jenisUsaha = jenisUsaha,
+                        tanggalPencairan = tanggalPencairan,
+                        tanggalPengajuan = tanggalPengajuan,
+                        pinjamanKe = pinjamanKe.toIntOrNull() ?: pelanggan?.pinjamanKe ?: 1,
+                        simpanan = simpanan.toIntOrNull() ?: pelanggan?.simpanan ?: 0,
+                        newFotoKtpUri = newFotoKtpUri,
                         onSuccess = {
                             isLoading = false
                             Toast.makeText(context, "Nasabah berhasil diupdate", Toast.LENGTH_SHORT).show()
@@ -463,6 +493,231 @@ fun EditPelangganScreen(
                 }
             }
 
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Data Pinjaman Card (editable)
+            AnimatedVisibility(
+                visible = isVisible,
+                enter = fadeIn(tween(400, delayMillis = 300)) + slideInVertically(
+                    initialOffsetY = { 30 },
+                    animationSpec = tween(400, delayMillis = 300)
+                )
+            ) {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .shadow(
+                            elevation = 8.dp,
+                            shape = RoundedCornerShape(20.dp),
+                            ambientColor = EditCustomerColors.warning.copy(alpha = 0.1f)
+                        ),
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(containerColor = cardColor)
+                ) {
+                    Column(modifier = Modifier.padding(20.dp)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            modifier = Modifier.padding(bottom = 20.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .background(EditCustomerColors.warning.copy(alpha = 0.1f), RoundedCornerShape(12.dp)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.AccountBalance,
+                                    contentDescription = null,
+                                    tint = EditCustomerColors.warning,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
+                            Text(
+                                "Data Pinjaman",
+                                color = txtColor,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 18.sp
+                            )
+                        }
+
+                        // Tanggal Pengajuan - date picker
+                        ModernDatePickerField(
+                            label = "Tanggal Pengajuan",
+                            value = tanggalPengajuan,
+                            isDark = isDark,
+                            cardColor = cardColor,
+                            borderColor = borderColor,
+                            txtColor = txtColor,
+                            subtitleColor = subtitleColor,
+                            context = context,
+                            dateFormat = dateFormat,
+                            onDateSelected = { tanggalPengajuan = it }
+                        )
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        // Tanggal Pencairan - date picker
+                        ModernDatePickerField(
+                            label = "Tanggal Pencairan",
+                            value = tanggalPencairan,
+                            isDark = isDark,
+                            cardColor = cardColor,
+                            borderColor = borderColor,
+                            txtColor = txtColor,
+                            subtitleColor = subtitleColor,
+                            context = context,
+                            dateFormat = dateFormat,
+                            onDateSelected = { tanggalPencairan = it }
+                        )
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        // Pinjaman Ke
+                        ModernTextField(
+                            value = pinjamanKe,
+                            onValueChange = { pinjamanKe = it.filter { c -> c.isDigit() } },
+                            label = "Pinjaman Ke",
+                            icon = Icons.Rounded.Repeat,
+                            keyboardType = KeyboardType.Number,
+                            isDark = isDark,
+                            cardColor = cardColor,
+                            borderColor = borderColor,
+                            txtColor = txtColor,
+                            subtitleColor = subtitleColor
+                        )
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        // Simpanan Tambahan
+                        ModernTextField(
+                            value = simpanan,
+                            onValueChange = { simpanan = it.filter { c -> c.isDigit() } },
+                            label = "Simpanan Tambahan (Rp)",
+                            icon = Icons.Rounded.Savings,
+                            keyboardType = KeyboardType.Number,
+                            isDark = isDark,
+                            cardColor = cardColor,
+                            borderColor = borderColor,
+                            txtColor = txtColor,
+                            subtitleColor = subtitleColor
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Foto KTP Card
+            AnimatedVisibility(
+                visible = isVisible,
+                enter = fadeIn(tween(400, delayMillis = 400)) + slideInVertically(
+                    initialOffsetY = { 30 },
+                    animationSpec = tween(400, delayMillis = 400)
+                )
+            ) {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .shadow(
+                            elevation = 8.dp,
+                            shape = RoundedCornerShape(20.dp),
+                            ambientColor = EditCustomerColors.primary.copy(alpha = 0.1f)
+                        ),
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(containerColor = cardColor)
+                ) {
+                    Column(modifier = Modifier.padding(20.dp)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            modifier = Modifier.padding(bottom = 16.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .background(EditCustomerColors.primary.copy(alpha = 0.1f), RoundedCornerShape(12.dp)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.CreditCard,
+                                    contentDescription = null,
+                                    tint = EditCustomerColors.primary,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
+                            Text(
+                                "Foto KTP",
+                                color = txtColor,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 18.sp
+                            )
+                        }
+
+                        // Preview foto (baru atau yang sudah ada)
+                        val fotoPreviewModel: Any? = newFotoKtpUri
+                            ?: pelanggan?.fotoKtpUrl?.takeIf { it.isNotBlank() }
+                        if (fotoPreviewModel != null) {
+                            AsyncImage(
+                                model = ImageRequest.Builder(context)
+                                    .data(fotoPreviewModel)
+                                    .crossfade(true)
+                                    .build(),
+                                contentDescription = "Foto KTP",
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(180.dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .border(
+                                        width = 1.dp,
+                                        color = borderColor,
+                                        shape = RoundedCornerShape(12.dp)
+                                    ),
+                                contentScale = ContentScale.Crop
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+                        }
+
+                        // Tombol pilih dari galeri
+                        OutlinedButton(
+                            onClick = {
+                                ktpGalleryLauncher.launch(
+                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                )
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                contentColor = EditCustomerColors.primary
+                            ),
+                            border = androidx.compose.foundation.BorderStroke(
+                                1.dp, EditCustomerColors.primary.copy(alpha = 0.5f)
+                            )
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Image,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = if (newFotoKtpUri != null) "Ganti Foto KTP" else "Pilih Foto KTP dari Galeri",
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+
+                        if (newFotoKtpUri != null) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = "✓ Foto baru dipilih, akan diupload saat menyimpan",
+                                fontSize = 12.sp,
+                                color = EditCustomerColors.success
+                            )
+                        }
+                    }
+                }
+            }
+
             // Error message
             AnimatedVisibility(visible = showError) {
                 Card(
@@ -774,6 +1029,90 @@ private fun ModernEmptyState(
             color = Color.Gray
         )
     }
+}
+
+@Composable
+private fun ModernDatePickerField(
+    label: String,
+    value: String,
+    isDark: Boolean,
+    cardColor: Color,
+    borderColor: Color,
+    txtColor: Color,
+    subtitleColor: Color,
+    context: android.content.Context,
+    dateFormat: SimpleDateFormat,
+    onDateSelected: (String) -> Unit
+) {
+    val calendar = remember { Calendar.getInstance() }
+
+    // Parse nilai awal jika ada
+    if (value.isNotBlank()) {
+        try {
+            val parsed = dateFormat.parse(value)
+            if (parsed != null) calendar.time = parsed
+        } catch (_: Exception) { }
+    }
+
+    val datePickerDialog = remember(value) {
+        DatePickerDialog(
+            context,
+            { _, year, month, day ->
+                val cal = Calendar.getInstance().apply { set(year, month, day) }
+                onDateSelected(dateFormat.format(cal.time))
+            },
+            calendar.get(Calendar.YEAR),
+            calendar.get(Calendar.MONTH),
+            calendar.get(Calendar.DAY_OF_MONTH)
+        )
+    }
+
+    OutlinedTextField(
+        value = value,
+        onValueChange = { },
+        readOnly = true,
+        label = { Text(label, color = subtitleColor) },
+        leadingIcon = {
+            Box(
+                modifier = Modifier
+                    .size(36.dp)
+                    .background(EditCustomerColors.warning.copy(alpha = 0.1f), RoundedCornerShape(10.dp)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.CalendarToday,
+                    contentDescription = null,
+                    tint = EditCustomerColors.warning,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+        },
+        trailingIcon = {
+            IconButton(onClick = { datePickerDialog.show() }) {
+                Icon(
+                    imageVector = Icons.Rounded.Edit,
+                    contentDescription = "Pilih tanggal",
+                    tint = EditCustomerColors.primary,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+        },
+        shape = RoundedCornerShape(14.dp),
+        colors = OutlinedTextFieldDefaults.colors(
+            focusedContainerColor = cardColor,
+            unfocusedContainerColor = cardColor,
+            focusedBorderColor = EditCustomerColors.warning,
+            unfocusedBorderColor = borderColor,
+            cursorColor = EditCustomerColors.warning,
+            focusedTextColor = txtColor,
+            unfocusedTextColor = txtColor,
+            focusedLabelColor = EditCustomerColors.warning,
+            unfocusedLabelColor = subtitleColor
+        ),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { datePickerDialog.show() }
+    )
 }
 
 @Composable
