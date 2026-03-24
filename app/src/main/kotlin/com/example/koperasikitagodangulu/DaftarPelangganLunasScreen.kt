@@ -97,16 +97,19 @@ fun DaftarPelangganLunasScreen(
     val context = LocalContext.current
 
     // Filter: nasabah lunas cicilan tapi masih punya tabungan (belum dicairkan)
-    val pelangganLunas = remember(daftarPelanggan.size) {
-        daftarPelanggan.filter { pelanggan ->
-            val totalBayar = pelanggan.pembayaranList.sumOf { it.jumlah + it.subPembayaran.sumOf { sub -> sub.jumlah } }
-            val sudahLunasCicilan = totalBayar >= pelanggan.totalPelunasan && pelanggan.totalPelunasan > 0
+    // derivedStateOf agar reaktif terhadap perubahan ISI list, bukan hanya SIZE
+    val pelangganLunas by remember {
+        derivedStateOf {
+            daftarPelanggan.filter { pelanggan ->
+                val totalBayar = pelanggan.pembayaranList.sumOf { it.jumlah + it.subPembayaran.sumOf { sub -> sub.jumlah } }
+                val sudahLunasCicilan = totalBayar >= pelanggan.totalPelunasan && pelanggan.totalPelunasan > 0
 
-            // ✅ Nasabah lunas cicilan, masih punya tabungan, belum ditandai manual Sisa Tabungan
-            sudahLunasCicilan &&
-                    pelanggan.statusPencairanSimpanan != "Dicairkan" &&
-                    pelanggan.statusKhusus != "MENUNGGU_PENCAIRAN" &&
-                    pelanggan.status != "Menunggu Approval"
+                // ✅ Nasabah lunas cicilan, masih punya tabungan, belum ditandai manual Sisa Tabungan
+                sudahLunasCicilan &&
+                        pelanggan.statusPencairanSimpanan != "Dicairkan" &&
+                        pelanggan.statusKhusus != "MENUNGGU_PENCAIRAN" &&
+                        pelanggan.status != "Menunggu Approval"
+            }
         }
     }
 
@@ -128,10 +131,12 @@ fun DaftarPelangganLunasScreen(
         isVisible = true
     }
 
-    val daftarTampil = remember(queryNama, pelangganLunas) {
-        pelangganLunas.filter { pel ->
-            queryNama.isBlank() || pel.namaKtp.contains(queryNama, ignoreCase = true) ||
-                    pel.namaPanggilan.contains(queryNama, ignoreCase = true)
+    val daftarTampil by remember(queryNama) {
+        derivedStateOf {
+            pelangganLunas.filter { pel ->
+                queryNama.isBlank() || pel.namaKtp.contains(queryNama, ignoreCase = true) ||
+                        pel.namaPanggilan.contains(queryNama, ignoreCase = true)
+            }
         }
     }
 
