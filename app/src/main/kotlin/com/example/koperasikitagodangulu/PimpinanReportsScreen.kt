@@ -97,76 +97,13 @@ fun PimpinanReportsScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // SECTION 0: HERO SUMMARY
-            item {
-                AnimatedVisibility(
-                    visible = isVisible,
-                    enter = fadeIn(tween(350)) + slideInVertically(
-                        initialOffsetY = { -40 },
-                        animationSpec = tween(350)
-                    )
-                ) {
-                    PimpinanHeroSummaryCard(
-                        totalAktif = adminSummary.sumOf { it.nasabahAktif },
-                        totalPiutang = adminSummary.sumOf { it.totalPiutang },
-                        jumlahPdl = adminSummary.size,
-                        isDark = isDark
-                    )
-                }
-            }
-
-            // SECTION AKSES: PEMBUKUAN
-            item {
-                AnimatedVisibility(
-                    visible = isVisible,
-                    enter = fadeIn(tween(400, delayMillis = 100)) + slideInVertically(
-                        initialOffsetY = { 30 },
-                        animationSpec = tween(400, delayMillis = 100)
-                    )
-                ) {
-                    Column {
-                        ModernReportSectionHeader(
-                            title = "Akses Pembukuan",
-                            icon = Icons.Rounded.MenuBook,
-                            isDark = isDark
-                        )
-                        Spacer(modifier = Modifier.height(12.dp))
-                        PembukuanCardClickable(
-                            onClick = {
-                                coroutineScope.launch {
-                                    val baseUrl = "https://www.koperasi-kita.com/pembukuan"
-                                    val currentUser = FirebaseAuth.getInstance().currentUser
-                                    val url = if (currentUser != null) {
-                                        try {
-                                            val idToken = currentUser.getIdToken(false).await().token
-                                            if (idToken != null) "$baseUrl?idToken=${Uri.encode(idToken)}"
-                                            else baseUrl
-                                        } catch (_: Exception) { baseUrl }
-                                    } else { baseUrl }
-                                    withContext(Dispatchers.Main) {
-                                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
-                                            setPackage("com.android.chrome")
-                                        }
-                                        try {
-                                            context.startActivity(intent)
-                                        } catch (_: ActivityNotFoundException) {
-                                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
-                                        }
-                                    }
-                                }
-                            }
-                        )
-                    }
-                }
-            }
-
             // SECTION 1: RINGKASAN CABANG
             item {
                 AnimatedVisibility(
                     visible = isVisible,
-                    enter = fadeIn(tween(400, delayMillis = 150)) + slideInVertically(
+                    enter = fadeIn(tween(400)) + slideInVertically(
                         initialOffsetY = { -30 },
-                        animationSpec = tween(400, delayMillis = 150)
+                        animationSpec = tween(400)
                     )
                 ) {
                     Column {
@@ -182,8 +119,70 @@ fun PimpinanReportsScreen(
                         val nasabahBaruHariIni = adminSummary.sumOf { it.nasabahBaruHariIni }
                         val nasabahLunasHariIni = adminSummary.sumOf { it.nasabahLunasHariIni }
 
-                        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                            // Row 1: Status Khusus & Bermasalah
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            // Baris 1: Pembukuan & Menunggu Pencairan
+                            Row(Modifier.fillMaxWidth(), Arrangement.spacedBy(10.dp)) {
+                                PimpinanQuickCard(
+                                    title = "Buka Pembukuan",
+                                    subtitle = "Buku Pokok",
+                                    icon = Icons.Rounded.MenuBook,
+                                    gradient = listOf(Color(0xFFF43F5E), Color(0xFFFB7185)),
+                                    modifier = Modifier.weight(1f),
+                                    onClick = {
+                                        coroutineScope.launch {
+                                            val baseUrl = "https://www.koperasi-kita.com/pembukuan"
+                                            val currentUser = FirebaseAuth.getInstance().currentUser
+                                            val url = if (currentUser != null) {
+                                                try {
+                                                    val idToken = currentUser.getIdToken(false).await().token
+                                                    if (idToken != null) "$baseUrl?idToken=${Uri.encode(idToken)}"
+                                                    else baseUrl
+                                                } catch (_: Exception) { baseUrl }
+                                            } else { baseUrl }
+                                            withContext(Dispatchers.Main) {
+                                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+                                                    setPackage("com.android.chrome")
+                                                }
+                                                try {
+                                                    context.startActivity(intent)
+                                                } catch (_: ActivityNotFoundException) {
+                                                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                                                }
+                                            }
+                                        }
+                                    }
+                                )
+                                PimpinanQuickCard(
+                                    title = "Menunggu Pencairan",
+                                    subtitle = "Simpanan",
+                                    icon = Icons.Rounded.Savings,
+                                    gradient = listOf(Color(0xFF10B981), Color(0xFF34D399)),
+                                    modifier = Modifier.weight(1f),
+                                    onClick = { navController.navigate("daftarPimpinanMenungguPencairan") }
+                                )
+                            }
+
+                            // Baris 2: Daftar Lengkap & Nasabah Lunas
+                            Row(Modifier.fillMaxWidth(), Arrangement.spacedBy(10.dp)) {
+                                PimpinanQuickCard(
+                                    title = "Daftar Lengkap",
+                                    subtitle = "Semua Nasabah",
+                                    icon = Icons.Rounded.People,
+                                    gradient = PimpinanColors.primaryGradient,
+                                    modifier = Modifier.weight(1f),
+                                    onClick = { navController.navigate("pimpinan_daftar_semua_nasabah") }
+                                )
+                                PimpinanQuickCard(
+                                    title = nasabahLunas.toString(),
+                                    subtitle = "Nasabah Lunas",
+                                    icon = Icons.Rounded.CheckCircle,
+                                    gradient = PimpinanColors.purpleGradient,
+                                    modifier = Modifier.weight(1f),
+                                    onClick = {}
+                                )
+                            }
+
+                            // Row: Status Khusus & Bermasalah
                             Row(Modifier.fillMaxWidth(), Arrangement.spacedBy(12.dp)) {
                                 ReportStatCardClickable(
                                     title = "Status Khusus",
@@ -192,7 +191,7 @@ fun PimpinanReportsScreen(
                                     backgroundColor = PimpinanColors.purple,
                                     modifier = Modifier.weight(1f),
                                     onClick = { navController.navigate("daftarPimpinanPelangganStatusKhususSemuaAdmin") },
-                                    isDark = isDark // ✅ UBAH: Tambah isDark
+                                    isDark = isDark
                                 )
                                 ReportStatCardClickable(
                                     title = "Bermasalah",
@@ -201,29 +200,11 @@ fun PimpinanReportsScreen(
                                     backgroundColor = PimpinanColors.danger,
                                     modifier = Modifier.weight(1f),
                                     onClick = { navController.navigate("daftarPimpinanPelangganBermasalah") },
-                                    isDark = isDark // ✅ UBAH: Tambah isDark
+                                    isDark = isDark
                                 )
                             }
 
-                            // ✅ BARU: Card Menunggu Pencairan (full width, clickable)
-                            MenungguPencairanCardClickable(
-                                onClick = { navController.navigate("daftarPimpinanMenungguPencairan") }
-                            )
-
-                            // ✅ BARU: Card Daftar Semua Nasabah
-                            DaftarSemuaNasabahCardClickable(
-                                onClick = { navController.navigate("pimpinan_daftar_semua_nasabah") }
-                            )
-
-                            // Row 2: Nasabah Lunas (Total)
-                            ModernReportStatCardFull(
-                                title = "Nasabah Lunas (Total)",
-                                value = nasabahLunas.toString(),
-                                icon = Icons.Rounded.CheckCircle,
-                                gradient = PimpinanColors.purpleGradient
-                            )
-
-                            // Row 3: Baru Hari Ini & Lunas Hari Ini
+                            // Row: Drop Hari Ini & Lunas Hari Ini
                             Row(Modifier.fillMaxWidth(), Arrangement.spacedBy(12.dp)) {
                                 ReportStatCardClickable(
                                     title = "Drop Hari Ini",
@@ -232,7 +213,7 @@ fun PimpinanReportsScreen(
                                     backgroundColor = PimpinanColors.teal,
                                     modifier = Modifier.weight(1f),
                                     onClick = { navController.navigate("daftarPimpinanNasabahBaruHariIni") },
-                                    isDark = isDark // ✅ UBAH: Tambah isDark
+                                    isDark = isDark
                                 )
                                 ReportStatCardClickable(
                                     title = "Lunas Hari Ini",
@@ -241,7 +222,7 @@ fun PimpinanReportsScreen(
                                     backgroundColor = PimpinanColors.success,
                                     modifier = Modifier.weight(1f),
                                     onClick = { navController.navigate("daftarPimpinanNasabahLunasHariIni") },
-                                    isDark = isDark // ✅ UBAH: Tambah isDark
+                                    isDark = isDark
                                 )
                             }
                         }
@@ -921,242 +902,79 @@ private fun DaftarSemuaNasabahCardClickable(
 }
 
 // =========================================================================
-// KOMPONEN: Pimpinan Hero Summary Card
+// KOMPONEN: Quick Card Compact (grid 2x2)
 // =========================================================================
 @Composable
-private fun PimpinanHeroSummaryCard(
-    totalAktif: Int,
-    totalPiutang: Long,
-    jumlahPdl: Int,
-    isDark: Boolean = false
-) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .shadow(
-                elevation = 12.dp,
-                shape = RoundedCornerShape(24.dp),
-                ambientColor = PimpinanColors.primary.copy(alpha = 0.25f)
-            ),
-        shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.Transparent)
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(
-                    Brush.linearGradient(
-                        listOf(Color(0xFF1E1B4B), Color(0xFF312E81), Color(0xFF4338CA))
-                    )
-                )
-        ) {
-            // Dekorasi lingkaran di sudut kanan atas
-            Box(
-                modifier = Modifier
-                    .size(140.dp)
-                    .offset(x = 260.dp, y = (-40).dp)
-                    .background(Color.White.copy(alpha = 0.05f), CircleShape)
-            )
-            Box(
-                modifier = Modifier
-                    .size(90.dp)
-                    .offset(x = 300.dp, y = 20.dp)
-                    .background(Color.White.copy(alpha = 0.05f), CircleShape)
-            )
-
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 18.dp)
-            ) {
-                Text(
-                    text = "Ringkasan Cabang",
-                    fontSize = 12.sp,
-                    color = Color.White.copy(alpha = 0.65f),
-                    fontWeight = FontWeight.Medium
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = formatRupiah(totalPiutang),
-                    fontSize = 26.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White
-                )
-                Text(
-                    text = "Total Saldo Berjalan",
-                    fontSize = 11.sp,
-                    color = Color.White.copy(alpha = 0.55f)
-                )
-
-                Spacer(modifier = Modifier.height(18.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    HeroStatItem(
-                        label = "Nasabah Aktif",
-                        value = totalAktif.toString(),
-                        icon = Icons.Rounded.People
-                    )
-                    // Divider vertikal
-                    Box(
-                        modifier = Modifier
-                            .width(1.dp)
-                            .height(40.dp)
-                            .background(Color.White.copy(alpha = 0.2f))
-                    )
-                    HeroStatItem(
-                        label = "Jumlah PDL",
-                        value = jumlahPdl.toString(),
-                        icon = Icons.Rounded.Groups
-                    )
-                    // Divider vertikal
-                    Box(
-                        modifier = Modifier
-                            .width(1.dp)
-                            .height(40.dp)
-                            .background(Color.White.copy(alpha = 0.2f))
-                    )
-                    HeroStatItem(
-                        label = "Resmi",
-                        value = "Aktif",
-                        icon = Icons.Rounded.Verified
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun HeroStatItem(
-    label: String,
-    value: String,
-    icon: ImageVector
-) {
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(4.dp)
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = Color.White.copy(alpha = 0.8f),
-            modifier = Modifier.size(18.dp)
-        )
-        Text(
-            text = value,
-            fontSize = 16.sp,
-            fontWeight = FontWeight.Bold,
-            color = Color.White
-        )
-        Text(
-            text = label,
-            fontSize = 10.sp,
-            color = Color.White.copy(alpha = 0.6f)
-        )
-    }
-}
-
-// =========================================================================
-// KOMPONEN: Card Pembukuan (buka di Chrome dengan Firebase auto-login)
-// =========================================================================
-@Composable
-private fun PembukuanCardClickable(
+private fun PimpinanQuickCard(
+    title: String,
+    subtitle: String,
+    icon: ImageVector,
+    gradient: List<Color>,
+    modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
     Card(
-        modifier = Modifier
-            .fillMaxWidth()
+        modifier = modifier
             .shadow(
-                elevation = 10.dp,
-                shape = RoundedCornerShape(20.dp),
-                ambientColor = Color(0xFFF43F5E).copy(alpha = 0.3f)
+                elevation = 6.dp,
+                shape = RoundedCornerShape(16.dp),
+                ambientColor = gradient.first().copy(alpha = 0.25f)
             )
             .clickable(onClick = onClick),
-        shape = RoundedCornerShape(20.dp),
+        shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = Color.Transparent)
     ) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(
-                    Brush.linearGradient(
-                        listOf(Color(0xFFF43F5E), Color(0xFFFB7185))
-                    )
-                )
+                .background(Brush.linearGradient(gradient))
         ) {
-            // Dekorasi lingkaran
+            // Dekorasi lingkaran sudut kiri atas
             Box(
                 modifier = Modifier
-                    .size(90.dp)
-                    .offset(x = (-22).dp, y = (-22).dp)
+                    .size(60.dp)
+                    .offset(x = (-16).dp, y = (-16).dp)
                     .background(Color.White.copy(alpha = 0.1f), CircleShape)
             )
-            Box(
-                modifier = Modifier
-                    .size(50.dp)
-                    .offset(x = (-5).dp, y = 30.dp)
-                    .background(Color.White.copy(alpha = 0.07f), CircleShape)
-            )
-
-            Row(
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 18.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+                    .padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Column {
-                    Text(
-                        text = "Buku Pokok",
-                        fontSize = 13.sp,
-                        color = Color.White.copy(alpha = 0.8f)
-                    )
-                    Spacer(modifier = Modifier.height(3.dp))
-                    Text(
-                        text = "Buka Pembukuan",
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White
-                    )
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.OpenInNew,
-                            contentDescription = null,
-                            tint = Color.White.copy(alpha = 0.75f),
-                            modifier = Modifier.size(13.dp)
-                        )
-                        Text(
-                            text = "koperasi-kita.com/pembukuan",
-                            fontSize = 11.sp,
-                            color = Color.White.copy(alpha = 0.75f)
-                        )
-                    }
-                }
-
                 Box(
                     modifier = Modifier
-                        .size(54.dp)
+                        .size(36.dp)
                         .background(Color.White.copy(alpha = 0.2f), CircleShape),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        imageVector = Icons.Rounded.MenuBook,
+                        imageVector = icon,
                         contentDescription = null,
                         tint = Color.White,
-                        modifier = Modifier.size(30.dp)
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+                Column {
+                    Text(
+                        text = subtitle,
+                        fontSize = 11.sp,
+                        color = Color.White.copy(alpha = 0.8f)
+                    )
+                    Text(
+                        text = title,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
             }
         }
     }
 }
+
 
 // =========================================================================
 // KOMPONEN LAMA (untuk backward compatibility jika diperlukan)
