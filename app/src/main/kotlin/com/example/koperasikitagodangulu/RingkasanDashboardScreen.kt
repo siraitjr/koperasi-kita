@@ -30,6 +30,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.platform.LocalContext
+import android.content.Intent
+import android.content.ActivityNotFoundException
+import android.net.Uri
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import java.text.SimpleDateFormat
@@ -64,6 +68,7 @@ fun RingkasanDashboardScreen(
 ) {
     val daftarPelanggan = viewModel.daftarPelanggan
     val isDark by viewModel.isDarkMode
+    val context = LocalContext.current
 
     val cardColor = if (isDark) DashboardColors.darkCard else DashboardColors.lightSurface
     val txtColor = if (isDark) Color.White else Color(0xFF1E293B)
@@ -316,6 +321,29 @@ fun RingkasanDashboardScreen(
                             onClick = { navController.navigate("daftarMenungguPencairan") }
                         )
                     }
+
+                    // Buku Pokok: buka di Chrome
+                    ModernStatCard(
+                        title = "BUKU POKOK",
+                        value = "Buka Pembukuan",
+                        icon = Icons.Rounded.MenuBook,
+                        gradient = DashboardColors.roseGradient,
+                        modifier = Modifier.fillMaxWidth(),
+                        onClick = {
+                            val url = "https://www.koperasi-kita.com"
+                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+                                setPackage("com.android.chrome")
+                            }
+                            try {
+                                context.startActivity(intent)
+                            } catch (_: ActivityNotFoundException) {
+                                // Chrome tidak tersedia, buka di browser default
+                                context.startActivity(
+                                    Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                                )
+                            }
+                        }
+                    )
                 }
             }
         }
