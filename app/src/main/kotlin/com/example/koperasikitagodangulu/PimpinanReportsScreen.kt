@@ -118,81 +118,41 @@ fun PimpinanReportsScreen(
                         val nasabahBaruHariIni = adminSummary.sumOf { it.nasabahBaruHariIni }
                         val nasabahLunasHariIni = adminSummary.sumOf { it.nasabahLunasHariIni }
 
-                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            // Hero card: 3 aksi dalam 1 card
-                            PimpinanHeroActionCard(
-                                isDark = isDark,
-                                onPembukuanClick = {
-                                    coroutineScope.launch {
-                                        val baseUrl = "https://www.koperasi-kita.com/pembukuan"
-                                        val currentUser = FirebaseAuth.getInstance().currentUser
-                                        val url = if (currentUser != null) {
-                                            try {
-                                                val idToken = currentUser.getIdToken(false).await().token
-                                                if (idToken != null) "$baseUrl?idToken=${Uri.encode(idToken)}"
-                                                else baseUrl
-                                            } catch (_: Exception) { baseUrl }
-                                        } else { baseUrl }
-                                        withContext(Dispatchers.Main) {
-                                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
-                                                setPackage("com.android.chrome")
-                                            }
-                                            try {
-                                                context.startActivity(intent)
-                                            } catch (_: ActivityNotFoundException) {
-                                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
-                                            }
+                        // Hero card: semua aksi dalam 1 card
+                        PimpinanHeroActionCard(
+                            isDark = isDark,
+                            nasabahBaruHariIni = nasabahBaruHariIni,
+                            nasabahLunasHariIni = nasabahLunasHariIni,
+                            onPembukuanClick = {
+                                coroutineScope.launch {
+                                    val baseUrl = "https://www.koperasi-kita.com/pembukuan"
+                                    val currentUser = FirebaseAuth.getInstance().currentUser
+                                    val url = if (currentUser != null) {
+                                        try {
+                                            val idToken = currentUser.getIdToken(false).await().token
+                                            if (idToken != null) "$baseUrl?idToken=${Uri.encode(idToken)}"
+                                            else baseUrl
+                                        } catch (_: Exception) { baseUrl }
+                                    } else { baseUrl }
+                                    withContext(Dispatchers.Main) {
+                                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+                                            setPackage("com.android.chrome")
+                                        }
+                                        try {
+                                            context.startActivity(intent)
+                                        } catch (_: ActivityNotFoundException) {
+                                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
                                         }
                                     }
-                                },
-                                onSisaTabunganClick = { navController.navigate("daftarPimpinanMenungguPencairan") },
-                                onDaftarLengkapClick = { navController.navigate("pimpinan_daftar_semua_nasabah") }
-                            )
-
-                            // Row: Status Khusus & Bermasalah
-                            Row(Modifier.fillMaxWidth(), Arrangement.spacedBy(12.dp)) {
-                                ReportStatCardClickable(
-                                    title = "Status Khusus",
-                                    value = "Lihat",
-                                    icon = Icons.Rounded.Flag,
-                                    backgroundColor = PimpinanColors.purple,
-                                    modifier = Modifier.weight(1f),
-                                    onClick = { navController.navigate("daftarPimpinanPelangganStatusKhususSemuaAdmin") },
-                                    isDark = isDark
-                                )
-                                ReportStatCardClickable(
-                                    title = "Bermasalah",
-                                    value = "Lihat",
-                                    icon = Icons.Rounded.Warning,
-                                    backgroundColor = PimpinanColors.danger,
-                                    modifier = Modifier.weight(1f),
-                                    onClick = { navController.navigate("daftarPimpinanPelangganBermasalah") },
-                                    isDark = isDark
-                                )
-                            }
-
-                            // Row: Drop Hari Ini & Lunas Hari Ini
-                            Row(Modifier.fillMaxWidth(), Arrangement.spacedBy(12.dp)) {
-                                ReportStatCardClickable(
-                                    title = "Drop Hari Ini",
-                                    value = nasabahBaruHariIni.toString(),
-                                    icon = Icons.Rounded.PersonAdd,
-                                    backgroundColor = PimpinanColors.teal,
-                                    modifier = Modifier.weight(1f),
-                                    onClick = { navController.navigate("daftarPimpinanNasabahBaruHariIni") },
-                                    isDark = isDark
-                                )
-                                ReportStatCardClickable(
-                                    title = "Lunas Hari Ini",
-                                    value = nasabahLunasHariIni.toString(),
-                                    icon = Icons.Rounded.Verified,
-                                    backgroundColor = PimpinanColors.success,
-                                    modifier = Modifier.weight(1f),
-                                    onClick = { navController.navigate("daftarPimpinanNasabahLunasHariIni") },
-                                    isDark = isDark
-                                )
-                            }
-                        }
+                                }
+                            },
+                            onDaftarLengkapClick = { navController.navigate("pimpinan_daftar_semua_nasabah") },
+                            onStatusKhususClick = { navController.navigate("daftarPimpinanPelangganStatusKhususSemuaAdmin") },
+                            onBermasalahClick = { navController.navigate("daftarPimpinanPelangganBermasalah") },
+                            onSisaTabunganClick = { navController.navigate("daftarPimpinanMenungguPencairan") },
+                            onDropHariIniClick = { navController.navigate("daftarPimpinanNasabahBaruHariIni") },
+                            onLunasHariIniClick = { navController.navigate("daftarPimpinanNasabahLunasHariIni") }
+                        )
                     }
                 }
             }
@@ -874,9 +834,15 @@ private fun DaftarSemuaNasabahCardClickable(
 @Composable
 private fun PimpinanHeroActionCard(
     isDark: Boolean = false,
+    nasabahBaruHariIni: Long,
+    nasabahLunasHariIni: Long,
     onPembukuanClick: () -> Unit,
+    onDaftarLengkapClick: () -> Unit,
+    onStatusKhususClick: () -> Unit,
+    onBermasalahClick: () -> Unit,
     onSisaTabunganClick: () -> Unit,
-    onDaftarLengkapClick: () -> Unit
+    onDropHariIniClick: () -> Unit,
+    onLunasHariIniClick: () -> Unit
 ) {
     Card(
         modifier = Modifier
@@ -900,6 +866,33 @@ private fun PimpinanHeroActionCard(
                 onClick = onPembukuanClick
             )
             HeroActionItem(
+                title = "Daftar Lengkap",
+                subtitle = "Semua Nasabah",
+                icon = Icons.Rounded.People,
+                iconBg = PimpinanColors.primary,
+                isDark = isDark,
+                showDivider = true,
+                onClick = onDaftarLengkapClick
+            )
+            HeroActionItem(
+                title = "Status Khusus",
+                subtitle = "Nasabah Status Khusus",
+                icon = Icons.Rounded.Flag,
+                iconBg = PimpinanColors.purple,
+                isDark = isDark,
+                showDivider = true,
+                onClick = onStatusKhususClick
+            )
+            HeroActionItem(
+                title = "Bermasalah",
+                subtitle = "Nasabah Bermasalah",
+                icon = Icons.Rounded.Warning,
+                iconBg = PimpinanColors.danger,
+                isDark = isDark,
+                showDivider = true,
+                onClick = onBermasalahClick
+            )
+            HeroActionItem(
                 title = "Sisa Tabungan & Nasabah Lunas",
                 subtitle = "Simpanan Nasabah",
                 icon = Icons.Rounded.Savings,
@@ -909,13 +902,22 @@ private fun PimpinanHeroActionCard(
                 onClick = onSisaTabunganClick
             )
             HeroActionItem(
-                title = "Daftar Lengkap",
-                subtitle = "Semua Nasabah",
-                icon = Icons.Rounded.People,
-                iconBg = PimpinanColors.primary,
+                title = "Drop Hari Ini",
+                subtitle = nasabahBaruHariIni.toString(),
+                icon = Icons.Rounded.PersonAdd,
+                iconBg = PimpinanColors.teal,
+                isDark = isDark,
+                showDivider = true,
+                onClick = onDropHariIniClick
+            )
+            HeroActionItem(
+                title = "Lunas Hari Ini",
+                subtitle = nasabahLunasHariIni.toString(),
+                icon = Icons.Rounded.Verified,
+                iconBg = PimpinanColors.success,
                 isDark = isDark,
                 showDivider = false,
-                onClick = onDaftarLengkapClick
+                onClick = onLunasHariIniClick
             )
         }
     }
