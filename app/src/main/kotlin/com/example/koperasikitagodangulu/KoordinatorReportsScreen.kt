@@ -43,6 +43,13 @@ import androidx.compose.foundation.border
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.BorderStroke
 import com.google.accompanist.systemuicontroller.rememberSystemUiController
+import android.content.ActivityNotFoundException
+import android.content.Intent
+import android.net.Uri
+import com.google.firebase.auth.FirebaseAuth
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.withContext
 
 /**
  * =========================================================================
@@ -111,6 +118,9 @@ fun KoordinatorReportsScreen(
         }
     }
 
+    val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
+
     Scaffold(
         containerColor = KoordinatorColors.getBackground(isDark),
         topBar = {
@@ -131,6 +141,33 @@ fun KoordinatorReportsScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
+            // =========================================================
+            // PEMBUKUAN CARD
+            // =========================================================
+            PembukuanCard(isDark = isDark) {
+                coroutineScope.launch {
+                    val baseUrl = "https://www.koperasi-kita.com/pembukuan"
+                    val currentUser = FirebaseAuth.getInstance().currentUser
+                    val url = if (currentUser != null) {
+                        try {
+                            val idToken = currentUser.getIdToken(false).await().token
+                            if (idToken != null) "$baseUrl?idToken=${Uri.encode(idToken)}"
+                            else baseUrl
+                        } catch (_: Exception) { baseUrl }
+                    } else { baseUrl }
+                    withContext(Dispatchers.Main) {
+                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+                            setPackage("com.android.chrome")
+                        }
+                        try {
+                            context.startActivity(intent)
+                        } catch (_: ActivityNotFoundException) {
+                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                        }
+                    }
+                }
+            }
+
             // =========================================================
             // CABANG FILTER
             // =========================================================
@@ -1730,6 +1767,74 @@ private fun BiayaAwalDetailCard(biayaAwal: BiayaAwalItem, isDark: Boolean = fals
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Bold,
                 color = PengawasColors.info
+            )
+        }
+    }
+}
+
+// =========================================================================
+// KOMPONEN: Card Pembukuan (Koordinator)
+// =========================================================================
+@Composable
+private fun PembukuanCard(
+    isDark: Boolean,
+    onClick: () -> Unit
+) {
+    Card(
+        onClick = onClick,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 10.dp)
+            .shadow(
+                elevation = 4.dp,
+                shape = RoundedCornerShape(16.dp),
+                ambientColor = Color(0xFFF43F5E).copy(alpha = 0.15f)
+            ),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = KoordinatorColors.getCard(isDark)),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(44.dp)
+                    .background(
+                        Color(0xFFF43F5E).copy(alpha = 0.12f),
+                        RoundedCornerShape(12.dp)
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.MenuBook,
+                    contentDescription = null,
+                    tint = Color(0xFFF43F5E),
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+            Spacer(modifier = Modifier.width(14.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Pembukuan",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 15.sp,
+                    color = KoordinatorColors.getTextPrimary(isDark)
+                )
+                Text(
+                    text = "Buka sistem pembukuan keuangan",
+                    fontSize = 12.sp,
+                    color = KoordinatorColors.getTextSecondary(isDark)
+                )
+            }
+            Icon(
+                imageVector = Icons.Rounded.ChevronRight,
+                contentDescription = null,
+                tint = KoordinatorColors.getTextMuted(isDark),
+                modifier = Modifier.size(20.dp)
             )
         }
     }
