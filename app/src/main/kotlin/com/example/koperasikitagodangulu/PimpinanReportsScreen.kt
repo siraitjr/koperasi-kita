@@ -119,56 +119,34 @@ fun PimpinanReportsScreen(
                         val nasabahLunasHariIni = adminSummary.sumOf { it.nasabahLunasHariIni }
 
                         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            // Baris 1: Pembukuan & Sisa Tabungan
-                            Row(Modifier.fillMaxWidth(), Arrangement.spacedBy(10.dp)) {
-                                PimpinanQuickCard(
-                                    title = "Buka Pembukuan",
-                                    subtitle = "Buku Pokok",
-                                    icon = Icons.Rounded.MenuBook,
-                                    gradient = listOf(Color(0xFFF43F5E), Color(0xFFFB7185)),
-                                    modifier = Modifier.weight(1f),
-                                    onClick = {
-                                        coroutineScope.launch {
-                                            val baseUrl = "https://www.koperasi-kita.com/pembukuan"
-                                            val currentUser = FirebaseAuth.getInstance().currentUser
-                                            val url = if (currentUser != null) {
-                                                try {
-                                                    val idToken = currentUser.getIdToken(false).await().token
-                                                    if (idToken != null) "$baseUrl?idToken=${Uri.encode(idToken)}"
-                                                    else baseUrl
-                                                } catch (_: Exception) { baseUrl }
-                                            } else { baseUrl }
-                                            withContext(Dispatchers.Main) {
-                                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
-                                                    setPackage("com.android.chrome")
-                                                }
-                                                try {
-                                                    context.startActivity(intent)
-                                                } catch (_: ActivityNotFoundException) {
-                                                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
-                                                }
+                            // Hero card: 3 aksi dalam 1 card
+                            PimpinanHeroActionCard(
+                                isDark = isDark,
+                                onPembukuanClick = {
+                                    coroutineScope.launch {
+                                        val baseUrl = "https://www.koperasi-kita.com/pembukuan"
+                                        val currentUser = FirebaseAuth.getInstance().currentUser
+                                        val url = if (currentUser != null) {
+                                            try {
+                                                val idToken = currentUser.getIdToken(false).await().token
+                                                if (idToken != null) "$baseUrl?idToken=${Uri.encode(idToken)}"
+                                                else baseUrl
+                                            } catch (_: Exception) { baseUrl }
+                                        } else { baseUrl }
+                                        withContext(Dispatchers.Main) {
+                                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+                                                setPackage("com.android.chrome")
+                                            }
+                                            try {
+                                                context.startActivity(intent)
+                                            } catch (_: ActivityNotFoundException) {
+                                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
                                             }
                                         }
                                     }
-                                )
-                                PimpinanQuickCard(
-                                    title = "Sisa Tabungan & Nasabah Lunas",
-                                    subtitle = "Simpanan Nasabah",
-                                    icon = Icons.Rounded.Savings,
-                                    gradient = listOf(Color(0xFF10B981), Color(0xFF34D399)),
-                                    modifier = Modifier.weight(1f),
-                                    onClick = { navController.navigate("daftarPimpinanMenungguPencairan") }
-                                )
-                            }
-
-                            // Baris 2: Daftar Lengkap (full width)
-                            PimpinanQuickCard(
-                                title = "Daftar Lengkap",
-                                subtitle = "Semua Nasabah",
-                                icon = Icons.Rounded.People,
-                                gradient = PimpinanColors.primaryGradient,
-                                modifier = Modifier.fillMaxWidth(),
-                                onClick = { navController.navigate("pimpinan_daftar_semua_nasabah") }
+                                },
+                                onSisaTabunganClick = { navController.navigate("daftarPimpinanMenungguPencairan") },
+                                onDaftarLengkapClick = { navController.navigate("pimpinan_daftar_semua_nasabah") }
                             )
 
                             // Row: Status Khusus & Bermasalah
@@ -886,6 +864,120 @@ private fun DaftarSemuaNasabahCardClickable(
                     )
                 }
             }
+        }
+    }
+}
+
+// =========================================================================
+// KOMPONEN: Hero Action Card (3 aksi dalam 1 card)
+// =========================================================================
+@Composable
+private fun PimpinanHeroActionCard(
+    isDark: Boolean = false,
+    onPembukuanClick: () -> Unit,
+    onSisaTabunganClick: () -> Unit,
+    onDaftarLengkapClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .shadow(
+                elevation = 8.dp,
+                shape = RoundedCornerShape(20.dp),
+                ambientColor = PimpinanColors.primary.copy(alpha = 0.2f)
+            ),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = PimpinanColors.getCard(isDark))
+    ) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            HeroActionItem(
+                title = "Buka Pembukuan",
+                subtitle = "Pembukuan",
+                icon = Icons.Rounded.MenuBook,
+                iconBg = Color(0xFFF43F5E),
+                isDark = isDark,
+                showDivider = true,
+                onClick = onPembukuanClick
+            )
+            HeroActionItem(
+                title = "Sisa Tabungan & Nasabah Lunas",
+                subtitle = "Simpanan Nasabah",
+                icon = Icons.Rounded.Savings,
+                iconBg = Color(0xFF10B981),
+                isDark = isDark,
+                showDivider = true,
+                onClick = onSisaTabunganClick
+            )
+            HeroActionItem(
+                title = "Daftar Lengkap",
+                subtitle = "Semua Nasabah",
+                icon = Icons.Rounded.People,
+                iconBg = PimpinanColors.primary,
+                isDark = isDark,
+                showDivider = false,
+                onClick = onDaftarLengkapClick
+            )
+        }
+    }
+}
+
+@Composable
+private fun HeroActionItem(
+    title: String,
+    subtitle: String,
+    icon: ImageVector,
+    iconBg: Color,
+    isDark: Boolean,
+    showDivider: Boolean,
+    onClick: () -> Unit
+) {
+    Column {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onClick)
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .background(iconBg.copy(alpha = 0.12f), RoundedCornerShape(12.dp)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = iconBg,
+                    modifier = Modifier.size(22.dp)
+                )
+            }
+            Spacer(Modifier.width(14.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 14.sp,
+                    color = PimpinanColors.getTextPrimary(isDark)
+                )
+                Text(
+                    text = subtitle,
+                    fontSize = 12.sp,
+                    color = PimpinanColors.getTextSecondary(isDark)
+                )
+            }
+            Icon(
+                imageVector = Icons.Rounded.ChevronRight,
+                contentDescription = null,
+                tint = PimpinanColors.getTextMuted(isDark),
+                modifier = Modifier.size(20.dp)
+            )
+        }
+        if (showDivider) {
+            HorizontalDivider(
+                modifier = Modifier.padding(horizontal = 16.dp),
+                color = PimpinanColors.getBorder(isDark)
+            )
         }
     }
 }
