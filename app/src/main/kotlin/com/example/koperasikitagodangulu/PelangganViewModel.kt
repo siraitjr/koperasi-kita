@@ -1226,7 +1226,12 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                             } else {
                                 notification
                             }
-                            notifList.add(notifWithId)
+                            // Hanya tampilkan notifikasi dari 30 hari terakhir agar notifikasi
+                            // lama yang sudah diproses tidak muncul kembali
+                            val cutoff30Hari = System.currentTimeMillis() - (30L * 24 * 60 * 60 * 1000)
+                            if (notifWithId.timestamp >= cutoff30Hari) {
+                                notifList.add(notifWithId)
+                            }
                         }
                     } catch (e: Exception) {
                         Log.e("Notification", "❌ Error parsing notification ${notifSnapshot.key}: ${e.message}")
@@ -4688,7 +4693,8 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                 return
             }
 
-            val notificationId = "${notifType.lowercase()}_${pelangganId}_${System.currentTimeMillis()}"
+            val hourBucket = System.currentTimeMillis() / 3_600_000L
+            val notificationId = "${notifType.lowercase()}_${pelangganId}_${hourBucket}"
             val notificationData = mapOf(
                 "id" to notificationId,
                 "type" to notifType,
@@ -4725,7 +4731,8 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
 
             val koordinatorUids = koordinatorSnapshot.children.mapNotNull { it.key }
             for (uid in koordinatorUids) {
-                val notificationId = "${notifType.lowercase()}_koordinator_${pelangganId}_${System.currentTimeMillis()}"
+                val hourBucket = System.currentTimeMillis() / 3_600_000L
+                val notificationId = "${notifType.lowercase()}_koordinator_${pelangganId}_${hourBucket}"
                 val notificationData = mapOf(
                     "id" to notificationId,
                     "type" to notifType,
@@ -4761,7 +4768,8 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
 
             val pengawasUids = pengawasSnapshot.children.mapNotNull { it.key }
             for (uid in pengawasUids) {
-                val notificationId = "${notifType.lowercase()}_pengawas_${pelangganId}_${System.currentTimeMillis()}"
+                val hourBucket = System.currentTimeMillis() / 3_600_000L
+                val notificationId = "${notifType.lowercase()}_pengawas_${pelangganId}_${hourBucket}"
                 val notificationData = mapOf(
                     "id" to notificationId,
                     "type" to notifType,
@@ -5702,7 +5710,10 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
     ) {
         try {
             val validType = if (type.isBlank()) "REJECTION" else type
-            val notificationId = "${validType.lowercase()}_${pelangganId}_${System.currentTimeMillis()}"
+            // Gunakan bucket per-jam agar notifikasi yang sama (retry/double-tap dalam 1 jam)
+            // menghasilkan ID yang sama (idempotent) — mencegah duplikat notifikasi
+            val hourBucket = System.currentTimeMillis() / 3_600_000L
+            val notificationId = "${validType.lowercase()}_${pelangganId}_${hourBucket}"
 
             val title = when (validType) {
                 "APPROVAL" -> if (isPinjamanDiubah) "Pengajuan Disetujui dengan Penyesuaian" else "Pengajuan Disetujui"
