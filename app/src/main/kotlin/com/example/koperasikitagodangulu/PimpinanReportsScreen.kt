@@ -834,8 +834,8 @@ private fun DaftarSemuaNasabahCardClickable(
 @Composable
 private fun PimpinanHeroActionCard(
     isDark: Boolean = false,
-    nasabahBaruHariIni: Long,
-    nasabahLunasHariIni: Long,
+    nasabahBaruHariIni: Int,
+    nasabahLunasHariIni: Int,
     onPembukuanClick: () -> Unit,
     onDaftarLengkapClick: () -> Unit,
     onStatusKhususClick: () -> Unit,
