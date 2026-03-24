@@ -22,6 +22,8 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -111,6 +113,17 @@ fun DaftarPelangganLunasScreen(
     var queryNama by rememberSaveable { mutableStateOf("") }
     var isVisible by remember { mutableStateOf(false) }
 
+    // State untuk dialog Cairkan Semua
+    var showConfirmDialog by remember { mutableStateOf(false) }
+    var selectedPelanggan by remember { mutableStateOf<Pelanggan?>(null) }
+    var isProcessing by remember { mutableStateOf(false) }
+
+    // State untuk dialog Cairkan Setengah
+    var showSetengahDialog by remember { mutableStateOf(false) }
+    var selectedPelangganSetengah by remember { mutableStateOf<Pelanggan?>(null) }
+    var isSubmittingSetengah by remember { mutableStateOf(false) }
+    var nominalCairanInput by remember { mutableStateOf("") }
+
     LaunchedEffect(Unit) {
         isVisible = true
     }
@@ -193,13 +206,206 @@ fun DaftarPelangganLunasScreen(
                             navController = navController,
                             isDark = isDark,
                             cardColor = cardColor,
+                            borderColor = borderColor,
                             txtColor = txtColor,
                             secondaryTextColor = secondaryTextColor,
-                            context = context
+                            context = context,
+                            onLanjutPinjamanClick = {
+                                navController.navigate("kelolaKredit/${pelanggan.id}")
+                            },
+                            onCairkanSetengahClick = {
+                                selectedPelangganSetengah = pelanggan
+                                nominalCairanInput = ""
+                                showSetengahDialog = true
+                            },
+                            onCairkanClick = {
+                                selectedPelanggan = pelanggan
+                                showConfirmDialog = true
+                            }
                         )
                     }
                 }
             }
+        }
+
+        // Dialog Konfirmasi Cairkan Semua
+        if (showConfirmDialog && selectedPelanggan != null) {
+            val pel = selectedPelanggan!!
+            AlertDialog(
+                onDismissRequest = { if (!isProcessing) { showConfirmDialog = false; selectedPelanggan = null } },
+                shape = RoundedCornerShape(24.dp),
+                icon = {
+                    Box(
+                        modifier = Modifier
+                            .size(72.dp)
+                            .background(Brush.linearGradient(LunasColors.successGradient), CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Rounded.Savings, null, tint = Color.White, modifier = Modifier.size(40.dp))
+                    }
+                },
+                title = {
+                    Text(
+                        text = "Konfirmasi Pencairan",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 20.sp,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                },
+                text = {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        Text("Anda akan mencairkan simpanan untuk:", textAlign = TextAlign.Center)
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(16.dp),
+                            colors = CardDefaults.cardColors(containerColor = LunasColors.success.copy(alpha = 0.1f))
+                        ) {
+                            Column(
+                                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Text(viewModel.getDisplayName(pel), fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                                HorizontalDivider(color = LunasColors.success.copy(alpha = 0.2f))
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                    Text("Total Simpanan")
+                                    Text("Rp ${formatRupiah(pel.simpanan)}", fontWeight = FontWeight.Bold, color = LunasColors.success)
+                                }
+                            }
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Icon(Icons.Rounded.Info, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
+                            Text("Tindakan ini tidak dapat dibatalkan", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            isProcessing = true
+                            viewModel.cairkanSimpanan(
+                                pelangganId = pel.id,
+                                onSuccess = {
+                                    isProcessing = false
+                                    showConfirmDialog = false
+                                    selectedPelanggan = null
+                                    Toast.makeText(context, "Simpanan berhasil dicairkan", Toast.LENGTH_SHORT).show()
+                                },
+                                onFailure = { e ->
+                                    isProcessing = false
+                                    Toast.makeText(context, "Gagal: ${e.message}", Toast.LENGTH_SHORT).show()
+                                }
+                            )
+                        },
+                        enabled = !isProcessing,
+                        colors = ButtonDefaults.buttonColors(containerColor = LunasColors.success),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        if (isProcessing) CircularProgressIndicator(modifier = Modifier.size(18.dp), color = Color.White, strokeWidth = 2.dp)
+                        else Text("Ya, Cairkan", fontWeight = FontWeight.Bold)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showConfirmDialog = false; selectedPelanggan = null }, enabled = !isProcessing) {
+                        Text("Batal")
+                    }
+                }
+            )
+        }
+
+        // Dialog Cairkan Setengah (Sebagian)
+        if (showSetengahDialog && selectedPelangganSetengah != null) {
+            val pel = selectedPelangganSetengah!!
+            val nominalInt = nominalCairanInput.toIntOrNull() ?: 0
+            val isNominalValid = nominalInt in 1..pel.simpanan
+            AlertDialog(
+                onDismissRequest = {
+                    if (!isSubmittingSetengah) {
+                        showSetengahDialog = false
+                        selectedPelangganSetengah = null
+                        nominalCairanInput = ""
+                    }
+                },
+                icon = {
+                    Icon(Icons.Rounded.AccountBalanceWallet, null, tint = LunasColors.warning, modifier = Modifier.size(36.dp))
+                },
+                title = {
+                    Text("Cairkan Sebagian Simpanan", fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
+                },
+                text = {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(pel.namaPanggilan.ifBlank { pel.namaKtp }, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, textAlign = TextAlign.Center)
+                        Text("Total simpanan: Rp ${formatRupiah(pel.simpanan)}", fontSize = 12.sp, color = Color(0xFF64748B), textAlign = TextAlign.Center)
+                        Spacer(modifier = Modifier.height(4.dp))
+                        OutlinedTextField(
+                            value = nominalCairanInput,
+                            onValueChange = { nominalCairanInput = it.filter { c -> c.isDigit() } },
+                            label = { Text("Jumlah yang dicairkan (Rp)") },
+                            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = KeyboardType.Number),
+                            singleLine = true,
+                            isError = nominalCairanInput.isNotEmpty() && !isNominalValid,
+                            supportingText = {
+                                when {
+                                    nominalCairanInput.isEmpty() -> Text("Kosongkan untuk default 50% (Rp ${formatRupiah(pel.simpanan / 2)})", fontSize = 11.sp, color = Color(0xFF64748B))
+                                    nominalInt > pel.simpanan -> Text("Melebihi total simpanan", color = MaterialTheme.colorScheme.error, fontSize = 11.sp)
+                                    nominalInt <= 0 -> Text("Nominal harus lebih dari 0", color = MaterialTheme.colorScheme.error, fontSize = 11.sp)
+                                    else -> Text("${(nominalInt * 100.0 / pel.simpanan).toInt()}% dari total simpanan", fontSize = 11.sp, color = LunasColors.warning)
+                                }
+                            },
+                            colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = LunasColors.warning, focusedLabelColor = LunasColors.warning),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Surface(color = LunasColors.warning.copy(alpha = 0.08f), shape = RoundedCornerShape(10.dp)) {
+                            Text(
+                                "Pengajuan ini akan dikirim ke koordinator untuk disetujui terlebih dahulu.",
+                                fontSize = 12.sp, color = LunasColors.warning, textAlign = TextAlign.Center,
+                                modifier = Modifier.padding(10.dp)
+                            )
+                        }
+                    }
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            val jumlahFinal = if (nominalCairanInput.isEmpty()) pel.simpanan / 2 else nominalInt
+                            isSubmittingSetengah = true
+                            viewModel.ajukanPencairanSetengahSimpanan(
+                                pelangganId = pel.id,
+                                jumlahDicairkan = jumlahFinal,
+                                onSuccess = {
+                                    isSubmittingSetengah = false
+                                    showSetengahDialog = false
+                                    selectedPelangganSetengah = null
+                                    nominalCairanInput = ""
+                                    Toast.makeText(context, "Pengajuan berhasil dikirim ke koordinator", Toast.LENGTH_LONG).show()
+                                },
+                                onFailure = { e ->
+                                    isSubmittingSetengah = false
+                                    Toast.makeText(context, "Gagal: ${e.message}", Toast.LENGTH_SHORT).show()
+                                }
+                            )
+                        },
+                        enabled = !isSubmittingSetengah && (nominalCairanInput.isEmpty() || isNominalValid),
+                        colors = ButtonDefaults.buttonColors(containerColor = LunasColors.warning),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        if (isSubmittingSetengah) CircularProgressIndicator(modifier = Modifier.size(18.dp), color = Color.White, strokeWidth = 2.dp)
+                        else Text("Ya, Ajukan", fontWeight = FontWeight.Bold)
+                    }
+                },
+                dismissButton = {
+                    TextButton(
+                        onClick = { showSetengahDialog = false; selectedPelangganSetengah = null; nominalCairanInput = "" },
+                        enabled = !isSubmittingSetengah
+                    ) { Text("Batal") }
+                },
+                shape = RoundedCornerShape(16.dp)
+            )
         }
     }
 }
@@ -486,16 +692,20 @@ private fun ModernLunasItemCard(
     navController: NavController,
     isDark: Boolean,
     cardColor: Color,
+    borderColor: Color,
     txtColor: Color,
     secondaryTextColor: Color,
-    context: Context
+    context: Context,
+    onLanjutPinjamanClick: () -> Unit,
+    onCairkanSetengahClick: () -> Unit,
+    onCairkanClick: () -> Unit
 ) {
     val displayName = viewModel.getDisplayName(pelanggan)
     val displayNik = viewModel.getDisplayNik(pelanggan)
-    val displayNamaKtp = viewModel.getDisplayNamaKtp(pelanggan)
+    val totalSimpanan = viewModel.getTotalSimpananByNama(pelanggan.namaKtp)
+    val tanggalLunas = viewModel.getTanggalPelunasan(pelanggan)
 
     var expandedMenu by remember { mutableStateOf(false) }
-    var expanded by rememberSaveable(pelanggan.id) { mutableStateOf(false) }
     var showDeleteConfirmation by remember { mutableStateOf(false) }
     var pelangganToDelete by remember { mutableStateOf<Pelanggan?>(null) }
 
@@ -503,294 +713,204 @@ private fun ModernLunasItemCard(
         modifier = Modifier
             .fillMaxWidth()
             .shadow(
-                elevation = 4.dp,
-                shape = RoundedCornerShape(16.dp),
-                ambientColor = LunasColors.success.copy(alpha = 0.1f)
-            )
-            .clickable { navController.navigate("riwayat/${pelanggan.id}") },
-        shape = RoundedCornerShape(16.dp),
+                elevation = 8.dp,
+                shape = RoundedCornerShape(20.dp),
+                ambientColor = LunasColors.success.copy(alpha = 0.15f),
+                spotColor = LunasColors.success.copy(alpha = 0.15f)
+            ),
+        shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(containerColor = cardColor)
     ) {
-        Box(modifier = Modifier.fillMaxWidth()) {
-            Column(
+        Column(modifier = Modifier.fillMaxWidth()) {
+
+            // ── Header dengan gradient hijau ──────────────────────────────
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .background(
+                        Brush.linearGradient(
+                            colors = listOf(
+                                LunasColors.success.copy(alpha = 0.1f),
+                                LunasColors.success.copy(alpha = 0.05f)
+                            )
+                        )
+                    )
                     .padding(16.dp)
             ) {
-                // Header Row
-                Row(
-                    verticalAlignment = Alignment.Top,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    // Avatar with badge
-                    Box(contentAlignment = Alignment.BottomEnd) {
-                        Box(
-                            modifier = Modifier
-                                .size(50.dp)
-                                .background(
-                                    Brush.linearGradient(LunasColors.successGradient),
-                                    CircleShape
-                                ),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = pelanggan.namaKtp.take(2).uppercase(),
-                                color = Color.White,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 16.sp
-                            )
-                        }
-                        // Lunas badge
-                        Box(
-                            modifier = Modifier
-                                .size(20.dp)
-                                .background(Color.White, CircleShape)
-                                .padding(2.dp)
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .background(LunasColors.success, CircleShape),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.Check,
-                                    contentDescription = null,
-                                    tint = Color.White,
-                                    modifier = Modifier.size(12.dp)
-                                )
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.width(12.dp))
-
-                    Column(modifier = Modifier.weight(1f)) {
-                        // Nomor Anggota
-                        if (pelanggan.nomorAnggota.isNotBlank()) {
-                            Surface(
-                                color = LunasColors.teal.copy(alpha = 0.1f),
-                                shape = RoundedCornerShape(6.dp)
-                            ) {
-                                Text(
-                                    text = "No. ${pelanggan.nomorAnggota}",
-                                    color = LunasColors.teal,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
-                                )
-                            }
-                            Spacer(modifier = Modifier.height(4.dp))
-                        }
-
-                        // Nama
-                        Text(
-                            text = displayNamaKtp,
-                            color = txtColor,
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Bold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-
-                        // NIK
-                        Text(
-                            text = "NIK: $displayNik",
-                            color = secondaryTextColor,
-                            fontSize = 12.sp
-                        )
-                    }
-
-                    // Menu Button
-                    Box {
-                        IconButton(
-                            onClick = { expandedMenu = true },
-                            modifier = Modifier.size(32.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.MoreVert,
-                                contentDescription = "Menu",
-                                tint = secondaryTextColor
-                            )
-                        }
-                        DropdownMenu(
-                            expanded = expandedMenu,
-                            onDismissRequest = { expandedMenu = false }
-                        ) {
-                            DropdownMenuItem(
-                                text = { Text("Kelola Pinjaman") },
-                                onClick = {
-                                    expandedMenu = false
-                                    navController.navigate("kelolaKredit/${pelanggan.id}")
-                                },
-                                leadingIcon = {
-                                    Icon(
-                                        Icons.Rounded.Settings,
-                                        null,
-                                        tint = LunasColors.primary
-                                    )
-                                }
-                            )
-
-                            HorizontalDivider()
-
-                            DropdownMenuItem(
-                                text = { Text("Ajukan Penghapusan", color = LunasColors.warning) },
-                                onClick = {
-                                    expandedMenu = false
-                                    pelangganToDelete = pelanggan
-                                    showDeleteConfirmation = true
-                                },
-                                leadingIcon = {
-                                    Icon(Icons.Rounded.Delete, null, tint = LunasColors.warning)
-                                }
-                            )
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(12.dp))
-                HorizontalDivider(color = if (isDark) LunasColors.darkBorder else LunasColors.lightBorder)
-                Spacer(modifier = Modifier.height(12.dp))
-
-                // Basic Info
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    ModernInfoColumn(
-                        label = "Wilayah",
-                        value = pelanggan.wilayah,
-                        secondaryTextColor = secondaryTextColor,
-                        txtColor = txtColor
-                    )
-                    ModernInfoColumn(
-                        label = "Pinjaman Ke",
-                        value = pelanggan.pinjamanKe.toString(),
-                        secondaryTextColor = secondaryTextColor,
-                        txtColor = txtColor,
-                        alignment = Alignment.End
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    ModernInfoColumn(
-                        label = "Besar Pinjaman",
-                        value = formatRupiah(pelanggan.besarPinjaman),
-                        secondaryTextColor = secondaryTextColor,
-                        txtColor = txtColor
-                    )
-                    ModernInfoColumn(
-                        label = "Total Pelunasan",
-                        value = formatRupiah(pelanggan.totalPelunasan),
-                        secondaryTextColor = secondaryTextColor,
-                        txtColor = LunasColors.success,
-                        alignment = Alignment.End
-                    )
-                }
-
-                // Expanded Details
-                AnimatedVisibility(
-                    visible = expanded,
-                    enter = fadeIn() + expandVertically(),
-                    exit = fadeOut() + shrinkVertically()
-                ) {
-                    Column(modifier = Modifier.padding(top = 12.dp)) {
-                        HorizontalDivider(color = if (isDark) LunasColors.darkBorder else LunasColors.lightBorder)
-                        Spacer(modifier = Modifier.height(12.dp))
-
-                        ModernDetailRow("Alamat KTP", pelanggan.alamatKtp, secondaryTextColor, txtColor)
-                        ModernDetailRow("Alamat Rumah", pelanggan.alamatRumah, secondaryTextColor, txtColor)
-                        ModernDetailRow("Detail Rumah", pelanggan.detailRumah, secondaryTextColor, txtColor)
-                        ModernDetailRow("No HP", pelanggan.noHp, secondaryTextColor, txtColor)
-                        ModernDetailRow("Jenis Usaha", pelanggan.jenisUsaha, secondaryTextColor, txtColor)
-                        ModernDetailRow("Admin (5%)", formatRupiah(pelanggan.admin), secondaryTextColor, txtColor)
-
-                        val simpananLimaPersen = (pelanggan.besarPinjaman * 5) / 100
-                        ModernDetailRow("Simpanan (5%)", formatRupiah(simpananLimaPersen), secondaryTextColor, txtColor)
-
-                        val simpananTambahan = pelanggan.simpanan - simpananLimaPersen
-                        if (simpananTambahan > 0 && pelanggan.pinjamanKe >= 2) {
-                            ModernDetailRow("Simpanan Tambahan", formatRupiah(simpananTambahan), secondaryTextColor, txtColor)
-                        }
-
-                        if (pelanggan.pinjamanKe >= 2) {
-                            val totalSimpananSemua = viewModel.getTotalSimpananByNama(pelanggan.namaKtp)
-                            ModernDetailRow(
-                                "Total Simpanan (Akumulasi)",
-                                formatRupiah(totalSimpananSemua),
-                                secondaryTextColor,
-                                LunasColors.teal
-                            )
-                        }
-
-                        ModernDetailRow("Jasa Pinjaman (10%)", formatRupiah(pelanggan.jasaPinjaman), secondaryTextColor, txtColor)
-                        ModernDetailRow("Total Diterima", formatRupiah(pelanggan.totalDiterima), secondaryTextColor, txtColor)
-                        ModernDetailRow("Tenor", "${pelanggan.tenor} Hari", secondaryTextColor, txtColor)
-                        ModernDetailRow("Tanggal Pengajuan", pelanggan.tanggalPengajuan, secondaryTextColor, txtColor)
-                        ModernDetailRow("Tanggal Pelunasan", viewModel.getTanggalPelunasan(pelanggan), secondaryTextColor, LunasColors.success)
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                // Status Badge & Expand Button
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Lunas Badge
-                    Surface(
-                        color = LunasColors.success.copy(alpha = 0.1f),
-                        shape = RoundedCornerShape(10.dp)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        modifier = Modifier.weight(1f)
                     ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        // Avatar
+                        Box(
+                            modifier = Modifier
+                                .size(48.dp)
+                                .background(Brush.linearGradient(LunasColors.successGradient), CircleShape),
+                            contentAlignment = Alignment.Center
                         ) {
-                            Icon(
-                                imageVector = Icons.Rounded.CheckCircle,
-                                contentDescription = null,
-                                tint = LunasColors.success,
-                                modifier = Modifier.size(16.dp)
-                            )
                             Text(
-                                text = "LUNAS",
-                                color = LunasColors.success,
+                                text = displayName.take(1).uppercase(),
+                                color = Color.White,
                                 fontWeight = FontWeight.Bold,
-                                fontSize = 13.sp
+                                fontSize = 20.sp
                             )
+                        }
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = displayName,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 16.sp,
+                                color = txtColor,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(text = pelanggan.wilayah, fontSize = 13.sp, color = secondaryTextColor)
                         }
                     }
 
-                    // Expand Button
-                    TextButton(
-                        onClick = { expanded = !expanded }
-                    ) {
-                        Text(
-                            text = if (expanded) "Sembunyikan" else "Lihat Detail",
-                            color = LunasColors.primary,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Medium
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Icon(
-                            imageVector = if (expanded) Icons.Rounded.KeyboardArrowUp else Icons.Rounded.KeyboardArrowDown,
-                            contentDescription = null,
-                            tint = LunasColors.primary,
-                            modifier = Modifier.size(20.dp)
-                        )
+                    // Badge Lunas + Menu
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Surface(shape = RoundedCornerShape(20.dp), color = LunasColors.success.copy(alpha = 0.15f)) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Icon(Icons.Rounded.CheckCircle, null, tint = LunasColors.success, modifier = Modifier.size(14.dp))
+                                Text("Lunas", color = LunasColors.success, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                            }
+                        }
+                        Box {
+                            IconButton(onClick = { expandedMenu = true }, modifier = Modifier.size(32.dp)) {
+                                Icon(Icons.Rounded.MoreVert, "Menu", tint = secondaryTextColor, modifier = Modifier.size(18.dp))
+                            }
+                            DropdownMenu(expanded = expandedMenu, onDismissRequest = { expandedMenu = false }) {
+                                DropdownMenuItem(
+                                    text = { Text("Riwayat Pembayaran") },
+                                    onClick = { expandedMenu = false; navController.navigate("riwayat/${pelanggan.id}") },
+                                    leadingIcon = { Icon(Icons.Rounded.History, null, tint = LunasColors.primary) }
+                                )
+                                HorizontalDivider()
+                                DropdownMenuItem(
+                                    text = { Text("Ajukan Penghapusan", color = LunasColors.warning) },
+                                    onClick = { expandedMenu = false; pelangganToDelete = pelanggan; showDeleteConfirmation = true },
+                                    leadingIcon = { Icon(Icons.Rounded.Delete, null, tint = LunasColors.warning) }
+                                )
+                            }
+                        }
                     }
                 }
             }
-            // Delete Confirmation Dialog
+
+            // ── Konten ────────────────────────────────────────────────────
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                // Info Grid (sama struktur dengan card Sisa Tabungan)
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    // Kolom Kiri
+                    Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        LunasInfoItem(icon = Icons.Rounded.Badge, label = "NIK", value = displayNik, txtColor = txtColor, subtitleColor = secondaryTextColor)
+                        LunasInfoItem(icon = Icons.Rounded.CalendarToday, label = "Tgl Pengajuan", value = pelanggan.tanggalPengajuan, txtColor = txtColor, subtitleColor = secondaryTextColor)
+                        LunasInfoItem(icon = Icons.Rounded.Repeat, label = "Pinjaman Ke", value = "${pelanggan.pinjamanKe}", txtColor = txtColor, subtitleColor = secondaryTextColor)
+                    }
+                    // Kolom Kanan
+                    Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        LunasInfoItem(icon = Icons.Rounded.AttachMoney, label = "Total Pinjaman", value = "Rp ${formatRupiah(pelanggan.totalPelunasan)}", txtColor = txtColor, subtitleColor = secondaryTextColor)
+                        LunasInfoItem(icon = Icons.Rounded.EventAvailable, label = "Tgl Lunas", value = tanggalLunas.ifBlank { "-" }, valueColor = LunasColors.success, txtColor = txtColor, subtitleColor = secondaryTextColor)
+                        LunasInfoItem(icon = Icons.Rounded.LocationOn, label = "Wilayah", value = pelanggan.wilayah, txtColor = txtColor, subtitleColor = secondaryTextColor)
+                    }
+                }
+
+                HorizontalDivider(color = borderColor, thickness = 1.dp)
+
+                // Card Total Simpanan
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(containerColor = LunasColors.success.copy(alpha = 0.1f))
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(12.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Icon(Icons.Rounded.Savings, null, tint = LunasColors.success, modifier = Modifier.size(24.dp))
+                            Column {
+                                Text("Total Simpanan", fontSize = 12.sp, color = secondaryTextColor)
+                                Text(
+                                    "Rp ${formatRupiah(totalSimpanan)}",
+                                    fontSize = 18.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = LunasColors.success
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Tombol Lanjut Pinjaman (full width)
+                OutlinedButton(
+                    onClick = onLanjutPinjamanClick,
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    border = ButtonDefaults.outlinedButtonBorder.copy(
+                        brush = Brush.linearGradient(LunasColors.primaryGradient)
+                    ),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = LunasColors.primary)
+                ) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Rounded.AddCard, null, modifier = Modifier.size(18.dp))
+                        Text("Lanjut Pinjaman", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    }
+                }
+
+                // Tombol Setengah | Cairkan Semua berdampingan
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(
+                        onClick = onCairkanSetengahClick,
+                        modifier = Modifier.weight(1f).height(48.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        border = ButtonDefaults.outlinedButtonBorder.copy(
+                            brush = Brush.linearGradient(listOf(LunasColors.warning, LunasColors.warning))
+                        ),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = LunasColors.warning)
+                    ) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Rounded.CallSplit, null, modifier = Modifier.size(18.dp))
+                            Text("Setengah", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        }
+                    }
+                    Button(
+                        onClick = onCairkanClick,
+                        modifier = Modifier.weight(1f).height(48.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color.Transparent),
+                        contentPadding = PaddingValues(0.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier.fillMaxSize().background(Brush.linearGradient(LunasColors.successGradient), RoundedCornerShape(12.dp)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Rounded.AccountBalanceWallet, null, tint = Color.White, modifier = Modifier.size(18.dp))
+                                Text("Cairkan Semua", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Delete Confirmation Dialog
             if (showDeleteConfirmation && pelangganToDelete != null) {
                 var alasanPenghapusan by remember { mutableStateOf("") }
                 var isSubmitting by remember { mutableStateOf(false) }
@@ -947,13 +1067,33 @@ private fun ModernLunasItemCard(
                     }
                 )
             }
-        }
     }
 }
 
 // =========================================================================
 // HELPER COMPONENTS
 // =========================================================================
+@Composable
+private fun LunasInfoItem(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    value: String,
+    txtColor: Color,
+    subtitleColor: Color,
+    valueColor: Color? = null
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Icon(icon, contentDescription = null, tint = subtitleColor, modifier = Modifier.size(16.dp))
+        Column {
+            Text(text = label, fontSize = 11.sp, color = subtitleColor)
+            Text(text = value, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = valueColor ?: txtColor, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+    }
+}
+
 @Composable
 private fun ModernInfoColumn(
     label: String,
