@@ -355,11 +355,6 @@ fun AppNavigation(navController: NavHostController, viewModel: PelangganViewMode
             PimpinanDaftarMenungguPencairanScreen(navController, viewModel)
         }
 
-        // ✅ BARU: Route untuk Nasabah Lunas Total
-        composable("pimpinanDaftarNasabahLunasTotal") {
-            PimpinanDaftarNasabahLunasAllScreen(navController, viewModel)
-        }
-
         composable("pengawasDaftarStatusKhusus") {
             PengawasDaftarStatusKhususScreen(navController, viewModel)
         }

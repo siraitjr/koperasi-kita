@@ -115,12 +115,11 @@ fun PimpinanReportsScreen(
 
                         Spacer(modifier = Modifier.height(12.dp))
 
-                        val nasabahLunas = adminSummary.sumOf { it.nasabahLunas }
                         val nasabahBaruHariIni = adminSummary.sumOf { it.nasabahBaruHariIni }
                         val nasabahLunasHariIni = adminSummary.sumOf { it.nasabahLunasHariIni }
 
                         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            // Baris 1: Pembukuan & Menunggu Pencairan
+                            // Baris 1: Pembukuan & Sisa Tabungan
                             Row(Modifier.fillMaxWidth(), Arrangement.spacedBy(10.dp)) {
                                 PimpinanQuickCard(
                                     title = "Buka Pembukuan",
@@ -153,8 +152,8 @@ fun PimpinanReportsScreen(
                                     }
                                 )
                                 PimpinanQuickCard(
-                                    title = "Sisa Tabungan",
-                                    subtitle = "Belum Dicairkan",
+                                    title = "Sisa Tabungan & Nasabah Lunas",
+                                    subtitle = "Simpanan Nasabah",
                                     icon = Icons.Rounded.Savings,
                                     gradient = listOf(Color(0xFF10B981), Color(0xFF34D399)),
                                     modifier = Modifier.weight(1f),
@@ -162,25 +161,15 @@ fun PimpinanReportsScreen(
                                 )
                             }
 
-                            // Baris 2: Daftar Lengkap & Nasabah Lunas
-                            Row(Modifier.fillMaxWidth(), Arrangement.spacedBy(10.dp)) {
-                                PimpinanQuickCard(
-                                    title = "Daftar Lengkap",
-                                    subtitle = "Semua Nasabah",
-                                    icon = Icons.Rounded.People,
-                                    gradient = PimpinanColors.primaryGradient,
-                                    modifier = Modifier.weight(1f),
-                                    onClick = { navController.navigate("pimpinan_daftar_semua_nasabah") }
-                                )
-                                PimpinanQuickCard(
-                                    title = nasabahLunas.toString(),
-                                    subtitle = "Nasabah Lunas",
-                                    icon = Icons.Rounded.CheckCircle,
-                                    gradient = PimpinanColors.purpleGradient,
-                                    modifier = Modifier.weight(1f),
-                                    onClick = { navController.navigate("pimpinanDaftarNasabahLunasTotal") }
-                                )
-                            }
+                            // Baris 2: Daftar Lengkap (full width)
+                            PimpinanQuickCard(
+                                title = "Daftar Lengkap",
+                                subtitle = "Semua Nasabah",
+                                icon = Icons.Rounded.People,
+                                gradient = PimpinanColors.primaryGradient,
+                                modifier = Modifier.fillMaxWidth(),
+                                onClick = { navController.navigate("pimpinan_daftar_semua_nasabah") }
+                            )
 
                             // Row: Status Khusus & Bermasalah
                             Row(Modifier.fillMaxWidth(), Arrangement.spacedBy(12.dp)) {
