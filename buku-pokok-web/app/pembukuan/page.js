@@ -6,7 +6,7 @@
 // =========================================================================
 
 import { useState, useEffect, useRef } from 'react';
-import { onAuthStateChanged, signInWithEmailAndPassword, signOut } from 'firebase/auth';
+import { onAuthStateChanged, signInWithEmailAndPassword, signOut, signInWithCustomToken } from 'firebase/auth';
 import { auth } from '../../lib/firebase';
 import { getSummary, getBukuPokok, getKasirSummary } from '../../lib/api';
 import { formatRp, formatRpFull, formatRpShort } from '../../lib/format';
@@ -21,6 +21,30 @@ export default function Home() {
   const [selectedCabang, setSelectedCabang] = useState(null);
   const [selectedAdmin, setSelectedAdmin] = useState(null);
   const [kasirCabangList, setKasirCabangList] = useState([]);
+
+  // ==================== AUTO-LOGIN dari Android App ====================
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const idToken = urlParams.get('idToken');
+    if (!idToken) return;
+
+    // Segera hapus token dari URL (keamanan - tidak tersimpan di history browser)
+    window.history.replaceState({}, '', window.location.pathname);
+
+    // Tukar ID Token dengan Custom Token via Cloud Function
+    fetch('https://asia-southeast1-koperasikitagodangulu.cloudfunctions.net/generateAutoLoginToken', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ idToken }),
+    })
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.customToken) {
+          return signInWithCustomToken(auth, data.customToken);
+        }
+      })
+      .catch((err) => console.error('Auto-login gagal:', err));
+  }, []);
 
   // ==================== HELPERS: Save/Restore navigation ====================
   const saveNav = (scr, cabang, admin) => {

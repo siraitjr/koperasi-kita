@@ -34,6 +34,12 @@ import androidx.compose.ui.platform.LocalContext
 import android.content.Intent
 import android.content.ActivityNotFoundException
 import android.net.Uri
+import androidx.compose.runtime.rememberCoroutineScope
+import com.google.firebase.auth.FirebaseAuth
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.withContext
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import java.text.SimpleDateFormat
@@ -69,6 +75,7 @@ fun RingkasanDashboardScreen(
     val daftarPelanggan = viewModel.daftarPelanggan
     val isDark by viewModel.isDarkMode
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
 
     val cardColor = if (isDark) DashboardColors.darkCard else DashboardColors.lightSurface
     val txtColor = if (isDark) Color.White else Color(0xFF1E293B)
@@ -322,7 +329,7 @@ fun RingkasanDashboardScreen(
                         )
                     }
 
-                    // Buku Pokok: buka di Chrome
+                    // Buku Pokok: buka di Chrome dengan auto-login
                     ModernStatCard(
                         title = "BUKU POKOK",
                         value = "Buka Pembukuan",
@@ -330,17 +337,27 @@ fun RingkasanDashboardScreen(
                         gradient = DashboardColors.roseGradient,
                         modifier = Modifier.fillMaxWidth(),
                         onClick = {
-                            val url = "https://www.koperasi-kita.com"
-                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
-                                setPackage("com.android.chrome")
-                            }
-                            try {
-                                context.startActivity(intent)
-                            } catch (_: ActivityNotFoundException) {
-                                // Chrome tidak tersedia, buka di browser default
-                                context.startActivity(
-                                    Intent(Intent.ACTION_VIEW, Uri.parse(url))
-                                )
+                            coroutineScope.launch {
+                                val baseUrl = "https://www.koperasi-kita.com/pembukuan"
+                                val currentUser = FirebaseAuth.getInstance().currentUser
+                                val url = if (currentUser != null) {
+                                    try {
+                                        val idToken = currentUser.getIdToken(false).await().token
+                                        if (idToken != null) "$baseUrl?idToken=${Uri.encode(idToken)}"
+                                        else baseUrl
+                                    } catch (_: Exception) { baseUrl }
+                                } else { baseUrl }
+
+                                withContext(Dispatchers.Main) {
+                                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+                                        setPackage("com.android.chrome")
+                                    }
+                                    try {
+                                        context.startActivity(intent)
+                                    } catch (_: ActivityNotFoundException) {
+                                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                                    }
+                                }
                             }
                         }
                     )

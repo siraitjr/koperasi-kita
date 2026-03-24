@@ -198,6 +198,12 @@ exports.deleteKasirEntry = kasirApi.deleteKasirEntry;
 exports.scanDuplicateNasabah = detectDuplicate.scanDuplicateNasabah;
 exports.cleanupDuplicateNasabah = detectDuplicate.cleanupDuplicateNasabah;
 
+// =========================================================================
+// AUTO-LOGIN TOKEN (Android App → Buku Pokok Web)
+// =========================================================================
+const autoLogin = require('./generateAutoLoginToken');
+exports.generateAutoLoginToken = autoLogin.generateAutoLoginToken;
+
 exports.cleanupDuplicateApprovals = functions.https.onRequest(cleanupDuplicateApprovals);
 
 // =========================================================================
