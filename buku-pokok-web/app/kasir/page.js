@@ -1735,7 +1735,7 @@ function KasPenuntunScreen({ user, cabang, cabangList, onBack, onLogout }) {
                   <th style={{ ...thS, background: '#e8f8f0' }} colSpan={1}>Tunai Pasar</th>
                   <th style={{ ...thS, background: '#e0f0ff' }} rowSpan={2}>Suntikan Dana</th>
                   <th style={{ ...thS, background: '#e0f0ff' }} rowSpan={2}>Pinjaman Kas</th>
-                  <th style={{ ...thS }} rowSpan={2}>Saldo Kas</th>
+                  <th style={{ ...thS }} rowSpan={2}>Saldo Kas Bulan Lalu</th>
                   <th style={{ ...thS, background: '#dbeafe' }} rowSpan={2}>Debit</th>
                   <th style={{ ...thS, background: '#fef9c3' }} rowSpan={2}>Kas Pakai</th>
                   <th style={{ ...thS }} rowSpan={2}>SHU/SP</th>
