@@ -195,8 +195,6 @@ fun RingkasanDashboardScreen(
                 p.status != "Menunggu Approval"
     }
 
-    val pelangganAktif = nasabahAktif.size
-
     val persentaseTarget: Float = if (targetHarian > 0) {
         totalTagihanHariIni.toFloat() / targetHarian
     } else {
@@ -296,7 +294,7 @@ fun RingkasanDashboardScreen(
                         )
                     }
 
-                    // Row 3: Total Lunas & Aktif
+                    // Row 3: Nasabah Lunas & Sisa Tabungan
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -310,23 +308,14 @@ fun RingkasanDashboardScreen(
                             onClick = { navController.navigate("daftarPelangganLunas") }
                         )
                         ModernStatCard(
-                            title = "Nasabah Aktif",
-                            value = pelangganAktif.toString(),
-                            icon = Icons.Rounded.Groups,
-                            gradient = DashboardColors.warningGradient,
+                            title = "Sisa Tabungan",
+                            value = pelangganMenungguPencairan.toString(),
+                            icon = Icons.Rounded.Savings,
+                            gradient = DashboardColors.purpleGradient,
                             modifier = Modifier.weight(1f),
-                            onClick = { navController.navigate("daftarPelanggan") }
+                            onClick = { navController.navigate("daftarMenungguPencairan") }
                         )
                     }
-
-                    ModernStatCard(
-                        title = "Sisa Tabungan",
-                        value = pelangganMenungguPencairan.toString(),
-                        icon = Icons.Rounded.Savings,
-                        gradient = DashboardColors.purpleGradient,
-                        modifier = Modifier.fillMaxWidth(),
-                        onClick = { navController.navigate("daftarMenungguPencairan") }
-                    )
                 }
             }
         }
