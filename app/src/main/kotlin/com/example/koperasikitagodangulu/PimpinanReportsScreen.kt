@@ -926,7 +926,7 @@ private fun DaftarSemuaNasabahCardClickable(
 @Composable
 private fun PimpinanHeroSummaryCard(
     totalAktif: Int,
-    totalPiutang: Double,
+    totalPiutang: Long,
     jumlahPdl: Int,
     isDark: Boolean = false
 ) {
@@ -977,7 +977,7 @@ private fun PimpinanHeroSummaryCard(
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = formatRupiah(totalPiutang.toInt()),
+                    text = formatRupiah(totalPiutang),
                     fontSize = 26.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color.White
