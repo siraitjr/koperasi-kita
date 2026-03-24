@@ -6352,6 +6352,11 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
         wilayah: String,
         noHp: String,
         jenisUsaha: String,
+        tanggalPencairan: String = "",
+        tanggalPengajuan: String = "",
+        pinjamanKe: Int = -1,
+        simpanan: Int = -1,
+        newFotoKtpUri: Uri? = null,
         onSuccess: (() -> Unit)? = null,
         onFailure: ((Exception) -> Unit)? = null
     ) {
@@ -6369,7 +6374,24 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     return@launch
                 }
 
-                // ✅ PERBAIKAN: Hanya update data pribadi, tidak mengubah data pinjaman
+                // Upload foto KTP baru jika dipilih
+                val resolvedFotoKtpUrl = if (newFotoKtpUri != null) {
+                    val adminUid = existingPelanggan.adminUid.ifBlank {
+                        Firebase.auth.currentUser?.uid ?: ""
+                    }
+                    val uploadedUrl = uploadFotoKtp(newFotoKtpUri, adminUid, pelangganId, "utama")
+                    if (uploadedUrl != null) {
+                        Log.d("EditPelanggan", "✅ Foto KTP berhasil diupload: $uploadedUrl")
+                        uploadedUrl
+                    } else {
+                        Log.w("EditPelanggan", "⚠️ Upload foto KTP gagal, gunakan URL lama")
+                        existingPelanggan.fotoKtpUrl
+                    }
+                } else {
+                    existingPelanggan.fotoKtpUrl
+                }
+
+                // ✅ PERBAIKAN: Hanya update data yang dikirim, tidak mengubah data pinjaman lain
                 val updatedPelanggan = existingPelanggan.copy(
                     namaKtp = namaKtp,
                     nik = nik,
@@ -6380,8 +6402,13 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     detailRumah = detailRumah,
                     wilayah = wilayah,
                     noHp = noHp,
-                    jenisUsaha = jenisUsaha
-                    // Data pinjaman (besarPinjaman, tenor, dll) tetap menggunakan nilai existing
+                    jenisUsaha = jenisUsaha,
+                    tanggalPencairan = if (tanggalPencairan.isNotBlank()) tanggalPencairan else existingPelanggan.tanggalPencairan,
+                    tanggalPengajuan = if (tanggalPengajuan.isNotBlank()) tanggalPengajuan else existingPelanggan.tanggalPengajuan,
+                    pinjamanKe = if (pinjamanKe >= 0) pinjamanKe else existingPelanggan.pinjamanKe,
+                    simpanan = if (simpanan >= 0) simpanan else existingPelanggan.simpanan,
+                    fotoKtpUrl = resolvedFotoKtpUrl
+                    // Data pinjaman lainnya (besarPinjaman, tenor, dll) tetap menggunakan nilai existing
                 )
 
                 // Update di Firebase dan lokal
