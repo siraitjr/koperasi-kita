@@ -1461,19 +1461,23 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                 val dateFormat = SimpleDateFormat("dd MMM yyyy", Locale("in", "ID"))
                 val tanggalSekarang = dateFormat.format(Date())
 
-                // 1. Update di data pelanggan utama
-                val pelangganRef = database.child("pelanggan").child(currentUid).child(pelangganId)
-                val pelangganSnap = pelangganRef.get().await()
-                val pelanggan = pelangganSnap.getValue(Pelanggan::class.java) ?: return@launch
+                // ✅ OPTIMASI: Gunakan data lokal daripada baca Firebase lagi (hemat 1 RTDB read)
+                val pelanggan = daftarPelanggan.firstOrNull { it.id == pelangganId } ?: return@launch
+                val targetAdminUid = pelanggan.adminUid.ifBlank { currentUid }
 
+                // ✅ OPTIMASI: Baca nama admin hanya sekali (sebelumnya dibaca 2x = hemat 1 RTDB read)
+                val adminName = try {
+                    database.child("metadata/admins/$currentUid/name").get().await()
+                        .getValue(String::class.java) ?: currentEmail
+                } catch (_: Exception) { currentEmail }
+
+                // 1. Update di data pelanggan utama
+                val pelangganRef = database.child("pelanggan").child(targetAdminUid).child(pelangganId)
                 val updates = mapOf(
                     "statusKhusus" to statusKhusus,
                     "catatanStatusKhusus" to catatan,
                     "tanggalStatusKhusus" to tanggalSekarang,
-                    "diberiTandaOleh" to run {
-                        val snap = database.child("metadata/admins/$currentUid/name").get().await()
-                        snap.getValue(String::class.java) ?: currentEmail
-                    }
+                    "diberiTandaOleh" to adminName
                 )
                 pelangganRef.updateChildren(updates).await()
 
@@ -1484,7 +1488,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                         .child(cabangId).child(pelangganId)
 
                     if (statusKhusus.isNotBlank()) {
-                        // Hitung total piutang
+                        // Hitung total piutang dari data lokal (sudah tersedia)
                         val totalBayar =
                             pelanggan.pembayaranList.sumOf { it.jumlah + it.subPembayaran.sumOf { s -> s.jumlah } }
                         val sisaPiutang = (pelanggan.totalPelunasan - totalBayar).coerceAtLeast(0)
@@ -1498,10 +1502,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                             "tanggalStatusKhusus" to tanggalSekarang,
                             "diberiTandaOleh" to currentEmail,
                             "adminUid" to currentUid,
-                            "adminName" to run {
-                                val snap = database.child("metadata/admins/$currentUid/name").get().await()
-                                snap.getValue(String::class.java) ?: Firebase.auth.currentUser?.displayName ?: ""
-                            },
+                            "adminName" to adminName,
                             "totalPiutang" to sisaPiutang,
                             "besarPinjaman" to pelanggan.besarPinjaman,
                             "wilayah" to pelanggan.wilayah,
