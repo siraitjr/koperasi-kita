@@ -6391,12 +6391,40 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     existingPelanggan.fotoKtpUrl
                 }
 
-                // ✅ PERBAIKAN: Hanya update data yang dikirim, tidak mengubah data pinjaman lain
+                val adminUid = existingPelanggan.adminUid.ifBlank {
+                    Firebase.auth.currentUser?.uid ?: ""
+                }
+
+                // ✅ PERBAIKAN KRITIS: Gunakan partial update (updateChildren) bukan full overwrite (setValue)
+                // Ini mencegah nomorAnggota yang stale dari local cache menimpa nilai yang benar di Firebase.
+                // nomorAnggota SENGAJA tidak dimasukkan ke updateMap agar tidak pernah tertimpa melalui operasi edit.
+                val lastUpdatedStr = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
+                val updateMap = mutableMapOf<String, Any?>(
+                    "namaKtp" to namaKtp,
+                    "nik" to nik,
+                    "namaPanggilan" to namaPanggilan,
+                    "alamatKtp" to alamatKtp,
+                    "alamatRumah" to alamatRumah,
+                    "detailRumah" to detailRumah,
+                    "wilayah" to wilayah,
+                    "noHp" to noHp,
+                    "jenisUsaha" to jenisUsaha,
+                    "lastUpdated" to lastUpdatedStr
+                )
+                if (tanggalPencairan.isNotBlank()) updateMap["tanggalPencairan"] = tanggalPencairan
+                if (tanggalPengajuan.isNotBlank()) updateMap["tanggalPengajuan"] = tanggalPengajuan
+                if (pinjamanKe >= 0) updateMap["pinjamanKe"] = pinjamanKe
+                if (simpanan >= 0) updateMap["simpanan"] = simpanan
+                if (resolvedFotoKtpUrl.isNotBlank()) updateMap["fotoKtpUrl"] = resolvedFotoKtpUrl
+
+                offlineRepo.updatePelanggan(adminUid, pelangganId, updateMap)
+
+                // Update local daftarPelanggan untuk refresh UI segera, nomorAnggota dari existing (tidak diubah)
                 val updatedPelanggan = existingPelanggan.copy(
                     namaKtp = namaKtp,
                     nik = nik,
                     namaPanggilan = namaPanggilan,
-                    nomorAnggota = nomorAnggota,
+                    // nomorAnggota tidak diubah — gunakan nilai dari Firebase/existing
                     alamatKtp = alamatKtp,
                     alamatRumah = alamatRumah,
                     detailRumah = detailRumah,
@@ -6407,14 +6435,14 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     tanggalPengajuan = if (tanggalPengajuan.isNotBlank()) tanggalPengajuan else existingPelanggan.tanggalPengajuan,
                     pinjamanKe = if (pinjamanKe >= 0) pinjamanKe else existingPelanggan.pinjamanKe,
                     simpanan = if (simpanan >= 0) simpanan else existingPelanggan.simpanan,
-                    fotoKtpUrl = resolvedFotoKtpUrl
-                    // Data pinjaman lainnya (besarPinjaman, tenor, dll) tetap menggunakan nilai existing
+                    fotoKtpUrl = resolvedFotoKtpUrl,
+                    lastUpdated = lastUpdatedStr
                 )
+                val index = daftarPelanggan.indexOfFirst { it.id == pelangganId }
+                if (index != -1) daftarPelanggan[index] = updatedPelanggan
+                simpanKeLokal()
 
-                // Update di Firebase dan lokal
-                updatePelanggan(updatedPelanggan)
-
-                Log.d("EditPelanggan", "✅ Berhasil update data pribadi pelanggan: ${updatedPelanggan.namaPanggilan}, Nomor Anggota: $nomorAnggota")
+                Log.d("EditPelanggan", "✅ Berhasil update data pribadi pelanggan: ${updatedPelanggan.namaPanggilan}, nomorAnggota dipertahankan: ${existingPelanggan.nomorAnggota}")
                 onSuccess?.invoke()
 
             } catch (e: Exception) {
