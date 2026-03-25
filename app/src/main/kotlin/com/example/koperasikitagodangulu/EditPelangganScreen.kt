@@ -104,10 +104,6 @@ fun EditPelangganScreen(
     var tanggalPengajuan by remember { mutableStateOf(pelanggan?.tanggalPengajuan ?: "") }
     var pinjamanKe by remember { mutableStateOf(pelanggan?.pinjamanKe?.toString() ?: "") }
     var simpanan by remember { mutableStateOf(pelanggan?.simpanan?.toString() ?: "") }
-    var tarikTabungan by remember { mutableStateOf(pelanggan?.tarikTabungan?.toString() ?: "") }
-    // Pinjaman ke-1 dengan tarik tabungan → edit field tarikTabungan
-    // Pinjaman ke-2+ → edit field simpananTambahan
-    val isShowTarikTabungan = (pelanggan?.pinjamanKe ?: 1) == 1 && (pelanggan?.tarikTabungan ?: 0) > 0
     var newFotoKtpUri by remember { mutableStateOf<Uri?>(null) }
     var isLoading by remember { mutableStateOf(false) }
     var showError by remember { mutableStateOf(false) }
@@ -177,8 +173,7 @@ fun EditPelangganScreen(
                         tanggalPencairan = tanggalPencairan,
                         tanggalPengajuan = tanggalPengajuan,
                         pinjamanKe = pinjamanKe.toIntOrNull() ?: pelanggan?.pinjamanKe ?: 1,
-                        simpanan = if (isShowTarikTabungan) -1 else simpanan.toIntOrNull() ?: pelanggan?.simpanan ?: 0,
-                        tarikTabungan = if (isShowTarikTabungan) tarikTabungan.toIntOrNull() ?: pelanggan?.tarikTabungan ?: 0 else -1,
+                        simpanan = simpanan.toIntOrNull() ?: pelanggan?.simpanan ?: 0,
                         newFotoKtpUri = newFotoKtpUri,
                         onSuccess = {
                             isLoading = false
@@ -594,34 +589,19 @@ fun EditPelangganScreen(
 
                         Spacer(modifier = Modifier.height(12.dp))
 
-                        // Tarik Tabungan (pinjaman ke-1) atau Simpanan Tambahan (pinjaman ke-2+)
-                        if (isShowTarikTabungan) {
-                            ModernTextField(
-                                value = tarikTabungan,
-                                onValueChange = { tarikTabungan = it.filter { c -> c.isDigit() } },
-                                label = "Tarik Tabungan (Rp)",
-                                icon = Icons.Rounded.AccountBalanceWallet,
-                                keyboardType = KeyboardType.Number,
-                                isDark = isDark,
-                                cardColor = cardColor,
-                                borderColor = borderColor,
-                                txtColor = txtColor,
-                                subtitleColor = subtitleColor
-                            )
-                        } else {
-                            ModernTextField(
-                                value = simpanan,
-                                onValueChange = { simpanan = it.filter { c -> c.isDigit() } },
-                                label = "Simpanan Tambahan (Rp)",
-                                icon = Icons.Rounded.Savings,
-                                keyboardType = KeyboardType.Number,
-                                isDark = isDark,
-                                cardColor = cardColor,
-                                borderColor = borderColor,
-                                txtColor = txtColor,
-                                subtitleColor = subtitleColor
-                            )
-                        }
+                        // Simpanan Tambahan
+                        ModernTextField(
+                            value = simpanan,
+                            onValueChange = { simpanan = it.filter { c -> c.isDigit() } },
+                            label = "Simpanan Tambahan (Rp)",
+                            icon = Icons.Rounded.Savings,
+                            keyboardType = KeyboardType.Number,
+                            isDark = isDark,
+                            cardColor = cardColor,
+                            borderColor = borderColor,
+                            txtColor = txtColor,
+                            subtitleColor = subtitleColor
+                        )
                     }
                 }
             }

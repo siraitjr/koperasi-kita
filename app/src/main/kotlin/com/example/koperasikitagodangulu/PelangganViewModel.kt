@@ -6356,7 +6356,6 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
         tanggalPengajuan: String = "",
         pinjamanKe: Int = -1,
         simpanan: Int = -1,
-        tarikTabungan: Int = -1,
         newFotoKtpUri: Uri? = null,
         onSuccess: (() -> Unit)? = null,
         onFailure: ((Exception) -> Unit)? = null
@@ -6408,7 +6407,6 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     tanggalPengajuan = if (tanggalPengajuan.isNotBlank()) tanggalPengajuan else existingPelanggan.tanggalPengajuan,
                     pinjamanKe = if (pinjamanKe >= 0) pinjamanKe else existingPelanggan.pinjamanKe,
                     simpanan = if (simpanan >= 0) simpanan else existingPelanggan.simpanan,
-                    tarikTabungan = if (tarikTabungan >= 0) tarikTabungan else existingPelanggan.tarikTabungan,
                     fotoKtpUrl = resolvedFotoKtpUrl
                     // Data pinjaman lainnya (besarPinjaman, tenor, dll) tetap menggunakan nilai existing
                 )
