@@ -145,18 +145,6 @@ fun EditPelangganScreen(
                         return@ModernEditBottomBar
                     }
 
-                    if (nomorAnggota.length != 6) {
-                        showError = true
-                        errorMessage = "Nomor Anggota harus 6 digit"
-                        return@ModernEditBottomBar
-                    }
-
-                    if (!viewModel.validatePelangganDataEdit(namaKtp, nik, nomorAnggota)) {
-                        showError = true
-                        errorMessage = "Data tidak valid"
-                        return@ModernEditBottomBar
-                    }
-
                     isLoading = true
                     viewModel.updatePelangganDataEdit(
                         pelangganId = pelangganId!!,
@@ -325,14 +313,14 @@ fun EditPelangganScreen(
 
                         ModernTextField(
                             value = nomorAnggota,
-                            onValueChange = { nomorAnggota = it.filter { char -> char.isDigit() }.take(6) },
-                            label = "Nomor Anggota (6 digit)",
+                            onValueChange = { /* read-only: nomorAnggota tidak disimpan via edit */ },
+                            label = "Nomor Anggota (tidak dapat diubah)",
                             icon = Icons.Rounded.Numbers,
                             keyboardType = KeyboardType.Number,
                             isDark = isDark,
                             cardColor = cardColor,
                             borderColor = borderColor,
-                            txtColor = txtColor,
+                            txtColor = subtitleColor,
                             subtitleColor = subtitleColor
                         )
 

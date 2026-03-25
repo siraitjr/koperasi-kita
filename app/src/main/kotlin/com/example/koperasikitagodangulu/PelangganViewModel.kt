@@ -6332,12 +6332,11 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
     fun validatePelangganDataEdit(
         namaKtp: String,
         nik: String,
-        nomorAnggota: String
+        nomorAnggota: String = ""
     ): Boolean {
-        return namaKtp.isNotBlank() &&
-                nik.isNotBlank() &&
-                nomorAnggota.isNotBlank() &&
-                nomorAnggota.length == 6 // ✅ Validasi 6 digit
+        // nomorAnggota tidak divalidasi — field ini tidak disimpan via operasi edit
+        // untuk mencegah data lokal yang stale memblokir penyimpanan field lain
+        return namaKtp.isNotBlank() && nik.isNotBlank()
     }
 
     fun updatePelangganDataEdit(
