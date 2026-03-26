@@ -133,8 +133,10 @@ fun DaftarPelangganScreen(
     // Animation state
     var isVisible by rememberSaveable { mutableStateOf(true) }
 
-    val daftarTampil = remember(queryNama, selectedFilter, viewModel.daftarPelanggan.size) {
-        viewModel.getFilteredPelanggan(queryNama, selectedFilter)
+    // ✅ FIX: Gunakan derivedStateOf agar otomatis recompute saat isi daftarPelanggan berubah
+    // (termasuk penggantian elemen, bukan hanya perubahan ukuran list)
+    val daftarTampil by remember(queryNama, selectedFilter) {
+        derivedStateOf { viewModel.getFilteredPelanggan(queryNama, selectedFilter) }
     }
 
     Scaffold(

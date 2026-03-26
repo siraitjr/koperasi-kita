@@ -26,9 +26,9 @@ fun PaymentSummaryScreen(
 ) {
     val today = SimpleDateFormat("dd MMM yyyy", Locale("in", "ID")).format(Date())
 
-    // Gunakan fungsi dari viewModel dengan benar
-    val paymentSummary = remember(viewModel.daftarPelanggan.size, today) {
-        viewModel.calculatePaymentSummaryWithEmail(viewModel.daftarPelanggan, today)
+    // ✅ FIX: Gunakan derivedStateOf agar otomatis recompute saat isi daftarPelanggan berubah
+    val paymentSummary by remember(today) {
+        derivedStateOf { viewModel.calculatePaymentSummaryWithEmail(viewModel.daftarPelanggan, today) }
     }
 
     Scaffold(

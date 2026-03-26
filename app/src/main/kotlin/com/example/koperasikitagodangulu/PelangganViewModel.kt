@@ -7660,6 +7660,9 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
+    // ✅ Track notifikasi yang sudah di-refresh agar tidak baca Firebase berulang kali
+    private val refreshedNotificationIds = mutableSetOf<String>()
+
     private fun setupNotificationListenerOptimized(uid: String) {
         val notifRef = database.child("admin_notifications").child(uid)
 
@@ -7689,6 +7692,39 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                                             daftarPelanggan.removeAt(index)
                                             simpanKeLokal()
                                             Log.d("NotifListener", "🗑️ Pelanggan $pelangganIdToRemove dihapus dari local list")
+                                        }
+                                    }
+                                }
+
+                                // ✅ FIX: Refresh data pelanggan saat menerima notifikasi approval/rejection
+                                // Agar DaftarPelangganScreen langsung menampilkan data terbaru setelah pimpinan approve
+                                val notifKey = child.key ?: ""
+                                if ((notification.type == "APPROVAL" || notification.type == "REJECTION") &&
+                                    !notification.read && notifKey.isNotBlank() &&
+                                    notifKey !in refreshedNotificationIds) {
+                                    refreshedNotificationIds.add(notifKey)
+                                    val pelangganIdToRefresh = notification.pelangganId
+                                    if (pelangganIdToRefresh.isNotBlank()) {
+                                        val currentUid = Firebase.auth.currentUser?.uid
+                                        if (!currentUid.isNullOrBlank()) {
+                                            try {
+                                                val freshSnap = database.child("pelanggan")
+                                                    .child(currentUid)
+                                                    .child(pelangganIdToRefresh)
+                                                    .get()
+                                                    .await()
+                                                val freshData = freshSnap.getValue(Pelanggan::class.java)
+                                                if (freshData != null) {
+                                                    val idx = daftarPelanggan.indexOfFirst { it.id == pelangganIdToRefresh }
+                                                    if (idx != -1) {
+                                                        daftarPelanggan[idx] = freshData.copy(isSynced = true)
+                                                        simpanKeLokal()
+                                                        Log.d("NotifListener", "✅ Pelanggan $pelangganIdToRefresh di-refresh dari Firebase (${notification.type})")
+                                                    }
+                                                }
+                                            } catch (e: Exception) {
+                                                Log.w("NotifListener", "⚠️ Gagal refresh pelanggan $pelangganIdToRefresh: ${e.message}")
+                                            }
                                         }
                                     }
                                 }

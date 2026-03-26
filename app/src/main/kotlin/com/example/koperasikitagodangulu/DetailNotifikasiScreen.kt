@@ -74,7 +74,8 @@ fun DetailNotifikasiScreen(
     var showPermissionDeniedDialog by remember { mutableStateOf(false) }
 
     // ✅ Ambil data pelanggan dari notifikasi (dengan re-fetch saat daftarPelanggan berubah)
-    val pelanggan by remember(notificationId, viewModel.daftarPelanggan.size) {
+    // ✅ FIX: Hapus .size dari key — derivedStateOf sudah otomatis melacak perubahan daftarPelanggan
+    val pelanggan by remember(notificationId) {
         derivedStateOf {
             currentNotification?.pelangganId?.let { viewModel.getPelangganById(it) }
         }

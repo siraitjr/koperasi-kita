@@ -29,9 +29,9 @@ fun AdminPaymentDetailScreen(
 ) {
     val today = SimpleDateFormat("dd MMM yyyy", Locale("in", "ID")).format(Date())
 
-    // Gunakan fungsi dari viewModel dengan benar
-    val customerPayments = remember(viewModel.daftarPelanggan.size, today, adminId) {
-        viewModel.calculateCustomerPayments(viewModel.daftarPelanggan, today, adminId)
+    // ✅ FIX: Gunakan derivedStateOf agar otomatis recompute saat isi daftarPelanggan berubah
+    val customerPayments by remember(today, adminId) {
+        derivedStateOf { viewModel.calculateCustomerPayments(viewModel.daftarPelanggan, today, adminId) }
     }
 
     val adminName = remember(adminId) {
