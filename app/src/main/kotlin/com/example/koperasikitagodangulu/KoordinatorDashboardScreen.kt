@@ -238,49 +238,6 @@ fun KoordinatorDashboardScreen(
                     }
 
                     // =========================================================
-                    // TOMBOL ABSENSI HARIAN
-                    // =========================================================
-                    item {
-                        AnimatedVisibility(
-                            visible = isVisible,
-                            enter = fadeIn(tween(250)) + slideInVertically(initialOffsetY = { -20 })
-                        ) {
-                            Card(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable { navController.navigate("absensi") },
-                                shape = RoundedCornerShape(16.dp),
-                                colors = CardDefaults.cardColors(containerColor = KoordinatorColors.getCard(isDark))
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(16.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(14.dp)
-                                ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(44.dp)
-                                            .background(
-                                                Brush.linearGradient(
-                                                    listOf(Color(0xFF14B8A6), Color(0xFF2DD4BF))
-                                                ),
-                                                RoundedCornerShape(12.dp)
-                                            ),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Icon(Icons.Rounded.HowToReg, contentDescription = null, tint = Color.White, modifier = Modifier.size(22.dp))
-                                    }
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text("Absensi Harian", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = KoordinatorColors.getTextPrimary(isDark))
-                                        Text("Catat kehadiran hari ini", fontSize = 12.sp, color = KoordinatorColors.getTextSecondary(isDark))
-                                    }
-                                    Icon(Icons.Rounded.ChevronRight, contentDescription = null, tint = KoordinatorColors.getTextMuted(isDark))
-                                }
-                            }
-                        }
-                    }
-
-                    // =========================================================
                     // CABANG FILTER CHIPS
                     // =========================================================
                     item {

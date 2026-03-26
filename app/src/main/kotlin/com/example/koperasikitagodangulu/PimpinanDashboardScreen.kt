@@ -360,45 +360,6 @@ fun PimpinanDashboardScreen(
                         }
                     }
 
-                    // Tombol Absensi Harian
-                    item {
-                        AnimatedVisibility(
-                            visible = isVisible,
-                            enter = fadeIn(tween(300)) + slideInVertically(initialOffsetY = { -20 }, animationSpec = tween(300))
-                        ) {
-                            Card(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable { navController.navigate("absensi") },
-                                shape = RoundedCornerShape(16.dp),
-                                colors = CardDefaults.cardColors(containerColor = PimpinanColors.getCard(isDark))
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(16.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(14.dp)
-                                ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(44.dp)
-                                            .background(
-                                                Brush.linearGradient(PimpinanColors.tealGradient),
-                                                RoundedCornerShape(12.dp)
-                                            ),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Icon(Icons.Rounded.HowToReg, contentDescription = null, tint = Color.White, modifier = Modifier.size(22.dp))
-                                    }
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text("Absensi Harian", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = PimpinanColors.getTextPrimary(isDark))
-                                        Text("Catat kehadiran hari ini", fontSize = 12.sp, color = PimpinanColors.getTextSecondary(isDark))
-                                    }
-                                    Icon(Icons.Rounded.ChevronRight, contentDescription = null, tint = PimpinanColors.getTextMuted(isDark))
-                                }
-                            }
-                        }
-                    }
-
                     // Ringkasan Kinerja
                     item {
                         AnimatedVisibility(

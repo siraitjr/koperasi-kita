@@ -102,7 +102,6 @@ fun PimpinanTopBar(
     var showProfileOptionsDialog by remember { mutableStateOf(false) }
     var showFullPhotoDialog by remember { mutableStateOf(false) }
     var isUploadingPhoto by remember { mutableStateOf(false) }
-    var showLogoutAbsensiDialog by remember { mutableStateOf(false) }
 
     // Launcher untuk pick image
     val photoPickerLauncher = rememberLauncherForActivityResult(
@@ -485,11 +484,41 @@ fun PimpinanTopBar(
 
                     Spacer(modifier = Modifier.height(8.dp))
 
+                    // Tombol Absensi
+                    OutlinedButton(
+                        onClick = {
+                            showProfileOptionsDialog = false
+                            navController.navigate("absensi")
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = PimpinanColors.primary
+                        )
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.CheckCircle,
+                            contentDescription = null,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Absensi")
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
                     // Tombol Keluar
                     OutlinedButton(
                         onClick = {
                             showProfileOptionsDialog = false
-                            showLogoutAbsensiDialog = true
+                            viewModel.clearAllCaches()
+                            viewModel.clearAdminPhotoCache()
+                            LocationTrackingMonitor.stopMonitoring()
+                            LocationCheckWorker.cancel(context)
+                            Firebase.auth.signOut()
+                            navController.navigate("auth") {
+                                popUpTo(0) { inclusive = true }
+                            }
                         },
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(12.dp),
@@ -583,61 +612,6 @@ fun PimpinanTopBar(
         )
     }
 
-    // Dialog pilihan Absen / Logout
-    if (showLogoutAbsensiDialog) {
-        AlertDialog(
-            onDismissRequest = { showLogoutAbsensiDialog = false },
-            title = { Text("Keluar", fontWeight = FontWeight.Bold) },
-            text = {
-                Text("Apakah Anda ingin absen terlebih dahulu sebelum keluar?")
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        showLogoutAbsensiDialog = false
-                        navController.navigate("absensi")
-                    },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = PimpinanColors.primary
-                    )
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.CheckCircle,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Absen Dulu")
-                }
-            },
-            dismissButton = {
-                OutlinedButton(
-                    onClick = {
-                        showLogoutAbsensiDialog = false
-                        viewModel.clearAllCaches()
-                        viewModel.clearAdminPhotoCache()
-                        LocationTrackingMonitor.stopMonitoring()
-                        LocationCheckWorker.cancel(context)
-                        Firebase.auth.signOut()
-                        navController.navigate("auth") {
-                            popUpTo(0) { inclusive = true }
-                        }
-                    }
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.Logout,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Langsung Keluar")
-                }
-            },
-            containerColor = PimpinanColors.getCard(isDark),
-            titleContentColor = PimpinanColors.getTextPrimary(isDark),
-            textContentColor = PimpinanColors.getTextPrimary(isDark)
-        )
-    }
 }
 
 /**
