@@ -45,6 +45,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material.icons.rounded.CameraAlt
 import androidx.compose.material.icons.rounded.Logout
+import androidx.compose.material.icons.rounded.CheckCircle
 import com.example.koperasikitagodangulu.services.LocationTrackingMonitor
 import com.example.koperasikitagodangulu.services.LocationCheckWorker
 import com.google.accompanist.systemuicontroller.rememberSystemUiController
