@@ -1820,7 +1820,7 @@ function JurnalTransaksiScreen({ user, cabang, onBack, onLogout }) {
           <div style={{ fontSize: '14px', color: '#6b7280' }}>
             {bulanDisplay} &mdash; {filteredEntries.length} transaksi
           </div>
-          {['pengawas', 'koordinator', 'pimpinan'].includes(user?.role) && (
+          {['admin', 'pengawas', 'koordinator', 'pimpinan'].includes(user?.role) && (
             <button
               onClick={handleBackfill}
               disabled={backfillLoading}

@@ -97,8 +97,8 @@ exports.getJurnalTransaksi = functions
                 return;
             }
 
-            // 3. Only pimpinan, pengawas, koordinator, kasir_wilayah, sekretaris can view
-            const allowedRoles = ['pimpinan', 'pengawas', 'koordinator', 'kasir_wilayah', 'kasir_unit', 'sekretaris'];
+            // 3. Semua role boleh melihat jurnal (admin hanya lihat data sendiri)
+            const allowedRoles = ['admin', 'pimpinan', 'pengawas', 'koordinator', 'kasir_wilayah', 'kasir_unit', 'sekretaris'];
             if (!allowedRoles.includes(user.role)) {
                 res.status(403).json({ success: false, error: 'Tidak memiliki akses ke jurnal transaksi' });
                 return;
@@ -129,8 +129,10 @@ exports.getJurnalTransaksi = functions
                 entries = entries.filter(e => e.tipe === tipe);
             }
 
-            // Filter by adminUid
-            if (adminUid) {
+            // Filter by adminUid (admin lapangan hanya bisa lihat data sendiri)
+            if (user.role === 'admin') {
+                entries = entries.filter(e => e.adminUid === user.uid);
+            } else if (adminUid) {
                 entries = entries.filter(e => e.adminUid === adminUid);
             }
 
@@ -216,8 +218,8 @@ exports.backfillJurnalTransaksi = functions
             }
 
             const user = await getUserRole(auth.uid);
-            if (!user || !['pengawas', 'koordinator', 'pimpinan'].includes(user.role)) {
-                res.status(403).json({ success: false, error: 'Hanya pengawas/koordinator/pimpinan yang bisa backfill' });
+            if (!user || !['admin', 'pengawas', 'koordinator', 'pimpinan'].includes(user.role)) {
+                res.status(403).json({ success: false, error: 'Tidak memiliki akses backfill' });
                 return;
             }
 
@@ -228,8 +230,14 @@ exports.backfillJurnalTransaksi = functions
             }
 
             // Get admin list for this cabang
-            const cabangSnap = await db.ref(`metadata/cabang/${cabangId}/adminList`).once('value');
-            const adminUids = cabangSnap.val() || [];
+            // Admin lapangan hanya bisa backfill data mereka sendiri
+            let adminUids = [];
+            if (user.role === 'admin') {
+                adminUids = [user.uid];
+            } else {
+                const cabangSnap = await db.ref(`metadata/cabang/${cabangId}/adminList`).once('value');
+                adminUids = cabangSnap.val() || [];
+            }
 
             if (adminUids.length === 0) {
                 res.status(200).json({ success: true, message: 'Tidak ada admin di cabang ini', stats: { totalEntries: 0 } });
