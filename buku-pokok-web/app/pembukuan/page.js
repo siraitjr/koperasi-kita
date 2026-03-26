@@ -8,7 +8,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { onAuthStateChanged, signInWithEmailAndPassword, signOut, signInWithCustomToken } from 'firebase/auth';
 import { auth } from '../../lib/firebase';
-import { getSummary, getBukuPokok, getKasirSummary } from '../../lib/api';
+import { getSummary, getBukuPokok, getKasirSummary, getJurnalTransaksi, backfillJurnalTransaksi } from '../../lib/api';
 import { formatRp, formatRpFull, formatRpShort } from '../../lib/format';
 
 const KASIR_VIEW_ROLES = ['pimpinan', 'koordinator', 'pengawas'];
@@ -119,6 +119,11 @@ export default function Home() {
                 setSelectedCabang(saved.cabang);
                 setSelectedAdmin(saved.admin || null);
                 setScreen('bukuPokok');
+              } else if (saved.screen === 'jurnalTransaksi' && saved.cabang) {
+                setSelectedCabang(saved.cabang);
+                setScreen('jurnalTransaksi');
+              } else if (saved.screen === 'jurnalDashboard') {
+                setScreen('jurnalDashboard');
               } else if (saved.screen === 'dashboard') {
                 setScreen('dashboard');
               } else {
@@ -156,6 +161,9 @@ export default function Home() {
     if (book === 'bukuPokok') {
       setScreen('dashboard');
       saveNav('dashboard', null, null);
+    } else if (book === 'jurnalTransaksi') {
+      setScreen('jurnalDashboard');
+      saveNav('jurnalDashboard', null, null);
     } else if (['jurnalKasir', 'bukuRekap', 'kasPenuntun', 'bukuTunai', 'bukuEkspedisi', 'ringkasanKas'].includes(book)) {
       // Pimpinan/koordinator/pengawas: buka halaman kasir langsung (read-only)
       const kasirScreenMap = {
@@ -193,6 +201,18 @@ export default function Home() {
     saveNav('dashboard', null, null);
   };
 
+  const handleSelectJurnalCabang = (cabang) => {
+    setSelectedCabang(cabang);
+    setScreen('jurnalTransaksi');
+    saveNav('jurnalTransaksi', cabang, null);
+  };
+
+  const handleBackFromJurnal = () => {
+    setScreen('jurnalDashboard');
+    setSelectedCabang(null);
+    saveNav('jurnalDashboard', null, null);
+  };
+
   const handleBackToHome = () => {
     if (userData?.role === 'kasir_unit' || userData?.role === 'kasir_wilayah' || userData?.role === 'sekretaris') {
       window.location.href = '/kasir';
@@ -226,6 +246,31 @@ export default function Home() {
         user={userData}
         kasirCabangList={kasirCabangList}
         onSelectBook={handleSelectBook}
+        onLogout={handleLogout}
+      />
+    );
+  }
+
+  if (screen === 'jurnalDashboard') {
+    return (
+      <DashboardScreen
+        user={userData}
+        cabangList={cabangList}
+        onSelectCabang={handleSelectJurnalCabang}
+        onBack={handleBackToHome}
+        onLogout={handleLogout}
+        title="Jurnal Transaksi"
+        subtitle="Pilih cabang untuk melihat jurnal transaksi"
+      />
+    );
+  }
+
+  if (screen === 'jurnalTransaksi' && selectedCabang) {
+    return (
+      <JurnalTransaksiScreen
+        user={userData}
+        cabang={selectedCabang}
+        onBack={handleBackFromJurnal}
         onLogout={handleLogout}
       />
     );
@@ -396,6 +441,21 @@ function HomeScreen({ user, kasirCabangList, onSelectBook, onLogout }) {
       ),
       ready: true,
     },
+    {
+      id: 'jurnalTransaksi',
+      name: 'Jurnal Transaksi',
+      desc: 'Catatan permanen setiap pembayaran & pencairan',
+      icon: (
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+          <polyline points="14 2 14 8 20 8"/>
+          <line x1="16" x2="8" y1="13" y2="13"/>
+          <line x1="16" x2="8" y1="17" y2="17"/>
+          <line x1="10" x2="8" y1="9" y2="9"/>
+        </svg>
+      ),
+      ready: true,
+    },
   ];
 
   const kasirMenus = showKasirMenus ? [
@@ -550,7 +610,7 @@ function HomeScreen({ user, kasirCabangList, onSelectBook, onLogout }) {
 // ============================================================
 // DASHBOARD SCREEN (Pilih Cabang)
 // ============================================================
-function DashboardScreen({ user, cabangList, onSelectCabang, onBack, onLogout }) {
+function DashboardScreen({ user, cabangList, onSelectCabang, onBack, onLogout, title, subtitle }) {
   return (
     <div className="page-container">
       <header className="top-bar">
@@ -561,7 +621,7 @@ function DashboardScreen({ user, cabangList, onSelectCabang, onBack, onLogout })
             </svg>
           </button>
           <div>
-            <h1>Buku Pokok</h1>
+            <h1>{title || 'Buku Pokok'}</h1>
             <p>KSP Sigodang Ulu Jaya</p>
           </div>
         </div>
@@ -585,7 +645,7 @@ function DashboardScreen({ user, cabangList, onSelectCabang, onBack, onLogout })
       <main className="dash-content fade-in">
         <div className="dash-header">
           <h2>Pilih Cabang</h2>
-          <p>Pilih cabang untuk melihat Buku Pokok nasabah</p>
+          <p>{subtitle || 'Pilih cabang untuk melihat Buku Pokok nasabah'}</p>
         </div>
 
         <div className="cabang-grid">
@@ -1560,6 +1620,301 @@ function DetailModal({ nasabah, onClose }) {
           <img src={zoomImage} alt="Foto diperbesar" className="zoom-image" onClick={(e) => e.stopPropagation()} />
         </div>
       )}
+    </div>
+  );
+}
+
+
+// ============================================================
+// JURNAL TRANSAKSI SCREEN
+// ============================================================
+function JurnalTransaksiScreen({ user, cabang, onBack, onLogout }) {
+  const [entries, setEntries] = useState([]);
+  const [ringkasan, setRingkasan] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [bulan, setBulan] = useState(() => {
+    const now = new Date();
+    const wibOffset = 7 * 60 * 60 * 1000;
+    const wibDate = new Date(now.getTime() + wibOffset);
+    const y = wibDate.getUTCFullYear();
+    const m = (wibDate.getUTCMonth() + 1).toString().padStart(2, '0');
+    return `${y}-${m}`;
+  });
+  const [tipeFilter, setTipeFilter] = useState('');
+  const [search, setSearch] = useState('');
+  const [backfillLoading, setBackfillLoading] = useState(false);
+  const [backfillResult, setBackfillResult] = useState('');
+
+  const fetchData = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const result = await getJurnalTransaksi({
+        cabangId: cabang.id,
+        bulan,
+        tipe: tipeFilter || undefined,
+      });
+      if (result.success) {
+        setEntries(result.data.entries || []);
+        setRingkasan(result.data.ringkasan || null);
+      } else {
+        setError(result.error || 'Gagal memuat data');
+      }
+    } catch (err) {
+      setError(err.message || 'Gagal memuat data');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchData();
+  }, [cabang.id, bulan, tipeFilter]);
+
+  const handleBackfill = async () => {
+    if (!confirm('Backfill akan memigrasi data pembayaran existing ke jurnal transaksi. Lanjutkan?')) return;
+    setBackfillLoading(true);
+    setBackfillResult('');
+    try {
+      const result = await backfillJurnalTransaksi({ cabangId: cabang.id });
+      if (result.success) {
+        setBackfillResult(`Berhasil: ${result.stats.totalEntries} entry dari ${result.stats.totalNasabah} nasabah`);
+        fetchData();
+      } else {
+        setBackfillResult('Gagal: ' + (result.error || 'Unknown error'));
+      }
+    } catch (err) {
+      setBackfillResult('Error: ' + err.message);
+    } finally {
+      setBackfillLoading(false);
+    }
+  };
+
+  const TIPE_LABELS = {
+    pembayaran_cicilan: 'Cicilan',
+    tambah_bayar: 'Tambah Bayar',
+    pencairan_pinjaman: 'Pencairan',
+    pelunasan_sisa_utang: 'Pelunasan Sisa Utang',
+    lunas: 'Lunas',
+  };
+
+  const TIPE_COLORS = {
+    pembayaran_cicilan: '#0f8a5f',
+    tambah_bayar: '#2563eb',
+    pencairan_pinjaman: '#d97706',
+    pelunasan_sisa_utang: '#7c3aed',
+    lunas: '#059669',
+  };
+
+  const filteredEntries = search
+    ? entries.filter(e =>
+        (e.namaPelanggan || '').toLowerCase().includes(search.toLowerCase()) ||
+        (e.namaKtp || '').toLowerCase().includes(search.toLowerCase()) ||
+        (e.adminName || '').toLowerCase().includes(search.toLowerCase())
+      )
+    : entries;
+
+  // Format bulan untuk display
+  const BULAN_NAMES = ['', 'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+  const bulanParts = bulan.split('-');
+  const bulanDisplay = `${BULAN_NAMES[parseInt(bulanParts[1])]} ${bulanParts[0]}`;
+
+  return (
+    <div className="page-container">
+      <header className="top-bar">
+        <div className="top-bar-left">
+          <button onClick={onBack} className="btn-back">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <path d="m12 19-7-7 7-7"/><path d="M19 12H5"/>
+            </svg>
+          </button>
+          <div>
+            <h1>Jurnal Transaksi</h1>
+            <p>{cabang.name}</p>
+          </div>
+        </div>
+        <div className="top-bar-right">
+          {user && (
+            <div className="user-badge">
+              <span className="user-name">{user.name}</span>
+              <span className="user-role">{user.role}</span>
+            </div>
+          )}
+          <button onClick={onLogout} className="btn-icon" title="Keluar">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+              <polyline points="16 17 21 12 16 7"/>
+              <line x1="21" x2="9" y1="12" y2="12"/>
+            </svg>
+          </button>
+        </div>
+      </header>
+
+      <main className="dash-content fade-in" style={{ padding: '16px' }}>
+        {/* Controls */}
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '16px', alignItems: 'center' }}>
+          <input
+            type="month"
+            value={bulan}
+            onChange={(e) => setBulan(e.target.value)}
+            style={{
+              padding: '8px 12px', borderRadius: '8px', border: '1px solid #d1d5db',
+              fontSize: '14px', background: '#fff', color: '#1f2937'
+            }}
+          />
+          <select
+            value={tipeFilter}
+            onChange={(e) => setTipeFilter(e.target.value)}
+            style={{
+              padding: '8px 12px', borderRadius: '8px', border: '1px solid #d1d5db',
+              fontSize: '14px', background: '#fff', color: '#1f2937'
+            }}
+          >
+            <option value="">Semua Tipe</option>
+            <option value="pembayaran_cicilan">Cicilan</option>
+            <option value="tambah_bayar">Tambah Bayar</option>
+            <option value="pencairan_pinjaman">Pencairan</option>
+            <option value="pelunasan_sisa_utang">Pelunasan Sisa Utang</option>
+            <option value="lunas">Lunas</option>
+          </select>
+          <input
+            type="text"
+            placeholder="Cari nasabah/admin..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            style={{
+              padding: '8px 12px', borderRadius: '8px', border: '1px solid #d1d5db',
+              fontSize: '14px', flex: 1, minWidth: '150px'
+            }}
+          />
+        </div>
+
+        {/* Ringkasan */}
+        {ringkasan && !loading && (
+          <div style={{
+            display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
+            gap: '10px', marginBottom: '16px'
+          }}>
+            <div style={{ background: '#ecfdf5', borderRadius: '10px', padding: '12px', textAlign: 'center' }}>
+              <div style={{ fontSize: '11px', color: '#065f46', fontWeight: 600 }}>Total Cicilan</div>
+              <div style={{ fontSize: '16px', color: '#059669', fontWeight: 700 }}>{formatRpFull(ringkasan.totalPembayaranCicilan)}</div>
+            </div>
+            <div style={{ background: '#eff6ff', borderRadius: '10px', padding: '12px', textAlign: 'center' }}>
+              <div style={{ fontSize: '11px', color: '#1e40af', fontWeight: 600 }}>Tambah Bayar</div>
+              <div style={{ fontSize: '16px', color: '#2563eb', fontWeight: 700 }}>{formatRpFull(ringkasan.totalTambahBayar)}</div>
+            </div>
+            <div style={{ background: '#fffbeb', borderRadius: '10px', padding: '12px', textAlign: 'center' }}>
+              <div style={{ fontSize: '11px', color: '#92400e', fontWeight: 600 }}>Pencairan</div>
+              <div style={{ fontSize: '16px', color: '#d97706', fontWeight: 700 }}>{formatRpFull(ringkasan.totalPencairan)}</div>
+            </div>
+            <div style={{ background: '#f0fdf4', borderRadius: '10px', padding: '12px', textAlign: 'center' }}>
+              <div style={{ fontSize: '11px', color: '#065f46', fontWeight: 600 }}>Nasabah Lunas</div>
+              <div style={{ fontSize: '16px', color: '#059669', fontWeight: 700 }}>{ringkasan.jumlahNasabahLunas}</div>
+            </div>
+          </div>
+        )}
+
+        {/* Header info */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+          <div style={{ fontSize: '14px', color: '#6b7280' }}>
+            {bulanDisplay} &mdash; {filteredEntries.length} transaksi
+          </div>
+          {['pengawas', 'koordinator', 'pimpinan'].includes(user?.role) && (
+            <button
+              onClick={handleBackfill}
+              disabled={backfillLoading}
+              style={{
+                padding: '6px 14px', borderRadius: '8px', border: '1px solid #d1d5db',
+                fontSize: '12px', background: backfillLoading ? '#f3f4f6' : '#fff',
+                color: '#374151', cursor: backfillLoading ? 'wait' : 'pointer'
+              }}
+            >
+              {backfillLoading ? 'Memproses...' : 'Backfill Data Lama'}
+            </button>
+          )}
+        </div>
+
+        {backfillResult && (
+          <div style={{
+            padding: '10px 14px', borderRadius: '8px', marginBottom: '12px',
+            background: backfillResult.startsWith('Berhasil') ? '#ecfdf5' : '#fef2f2',
+            color: backfillResult.startsWith('Berhasil') ? '#065f46' : '#991b1b',
+            fontSize: '13px'
+          }}>
+            {backfillResult}
+          </div>
+        )}
+
+        {/* Content */}
+        {loading ? (
+          <div style={{ textAlign: 'center', padding: '40px', color: '#9ca3af' }}>
+            <div className="loading-spinner" />
+            <p>Memuat jurnal...</p>
+          </div>
+        ) : error ? (
+          <div style={{ textAlign: 'center', padding: '40px', color: '#ef4444' }}>{error}</div>
+        ) : filteredEntries.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '40px', color: '#9ca3af' }}>
+            <p>Belum ada transaksi untuk {bulanDisplay}</p>
+            <p style={{ fontSize: '13px', marginTop: '8px' }}>Jurnal akan terisi otomatis saat ada pembayaran baru, atau gunakan tombol "Backfill Data Lama" untuk memigrasi data existing.</p>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {filteredEntries.map((entry) => (
+              <div
+                key={entry.id}
+                style={{
+                  background: '#fff', borderRadius: '10px', padding: '12px 14px',
+                  border: '1px solid #e5e7eb', display: 'flex', alignItems: 'center', gap: '12px'
+                }}
+              >
+                {/* Tipe badge */}
+                <div style={{
+                  background: (TIPE_COLORS[entry.tipe] || '#6b7280') + '15',
+                  color: TIPE_COLORS[entry.tipe] || '#6b7280',
+                  padding: '4px 10px', borderRadius: '6px', fontSize: '11px',
+                  fontWeight: 600, whiteSpace: 'nowrap', minWidth: '70px', textAlign: 'center'
+                }}>
+                  {TIPE_LABELS[entry.tipe] || entry.tipe}
+                </div>
+
+                {/* Info */}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: '14px', fontWeight: 600, color: '#1f2937', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {entry.namaPelanggan || entry.namaKtp || '-'}
+                  </div>
+                  <div style={{ fontSize: '12px', color: '#6b7280' }}>
+                    {entry.tanggal} &middot; {entry.adminName} &middot; Pinjaman ke-{entry.pinjamanKe}
+                  </div>
+                  {entry.keterangan && (
+                    <div style={{ fontSize: '11px', color: '#9ca3af', fontStyle: 'italic' }}>{entry.keterangan}</div>
+                  )}
+                </div>
+
+                {/* Amount */}
+                <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                  {entry.tipe !== 'lunas' ? (
+                    <>
+                      <div style={{
+                        fontSize: '14px', fontWeight: 700,
+                        color: entry.tipe === 'pencairan_pinjaman' ? '#d97706' : '#059669'
+                      }}>
+                        {entry.tipe === 'pencairan_pinjaman' ? '-' : '+'}{formatRpFull(entry.jumlah)}
+                      </div>
+                      <div style={{ fontSize: '11px', color: '#9ca3af' }}>
+                        Sisa: {formatRpFull(entry.sisaUtangSetelah)}
+                      </div>
+                    </>
+                  ) : (
+                    <div style={{ fontSize: '13px', fontWeight: 700, color: '#059669' }}>LUNAS</div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </main>
     </div>
   );
 }

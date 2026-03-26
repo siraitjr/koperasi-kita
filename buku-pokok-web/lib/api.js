@@ -127,3 +127,21 @@ export async function addKasirEntry({ jenis, arah, jumlah, keterangan, tanggal, 
 export async function deleteKasirEntry({ cabangId, bulan, entryId }) {
   return apiCall('deleteKasirEntry', { cabangId, bulan, entryId });
 }
+
+// =========================================================================
+// JURNAL TRANSAKSI API
+// =========================================================================
+
+/**
+ * Get jurnal transaksi per cabang/bulan
+ */
+export async function getJurnalTransaksi({ cabangId, bulan, tipe, adminUid }) {
+  return apiCall('getJurnalTransaksi', { cabangId, bulan, tipe, adminUid });
+}
+
+/**
+ * Backfill jurnal transaksi (one-time migration)
+ */
+export async function backfillJurnalTransaksi({ cabangId }) {
+  return apiCall('backfillJurnalTransaksi', { cabangId });
+}

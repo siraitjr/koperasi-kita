@@ -211,3 +211,10 @@ exports.cleanupDuplicateApprovals = functions.https.onRequest(cleanupDuplicateAp
 // =========================================================================
 const dataIntegrityFix = require('./dataIntegrityFix');
 exports.dataIntegrityFix = dataIntegrityFix.dataIntegrityFix;
+
+// =========================================================================
+// JURNAL TRANSAKSI - Pencatatan Permanen Pembukuan
+// =========================================================================
+const jurnalApi = require('./jurnalTransaksiApi');
+exports.getJurnalTransaksi = jurnalApi.getJurnalTransaksi;
+exports.backfillJurnalTransaksi = jurnalApi.backfillJurnalTransaksi;

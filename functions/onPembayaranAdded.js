@@ -17,6 +17,9 @@ const db = admin.database();
 
 const { processPembayaranBaru, getTodayIndonesia } = require('./summaryHelpers');
 
+// ✅ JURNAL TRANSAKSI - Pencatatan permanen untuk pembukuan profesional
+const jurnal = require('./jurnalTransaksi');
+
 // =========================================================================
 // HELPER: Simpan ke node pembayaran_harian
 // =========================================================================
@@ -220,6 +223,26 @@ exports.onPembayaranAdded = functions.database
                 }
             }
 
+            // ✅ JURNAL: Catat pembayaran cicilan ke jurnal permanen
+            // (di luar if-lunas agar SEMUA pembayaran tercatat, bukan hanya yang lunas)
+            if (pelanggan) {
+                const adminSnap2 = await db.ref(`metadata/admins/${adminUid}`).once('value');
+                const adminData2 = adminSnap2.val();
+                if (adminData2) {
+                    await jurnal.catatPembayaranCicilan(adminUid, pelangganId, pembayaran, pelanggan, adminData2);
+
+                    // Jika lunas, catat juga marker lunas
+                    if (isNasabahLunas(pelanggan)) {
+                        const pinjamanKe = pelanggan.pinjamanKe || 1;
+                        const sisaUtangLama = pelanggan.sisaUtangLamaSebelumTopUp || 0;
+                        const isTopUpPayment = pinjamanKe > 1 && sisaUtangLama > 0 && pembayaran.jumlah === sisaUtangLama;
+                        if (!isTopUpPayment) {
+                            await jurnal.catatLunas(adminUid, pelangganId, pelanggan, adminData2);
+                        }
+                    }
+                }
+            }
+
             return null;
         } catch (error) {
             console.error(`âŒ Error: ${error.message}`);
@@ -252,7 +275,20 @@ exports.onSubPembayaranAdded = functions.database
             if (pelanggan && isNasabahLunas(pelanggan)) {
                 await saveToNasabahLunas(adminUid, pelangganId, pelanggan);
             }
-            
+
+            // ✅ JURNAL: Catat tambah bayar ke jurnal permanen
+            if (pelanggan) {
+                const adminSnapJ = await db.ref(`metadata/admins/${adminUid}`).once('value');
+                const adminDataJ = adminSnapJ.val();
+                if (adminDataJ) {
+                    await jurnal.catatTambahBayar(adminUid, pelangganId, subPembayaran, pelanggan, adminDataJ);
+
+                    if (isNasabahLunas(pelanggan)) {
+                        await jurnal.catatLunas(adminUid, pelangganId, pelanggan, adminDataJ);
+                    }
+                }
+            }
+
             return null;
         } catch (error) {
             console.error(`âŒ Error: ${error.message}`);
@@ -336,9 +372,21 @@ exports.onPelangganApproved = functions.database
             
             // 2. ✅ Simpan ke event_harian/nasabah_baru
             await saveToNasabahBaru(adminUid, pelangganId, pelanggan);
-            
+
+            // 3. ✅ JURNAL: Catat pencairan pinjaman ke jurnal permanen
+            const adminSnapJ = await db.ref(`metadata/admins/${adminUid}`).once('value');
+            const adminDataJ = adminSnapJ.val();
+            if (adminDataJ) {
+                await jurnal.catatPencairanPinjaman(adminUid, pelangganId, pelanggan, adminDataJ, jumlahDicairkan);
+
+                // Jika lanjut pinjaman, catat juga pelunasan sisa utang lama
+                if (sisaUtangLama > 0 && pinjamanKe > 1) {
+                    await jurnal.catatPelunasanSisaUtang(adminUid, pelangganId, pelanggan, adminDataJ, sisaUtangLama);
+                }
+            }
+
             console.log(`✅ Pencairan recorded: Rp ${jumlahDicairkan}`);
-            
+
             return null;
         } catch (error) {
             console.error(`âŒ Error: ${error.message}`);
