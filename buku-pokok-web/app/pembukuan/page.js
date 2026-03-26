@@ -8,7 +8,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { onAuthStateChanged, signInWithEmailAndPassword, signOut, signInWithCustomToken } from 'firebase/auth';
 import { auth } from '../../lib/firebase';
-import { getSummary, getBukuPokok, getKasirSummary, getJurnalTransaksi, backfillJurnalTransaksi } from '../../lib/api';
+import { getSummary, getBukuPokok, getKasirSummary, getJurnalTransaksi } from '../../lib/api';
 import { formatRp, formatRpFull, formatRpShort } from '../../lib/format';
 
 const KASIR_VIEW_ROLES = ['pimpinan', 'koordinator', 'pengawas'];
@@ -1643,10 +1643,6 @@ function JurnalTransaksiScreen({ user, cabang, onBack, onLogout }) {
   });
   const [tipeFilter, setTipeFilter] = useState('');
   const [search, setSearch] = useState('');
-  const [backfillLoading, setBackfillLoading] = useState(false);
-  const [backfillResult, setBackfillResult] = useState('');
-  const [backfillDone, setBackfillDone] = useState(false);
-
   const fetchData = async () => {
     setLoading(true);
     setError('');
@@ -1659,7 +1655,6 @@ function JurnalTransaksiScreen({ user, cabang, onBack, onLogout }) {
       if (result.success) {
         setEntries(result.data.entries || []);
         setRingkasan(result.data.ringkasan || null);
-        if (result.data.backfillDone) setBackfillDone(true);
       } else {
         setError(result.error || 'Gagal memuat data');
       }
@@ -1673,26 +1668,6 @@ function JurnalTransaksiScreen({ user, cabang, onBack, onLogout }) {
   useEffect(() => {
     fetchData();
   }, [cabang.id, bulan, tipeFilter]);
-
-  const handleBackfill = async () => {
-    if (!confirm('Backfill akan memigrasi data pembayaran existing ke jurnal transaksi. Lanjutkan?')) return;
-    setBackfillLoading(true);
-    setBackfillResult('');
-    try {
-      const result = await backfillJurnalTransaksi({ cabangId: cabang.id });
-      if (result.success) {
-        setBackfillResult(`Berhasil: ${result.stats.totalEntries} entry dari ${result.stats.totalNasabah} nasabah`);
-        setBackfillDone(true);
-        fetchData();
-      } else {
-        setBackfillResult('Gagal: ' + (result.error || 'Unknown error'));
-      }
-    } catch (err) {
-      setBackfillResult('Error: ' + err.message);
-    } finally {
-      setBackfillLoading(false);
-    }
-  };
 
   const TIPE_LABELS = {
     pembayaran_cicilan: 'Cicilan',
@@ -1823,31 +1798,7 @@ function JurnalTransaksiScreen({ user, cabang, onBack, onLogout }) {
           <div style={{ fontSize: '14px', color: '#6b7280' }}>
             {bulanDisplay} &mdash; {filteredEntries.length} transaksi
           </div>
-          {!backfillDone && ['admin', 'pengawas', 'koordinator', 'pimpinan'].includes(user?.role) && (
-            <button
-              onClick={handleBackfill}
-              disabled={backfillLoading}
-              style={{
-                padding: '6px 14px', borderRadius: '8px', border: '1px solid #d1d5db',
-                fontSize: '12px', background: backfillLoading ? '#f3f4f6' : '#fff',
-                color: '#374151', cursor: backfillLoading ? 'wait' : 'pointer'
-              }}
-            >
-              {backfillLoading ? 'Memproses...' : 'Backfill Data Lama'}
-            </button>
-          )}
         </div>
-
-        {backfillResult && (
-          <div style={{
-            padding: '10px 14px', borderRadius: '8px', marginBottom: '12px',
-            background: backfillResult.startsWith('Berhasil') ? '#ecfdf5' : '#fef2f2',
-            color: backfillResult.startsWith('Berhasil') ? '#065f46' : '#991b1b',
-            fontSize: '13px'
-          }}>
-            {backfillResult}
-          </div>
-        )}
 
         {/* Content */}
         {loading ? (
@@ -1860,11 +1811,7 @@ function JurnalTransaksiScreen({ user, cabang, onBack, onLogout }) {
         ) : filteredEntries.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '40px', color: '#9ca3af' }}>
             <p>Belum ada transaksi untuk {bulanDisplay}</p>
-            <p style={{ fontSize: '13px', marginTop: '8px' }}>
-              {backfillDone
-                ? 'Jurnal akan terisi otomatis saat ada pembayaran baru.'
-                : 'Jurnal akan terisi otomatis saat ada pembayaran baru, atau gunakan tombol "Backfill Data Lama" untuk memigrasi data existing.'}
-            </p>
+            <p style={{ fontSize: '13px', marginTop: '8px' }}>Jurnal akan terisi otomatis saat ada pembayaran baru.</p>
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
