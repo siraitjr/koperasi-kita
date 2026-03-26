@@ -67,6 +67,7 @@ import android.content.SharedPreferences
 import com.example.koperasikitagodangulu.offline.OfflineRepository
 import com.example.koperasikitagodangulu.offline.SyncWorker
 import com.example.koperasikitagodangulu.offline.SyncStatus
+import com.example.koperasikitagodangulu.offline.SaveResult
 import kotlinx.coroutines.flow.collectLatest
 import com.example.koperasikitagodangulu.models.PengawasCabangSummary
 import com.example.koperasikitagodangulu.models.CabangMetadata
