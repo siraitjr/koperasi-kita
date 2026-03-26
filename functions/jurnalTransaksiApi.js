@@ -169,6 +169,10 @@ exports.getJurnalTransaksi = functions
                 }
             });
 
+            // 8. Cek apakah backfill sudah pernah dilakukan untuk cabang ini
+            const backfillSnap = await db.ref(`jurnal_transaksi_meta/${cabangId}/backfillDone`).once('value');
+            const backfillDone = backfillSnap.val() === true;
+
             res.status(200).json({
                 success: true,
                 data: {
@@ -176,6 +180,7 @@ exports.getJurnalTransaksi = functions
                     bulan: targetBulan,
                     entries,
                     ringkasan,
+                    backfillDone,
                     today: getTodayIndonesia()
                 }
             });
@@ -393,6 +398,16 @@ exports.backfillJurnalTransaksi = functions
                 await db.ref().update(batch);
                 console.log(`[BACKFILL] Batch ${Math.floor(i / BATCH_SIZE) + 1}: ${Object.keys(batch).length} entries written`);
             }
+
+            // Tandai backfill sudah selesai untuk cabang ini
+            await db.ref(`jurnal_transaksi_meta/${cabangId}`).update({
+                backfillDone: true,
+                backfillBy: user.uid,
+                backfillRole: user.role,
+                backfillAt: admin.database.ServerValue.TIMESTAMP,
+                totalEntries,
+                totalNasabah
+            });
 
             res.status(200).json({
                 success: true,
