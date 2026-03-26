@@ -101,6 +101,7 @@ fun PimpinanTopBar(
     var showProfileOptionsDialog by remember { mutableStateOf(false) }
     var showFullPhotoDialog by remember { mutableStateOf(false) }
     var isUploadingPhoto by remember { mutableStateOf(false) }
+    var showLogoutAbsensiDialog by remember { mutableStateOf(false) }
 
     // Launcher untuk pick image
     val photoPickerLauncher = rememberLauncherForActivityResult(
@@ -487,14 +488,7 @@ fun PimpinanTopBar(
                     OutlinedButton(
                         onClick = {
                             showProfileOptionsDialog = false
-                            viewModel.clearAllCaches()
-                            viewModel.clearAdminPhotoCache()
-                            LocationTrackingMonitor.stopMonitoring()
-                            LocationCheckWorker.cancel(context)
-                            Firebase.auth.signOut()
-                            navController.navigate("auth") {
-                                popUpTo(0) { inclusive = true }
-                            }
+                            showLogoutAbsensiDialog = true
                         },
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(12.dp),
@@ -580,6 +574,62 @@ fun PimpinanTopBar(
             dismissButton = {
                 TextButton(onClick = { showFullPhotoDialog = false }) {
                     Text("Tutup")
+                }
+            },
+            containerColor = PimpinanColors.getCard(isDark),
+            titleContentColor = PimpinanColors.getTextPrimary(isDark),
+            textContentColor = PimpinanColors.getTextPrimary(isDark)
+        )
+    }
+
+    // Dialog pilihan Absen / Logout
+    if (showLogoutAbsensiDialog) {
+        AlertDialog(
+            onDismissRequest = { showLogoutAbsensiDialog = false },
+            title = { Text("Keluar", fontWeight = FontWeight.Bold) },
+            text = {
+                Text("Apakah Anda ingin absen terlebih dahulu sebelum keluar?")
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showLogoutAbsensiDialog = false
+                        navController.navigate("absensi")
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = PimpinanColors.primary
+                    )
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.CheckCircle,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Absen Dulu")
+                }
+            },
+            dismissButton = {
+                OutlinedButton(
+                    onClick = {
+                        showLogoutAbsensiDialog = false
+                        viewModel.clearAllCaches()
+                        viewModel.clearAdminPhotoCache()
+                        LocationTrackingMonitor.stopMonitoring()
+                        LocationCheckWorker.cancel(context)
+                        Firebase.auth.signOut()
+                        navController.navigate("auth") {
+                            popUpTo(0) { inclusive = true }
+                        }
+                    }
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Logout,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Langsung Keluar")
                 }
             },
             containerColor = PimpinanColors.getCard(isDark),

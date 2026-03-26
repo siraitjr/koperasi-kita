@@ -118,6 +118,7 @@ fun PengawasTopBar(
 
     // Dark Mode State
     val isDark by viewModel.isDarkMode
+    var showLogoutAbsensiDialog by remember { mutableStateOf(false) }
 
     // Animation untuk refresh icon
     val infiniteTransition = rememberInfiniteTransition(label = "refresh")
@@ -333,11 +334,7 @@ fun PengawasTopBar(
 
                     // Profile/Logout Button
                     IconButton(onClick = {
-                        viewModel.clearAllCaches()
-                        Firebase.auth.signOut()
-                        navController.navigate("auth") {
-                            popUpTo(0) { inclusive = true }
-                        }
+                        showLogoutAbsensiDialog = true
                     }) {
                         Box(
                             modifier = Modifier
@@ -356,6 +353,59 @@ fun PengawasTopBar(
                 }
             }
         }
+    }
+
+    // Dialog pilihan Absen / Logout
+    if (showLogoutAbsensiDialog) {
+        AlertDialog(
+            onDismissRequest = { showLogoutAbsensiDialog = false },
+            title = { Text("Keluar", fontWeight = FontWeight.Bold) },
+            text = {
+                Text("Apakah Anda ingin absen terlebih dahulu sebelum keluar?")
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showLogoutAbsensiDialog = false
+                        navController.navigate("absensi")
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = PengawasColors.primaryGradient[0]
+                    )
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.CheckCircle,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Absen Dulu")
+                }
+            },
+            dismissButton = {
+                OutlinedButton(
+                    onClick = {
+                        showLogoutAbsensiDialog = false
+                        viewModel.clearAllCaches()
+                        Firebase.auth.signOut()
+                        navController.navigate("auth") {
+                            popUpTo(0) { inclusive = true }
+                        }
+                    }
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Logout,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Langsung Keluar")
+                }
+            },
+            containerColor = PengawasColors.getCard(isDark),
+            titleContentColor = PengawasColors.getTextPrimary(isDark),
+            textContentColor = PengawasColors.getTextPrimary(isDark)
+        )
     }
 }
 

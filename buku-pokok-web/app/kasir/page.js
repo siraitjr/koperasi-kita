@@ -117,6 +117,7 @@ export default function KasirPage() {
   const [summaryData, setSummaryData] = useState({});
   const [jenisLabels, setJenisLabels] = useState({});
   const [selectedCabang, setSelectedCabang] = useState(null);
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
 
   // ==================== AUTH STATE ====================
   useEffect(() => {
@@ -171,8 +172,18 @@ export default function KasirPage() {
     await signInWithEmailAndPassword(auth, email, password);
   };
 
-  const handleLogout = async () => {
+  const handleLogout = () => {
+    setShowLogoutModal(true);
+  };
+
+  const doLogout = async () => {
+    setShowLogoutModal(false);
     await signOut(auth);
+  };
+
+  const goToAbsensi = () => {
+    setShowLogoutModal(false);
+    setScreen('absensi');
   };
 
   // Untuk pimpinan/koordinator/pengawas yang datang dari pembukuan
@@ -204,12 +215,11 @@ export default function KasirPage() {
     return <LoginScreen onLogin={handleLogin} />;
   }
 
+  let content;
   if (screen === 'forbidden') {
-    return <ForbiddenScreen onLogout={handleLogout} />;
-  }
-
-  if (screen === 'jurnal') {
-    return (
+    content = <ForbiddenScreen onLogout={handleLogout} />;
+  } else if (screen === 'jurnal') {
+    content = (
       <JurnalScreen
         user={userData}
         cabang={selectedCabang}
@@ -218,10 +228,8 @@ export default function KasirPage() {
         onLogout={handleLogout}
       />
     );
-  }
-
-    if (screen === 'bukuRekap') {
-    return (
+  } else if (screen === 'bukuRekap') {
+    content = (
       <BukuRekapScreen
         user={userData}
         cabang={selectedCabang}
@@ -230,10 +238,8 @@ export default function KasirPage() {
         onLogout={handleLogout}
       />
     );
-  }
-
-  if (screen === 'kasPenuntun') {
-    return (
+  } else if (screen === 'kasPenuntun') {
+    content = (
       <KasPenuntunScreen
         user={userData}
         cabang={selectedCabang}
@@ -242,10 +248,8 @@ export default function KasirPage() {
         onLogout={handleLogout}
       />
     );
-  }
-
-  if (screen === 'bukuTunai') {
-    return (
+  } else if (screen === 'bukuTunai') {
+    content = (
       <BukuTunaiScreen
         user={userData}
         cabang={selectedCabang}
@@ -254,10 +258,8 @@ export default function KasirPage() {
         onLogout={handleLogout}
       />
     );
-  }
-
-  if (screen === 'bukuEkspedisi') {
-    return (
+  } else if (screen === 'bukuEkspedisi') {
+    content = (
       <BukuEkspedisiScreen
         user={userData}
         cabang={selectedCabang}
@@ -266,10 +268,8 @@ export default function KasirPage() {
         onLogout={handleLogout}
       />
     );
-  }
-
-  if (screen === 'ringkasan') {
-    return (
+  } else if (screen === 'ringkasan') {
+    content = (
       <RingkasanScreen
         user={userData}
         cabang={selectedCabang}
@@ -278,10 +278,8 @@ export default function KasirPage() {
         onLogout={handleLogout}
       />
     );
-  }
-
-  if (screen === 'absensi') {
-    return (
+  } else if (screen === 'absensi') {
+    content = (
       <AbsensiScreen
         user={userData}
         cabang={selectedCabang}
@@ -290,21 +288,88 @@ export default function KasirPage() {
         onLogout={handleLogout}
       />
     );
+  } else {
+    content = (
+      <HomeScreen
+        user={userData}
+        cabangList={cabangList}
+        summaryData={summaryData}
+        selectedCabang={selectedCabang}
+        onSelectCabang={(c) => setSelectedCabang(c)}
+        onNavigate={(s) => setScreen(s)}
+        onLogout={handleLogout}
+      />
+    );
   }
 
   return (
-    <HomeScreen
-      user={userData}
-      cabangList={cabangList}
-      summaryData={summaryData}
-      selectedCabang={selectedCabang}
-      onSelectCabang={(c) => setSelectedCabang(c)}
-      onNavigate={(s) => setScreen(s)}
-      onLogout={handleLogout}
-    />
+    <>
+      {content}
+      {showLogoutModal && (
+        <LogoutAbsensiModal
+          onAbsen={goToAbsensi}
+          onLogout={doLogout}
+          onClose={() => setShowLogoutModal(false)}
+        />
+      )}
+    </>
   );
 }
 
+
+// ============================================================
+// LOGOUT ABSENSI MODAL
+// ============================================================
+function LogoutAbsensiModal({ onAbsen, onLogout, onClose }) {
+  return (
+    <div style={{
+      position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+      background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center',
+      justifyContent: 'center', zIndex: 9999, padding: 16
+    }} onClick={onClose}>
+      <div style={{
+        background: '#fff', borderRadius: 16, padding: 24, maxWidth: 360,
+        width: '100%', boxShadow: '0 20px 60px rgba(0,0,0,0.3)'
+      }} onClick={e => e.stopPropagation()}>
+        <h3 style={{ margin: '0 0 8px', fontSize: 18, fontWeight: 700, color: '#1e293b' }}>Keluar</h3>
+        <p style={{ margin: '0 0 24px', color: '#64748b', fontSize: 14, lineHeight: 1.5 }}>
+          Apakah Anda ingin absen terlebih dahulu sebelum keluar?
+        </p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <button onClick={onAbsen} style={{
+            padding: '12px 16px', borderRadius: 10, border: 'none', cursor: 'pointer',
+            background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', color: '#fff',
+            fontWeight: 600, fontSize: 14, display: 'flex', alignItems: 'center',
+            justifyContent: 'center', gap: 8
+          }}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>
+            </svg>
+            Absen Dulu
+          </button>
+          <button onClick={onLogout} style={{
+            padding: '12px 16px', borderRadius: 10, cursor: 'pointer',
+            background: 'transparent', color: '#ef4444', fontWeight: 600, fontSize: 14,
+            border: '1.5px solid #fca5a5', display: 'flex', alignItems: 'center',
+            justifyContent: 'center', gap: 8
+          }}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/>
+            </svg>
+            Langsung Keluar
+          </button>
+          <button onClick={onClose} style={{
+            padding: '8px 16px', borderRadius: 10, cursor: 'pointer',
+            background: 'transparent', color: '#94a3b8', fontWeight: 500, fontSize: 13,
+            border: 'none'
+          }}>
+            Batal
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // ============================================================
 // LOGIN SCREEN (reuse pattern dari pembukuan)

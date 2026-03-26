@@ -21,6 +21,7 @@ export default function Home() {
   const [selectedCabang, setSelectedCabang] = useState(null);
   const [selectedAdmin, setSelectedAdmin] = useState(null);
   const [kasirCabangList, setKasirCabangList] = useState([]);
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
 
   // ==================== AUTO-LOGIN dari Android App ====================
   useEffect(() => {
@@ -152,9 +153,20 @@ export default function Home() {
     await signInWithEmailAndPassword(auth, email, password);
   };
 
-  const handleLogout = async () => {
+  const handleLogout = () => {
+    setShowLogoutModal(true);
+  };
+
+  const doLogout = async () => {
+    setShowLogoutModal(false);
     clearNav();
     await signOut(auth);
+  };
+
+  const goToAbsensi = () => {
+    setShowLogoutModal(false);
+    // Navigasi ke halaman kasir/absensi
+    window.location.href = '/kasir?screen=absensi';
   };
 
   const handleSelectBook = (book) => {
@@ -240,8 +252,9 @@ export default function Home() {
     return <LoginScreen onLogin={handleLogin} />;
   }
 
+  let content;
   if (screen === 'home') {
-    return (
+    content = (
       <HomeScreen
         user={userData}
         kasirCabangList={kasirCabangList}
@@ -249,10 +262,8 @@ export default function Home() {
         onLogout={handleLogout}
       />
     );
-  }
-
-  if (screen === 'jurnalDashboard') {
-    return (
+  } else if (screen === 'jurnalDashboard') {
+    content = (
       <DashboardScreen
         user={userData}
         cabangList={cabangList}
@@ -263,10 +274,8 @@ export default function Home() {
         subtitle="Pilih cabang untuk melihat jurnal transaksi"
       />
     );
-  }
-
-  if (screen === 'jurnalTransaksi' && selectedCabang) {
-    return (
+  } else if (screen === 'jurnalTransaksi' && selectedCabang) {
+    content = (
       <JurnalTransaksiScreen
         user={userData}
         cabang={selectedCabang}
@@ -274,10 +283,8 @@ export default function Home() {
         onLogout={handleLogout}
       />
     );
-  }
-
-  if (screen === 'bukuPokok' && selectedCabang) {
-    return (
+  } else if (screen === 'bukuPokok' && selectedCabang) {
+    content = (
       <BukuPokokScreen
         user={userData}
         cabang={selectedCabang}
@@ -287,19 +294,85 @@ export default function Home() {
         onLogout={handleLogout}
       />
     );
+  } else {
+    content = (
+      <DashboardScreen
+        user={userData}
+        cabangList={cabangList}
+        onSelectCabang={handleSelectCabang}
+        onBack={handleBackToHome}
+        onLogout={handleLogout}
+      />
+    );
   }
 
   return (
-    <DashboardScreen
-      user={userData}
-      cabangList={cabangList}
-      onSelectCabang={handleSelectCabang}
-      onBack={handleBackToHome}
-      onLogout={handleLogout}
-    />
+    <>
+      {content}
+      {showLogoutModal && (
+        <LogoutAbsensiModal
+          onAbsen={goToAbsensi}
+          onLogout={doLogout}
+          onClose={() => setShowLogoutModal(false)}
+        />
+      )}
+    </>
   );
 }
 
+// ============================================================
+// LOGOUT ABSENSI MODAL
+// ============================================================
+function LogoutAbsensiModal({ onAbsen, onLogout, onClose }) {
+  return (
+    <div style={{
+      position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+      background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center',
+      justifyContent: 'center', zIndex: 9999, padding: 16
+    }} onClick={onClose}>
+      <div style={{
+        background: '#fff', borderRadius: 16, padding: 24, maxWidth: 360,
+        width: '100%', boxShadow: '0 20px 60px rgba(0,0,0,0.3)'
+      }} onClick={e => e.stopPropagation()}>
+        <h3 style={{ margin: '0 0 8px', fontSize: 18, fontWeight: 700, color: '#1e293b' }}>Keluar</h3>
+        <p style={{ margin: '0 0 24px', color: '#64748b', fontSize: 14, lineHeight: 1.5 }}>
+          Apakah Anda ingin absen terlebih dahulu sebelum keluar?
+        </p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <button onClick={onAbsen} style={{
+            padding: '12px 16px', borderRadius: 10, border: 'none', cursor: 'pointer',
+            background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', color: '#fff',
+            fontWeight: 600, fontSize: 14, display: 'flex', alignItems: 'center',
+            justifyContent: 'center', gap: 8
+          }}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>
+            </svg>
+            Absen Dulu
+          </button>
+          <button onClick={onLogout} style={{
+            padding: '12px 16px', borderRadius: 10, cursor: 'pointer',
+            background: 'transparent', color: '#ef4444', fontWeight: 600, fontSize: 14,
+            border: '1.5px solid #fca5a5', display: 'flex', alignItems: 'center',
+            justifyContent: 'center', gap: 8
+          }}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/>
+            </svg>
+            Langsung Keluar
+          </button>
+          <button onClick={onClose} style={{
+            padding: '8px 16px', borderRadius: 10, cursor: 'pointer',
+            background: 'transparent', color: '#94a3b8', fontWeight: 500, fontSize: 13,
+            border: 'none'
+          }}>
+            Batal
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // ============================================================
 // LOGIN SCREEN

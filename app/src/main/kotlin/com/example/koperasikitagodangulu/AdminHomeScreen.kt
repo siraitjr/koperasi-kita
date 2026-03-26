@@ -125,6 +125,7 @@ fun AdminHomeScreen(navController: NavController, viewModel: PelangganViewModel)
     var isUploadingPhoto by remember { mutableStateOf(false) }
     var showPhotoOptionsDialog by remember { mutableStateOf(false) }
     var showFullPhotoDialog by remember { mutableStateOf(false) }
+    var showLogoutAbsensiDialog by remember { mutableStateOf(false) }
     val systemUiController = rememberSystemUiController()
     val bgColor = if (isDark) AdminColors.darkSurface else AdminColors.lightSurface
     SideEffect {
@@ -216,13 +217,7 @@ fun AdminHomeScreen(navController: NavController, viewModel: PelangganViewModel)
                                 }
                             )
                         } else {
-                            LocationTrackingMonitor.stopMonitoring()
-                            LocationCheckWorker.cancel(context)
-                            auth.signOut()
-                            Toast.makeText(context, "Logout sukses", Toast.LENGTH_SHORT).show()
-                            navController.navigate("auth") {
-                                popUpTo("dashboard") { inclusive = true }
-                            }
+                            showLogoutAbsensiDialog = true
                         }
                     },
                     onManualSync = { viewModel.manualSync() },
@@ -517,6 +512,61 @@ fun AdminHomeScreen(navController: NavController, viewModel: PelangganViewModel)
                     dismissButton = {
                         TextButton(onClick = { showFullPhotoDialog = false }) {
                             Text("Tutup")
+                        }
+                    },
+                    containerColor = cardColor,
+                    titleContentColor = txtColor,
+                    textContentColor = txtColor
+                )
+            }
+
+            // Dialog pilihan Absen / Logout
+            if (showLogoutAbsensiDialog) {
+                AlertDialog(
+                    onDismissRequest = { showLogoutAbsensiDialog = false },
+                    title = { Text("Keluar", fontWeight = FontWeight.Bold) },
+                    text = {
+                        Text("Apakah Anda ingin absen terlebih dahulu sebelum keluar?")
+                    },
+                    confirmButton = {
+                        Button(
+                            onClick = {
+                                showLogoutAbsensiDialog = false
+                                navController.navigate("absensi")
+                            },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = AdminColors.primaryGradient[0]
+                            )
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.CheckCircle,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Absen Dulu")
+                        }
+                    },
+                    dismissButton = {
+                        OutlinedButton(
+                            onClick = {
+                                showLogoutAbsensiDialog = false
+                                LocationTrackingMonitor.stopMonitoring()
+                                LocationCheckWorker.cancel(context)
+                                auth.signOut()
+                                Toast.makeText(context, "Logout sukses", Toast.LENGTH_SHORT).show()
+                                navController.navigate("auth") {
+                                    popUpTo("dashboard") { inclusive = true }
+                                }
+                            }
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Logout,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Langsung Keluar")
                         }
                     },
                     containerColor = cardColor,
