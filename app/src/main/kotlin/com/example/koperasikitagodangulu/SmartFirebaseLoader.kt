@@ -187,11 +187,20 @@ class SmartFirebaseLoader(
 
                     // Kasus 2: Data ada di Firebase dan lokal, keduanya sudah synced
                     firebasePelanggan != null -> {
-                        // ✅ PERBAIKAN: Jika lokal sudah isSynced=true, Firebase adalah sumber kebenaran
-                        // Karena perubahan dari pimpinan (approval, penolakan, edit) hanya ada di Firebase
-                        mergedList.add(firebasePelanggan)
-                        firebaseMap.remove(firebasePelanggan.id)
-                        Log.d(TAG, "📌 Using FIREBASE (synced, server is truth): ${firebasePelanggan.namaPanggilan}")
+                        // ✅ FIX: Safety check — jangan sampai kehilangan pembayaran!
+                        // Jika lokal punya lebih banyak pembayaran, prioritaskan lokal
+                        // (bisa terjadi jika sync pembayaran belum selesai tapi isSynced=true)
+                        val localPayCount = localPelanggan.pembayaranList.sumOf { 1 + it.subPembayaran.size }
+                        val firebasePayCount = firebasePelanggan.pembayaranList.sumOf { 1 + it.subPembayaran.size }
+                        if (localPayCount > firebasePayCount) {
+                            mergedList.add(localPelanggan)
+                            firebaseMap.remove(localPelanggan.id)
+                            Log.d(TAG, "⚠️ Using LOCAL (more payments: local=$localPayCount > firebase=$firebasePayCount): ${localPelanggan.namaPanggilan}")
+                        } else {
+                            mergedList.add(firebasePelanggan)
+                            firebaseMap.remove(firebasePelanggan.id)
+                            Log.d(TAG, "📌 Using FIREBASE (synced, server is truth): ${firebasePelanggan.namaPanggilan}")
+                        }
                     }
 
                     // Kasus 3: Data hanya ada di lokal dan sudah synced, tapi TIDAK ada di Firebase

@@ -1718,12 +1718,14 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
         Log.d("FirebaseSave", "Nama: ${pelanggan.namaKtp}")
         Log.d("FirebaseSave", "ID: $id")
 
+        // ✅ FIX: Set isSynced = false sampai sync ke Firebase benar-benar selesai
+        // Mencegah SmartFirebaseLoader menimpa data lokal dengan data Firebase yang stale
         val toSave = if (pelanggan.status == "Menunggu Approval") {
             // Reset dualApprovalInfo agar pengajuan ulang mulai dari Phase 1
             pelanggan.copy(
                 id = id,
                 adminUid = targetAdminUid,
-                isSynced = true,
+                isSynced = false,
                 dualApprovalInfo = if (pelanggan.besarPinjaman >= DualApprovalThreshold.MINIMUM_AMOUNT) {
                     DualApprovalInfo(
                         requiresDualApproval = true,
@@ -1734,7 +1736,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                 }
             )
         } else {
-            pelanggan.copy(id = id, adminUid = targetAdminUid, isSynced = true)
+            pelanggan.copy(id = id, adminUid = targetAdminUid, isSynced = false)
         }
 
         // ✅ PERUBAHAN: Gunakan OfflineRepository untuk offline-first
@@ -1746,26 +1748,33 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                 val pelangganMap = pelangganToMap(toSave)
 
                 // Simpan via OfflineRepository (akan di-queue dan sync otomatis)
-                offlineRepo.savePelanggan(
+                val saveResult = offlineRepo.savePelanggan(
                     adminUid = targetAdminUid,
                     pelangganId = id,
                     pelanggan = pelangganMap
                 )
 
+                // ✅ FIX: Tandai isSynced = true HANYA setelah sync berhasil ke Firebase
+                val finalSave = if (saveResult is SaveResult.Success) {
+                    toSave.copy(isSynced = true)
+                } else {
+                    toSave // tetap isSynced = false, akan diprioritaskan saat merge
+                }
+
                 // Update local list
                 val existingIndex =
                     daftarPelanggan.indexOfFirst { it.id == id || it.id == pelanggan.id }
                 if (existingIndex != -1) {
-                    daftarPelanggan[existingIndex] = toSave
+                    daftarPelanggan[existingIndex] = finalSave
                 } else {
-                    daftarPelanggan.add(toSave)
+                    daftarPelanggan.add(finalSave)
                 }
 
                 // Simpan ke local storage untuk offline read
                 simpanKeLokal()
 
                 _offlineSyncStatus.value = SyncStatus.SUCCESS
-                Log.d("FirebaseSave", "✅ Data di-queue untuk sync: ${toSave.namaPanggilan}")
+                Log.d("FirebaseSave", "✅ Data ${if (finalSave.isSynced) "synced" else "queued"}: ${toSave.namaPanggilan}")
 
                 // Handle pengajuan approval jika diperlukan
                 if (toSave.status == "Menunggu Approval") {
@@ -2313,11 +2322,12 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
             }
             val status = if (totalDibayar >= pelanggan.totalPelunasan) "Lunas" else "Aktif"
 
-            // ✅ PERBAIKAN: Tandai isSynced = false jika offline agar data lokal diprioritaskan saat merge
+            // ✅ FIX: SELALU tandai isSynced = false sampai sync ke Firebase BENAR-BENAR selesai
+            // Ini mencegah SmartFirebaseLoader menimpa data lokal dengan data Firebase yang stale
             val updatedPelanggan = pelanggan.copy(
                 pembayaranList = updatedPembayaranList,
                 status = status,
-                isSynced = isOnline(), // false jika offline, true jika online
+                isSynced = false, // KRITIS: false agar lokal diprioritaskan saat merge
                 lastUpdated = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
             )
 
@@ -2336,12 +2346,22 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     "subPembayaran" to emptyList<Map<String, Any>>()
                 )
 
-                offlineRepo.addPembayaran(
+                val result = offlineRepo.addPembayaran(
                     adminUid = adminUid,
                     pelangganId = pelanggan.id,
                     pembayaranIndex = pembayaranIndex,
                     pembayaran = pembayaranMap
                 )
+
+                // ✅ FIX: Tandai isSynced = true HANYA setelah sync berhasil
+                if (result is SaveResult.Success) {
+                    val idx = daftarPelanggan.indexOfFirst { it.id == id }
+                    if (idx != -1) {
+                        daftarPelanggan[idx] = daftarPelanggan[idx].copy(isSynced = true)
+                        simpanKeLokal()
+                        Log.d("Pembayaran", "✅ Sync berhasil, isSynced = true")
+                    }
+                }
 
                 // Update status jika perlu
                 if (status != pelanggan.status) {
