@@ -242,6 +242,36 @@ data class PelangganDitolak(
     constructor() : this(Pelanggan(), "", "", "", 0L)
 }
 
+// =========================================================================
+// ABSENSI KARYAWAN
+// =========================================================================
+
+data class AbsensiRecord(
+    val uid: String = "",
+    val nama: String = "",
+    val role: String = "",          // "admin" | "koordinator" | "pimpinan" | "kasir_unit"
+    val cabangId: String = "",
+    val cabangNama: String = "",
+    val jam: String = "",           // "08:30" WIB
+    val tanggal: String = "",       // ISO: "2026-03-26"
+    val timestamp: Long = 0L
+)
+
+data class CabangInfo(
+    val id: String = "",
+    val name: String = ""
+)
+
+data class OperasionalHarian(
+    val uid: String = "",
+    val nama: String = "",
+    val uangMakan: Int = 0,
+    val transport: Int = 0,
+    val diberikanOleh: String = "",
+    val diberikanOlehNama: String = "",
+    val timestamp: Long = 0L
+)
+
 data class AdminNotification(
     val id: String = "",
     val type: String = "", // "REJECTION", "APPROVAL", etc.
@@ -500,6 +530,13 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
 
     private val _serahTerimaNotifications = MutableStateFlow<List<SerahTerimaNotification>>(emptyList())
     val serahTerimaNotifications: StateFlow<List<SerahTerimaNotification>> = _serahTerimaNotifications
+
+    // =========================================================================
+    // ABSENSI STATE
+    // =========================================================================
+    val absensiSendiri = MutableStateFlow<AbsensiRecord?>(null)
+    val isLoadingAbsensi = MutableStateFlow(false)
+    val daftarCabangUntukAbsensi = MutableStateFlow<List<CabangInfo>>(emptyList())
 
     // Counter untuk badge notifikasi serah terima
     private val _unreadSerahTerimaCount = MutableStateFlow(0)
@@ -15768,6 +15805,110 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
             } catch (e: Exception) {
                 Log.e("PencairanSimpanan", "❌ Gagal menolak: ${e.message}")
                 onFailure?.invoke(e)
+            }
+        }
+    }
+
+    // =========================================================================
+    // ABSENSI KARYAWAN FUNCTIONS
+    // =========================================================================
+
+    /**
+     * Cek status absensi hari ini untuk user yang sedang login.
+     * Membaca dari `user_absensi_today/{uid}` (1 read).
+     * Jika data ditemukan dan tanggalnya cocok dengan hari ini, set absensiSendiri.
+     */
+    fun loadAbsensiSendiri() {
+        val uid = Firebase.auth.currentUser?.uid ?: return
+        val todayKey = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(java.util.Date())
+        isLoadingAbsensi.value = true
+        viewModelScope.launch {
+            try {
+                val snap = database.child("user_absensi_today").child(uid).get().await()
+                val record = snap.getValue(AbsensiRecord::class.java)
+                absensiSendiri.value = if (record != null && record.tanggal == todayKey) record else null
+                Log.d("Absensi", "✅ Status absensi loaded: ${absensiSendiri.value?.jam ?: "belum absen"}")
+            } catch (e: Exception) {
+                Log.e("Absensi", "❌ Gagal load absensi: ${e.message}")
+                absensiSendiri.value = null
+            } finally {
+                isLoadingAbsensi.value = false
+            }
+        }
+    }
+
+    /**
+     * Submit absensi untuk user yang sedang login.
+     * Menulis ke 2 path:
+     * 1. absensi/{cabangId}/{todayKey}/{uid}   - untuk tampilan kasir per cabang
+     * 2. user_absensi_today/{uid}              - untuk self-check cepat
+     */
+    fun submitAbsensi(
+        cabangId: String,
+        cabangNama: String,
+        onSuccess: () -> Unit,
+        onFailure: (String) -> Unit
+    ) {
+        val uid = Firebase.auth.currentUser?.uid ?: run { onFailure("Sesi login tidak ditemukan"); return }
+        val todayKey = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(java.util.Date())
+        val jam = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date())
+        val roleStr = when (_currentUserRole.value) {
+            UserRole.ADMIN_LAPANGAN -> "admin"
+            UserRole.KOORDINATOR -> "koordinator"
+            UserRole.PIMPINAN -> "pimpinan"
+            else -> "karyawan"
+        }
+        viewModelScope.launch {
+            try {
+                val namaSnap = database.child("metadata/admins/$uid/name").get().await()
+                val nama = namaSnap.getValue(String::class.java) ?: Firebase.auth.currentUser?.email ?: "Tidak Diketahui"
+
+                val record = AbsensiRecord(
+                    uid = uid,
+                    nama = nama,
+                    role = roleStr,
+                    cabangId = cabangId,
+                    cabangNama = cabangNama,
+                    jam = jam,
+                    tanggal = todayKey,
+                    timestamp = System.currentTimeMillis()
+                )
+
+                val updates = mapOf(
+                    "absensi/$cabangId/$todayKey/$uid" to record,
+                    "user_absensi_today/$uid" to record
+                )
+                database.updateChildren(updates).await()
+
+                absensiSendiri.value = record
+                Log.d("Absensi", "✅ Absensi berhasil: $nama pukul $jam di $cabangNama")
+                withContext(kotlinx.coroutines.Dispatchers.Main) { onSuccess() }
+            } catch (e: Exception) {
+                Log.e("Absensi", "❌ Gagal absen: ${e.message}")
+                withContext(kotlinx.coroutines.Dispatchers.Main) { onFailure(e.message ?: "Gagal menyimpan absensi") }
+            }
+        }
+    }
+
+    /**
+     * Muat daftar semua cabang dari metadata/cabang.
+     * Digunakan oleh Koordinator untuk memilih cabang saat absen.
+     */
+    fun loadDaftarCabangUntukAbsensi() {
+        if (daftarCabangUntukAbsensi.value.isNotEmpty()) return // sudah ada, skip
+        viewModelScope.launch {
+            try {
+                val snap = database.child("metadata/cabang").get().await()
+                val list = mutableListOf<CabangInfo>()
+                snap.children.forEach { child ->
+                    val cabangId = child.key ?: return@forEach
+                    val nama = child.child("name").getValue(String::class.java) ?: cabangId
+                    list.add(CabangInfo(id = cabangId, name = nama))
+                }
+                daftarCabangUntukAbsensi.value = list.sortedBy { it.name }
+                Log.d("Absensi", "✅ Loaded ${list.size} cabang")
+            } catch (e: Exception) {
+                Log.e("Absensi", "❌ Gagal load cabang: ${e.message}")
             }
         }
     }

@@ -140,7 +140,7 @@ export default function KasirPage() {
             // Cek parameter ?screen= dari pembukuan (untuk pimpinan/koordinator/pengawas)
             const urlParams = new URLSearchParams(window.location.search);
             const targetScreen = urlParams.get('screen');
-            const validScreens = ['jurnal', 'bukuRekap', 'kasPenuntun', 'bukuTunai', 'bukuEkspedisi', 'ringkasan'];
+            const validScreens = ['jurnal', 'bukuRekap', 'kasPenuntun', 'bukuTunai', 'bukuEkspedisi', 'ringkasan', 'absensi'];
             if (targetScreen && validScreens.includes(targetScreen)) {
               setScreen(targetScreen);
             } else {
@@ -271,6 +271,18 @@ export default function KasirPage() {
   if (screen === 'ringkasan') {
     return (
       <RingkasanScreen
+        user={userData}
+        cabang={selectedCabang}
+        cabangList={cabangList}
+        onBack={handleBack}
+        onLogout={handleLogout}
+      />
+    );
+  }
+
+  if (screen === 'absensi') {
+    return (
+      <AbsensiScreen
         user={userData}
         cabang={selectedCabang}
         cabangList={cabangList}
@@ -458,6 +470,15 @@ function HomeScreen({ user, cabangList, summaryData, selectedCabang, onSelectCab
       icon: (
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
           <path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/>
+        </svg>
+      ),
+    },
+    {
+      id: 'absensi', name: 'Absensi Karyawan', desc: 'Lihat & kelola absensi harian karyawan',
+      icon: (
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+          <rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/>
+          <path d="m9 16 2 2 4-4"/>
         </svg>
       ),
     },
@@ -2481,6 +2502,349 @@ function RingkasanScreen({ user, cabang, cabangList, onBack, onLogout }) {
             </div>
 
           </>
+        )}
+      </main>
+    </div>
+  );
+}
+
+// ============================================================
+// ABSENSI SCREEN (Kasir - Lihat & kelola absensi harian)
+// ============================================================
+function AbsensiScreen({ user, cabang, cabangList, onBack, onLogout }) {
+  const isUnit = user?.role === 'kasir_unit';
+  const [activeCabang, setActiveCabang] = useState(cabang || cabangList[0] || null);
+  const [absensiList, setAbsensiList] = useState([]);
+  const [operasionalMap, setOperasionalMap] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [sudahAbsen, setSudahAbsen] = useState(false);
+  const [absensiSendiri, setAbsensiSendiri] = useState(null);
+  const [submittingAbsensi, setSubmittingAbsensi] = useState(false);
+  const [savingMap, setSavingMap] = useState({});
+  const [inputMap, setInputMap] = useState({});
+  const [error, setError] = useState('');
+  const [successMsg, setSuccessMsg] = useState('');
+
+  const todayKey = (() => {
+    const now = new Date();
+    const jakartaOffset = 7 * 60;
+    const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
+    const jakarta = new Date(utc + (jakartaOffset * 60000));
+    const yyyy = jakarta.getFullYear();
+    const mm = String(jakarta.getMonth() + 1).padStart(2, '0');
+    const dd = String(jakarta.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  })();
+
+  const todayDisplay = getTodayIndo();
+
+  const ROLE_LABELS = {
+    admin: 'PDL', koordinator: 'Koordinator', pimpinan: 'Pimpinan',
+    kasir_unit: 'Kasir', kasir_wilayah: 'Kasir Wilayah'
+  };
+
+  // Load absensi data
+  const loadAbsensi = async () => {
+    if (!activeCabang) return;
+    setLoading(true);
+    setError('');
+    try {
+      const { ref: dbRefFn, get } = await import('firebase/database');
+      const { database: db } = await import('../../lib/firebase');
+
+      const snap = await get(dbRefFn(db, `absensi/${activeCabang.id}/${todayKey}`));
+      const data = snap.val() || {};
+      const list = Object.values(data).sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+      setAbsensiList(list);
+
+      // Check if kasir already absented (using their uid)
+      const uid = (await import('firebase/auth')).getAuth().currentUser?.uid;
+      if (uid) {
+        const selfSnap = await get(dbRefFn(db, `user_absensi_today/${uid}`));
+        const selfData = selfSnap.val();
+        if (selfData && selfData.tanggal === todayKey) {
+          setSudahAbsen(true);
+          setAbsensiSendiri(selfData);
+        } else {
+          setSudahAbsen(false);
+          setAbsensiSendiri(null);
+        }
+      }
+
+      // Load operasional harian
+      const opsSnap = await get(dbRefFn(db, `operasional_harian/${activeCabang.id}/${todayKey}`));
+      const opsData = opsSnap.val() || {};
+      setOperasionalMap(opsData);
+
+      // Initialize input map
+      const initInput = {};
+      list.forEach(a => {
+        initInput[a.uid] = {
+          uangMakan: opsData[a.uid]?.uangMakan ?? '',
+          transport: opsData[a.uid]?.transport ?? '',
+        };
+      });
+      setInputMap(initInput);
+
+    } catch (err) {
+      setError('Gagal memuat data absensi: ' + err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { loadAbsensi(); }, [activeCabang?.id]);
+
+  // Kasir absen sendiri
+  const handleAbsenSendiri = async () => {
+    if (!activeCabang || !isUnit) return;
+    setSubmittingAbsensi(true);
+    setError('');
+    try {
+      const { ref: dbRefFn, set, serverTimestamp } = await import('firebase/database');
+      const { database: db } = await import('../../lib/firebase');
+      const { getAuth } = await import('firebase/auth');
+
+      const auth = getAuth();
+      const uid = auth.currentUser?.uid;
+      if (!uid) throw new Error('Tidak ada sesi login');
+
+      const now = new Date();
+      const jakartaOffset = 7 * 60;
+      const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
+      const jakarta = new Date(utc + (jakartaOffset * 60000));
+      const jam = `${String(jakarta.getHours()).padStart(2, '0')}:${String(jakarta.getMinutes()).padStart(2, '0')}`;
+
+      const record = {
+        uid,
+        nama: user.name,
+        role: user.role,
+        cabangId: activeCabang.id,
+        cabangNama: activeCabang.name,
+        jam,
+        tanggal: todayKey,
+        timestamp: Date.now(),
+      };
+
+      await set(dbRefFn(db, `absensi/${activeCabang.id}/${todayKey}/${uid}`), record);
+      await set(dbRefFn(db, `user_absensi_today/${uid}`), record);
+
+      setSudahAbsen(true);
+      setAbsensiSendiri(record);
+      setSuccessMsg(`Absensi berhasil dicatat pukul ${jam}`);
+      setTimeout(() => setSuccessMsg(''), 3000);
+      await loadAbsensi();
+    } catch (err) {
+      setError('Gagal absen: ' + err.message);
+    } finally {
+      setSubmittingAbsensi(false);
+    }
+  };
+
+  // Simpan operasional karyawan
+  const handleSaveOperasional = async (uid, nama) => {
+    if (!activeCabang || !isUnit) return;
+    const input = inputMap[uid] || {};
+    const uangMakan = parseInt(input.uangMakan) || 0;
+    const transport = parseInt(input.transport) || 0;
+    if (uangMakan < 0 || transport < 0) { setError('Nominal tidak boleh negatif'); return; }
+
+    setSavingMap(m => ({ ...m, [uid]: true }));
+    setError('');
+    try {
+      const { ref: dbRefFn, set } = await import('firebase/database');
+      const { database: db } = await import('../../lib/firebase');
+      const { getAuth } = await import('firebase/auth');
+      const kasirUid = getAuth().currentUser?.uid;
+
+      const record = {
+        uid, nama, uangMakan, transport,
+        diberikanOleh: kasirUid,
+        diberikanOlehNama: user.name,
+        timestamp: Date.now(),
+      };
+
+      await set(dbRefFn(db, `operasional_harian/${activeCabang.id}/${todayKey}/${uid}`), record);
+      setOperasionalMap(m => ({ ...m, [uid]: record }));
+      setSuccessMsg(`Operasional ${nama} berhasil disimpan`);
+      setTimeout(() => setSuccessMsg(''), 3000);
+    } catch (err) {
+      setError('Gagal menyimpan: ' + err.message);
+    } finally {
+      setSavingMap(m => ({ ...m, [uid]: false }));
+    }
+  };
+
+  return (
+    <div className="page-container">
+      <header className="top-bar">
+        <div className="top-bar-left">
+          <button onClick={onBack} className="btn-icon" title="Kembali">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg>
+          </button>
+          <div>
+            <h1>Absensi Karyawan</h1>
+            <p>{todayDisplay}</p>
+          </div>
+        </div>
+        <div className="top-bar-right">
+          <button onClick={onLogout} className="btn-icon" title="Keluar">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/>
+            </svg>
+          </button>
+        </div>
+      </header>
+
+      <main className="home-content fade-in" style={{ maxWidth: 800, margin: '0 auto' }}>
+        {/* Cabang selector for kasir wilayah */}
+        {!isUnit && cabangList.length > 1 && (
+          <div style={{ marginBottom: 20 }}>
+            <div className="home-section-label">Pilih Cabang</div>
+            <div className="cabang-grid">
+              {cabangList.map(c => (
+                <button key={c.id} onClick={() => setActiveCabang(c)}
+                  className="cabang-card"
+                  style={activeCabang?.id === c.id ? { borderColor: 'var(--primary)', background: 'var(--primary-light)' } : {}}>
+                  <div className="cabang-card-info"><h3>{c.name}</h3></div>
+                  {activeCabang?.id === c.id && <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" strokeWidth="2.5" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {error && (
+          <div style={{ background: 'var(--danger-light,#fef2f2)', border: '1px solid var(--danger,#ef4444)', borderRadius: 10, padding: '10px 16px', marginBottom: 16, color: 'var(--danger,#ef4444)', fontSize: 14 }}>
+            {error}
+          </div>
+        )}
+
+        {successMsg && (
+          <div style={{ background: '#f0fdf4', border: '1px solid #22c55e', borderRadius: 10, padding: '10px 16px', marginBottom: 16, color: '#16a34a', fontSize: 14 }}>
+            ✓ {successMsg}
+          </div>
+        )}
+
+        {/* Kasir absen sendiri */}
+        {isUnit && activeCabang && (
+          <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, padding: 20, marginBottom: 20 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 12, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              Absensi Saya
+            </div>
+            {sudahAbsen ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <div style={{ width: 40, height: 40, borderRadius: '50%', background: '#f0fdf4', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="2.5" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>
+                </div>
+                <div>
+                  <p style={{ fontWeight: 600, color: '#16a34a', marginBottom: 2 }}>Sudah Absen</p>
+                  <p style={{ fontSize: 13, color: 'var(--text-muted)' }}>
+                    Pukul {absensiSendiri?.jam} · {activeCabang?.name}
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <div>
+                  <p style={{ fontWeight: 600, color: 'var(--text-primary)', marginBottom: 4 }}>{user?.name}</p>
+                  <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 12 }}>Belum absen hari ini · {activeCabang?.name}</p>
+                </div>
+                <button
+                  onClick={handleAbsenSendiri}
+                  disabled={submittingAbsensi}
+                  style={{ marginLeft: 'auto', padding: '8px 20px', background: 'var(--primary,#6366f1)', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 600, cursor: 'pointer', opacity: submittingAbsensi ? 0.6 : 1 }}>
+                  {submittingAbsensi ? 'Menyimpan...' : 'Absen Sekarang'}
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Daftar absensi */}
+        {activeCabang && (
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+              <div className="home-section-label" style={{ marginBottom: 0 }}>
+                Daftar Absensi Hari Ini {activeCabang && `— ${activeCabang.name}`}
+              </div>
+              <button onClick={loadAbsensi} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--primary)', fontSize: 13, fontWeight: 600 }}>
+                Refresh
+              </button>
+            </div>
+
+            {loading ? (
+              <div style={{ textAlign: 'center', padding: 40 }}>
+                <div className="loading-spinner" style={{ margin: '0 auto 12px' }} />
+                <p style={{ color: 'var(--text-muted)', fontSize: 14 }}>Memuat data...</p>
+              </div>
+            ) : absensiList.length === 0 ? (
+              <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, padding: 32, textAlign: 'center' }}>
+                <p style={{ color: 'var(--text-muted)', fontSize: 14 }}>Belum ada karyawan yang absen hari ini</p>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {absensiList.map((a, i) => {
+                  const ops = operasionalMap[a.uid] || {};
+                  const inp = inputMap[a.uid] || {};
+                  const sudahDiisi = ops.uangMakan !== undefined || ops.transport !== undefined;
+                  return (
+                    <div key={a.uid} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, padding: '14px 16px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: sudahDiisi || isUnit ? 12 : 0 }}>
+                        <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'var(--primary-light,#ede9fe)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, fontWeight: 700, color: 'var(--primary,#6366f1)', flexShrink: 0 }}>
+                          {(a.nama || '?')[0].toUpperCase()}
+                        </div>
+                        <div style={{ flex: 1 }}>
+                          <p style={{ fontWeight: 600, fontSize: 14, marginBottom: 2 }}>{a.nama}</p>
+                          <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                            {ROLE_LABELS[a.role] || a.role} · {a.cabangNama} · {a.jam}
+                          </p>
+                        </div>
+                        {sudahDiisi && (
+                          <div style={{ textAlign: 'right', fontSize: 12 }}>
+                            <p style={{ color: 'var(--text-muted)' }}>Makan: <b style={{ color: 'var(--text-primary)' }}>{(ops.uangMakan || 0).toLocaleString('id-ID')}</b></p>
+                            <p style={{ color: 'var(--text-muted)' }}>Transport: <b style={{ color: 'var(--text-primary)' }}>{(ops.transport || 0).toLocaleString('id-ID')}</b></p>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Input operasional (kasir_unit only) */}
+                      {isUnit && (
+                        <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                          <div style={{ flex: 1, minWidth: 120 }}>
+                            <label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Uang Makan (Rp)</label>
+                            <input
+                              type="number" min="0"
+                              value={inp.uangMakan ?? ''}
+                              onChange={e => setInputMap(m => ({ ...m, [a.uid]: { ...m[a.uid], uangMakan: e.target.value } }))}
+                              placeholder="0"
+                              style={{ width: '100%', padding: '6px 10px', border: '1px solid var(--border)', borderRadius: 8, fontSize: 14, background: 'var(--background)', color: 'var(--text-primary)', boxSizing: 'border-box' }}
+                            />
+                          </div>
+                          <div style={{ flex: 1, minWidth: 120 }}>
+                            <label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Transport (Rp)</label>
+                            <input
+                              type="number" min="0"
+                              value={inp.transport ?? ''}
+                              onChange={e => setInputMap(m => ({ ...m, [a.uid]: { ...m[a.uid], transport: e.target.value } }))}
+                              placeholder="0"
+                              style={{ width: '100%', padding: '6px 10px', border: '1px solid var(--border)', borderRadius: 8, fontSize: 14, background: 'var(--background)', color: 'var(--text-primary)', boxSizing: 'border-box' }}
+                            />
+                          </div>
+                          <button
+                            onClick={() => handleSaveOperasional(a.uid, a.nama)}
+                            disabled={savingMap[a.uid]}
+                            style={{ padding: '8px 16px', background: 'var(--primary,#6366f1)', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 600, cursor: 'pointer', fontSize: 13, whiteSpace: 'nowrap', marginTop: 16, opacity: savingMap[a.uid] ? 0.6 : 1 }}>
+                            {savingMap[a.uid] ? 'Menyimpan...' : 'Simpan'}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         )}
       </main>
     </div>

@@ -367,7 +367,13 @@ fun AdminHomeScreen(navController: NavController, viewModel: PelangganViewModel)
                         subtitle = "Cari Nasabah Berdasarkan KTP",
                         icon = Icons.Rounded.Search,
                         gradient = AdminColors.primaryGradient
-                    ) { navController.navigate("cari_pelanggan") }
+                    ) { navController.navigate("cari_pelanggan") },
+                    ModernMenuItem(
+                        title = "Absensi",
+                        subtitle = "Catat kehadiran harian",
+                        icon = Icons.Rounded.HowToReg,
+                        gradient = AdminColors.tealGradient
+                    ) { navController.navigate("absensi") }
                 )
 
                 itemsIndexed(menuItems) { index, item ->

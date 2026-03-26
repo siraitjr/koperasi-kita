@@ -427,5 +427,12 @@ fun AppNavigation(navController: NavHostController, viewModel: PelangganViewMode
         composable("pengawas_tracking") {
             PengawasTrackingScreen(navController, viewModel)
         }
+
+        // =========================================================================
+        // ABSENSI KARYAWAN
+        // =========================================================================
+        composable("absensi") {
+            AbsensiScreen(navController = navController, viewModel = viewModel)
+        }
     }
 }
