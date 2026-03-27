@@ -35,6 +35,21 @@ function getYearMonthWIB() {
     return `${year}-${month}`;
 }
 
+// Parsing tanggal format "25 Mar 2026" ke year-month "2026-03"
+function getYearMonthFromTanggal(tanggal) {
+    if (!tanggal) return getYearMonthWIB();
+    const months = {
+        'Jan': '01', 'Feb': '02', 'Mar': '03', 'Apr': '04',
+        'Mei': '05', 'Jun': '06', 'Jul': '07', 'Agu': '08',
+        'Sep': '09', 'Okt': '10', 'Nov': '11', 'Des': '12'
+    };
+    const parts = tanggal.trim().split(' ');
+    if (parts.length === 3 && months[parts[1]]) {
+        return `${parts[2]}-${months[parts[1]]}`;
+    }
+    return getYearMonthWIB(); // fallback ke bulan sekarang
+}
+
 // =========================================================================
 // CORE: Tulis satu entry jurnal transaksi
 // =========================================================================
@@ -62,7 +77,8 @@ async function writeJurnalEntry(params) {
     } = params;
 
     try {
-        const yearMonth = getYearMonthWIB();
+        const tglEntry = tanggal || getTodayIndonesia();
+        const yearMonth = getYearMonthFromTanggal(tglEntry);
 
         const entry = {
             tipe: tipe,
@@ -72,7 +88,7 @@ async function writeJurnalEntry(params) {
             adminUid: adminUid || '',
             adminName: adminName || '',
             jumlah: jumlah || 0,
-            tanggal: tanggal || getTodayIndonesia(),
+            tanggal: tglEntry,
             pinjamanKe: pinjamanKe || 1,
             sisaUtangSetelah: sisaUtangSetelah || 0,
             totalPelunasan: totalPelunasan || 0,

@@ -800,13 +800,13 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
 
         dashboardData.value = DashboardData(
             totalPinjaman = formatRupiah(global.totalPinjamanAktif.toInt()),
-            jumlahPelanggan = global.totalNasabah.toString(),
-            pembayaranHariIni = formatRupiah(global.pembayaranHariIni),
+            jumlahPelanggan = global.nasabahAktif.toString(),
+            pembayaranHariIni = formatRupiah(global.pembayaranHariIni.toInt()),
             totalTunggakan = formatRupiah(global.totalTunggakan.toInt()),
-            targetHarian = "Rp 0"
+            targetHarian = formatRupiah(global.targetHariIni.toInt())
         )
 
-        Log.d("Dashboard", "✅ Pengawas dashboard loaded from global summary")
+        Log.d("Dashboard", "✅ Pengawas dashboard loaded from global summary: nasabahAktif=${global.nasabahAktif}, pembayaran=${global.pembayaranHariIni}, target=${global.targetHariIni}")
     }
 
     private fun loadDashboardFromLocalData() {

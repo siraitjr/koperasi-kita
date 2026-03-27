@@ -84,9 +84,11 @@ class FirebaseCacheManager private constructor() {
 
     data class GlobalSummaryData(
         val totalNasabah: Int,
+        val nasabahAktif: Int,
         val totalPinjamanAktif: Long,
         val totalTunggakan: Long,
-        val pembayaranHariIni: Int
+        val pembayaranHariIni: Long,
+        val targetHariIni: Long
     )
 
     // =========================================================================

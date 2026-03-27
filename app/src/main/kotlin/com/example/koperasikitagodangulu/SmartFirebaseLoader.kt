@@ -745,9 +745,11 @@ class SmartFirebaseLoader(
             val snap = database.child("summary").child("global").get().await()
             val summary = FirebaseCacheManager.GlobalSummaryData(
                 totalNasabah = snap.child("totalNasabah").getValue(Int::class.java) ?: 0,
+                nasabahAktif = snap.child("nasabahAktif").getValue(Int::class.java) ?: 0,
                 totalPinjamanAktif = snap.child("totalPinjamanAktif").getValue(Long::class.java) ?: 0L,
-                totalTunggakan = snap.child("totalTunggakan").getValue(Long::class.java) ?: 0L,
-                pembayaranHariIni = snap.child("pembayaranHariIni").getValue(Int::class.java) ?: 0
+                totalTunggakan = snap.child("totalPiutang").getValue(Long::class.java) ?: 0L,
+                pembayaranHariIni = snap.child("pembayaranHariIni").getValue(Long::class.java) ?: 0L,
+                targetHariIni = snap.child("targetHariIni").getValue(Long::class.java) ?: 0L
             )
 
             cacheManager.cacheGlobalSummary(summary)
