@@ -452,6 +452,8 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
     val isDarkMode: State<Boolean> = _isDarkMode
     private val _isOnline = MutableStateFlow(isOnline())
     val isOnline: StateFlow<Boolean> = _isOnline
+    // Guard anti double-save: mencegah simpanPelangganKeFirebase dipanggil 2x untuk pelanggan yg sama
+    private val _savingPelangganIds = mutableSetOf<String>()
     val daftarPelanggan = mutableStateListOf<Pelanggan>()
     val dashboardData: MutableStateFlow<DashboardData> = MutableStateFlow(DashboardData())
     val notifications: MutableStateFlow<List<NotificationData>> = MutableStateFlow(emptyList())
@@ -1754,6 +1756,15 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
             return
         }
 
+        // Guard anti double-save: jika pelanggan ini sedang disimpan, skip
+        synchronized(_savingPelangganIds) {
+            if (_savingPelangganIds.contains(id)) {
+                Log.w("FirebaseSave", "⚠️ Skip double-save untuk $id (${pelanggan.namaPanggilan})")
+                return
+            }
+            _savingPelangganIds.add(id)
+        }
+
         Log.d("FirebaseSave", "=== MENYIMPAN KE FIREBASE (OFFLINE-FIRST) ===")
         Log.d("FirebaseSave", "Nama: ${pelanggan.namaKtp}")
         Log.d("FirebaseSave", "ID: $id")
@@ -1869,6 +1880,11 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                 _offlineSyncStatus.value = SyncStatus.ERROR
                 Log.e("FirebaseSave", "❌ Error: ${e.message}")
                 onFailure?.invoke(e)
+            } finally {
+                // ✅ FIX: Hapus guard agar pelanggan ini bisa disimpan lagi nanti
+                synchronized(_savingPelangganIds) {
+                    _savingPelangganIds.remove(id)
+                }
             }
         }
     }
@@ -3276,7 +3292,8 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
 
             val updatedPelanggan = pelanggan.copy(
                 pembayaranList = updatedPembayaranList,
-                status = status
+                status = status,
+                isSynced = false // ✅ FIX: Tandai belum sync agar tidak ditimpa Firebase
             )
 
             daftarPelanggan[pelangganIndex] = updatedPelanggan
@@ -3300,7 +3317,8 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
 
             val updatedPelanggan = pelanggan.copy(
                 pembayaranList = updatedPembayaranList,
-                status = status
+                status = status,
+                isSynced = false // ✅ FIX: Tandai belum sync agar tidak ditimpa Firebase
             )
 
             daftarPelanggan[pelangganIndex] = updatedPelanggan
@@ -7885,9 +7903,18 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                                                 if (freshData != null) {
                                                     val idx = daftarPelanggan.indexOfFirst { it.id == pelangganIdToRefresh }
                                                     if (idx != -1) {
-                                                        daftarPelanggan[idx] = freshData.copy(isSynced = true)
-                                                        simpanKeLokal()
-                                                        Log.d("NotifListener", "✅ Pelanggan $pelangganIdToRefresh di-refresh dari Firebase (${notification.type})")
+                                                        val localData = daftarPelanggan[idx]
+                                                        // ✅ FIX: Jangan timpa jika lokal punya pembayaran lebih banyak
+                                                        // (bisa terjadi jika admin baru input pembayaran tapi belum sync)
+                                                        val localPayCount = localData.pembayaranList.sumOf { 1 + it.subPembayaran.size }
+                                                        val freshPayCount = freshData.pembayaranList.sumOf { 1 + it.subPembayaran.size }
+                                                        if (localPayCount > freshPayCount && !localData.isSynced) {
+                                                            Log.w("NotifListener", "⚠️ Skip refresh $pelangganIdToRefresh: lokal punya lebih banyak pembayaran (local=$localPayCount > fresh=$freshPayCount)")
+                                                        } else {
+                                                            daftarPelanggan[idx] = freshData.copy(isSynced = true)
+                                                            simpanKeLokal()
+                                                            Log.d("NotifListener", "✅ Pelanggan $pelangganIdToRefresh di-refresh dari Firebase (${notification.type})")
+                                                        }
                                                     }
                                                 }
                                             } catch (e: Exception) {
