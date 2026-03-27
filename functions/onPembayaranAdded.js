@@ -345,29 +345,33 @@ exports.onPelangganApproved = functions.database
             const sisaUtangLama = pelanggan.sisaUtangLamaSebelumTopUp || 0;
             const pinjamanKe = pelanggan.pinjamanKe || 1;
             if (sisaUtangLama > 0 && pinjamanKe > 1) {
-                // Tentukan index berikutnya di pembayaranList
-                const currentList = pelanggan.pembayaranList;
-                let nextIndex = 0;
-                if (Array.isArray(currentList)) {
-                    nextIndex = currentList.length;
-                } else if (currentList && typeof currentList === 'object') {
-                    const keys = Object.keys(currentList).map(Number).filter(n => !isNaN(n));
-                    nextIndex = keys.length > 0 ? Math.max(...keys) + 1 : 0;
-                }
-
-                // Simpan ke pembayaranList nasabah di Firebase
+                // Gunakan transaction untuk menghindari race condition pada index
                 const pelunasanEntry = {
                     jumlah: sisaUtangLama,
                     tanggal: today,
                     subPembayaran: []
                 };
-                await db.ref(`pelanggan/${adminUid}/${pelangganId}/pembayaranList/${nextIndex}`).set(pelunasanEntry);
+                const pembayaranListRef = db.ref(`pelanggan/${adminUid}/${pelangganId}/pembayaranList`);
+                await pembayaranListRef.transaction((currentList) => {
+                    if (!currentList) {
+                        return [pelunasanEntry];
+                    }
+                    if (Array.isArray(currentList)) {
+                        currentList.push(pelunasanEntry);
+                        return currentList;
+                    }
+                    // Object format - find next index
+                    const keys = Object.keys(currentList).map(Number).filter(n => !isNaN(n));
+                    const nextIndex = keys.length > 0 ? Math.max(...keys) + 1 : 0;
+                    currentList[nextIndex] = pelunasanEntry;
+                    return currentList;
+                });
 
                 // CATATAN: JANGAN panggil saveToPembayaranHarian di sini
                 // Penulisan ke pembayaranList otomatis trigger onPembayaranAdded
                 // yang sudah menangani penyimpanan ke pembayaran_harian
 
-                console.log(`✅ Sisa utang Rp ${sisaUtangLama} saved to pembayaranList[${nextIndex}] AND will auto-save to pembayaran_harian`);
+                console.log(`✅ Sisa utang Rp ${sisaUtangLama} saved to pembayaranList via transaction AND will auto-save to pembayaran_harian`);
             }
             
             // 2. ✅ Simpan ke event_harian/nasabah_baru
