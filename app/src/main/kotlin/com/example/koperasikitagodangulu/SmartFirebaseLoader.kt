@@ -192,10 +192,10 @@ class SmartFirebaseLoader(
                         // (bisa terjadi jika sync pembayaran belum selesai tapi isSynced=true)
                         val localPayCount = localPelanggan.pembayaranList.sumOf { 1 + it.subPembayaran.size }
                         val firebasePayCount = firebasePelanggan.pembayaranList.sumOf { 1 + it.subPembayaran.size }
-                        if (localPayCount > firebasePayCount) {
+                        if (localPayCount >= firebasePayCount) {
                             mergedList.add(localPelanggan)
                             firebaseMap.remove(localPelanggan.id)
-                            Log.d(TAG, "⚠️ Using LOCAL (more payments: local=$localPayCount > firebase=$firebasePayCount): ${localPelanggan.namaPanggilan}")
+                            Log.d(TAG, "⚠️ Using LOCAL (more/equal payments: local=$localPayCount >= firebase=$firebasePayCount): ${localPelanggan.namaPanggilan}")
                         } else {
                             mergedList.add(firebasePelanggan)
                             firebaseMap.remove(firebasePelanggan.id)

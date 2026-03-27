@@ -127,7 +127,7 @@ fun PelangganYangHarusDikunjungiScreen(
         if (sudahBayarHariIni) return@filter false
 
         try {
-            val tanggalDaftar = dateFormat.parse(p.tanggalDaftar)
+            val tanggalDaftar = dateFormat.parse(p.tanggalDaftar) ?: return@filter true // ✅ FIX: null-safe
             val calendarDaftar = Calendar.getInstance().apply {
                 time = tanggalDaftar
                 set(Calendar.HOUR_OF_DAY, 0)
@@ -146,7 +146,7 @@ fun PelangganYangHarusDikunjungiScreen(
             }
             if (p.hasilSimulasiCicilan.isNotEmpty()) {
                 val cicilanPertama = p.hasilSimulasiCicilan.first()
-                val tanggalCicilanPertama = dateFormat.parse(cicilanPertama.tanggal)
+                val tanggalCicilanPertama = dateFormat.parse(cicilanPertama.tanggal) ?: return@filter true // ✅ FIX: null-safe
                 val calendarCicilanPertama = Calendar.getInstance().apply {
                     time = tanggalCicilanPertama
                     set(Calendar.HOUR_OF_DAY, 0)
