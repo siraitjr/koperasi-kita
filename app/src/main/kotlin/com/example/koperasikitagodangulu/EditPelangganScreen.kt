@@ -313,14 +313,14 @@ fun EditPelangganScreen(
 
                         ModernTextField(
                             value = nomorAnggota,
-                            onValueChange = { /* read-only: nomorAnggota tidak disimpan via edit */ },
-                            label = "Nomor Anggota (tidak dapat diubah)",
+                            onValueChange = { nomorAnggota = it },
+                            label = "Nomor Anggota",
                             icon = Icons.Rounded.Numbers,
                             keyboardType = KeyboardType.Number,
                             isDark = isDark,
                             cardColor = cardColor,
                             borderColor = borderColor,
-                            txtColor = subtitleColor,
+                            txtColor = txtColor,
                             subtitleColor = subtitleColor
                         )
 
