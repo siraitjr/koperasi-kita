@@ -6582,13 +6582,12 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                 }
 
                 // ✅ PERBAIKAN KRITIS: Gunakan partial update (updateChildren) bukan full overwrite (setValue)
-                // Ini mencegah nomorAnggota yang stale dari local cache menimpa nilai yang benar di Firebase.
-                // nomorAnggota SENGAJA tidak dimasukkan ke updateMap agar tidak pernah tertimpa melalui operasi edit.
                 val lastUpdatedStr = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
                 val updateMap = mutableMapOf<String, Any?>(
                     "namaKtp" to namaKtp,
                     "nik" to nik,
                     "namaPanggilan" to namaPanggilan,
+                    "nomorAnggota" to nomorAnggota,
                     "alamatKtp" to alamatKtp,
                     "alamatRumah" to alamatRumah,
                     "detailRumah" to detailRumah,
@@ -6605,12 +6604,12 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
 
                 offlineRepo.updatePelanggan(adminUid, pelangganId, updateMap)
 
-                // Update local daftarPelanggan untuk refresh UI segera, nomorAnggota dari existing (tidak diubah)
+                // Update local daftarPelanggan untuk refresh UI segera
                 val updatedPelanggan = existingPelanggan.copy(
                     namaKtp = namaKtp,
                     nik = nik,
                     namaPanggilan = namaPanggilan,
-                    // nomorAnggota tidak diubah — gunakan nilai dari Firebase/existing
+                    nomorAnggota = nomorAnggota,
                     alamatKtp = alamatKtp,
                     alamatRumah = alamatRumah,
                     detailRumah = detailRumah,
@@ -6628,7 +6627,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                 if (index != -1) daftarPelanggan[index] = updatedPelanggan
                 simpanKeLokal()
 
-                Log.d("EditPelanggan", "✅ Berhasil update data pribadi pelanggan: ${updatedPelanggan.namaPanggilan}, nomorAnggota dipertahankan: ${existingPelanggan.nomorAnggota}")
+                Log.d("EditPelanggan", "✅ Berhasil update data pribadi pelanggan: ${updatedPelanggan.namaPanggilan}, nomorAnggota: ${updatedPelanggan.nomorAnggota}")
                 onSuccess?.invoke()
 
             } catch (e: Exception) {
