@@ -271,9 +271,16 @@ exports.onSubPembayaranAdded = functions.database
             // 3. âœ… Cek apakah nasabah lunas setelah pembayaran ini
             const pelangganSnap = await db.ref(`pelanggan/${adminUid}/${pelangganId}`).once('value');
             const pelanggan = pelangganSnap.val();
-            
+
             if (pelanggan && isNasabahLunas(pelanggan)) {
-                await saveToNasabahLunas(adminUid, pelangganId, pelanggan);
+                // FIX: Skip jika ini terkait top-up/lanjut pinjaman (konsisten dengan onPembayaranAdded)
+                const pinjamanKe = pelanggan.pinjamanKe || 1;
+                const sisaUtangLama = pelanggan.sisaUtangLamaSebelumTopUp || 0;
+                const isTopUpRelated = pinjamanKe > 1 && sisaUtangLama > 0 && subPembayaran.jumlah === sisaUtangLama;
+
+                if (!isTopUpRelated) {
+                    await saveToNasabahLunas(adminUid, pelangganId, pelanggan);
+                }
             }
 
             // ✅ JURNAL: Catat tambah bayar ke jurnal permanen
@@ -284,7 +291,12 @@ exports.onSubPembayaranAdded = functions.database
                     await jurnal.catatTambahBayar(adminUid, pelangganId, subPembayaran, pelanggan, adminDataJ);
 
                     if (isNasabahLunas(pelanggan)) {
-                        await jurnal.catatLunas(adminUid, pelangganId, pelanggan, adminDataJ);
+                        const pinjamanKe = pelanggan.pinjamanKe || 1;
+                        const sisaUtangLama = pelanggan.sisaUtangLamaSebelumTopUp || 0;
+                        const isTopUpRelated = pinjamanKe > 1 && sisaUtangLama > 0 && subPembayaran.jumlah === sisaUtangLama;
+                        if (!isTopUpRelated) {
+                            await jurnal.catatLunas(adminUid, pelangganId, pelanggan, adminDataJ);
+                        }
                     }
                 }
             }
