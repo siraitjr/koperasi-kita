@@ -1441,8 +1441,8 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
 
                 // Hitung pelanggan menunggak
                 val tunggakanCount = daftarPelanggan.count { pelanggan ->
-                    val totalDibayar = pelanggan.pembayaranList.sumOf { it.jumlah }
-                    val sisaHutang = pelanggan.totalPelunasan - totalDibayar
+                    val totalDibayar = pelanggan.pembayaranList.sumOf { it.jumlah + it.subPembayaran.sumOf { sub -> sub.jumlah } }
+                    val sisaHutang = (pelanggan.totalPelunasan - totalDibayar).coerceAtLeast(0)
                     sisaHutang > 0 && pelanggan.status == "Aktif"
                 }
 
@@ -3254,7 +3254,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
             }
 
             // Hitung total yang sudah dibayar setelah penghapusan
-            val totalDibayar = updatedPembayaranList.sumOf { it.jumlah }
+            val totalDibayar = updatedPembayaranList.sumOf { it.jumlah + it.subPembayaran.sumOf { sub -> sub.jumlah } }
             val status = if (totalDibayar >= pelanggan.totalPelunasan) "Lunas" else "Aktif"
 
             val updatedPelanggan = pelanggan.copy(
@@ -3273,11 +3273,12 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
         if (pelangganIndex != -1) {
             val pelanggan = daftarPelanggan[pelangganIndex]
             val updatedPembayaranList = pelanggan.pembayaranList.toMutableList().apply {
-                this[index] = Pembayaran(jumlah, tanggal)
+                val existingSubPembayaran = this[index].subPembayaran
+                this[index] = Pembayaran(jumlah, tanggal, subPembayaran = existingSubPembayaran)
             }
 
             // Hitung total yang sudah dibayar setelah edit
-            val totalDibayar = updatedPembayaranList.sumOf { it.jumlah }
+            val totalDibayar = updatedPembayaranList.sumOf { it.jumlah + it.subPembayaran.sumOf { sub -> sub.jumlah } }
             val status = if (totalDibayar >= pelanggan.totalPelunasan) "Lunas" else "Aktif"
 
             val updatedPelanggan = pelanggan.copy(
@@ -5565,8 +5566,8 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     // ==========================================
                     // KASUS 2: PENGAJUAN BARU DITOLAK (pinjamanKe <= 1)
                     // ==========================================
-                    val totalBayar = pelanggan.pembayaranList.sumOf { it.jumlah }
-                    val sisaUtang = pelanggan.totalPelunasan - totalBayar
+                    val totalBayar = pelanggan.pembayaranList.sumOf { it.jumlah + it.subPembayaran.sumOf { sub -> sub.jumlah } }
+                    val sisaUtang = (pelanggan.totalPelunasan - totalBayar).coerceAtLeast(0)
                     val masihAdaUtang = sisaUtang > 0
                     val sudahPernahBayar = totalBayar > 0
 
@@ -6614,7 +6615,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
 
     private fun isPelangganMacet(pelanggan: Pelanggan): Boolean {
         try {
-            val totalDibayar = pelanggan.pembayaranList.sumOf { it.jumlah }
+            val totalDibayar = pelanggan.pembayaranList.sumOf { it.jumlah + it.subPembayaran.sumOf { sub -> sub.jumlah } }
             if (totalDibayar >= pelanggan.totalPelunasan) {
                 return false
             }
@@ -6628,7 +6629,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
             val mingguTanpaBayar = hitungMingguTanpaPembayaran(pelanggan)
             val polaBolong = deteksiPembayaranBolong(pelanggan)
             val tenorBulan = pelanggan.tenor / 30
-            val progressPembayaran = totalDibayar.toFloat() / pelanggan.totalPelunasan
+            val progressPembayaran = if (pelanggan.totalPelunasan > 0) totalDibayar.toFloat() / pelanggan.totalPelunasan else 0f
 
             Log.d("PelangganMacet", "Analisis ${pelanggan.namaPanggilan}: " +
                     "Bulan: $bulanBerjalan, " +
@@ -6664,7 +6665,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun getDetailStatusMacet(pelanggan: Pelanggan): String {
         return try {
-            val totalDibayar = pelanggan.pembayaranList.sumOf { it.jumlah }
+            val totalDibayar = pelanggan.pembayaranList.sumOf { it.jumlah + it.subPembayaran.sumOf { sub -> sub.jumlah } }
             val dateFormat = SimpleDateFormat("dd MMM yyyy", Locale("in", "ID"))
             val sekarang = Calendar.getInstance()
             val tanggalPengajuan = dateFormat.parse(pelanggan.tanggalPengajuan)
@@ -6672,7 +6673,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
             val bulanBerjalan = hitungSelisihBulan(tanggalPengajuan, sekarang.time)
             val mingguTanpaBayar = hitungMingguTanpaPembayaran(pelanggan)
             val polaBolong = deteksiPembayaranBolong(pelanggan)
-            val progressPembayaran = totalDibayar.toFloat() / pelanggan.totalPelunasan
+            val progressPembayaran = if (pelanggan.totalPelunasan > 0) totalDibayar.toFloat() / pelanggan.totalPelunasan else 0f
 
             // Prioritaskan berdasarkan urgency
             return when {
