@@ -846,16 +846,18 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
         val totalPinjaman = adminSummaries.sumOf { it.totalPinjamanAktif }
         val totalNasabah = adminSummaries.sumOf { it.nasabahAktif }
         val totalPiutang = adminSummaries.sumOf { it.totalPiutang }
+        val totalPembayaranHariIni = adminSummaries.sumOf { it.pembayaranHariIni }
+        val totalTargetHarian = adminSummaries.sumOf { it.targetHariIni }
 
         dashboardData.value = DashboardData(
             totalPinjaman = formatRupiah(totalPinjaman.toInt()),
             jumlahPelanggan = totalNasabah.toString(),
-            pembayaranHariIni = "Rp 0", // Akan diupdate dari realtime listener
+            pembayaranHariIni = formatRupiah(totalPembayaranHariIni.toInt()),
             totalTunggakan = formatRupiah(totalPiutang.toInt()),
-            targetHarian = "Rp 0" // Target perlu perhitungan berbeda
+            targetHarian = formatRupiah(totalTargetHarian.toInt())
         )
 
-        Log.d("Dashboard", "✅ Pimpinan dashboard loaded from summary")
+        Log.d("Dashboard", "✅ Pimpinan dashboard loaded from summary: pembayaranHariIni=Rp$totalPembayaranHariIni, target=Rp$totalTargetHarian")
     }
 
     private fun calculateTotalPinjaman(): Int {
@@ -2566,6 +2568,20 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     // Total piutang = total pinjaman aktif - total pembayaran
                     val totalPiutang = (totalPinjamanAktif - totalPembayaranAktif).coerceAtLeast(0)
 
+                    // ✅ v5: Hitung pembayaran hari ini per admin
+                    val summaryToday = SimpleDateFormat("dd MMM yyyy", Locale("in", "ID")).format(Date())
+                    val pembayaranHariIniAdmin = pelangganList.sumOf { pelanggan ->
+                        pelanggan.pembayaranList.sumOf { pembayaran ->
+                            var total = 0L
+                            if (pembayaran.tanggal == summaryToday) {
+                                total += pembayaran.jumlah.toLong()
+                            }
+                            total + pembayaran.subPembayaran
+                                .filter { it.tanggal == summaryToday }
+                                .sumOf { it.jumlah.toLong() }
+                        }
+                    }
+
                     AdminSummary(
                         adminId = adminId,
                         adminEmail = adminEmail,
@@ -2575,7 +2591,8 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                         nasabahAktif = nasabahAktif,
                         nasabahLunas = nasabahLunas,
                         nasabahMenungguPencairan = nasabahMenungguPencairan, // ✅ v4: Tambah field baru
-                        totalPiutang = totalPiutang
+                        totalPiutang = totalPiutang,
+                        pembayaranHariIni = pembayaranHariIniAdmin
                     )
                 } catch (e: Exception) {
                     Log.e("AdminSummary", "Error creating summary for admin $adminId: ${e.message}")
@@ -8276,8 +8293,9 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                 // 3. Load dashboard data (hitung dari data yang sudah ada)
                 loadDashboardData()
 
-                // 4. Refresh admin summary dengan data terbaru
+                // 4. Refresh admin summary dengan data terbaru lalu update dashboard
                 refreshAdminSummary()
+                loadDashboardData()
 
                 // 5. Setup listener untuk pending approvals (hanya sekali)
                 if (!_isPendingApprovalListenerActive) {
