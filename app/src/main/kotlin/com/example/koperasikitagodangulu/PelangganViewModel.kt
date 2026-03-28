@@ -13097,104 +13097,39 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     return@launch
                 }
 
-                // =========================================================
-                // FIX: Arsip ke riwayat_pinjaman SEBELUM hapus
-                // Agar data pembayaran tetap tercatat permanen di buku pokok
-                // Konsisten dengan archiveRiwayatPinjaman di onPelangganWrite.js
-                // =========================================================
-                val pinjamanKe = pelanggan.pinjamanKe.coerceAtLeast(1)
-
-                // Hitung totalDibayar — exclude entry "Bunga..." (konsisten dengan Cloud Functions)
-                val totalDibayar = pelanggan.pembayaranList
-                    .filter { !it.tanggal.startsWith("Bunga") }
-                    .sumOf { pay ->
-                        pay.jumlah.toLong() + pay.subPembayaran.sumOf { sub -> sub.jumlah.toLong() }
-                    }
-                val sisaUtang = (pelanggan.totalPelunasan - totalDibayar).coerceAtLeast(0)
-
-                val arsipData = mapOf(
-                    "namaKtp" to pelanggan.namaKtp,
-                    "namaPanggilan" to pelanggan.namaPanggilan,
-                    "nomorAnggota" to pelanggan.nomorAnggota,
-                    "pinjamanKe" to pinjamanKe,
-                    "besarPinjaman" to pelanggan.besarPinjaman,
-                    "totalPelunasan" to pelanggan.totalPelunasan,
-                    "totalDibayar" to totalDibayar,
-                    "sisaUtang" to sisaUtang,
-                    "tenor" to pelanggan.tenor,
-                    "jasaPinjaman" to pelanggan.jasaPinjaman,
-                    "admin" to pelanggan.admin,
-                    "simpanan" to pelanggan.simpanan,
-                    "totalDiterima" to pelanggan.totalDiterima,
-                    "tanggalPengajuan" to pelanggan.tanggalPengajuan,
-                    "tanggalPencairan" to pelanggan.tanggalPencairan,
-                    "tanggalLunasCicilan" to pelanggan.tanggalLunasCicilan,
-                    "status" to "Lunas",
-                    "statusKhusus" to pelanggan.statusKhusus,
-                    "pembayaranList" to pelanggan.pembayaranList.map { pembayaran ->
-                        mapOf(
-                            "jumlah" to pembayaran.jumlah,
-                            "tanggal" to pembayaran.tanggal,
-                            "subPembayaran" to pembayaran.subPembayaran.map { sub ->
-                                mapOf(
-                                    "jumlah" to sub.jumlah,
-                                    "tanggal" to sub.tanggal,
-                                    "keterangan" to sub.keterangan
-                                )
-                            }
-                        )
-                    },
-                    "archivedAt" to ServerValue.TIMESTAMP,
-                    "archivedReason" to "cairkan_simpanan",
-                    "adminUid" to adminUid
-                )
-
-                // Simpan arsip dulu, baru hapus
-                database.child("riwayat_pinjaman")
-                    .child(adminUid)
-                    .child(pelangganId)
-                    .child(pinjamanKe.toString())
-                    .setValue(arsipData)
+                // Nasabah lunas cicilan + tabungan dicairkan → hapus dari database
+                // Tidak perlu disimpan lagi karena sudah selesai semua kewajiban
+                database.child("pelanggan").child(adminUid).child(pelangganId)
+                    .removeValue()
                     .addOnSuccessListener {
-                        Log.d("Pencairan", "✅ Arsip riwayat pinjaman ke-$pinjamanKe berhasil: ${pelanggan.namaPanggilan}")
+                        // Hapus dari local list
+                        val index = daftarPelanggan.indexOfFirst { it.id == pelangganId }
+                        if (index != -1) {
+                            daftarPelanggan.removeAt(index)
+                        }
+                        Log.d("Pencairan", "✅ Nasabah dihapus dari database (lunas total): ${pelanggan.namaPanggilan}")
+                        viewModelScope.launch {
+                            try {
+                                val cabangId = _currentUserCabang.value ?: ""
+                                if (cabangId.isNotBlank()) {
+                                    // Hapus dari node pelanggan_status_khusus
+                                    database.child("pelanggan_status_khusus")
+                                        .child(cabangId)
+                                        .child(pelangganId)
+                                        .removeValue()
+                                        .await()
 
-                        // Setelah arsip berhasil, baru hapus dari pelanggan
-                        database.child("pelanggan").child(adminUid).child(pelangganId)
-                            .removeValue()
-                            .addOnSuccessListener {
-                                // Hapus dari local list
-                                val index = daftarPelanggan.indexOfFirst { it.id == pelangganId }
-                                if (index != -1) {
-                                    daftarPelanggan.removeAt(index)
+                                    updateStatusKhususCounter(adminUid, cabangId)
+                                    Log.d("Pencairan", "✅ Removed from pelanggan_status_khusus")
                                 }
-                                Log.d("Pencairan", "✅ Nasabah dihapus dari database (lunas total): ${pelanggan.namaPanggilan}")
-                                viewModelScope.launch {
-                                    try {
-                                        val cabangId = _currentUserCabang.value ?: ""
-                                        if (cabangId.isNotBlank()) {
-                                            // Hapus dari node pelanggan_status_khusus
-                                            database.child("pelanggan_status_khusus")
-                                                .child(cabangId)
-                                                .child(pelangganId)
-                                                .removeValue()
-                                                .await()
-
-                                            updateStatusKhususCounter(adminUid, cabangId)
-                                            Log.d("Pencairan", "✅ Removed from pelanggan_status_khusus")
-                                        }
-                                    } catch (e: Exception) {
-                                        Log.e("Pencairan", "Error removing from status_khusus: ${e.message}")
-                                    }
-                                }
-                                onSuccess?.invoke()
+                            } catch (e: Exception) {
+                                Log.e("Pencairan", "Error removing from status_khusus: ${e.message}")
                             }
-                            .addOnFailureListener { e ->
-                                Log.e("Pencairan", "❌ Gagal menghapus nasabah: ${e.message}")
-                                onFailure?.invoke(e)
-                            }
+                        }
+                        onSuccess?.invoke()
                     }
                     .addOnFailureListener { e ->
-                        Log.e("Pencairan", "❌ Gagal arsip riwayat pinjaman: ${e.message}")
+                        Log.e("Pencairan", "❌ Gagal menghapus nasabah: ${e.message}")
                         onFailure?.invoke(e)
                     }
 
