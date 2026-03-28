@@ -2218,15 +2218,22 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                                 "TambahPelanggan",
                                 "❌ SyncManager error, fallback ke lokal: ${e.message}"
                             )
-                            val tempId = "local-${UUID.randomUUID()}"
-                            val localP = base.copy(
-                                id = tempId,
-                                isSynced = false,
-                                adminUid = currentUid,
-                                cabangId = cabangId ?: ""
-                            )
-                            daftarPelanggan.add(localP)
-                            simpanKeLokal()
+                            // ✅ FIX: Cek duplikat berdasarkan NIK sebelum add ke list
+                            val nik = base.nikKtp.trim()
+                            val alreadyExists = nik.isNotBlank() && daftarPelanggan.any { it.nikKtp.trim() == nik }
+                            if (alreadyExists) {
+                                Log.w("TambahPelanggan", "⚠️ Skip fallback add - nasabah dengan NIK $nik sudah ada di list")
+                            } else {
+                                val tempId = "local-${UUID.randomUUID()}"
+                                val localP = base.copy(
+                                    id = tempId,
+                                    isSynced = false,
+                                    adminUid = currentUid,
+                                    cabangId = cabangId ?: ""
+                                )
+                                daftarPelanggan.add(localP)
+                                simpanKeLokal()
+                            }
                             onSuccess?.invoke()
                         }
                     )
