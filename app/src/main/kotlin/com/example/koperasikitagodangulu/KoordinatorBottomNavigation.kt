@@ -101,12 +101,16 @@ fun KoordinatorBottomNavigation(
                 Surface(
                     onClick = {
                         if (currentRoute != item.route) {
-                            navController.navigate(item.route) {
-                                popUpTo(navController.graph.startDestinationId) {
-                                    saveState = true
+                            try {
+                                navController.navigate(item.route) {
+                                    popUpTo(navController.graph.startDestinationId) {
+                                        saveState = true
+                                    }
+                                    launchSingleTop = true
+                                    restoreState = true
                                 }
-                                launchSingleTop = true
-                                restoreState = true
+                            } catch (e: Exception) {
+                                android.util.Log.e("KoordinatorNav", "Navigation error: ${e.message}")
                             }
                         }
                     },

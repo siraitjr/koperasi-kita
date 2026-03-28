@@ -313,10 +313,6 @@ fun AppNavigation(navController: NavHostController, viewModel: PelangganViewMode
             )
         }
 
-        composable("pengawas_approvals") {
-            PengawasApprovalScreen(navController, viewModel)
-        }
-
         composable(
             route = "laporan_harian_admin/{adminId}",
             arguments = listOf(navArgument("adminId") { type = NavType.StringType })
@@ -344,10 +340,6 @@ fun AppNavigation(navController: NavHostController, viewModel: PelangganViewMode
 
         composable("daftarPimpinanPelangganBermasalah") {
             PimpinanDaftarBermasalahScreen(navController, viewModel)
-        }
-
-        composable("daftarPimpinanPelangganStatusKhususSemuaAdmin") {
-            PimpinanDaftarStatusKhususScreen(navController, viewModel)
         }
 
         // ✅ BARU: Route untuk Menunggu Pencairan

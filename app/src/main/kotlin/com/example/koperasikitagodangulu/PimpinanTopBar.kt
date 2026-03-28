@@ -333,7 +333,13 @@ fun PimpinanTopBar(
                     // Notifications Button
                     if (showNotifications) {
                         IconButton(onClick = {
-                            navController.navigate("pimpinan_approvals")
+                            try {
+                                navController.navigate("pimpinan_approvals") {
+                                    launchSingleTop = true
+                                }
+                            } catch (e: Exception) {
+                                Log.e("TopBar", "Navigation error: ${e.message}")
+                            }
                             Log.d("TopBar", "🔔 Notification clicked: ${notificationCount.value} unread")
                         }) {
                             Box(
@@ -488,7 +494,13 @@ fun PimpinanTopBar(
                     OutlinedButton(
                         onClick = {
                             showProfileOptionsDialog = false
-                            navController.navigate("absensi")
+                            try {
+                                navController.navigate("absensi") {
+                                    launchSingleTop = true
+                                }
+                            } catch (e: Exception) {
+                                Log.e("TopBar", "Navigation error: ${e.message}")
+                            }
                         },
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(12.dp),
@@ -516,8 +528,12 @@ fun PimpinanTopBar(
                             LocationTrackingMonitor.stopMonitoring()
                             LocationCheckWorker.cancel(context)
                             Firebase.auth.signOut()
-                            navController.navigate("auth") {
-                                popUpTo(0) { inclusive = true }
+                            try {
+                                navController.navigate("auth") {
+                                    popUpTo(0) { inclusive = true }
+                                }
+                            } catch (e: Exception) {
+                                Log.e("TopBar", "Navigation error: ${e.message}")
                             }
                         },
                         modifier = Modifier.fillMaxWidth(),

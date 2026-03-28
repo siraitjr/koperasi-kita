@@ -160,11 +160,16 @@ fun PimpinanBottomNavigation(
                 Surface(
                     onClick = {
                         if (currentRoute != item.route) {
-                            navController.navigate(item.route) {
-                                launchSingleTop = true
-                                popUpTo(navController.graph.startDestinationId) {
-                                    saveState = true
+                            try {
+                                navController.navigate(item.route) {
+                                    launchSingleTop = true
+                                    restoreState = true
+                                    popUpTo(navController.graph.startDestinationId) {
+                                        saveState = true
+                                    }
                                 }
+                            } catch (e: Exception) {
+                                android.util.Log.e("PimpinanNav", "Navigation error: ${e.message}")
                             }
                         }
                     },

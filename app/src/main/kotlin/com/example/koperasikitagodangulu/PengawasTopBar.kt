@@ -289,7 +289,13 @@ fun PengawasTopBar(
                     // =========================================================================
                     if (showNotifications) {
                         IconButton(onClick = {
-                            navController.navigate("pengawas_approvals")
+                            try {
+                                navController.navigate("pengawas_approvals") {
+                                    launchSingleTop = true
+                                }
+                            } catch (e: Exception) {
+                                Log.e("PengawasTopBar", "Navigation error: ${e.message}")
+                            }
                             Log.d("PengawasTopBar", "🔔 Notification clicked: $notificationCount pending")
                         }) {
                             Box(
@@ -335,8 +341,12 @@ fun PengawasTopBar(
                     IconButton(onClick = {
                         viewModel.clearAllCaches()
                         Firebase.auth.signOut()
-                        navController.navigate("auth") {
-                            popUpTo(0) { inclusive = true }
+                        try {
+                            navController.navigate("auth") {
+                                popUpTo(0) { inclusive = true }
+                            }
+                        } catch (e: Exception) {
+                            Log.e("PengawasTopBar", "Navigation error: ${e.message}")
                         }
                     }) {
                         Box(

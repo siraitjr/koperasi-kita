@@ -230,8 +230,13 @@ fun KoordinatorTopBar(
                     // Notifications Button
                     if (showNotifications) {
                         IconButton(onClick = {
-                            // Navigate ke koordinator_approvals (bukan pengawas_approvals)
-                            navController.navigate("koordinator_approvals")
+                            try {
+                                navController.navigate("koordinator_approvals") {
+                                    launchSingleTop = true
+                                }
+                            } catch (e: Exception) {
+                                Log.e("KoordinatorTopBar", "Navigation error: ${e.message}")
+                            }
                             Log.d("KoordinatorTopBar", "🔔 Notification clicked: $notificationCount pending")
                         }) {
                             Box(
@@ -308,7 +313,13 @@ fun KoordinatorTopBar(
                 Button(
                     onClick = {
                         showLogoutAbsensiDialog = false
-                        navController.navigate("absensi")
+                        try {
+                            navController.navigate("absensi") {
+                                launchSingleTop = true
+                            }
+                        } catch (e: Exception) {
+                            Log.e("KoordinatorTopBar", "Navigation error: ${e.message}")
+                        }
                     },
                     colors = ButtonDefaults.buttonColors(
                         containerColor = KoordinatorColors.primary
@@ -331,8 +342,12 @@ fun KoordinatorTopBar(
                         LocationTrackingMonitor.stopMonitoring()
                         LocationCheckWorker.cancel(context)
                         Firebase.auth.signOut()
-                        navController.navigate("auth") {
-                            popUpTo(0) { inclusive = true }
+                        try {
+                            navController.navigate("auth") {
+                                popUpTo(0) { inclusive = true }
+                            }
+                        } catch (e: Exception) {
+                            Log.e("KoordinatorTopBar", "Navigation error: ${e.message}")
                         }
                     }
                 ) {

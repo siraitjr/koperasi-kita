@@ -283,8 +283,8 @@ class MainActivity : ComponentActivity() {
                                             }
                                         }
                                         else -> {
-                                            // Admin lapangan - ke serah terima list biasa
-                                            navController.navigate("serah_terima_list") {
+                                            // Admin lapangan - ke notifikasi
+                                            navController.navigate("notifikasi") {
                                                 launchSingleTop = true
                                             }
                                         }
