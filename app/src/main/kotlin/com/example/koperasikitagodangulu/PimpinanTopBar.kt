@@ -45,6 +45,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material.icons.rounded.CameraAlt
 import androidx.compose.material.icons.rounded.Logout
+import androidx.compose.material.icons.rounded.CheckCircle
 import com.example.koperasikitagodangulu.services.LocationTrackingMonitor
 import com.example.koperasikitagodangulu.services.LocationCheckWorker
 import com.google.accompanist.systemuicontroller.rememberSystemUiController
@@ -483,6 +484,29 @@ fun PimpinanTopBar(
 
                     Spacer(modifier = Modifier.height(8.dp))
 
+                    // Tombol Absensi
+                    OutlinedButton(
+                        onClick = {
+                            showProfileOptionsDialog = false
+                            navController.navigate("absensi")
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = PimpinanColors.primary
+                        )
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.CheckCircle,
+                            contentDescription = null,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Absensi")
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
                     // Tombol Keluar
                     OutlinedButton(
                         onClick = {
@@ -587,6 +611,7 @@ fun PimpinanTopBar(
             textContentColor = PimpinanColors.getTextPrimary(isDark)
         )
     }
+
 }
 
 /**

@@ -67,6 +67,7 @@ import android.content.SharedPreferences
 import com.example.koperasikitagodangulu.offline.OfflineRepository
 import com.example.koperasikitagodangulu.offline.SyncWorker
 import com.example.koperasikitagodangulu.offline.SyncStatus
+import com.example.koperasikitagodangulu.offline.SaveResult
 import kotlinx.coroutines.flow.collectLatest
 import com.example.koperasikitagodangulu.models.PengawasCabangSummary
 import com.example.koperasikitagodangulu.models.CabangMetadata
@@ -243,6 +244,36 @@ data class PelangganDitolak(
 ) {
     constructor() : this(Pelanggan(), "", "", "", 0L)
 }
+
+// =========================================================================
+// ABSENSI KARYAWAN
+// =========================================================================
+
+data class AbsensiRecord(
+    val uid: String = "",
+    val nama: String = "",
+    val role: String = "",          // "admin" | "koordinator" | "pimpinan" | "kasir_unit"
+    val cabangId: String = "",
+    val cabangNama: String = "",
+    val jam: String = "",           // "08:30" WIB
+    val tanggal: String = "",       // ISO: "2026-03-26"
+    val timestamp: Long = 0L
+)
+
+data class CabangInfo(
+    val id: String = "",
+    val name: String = ""
+)
+
+data class OperasionalHarian(
+    val uid: String = "",
+    val nama: String = "",
+    val uangMakan: Int = 0,
+    val transport: Int = 0,
+    val diberikanOleh: String = "",
+    val diberikanOlehNama: String = "",
+    val timestamp: Long = 0L
+)
 
 data class AdminNotification(
     val id: String = "",
@@ -504,6 +535,13 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
 
     private val _serahTerimaNotifications = MutableStateFlow<List<SerahTerimaNotification>>(emptyList())
     val serahTerimaNotifications: StateFlow<List<SerahTerimaNotification>> = _serahTerimaNotifications
+
+    // =========================================================================
+    // ABSENSI STATE
+    // =========================================================================
+    val absensiSendiri = MutableStateFlow<AbsensiRecord?>(null)
+    val isLoadingAbsensi = MutableStateFlow(false)
+    val daftarCabangUntukAbsensi = MutableStateFlow<List<CabangInfo>>(emptyList())
 
     // Counter untuk badge notifikasi serah terima
     private val _unreadSerahTerimaCount = MutableStateFlow(0)
@@ -4308,8 +4346,34 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                                                                 child.ref.removeValue()
                                                             }, 3000)
 
-                                                            updateLocalAndRefresh(pelangganId, updatedPelanggan, cabangId)
-                                                            onSuccess?.invoke()
+                                                            // Nasabah BARU ditolak (Phase 5): hapus dari pelanggan, pindah ke pelanggan_ditolak
+                                                            if (!isPengawasApproved && existing.pinjamanKe <= 1) {
+                                                                val alasanPengawas = currentDualInfo.pengawasApproval.note.ifBlank { "Ditolak oleh Pengawas" }
+                                                                val rejectedData = PelangganDitolak(
+                                                                    pelanggan = updatedPelanggan,
+                                                                    alasanPenolakan = alasanPengawas,
+                                                                    tanggalPenolakan = tanggalSekarang,
+                                                                    ditolakOleh = currentDualInfo.pengawasApproval.uid.ifBlank { adminUid }
+                                                                )
+                                                                database.child("pelanggan_ditolak").child(adminUid).child(pelangganId)
+                                                                    .setValue(rejectedData)
+                                                                    .addOnSuccessListener {
+                                                                        database.child("pelanggan").child(adminUid).child(pelangganId)
+                                                                            .removeValue()
+                                                                            .addOnSuccessListener {
+                                                                                daftarPelanggan.removeAll { it.id == pelangganId }
+                                                                                safeRemovePelanggan(pelangganId)
+                                                                                simpanKeLokal()
+                                                                                loadDashboardData()
+                                                                                cabangId?.let { loadPendingApprovalsOptimized(it) }
+                                                                                Log.d("Approval", "✅ Nasabah baru ditolak (Phase 5) dipindah ke pelanggan_ditolak")
+                                                                                onSuccess?.invoke()
+                                                                            }
+                                                                    }
+                                                            } else {
+                                                                updateLocalAndRefresh(pelangganId, updatedPelanggan, cabangId)
+                                                                onSuccess?.invoke()
+                                                            }
                                                         }
                                                 }
                                                 if (!snapshot.hasChildren()) {
@@ -5071,60 +5135,100 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
 
                     // =========================================================================
                     // PHASE 1: PIMPINAN REVIEW AWAL - REJECT
+                    // Pimpinan reject di Phase 1 = FINAL. Tidak lanjut ke Koordinator.
+                    // Admin lapangan langsung dapat notifikasi dan data nasabah baru dihapus.
                     // =========================================================================
                     if (currentPhase == ApprovalPhase.AWAITING_PIMPINAN || currentPhase.isEmpty()) {
-                        Log.d("Rejection", "📍 Phase 1: Pimpinan initial review - REJECT")
+                        Log.d("Rejection", "📍 Phase 1: Pimpinan initial review - REJECT → FINAL (tidak lanjut ke Koordinator)")
 
-                        // Update dualApprovalInfo dan PINDAH KE PHASE 2 (KOORDINATOR)
-                        // (Meskipun Pimpinan reject, Koordinator tetap harus review)
                         val updatedDualInfo = currentDualInfo.copy(
                             requiresDualApproval = true,
-                            approvalPhase = ApprovalPhase.AWAITING_KOORDINATOR, // ✅ PINDAH KE PHASE 2 (KOORDINATOR)
-                            pimpinanApproval = updatedPimpinanApproval
+                            approvalPhase = ApprovalPhase.COMPLETED,
+                            pimpinanApproval = updatedPimpinanApproval,
+                            finalDecision = "rejected",
+                            finalDecisionBy = ApproverRole.PIMPINAN,
+                            finalDecisionTimestamp = timestamp,
+                            rejectionReason = alasan
                         )
 
-                        val updatedPelanggan = pelanggan.copy(
-                            status = "Menunggu Approval", // Status TETAP menunggu
-                            dualApprovalInfo = updatedDualInfo,
-                            lastUpdated = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
-                        )
+                        val isTopUp = pelanggan.pinjamanKe > 1
 
-                        database.child("pelanggan").child(pelanggan.adminUid)
-                            .child(pelangganId).setValue(updatedPelanggan)
-                            .addOnSuccessListener {
-                                // Update pengajuan_approval untuk trigger cloud function
-                                currentUserCabang.value?.let { cabangId ->
-                                    database.child("pengajuan_approval").child(cabangId)
-                                        .orderByChild("pelangganId")
-                                        .equalTo(pelangganId)
-                                        .addListenerForSingleValueEvent(object : ValueEventListener {
-                                            override fun onDataChange(snapshot: DataSnapshot) {
-                                                snapshot.children.forEach { child ->
-                                                    child.ref.child("dualApprovalInfo").setValue(updatedDualInfo)
-                                                        .addOnSuccessListener {
-                                                            Log.d("Rejection", "✅ Phase 1 REJECT - moved to Phase 2 (AWAITING_KOORDINATOR)")
-                                                            Log.d("Rejection", "✅ Koordinator akan review berikutnya")
-                                                            if (index != -1) daftarPelanggan[index] = updatedPelanggan
-                                                            simpanKeLokal()
-                                                            loadPendingApprovalsOptimized(cabangId)
-                                                            onSuccess?.invoke()
-                                                        }
-                                                }
-                                                if (!snapshot.hasChildren()) {
-                                                    if (index != -1) daftarPelanggan[index] = updatedPelanggan
-                                                    simpanKeLokal()
-                                                    onSuccess?.invoke()
-                                                }
-                                            }
-                                            override fun onCancelled(error: DatabaseError) {
-                                                onSuccess?.invoke()
-                                            }
-                                        })
-                                } ?: onSuccess?.invoke()
+                        if (isTopUp) {
+                            // TOP-UP DITOLAK: kembalikan ke data pinjaman sebelumnya
+                            val dataSebelumTopUp = extractDataSebelumTopUp(pelanggan.catatanPerubahanPinjaman)
+                            val updatedPelanggan = if (dataSebelumTopUp != null) {
+                                pelanggan.copy(
+                                    status = "Aktif",
+                                    dualApprovalInfo = updatedDualInfo,
+                                    pinjamanKe = dataSebelumTopUp.pinjamanKe,
+                                    besarPinjaman = dataSebelumTopUp.besarPinjaman,
+                                    admin = dataSebelumTopUp.admin,
+                                    simpanan = dataSebelumTopUp.simpanan,
+                                    totalDiterima = dataSebelumTopUp.totalDiterima,
+                                    totalPelunasan = dataSebelumTopUp.totalPelunasan,
+                                    tenor = dataSebelumTopUp.tenor,
+                                    tanggalPengajuan = dataSebelumTopUp.tanggalPengajuan,
+                                    pembayaranList = pelanggan.pembayaranList,
+                                    hasilSimulasiCicilan = if (dataSebelumTopUp.tanggalPengajuan.isNotBlank() && dataSebelumTopUp.totalPelunasan > 0) {
+                                        generateCicilanKonsisten(dataSebelumTopUp.tanggalPengajuan, dataSebelumTopUp.tenor, dataSebelumTopUp.totalPelunasan)
+                                    } else pelanggan.hasilSimulasiCicilan,
+                                    catatanApproval = "Pengajuan top-up ditolak oleh Pimpinan: $alasan",
+                                    tanggalApproval = tanggalSekarang,
+                                    disetujuiOleh = pimpinanName,
+                                    sisaUtangLamaSebelumTopUp = 0,
+                                    totalPelunasanLamaSebelumTopUp = 0,
+                                    lastUpdated = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
+                                )
+                            } else {
+                                pelanggan.copy(
+                                    status = "Aktif",
+                                    dualApprovalInfo = updatedDualInfo,
+                                    pinjamanKe = pelanggan.pinjamanKe - 1,
+                                    catatanApproval = "Pengajuan top-up ditolak oleh Pimpinan: $alasan",
+                                    tanggalApproval = tanggalSekarang,
+                                    disetujuiOleh = pimpinanName,
+                                    sisaUtangLamaSebelumTopUp = 0,
+                                    totalPelunasanLamaSebelumTopUp = 0,
+                                    lastUpdated = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
+                                )
                             }
-                            .addOnFailureListener { e ->
-                                onFailure?.invoke(e)
+                            database.child("pelanggan").child(pelanggan.adminUid).child(pelangganId)
+                                .setValue(updatedPelanggan)
+                                .addOnSuccessListener {
+                                    createAdminNotification(
+                                        adminUid = pelanggan.adminUid,
+                                        pelangganId = pelangganId,
+                                        pelangganNama = pelanggan.namaPanggilan,
+                                        alasanPenolakan = "Pengajuan top-up ditolak oleh Pimpinan. Nasabah kembali ke pinjaman sebelumnya. Alasan: $alasan",
+                                        pimpinanName = pimpinanName,
+                                        type = "DUAL_APPROVAL_REJECTED",
+                                        pimpinanNote = alasan,
+                                        pimpinanApprovalStatus = ApprovalStatus.REJECTED,
+                                        pimpinanByName = pimpinanName
+                                    )
+                                    if (index != -1) daftarPelanggan[index] = updatedPelanggan
+                                    safeUpdatePelanggan(updatedPelanggan)
+                                    simpanKeLokal()
+                                    loadDashboardData()
+                                    currentUserCabang.value?.let { cabangId ->
+                                        hapusDariPengajuanApproval(pelangganId, cabangId)
+                                        loadPendingApprovalsOptimized(cabangId)
+                                    }
+                                    markRelatedNotificationsAsRead(pelangganId)
+                                    Log.d("Rejection", "✅ Phase 1 REJECT (top-up) - FINAL, notif terkirim ke admin")
+                                    onSuccess?.invoke()
+                                }
+                                .addOnFailureListener { e -> onFailure?.invoke(e) }
+                        } else {
+                            // NASABAH BARU DITOLAK: hapus dari pelanggan, pindah ke pelanggan_ditolak
+                            currentUserCabang.value?.let { cabangId ->
+                                hapusDariPengajuanApproval(pelangganId, cabangId)
                             }
+                            processRejectionForNewCustomer(
+                                pelanggan.copy(dualApprovalInfo = updatedDualInfo),
+                                pelangganId, alasan, pimpinanUid, pimpinanName, index, onSuccess, onFailure
+                            )
+                        }
 
                         return@launch
                     }
@@ -5330,12 +5434,38 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                                                                 child.ref.removeValue()
                                                             }, 3000)
 
-                                                            if (index != -1) {
-                                                                daftarPelanggan[index] = updatedPelanggan
+                                                            // ✅ PERBAIKAN Bug 3b: Nasabah BARU ditolak di Phase 5 - pindah ke pelanggan_ditolak dan hapus dari pelanggan
+                                                            if (isPengawasRejected && pelanggan.pinjamanKe <= 1) {
+                                                                val pengawasAlasanFinal = currentDualInfo.pengawasApproval.note.ifBlank { alasan }
+                                                                val rejectedData = PelangganDitolak(
+                                                                    pelanggan = updatedPelanggan,
+                                                                    alasanPenolakan = pengawasAlasanFinal,
+                                                                    tanggalPenolakan = tanggalSekarang,
+                                                                    ditolakOleh = currentDualInfo.pengawasApproval.uid.ifBlank { adminUidToUse }
+                                                                )
+                                                                database.child("pelanggan_ditolak").child(adminUidToUse).child(pelangganId)
+                                                                    .setValue(rejectedData)
+                                                                    .addOnSuccessListener {
+                                                                        database.child("pelanggan").child(adminUidToUse).child(pelangganId)
+                                                                            .removeValue()
+                                                                            .addOnSuccessListener {
+                                                                                daftarPelanggan.removeAll { it.id == pelangganId }
+                                                                                safeRemovePelanggan(pelangganId)
+                                                                                simpanKeLokal()
+                                                                                loadDashboardData()
+                                                                                currentUserCabang.value?.let { loadPendingApprovalsOptimized(it) }
+                                                                                Log.d("Rejection", "✅ Nasabah baru ditolak (Phase 5 reject) dipindah ke pelanggan_ditolak")
+                                                                                onSuccess?.invoke()
+                                                                            }
+                                                                    }
+                                                            } else {
+                                                                if (index != -1) {
+                                                                    daftarPelanggan[index] = updatedPelanggan
+                                                                }
+                                                                simpanKeLokal()
+                                                                loadPendingApprovalsOptimized(branchId)
+                                                                onSuccess?.invoke()
                                                             }
-                                                            simpanKeLokal()
-                                                            loadPendingApprovalsOptimized(branchId)
-                                                            onSuccess?.invoke()
                                                         }
                                                 }
                                                 if (!snapshot.hasChildren()) {
@@ -11724,8 +11854,9 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     /**
-     * Koordinator reject pengajuan (Phase 2 → Phase 3)
-     * Setelah Koordinator reject, tetap pindah ke AWAITING_PENGAWAS agar Pengawas bisa review
+     * Koordinator reject pengajuan (Phase 2 → COMPLETED)
+     * Koordinator reject = FINAL. Tidak lanjut ke Pengawas.
+     * Admin lapangan langsung dapat notifikasi dan data nasabah baru dihapus.
      */
     fun rejectPengajuanAsKoordinator(
         pelangganId: String,
@@ -11779,33 +11910,133 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     note = alasan
                 )
 
-                // ✅ PINDAH KE PHASE 3: AWAITING_PENGAWAS (agar Pengawas bisa review juga)
+                // Koordinator reject = FINAL. Langsung COMPLETED, tidak lanjut ke Pengawas.
                 val updatedDualInfo = currentDualInfo.copy(
-                    approvalPhase = ApprovalPhase.AWAITING_PENGAWAS,
-                    koordinatorApproval = updatedKoordinatorApproval
-                )
-
-                val updatedPelanggan = pelanggan.copy(
-                    status = "Menunggu Approval",
-                    dualApprovalInfo = updatedDualInfo,
-                    lastUpdated = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
+                    approvalPhase = ApprovalPhase.COMPLETED,
+                    koordinatorApproval = updatedKoordinatorApproval,
+                    finalDecision = "rejected",
+                    finalDecisionBy = ApproverRole.KOORDINATOR,
+                    finalDecisionTimestamp = timestamp,
+                    rejectionReason = alasan
                 )
 
                 val adminUid = pelanggan.adminUid.ifBlank { Firebase.auth.currentUser?.uid ?: "" }
+                val tanggalSekarang = SimpleDateFormat("dd MMM yyyy", Locale("in", "ID")).format(Date())
+                val isTopUp = pelanggan.pinjamanKe > 1
 
-                database.child("pelanggan").child(adminUid).child(pelangganId)
-                    .setValue(updatedPelanggan)
-                    .addOnSuccessListener {
-                        updatePengajuanApprovalDualStatusWithCallback(pelangganId, updatedDualInfo) {
+                if (isTopUp) {
+                    // TOP-UP DITOLAK: kembalikan ke data pinjaman sebelumnya
+                    val dataSebelumTopUp = extractDataSebelumTopUp(pelanggan.catatanPerubahanPinjaman)
+                    val updatedPelanggan = if (dataSebelumTopUp != null) {
+                        pelanggan.copy(
+                            status = "Aktif",
+                            dualApprovalInfo = updatedDualInfo,
+                            pinjamanKe = dataSebelumTopUp.pinjamanKe,
+                            besarPinjaman = dataSebelumTopUp.besarPinjaman,
+                            admin = dataSebelumTopUp.admin,
+                            simpanan = dataSebelumTopUp.simpanan,
+                            totalDiterima = dataSebelumTopUp.totalDiterima,
+                            totalPelunasan = dataSebelumTopUp.totalPelunasan,
+                            tenor = dataSebelumTopUp.tenor,
+                            tanggalPengajuan = dataSebelumTopUp.tanggalPengajuan,
+                            pembayaranList = pelanggan.pembayaranList,
+                            hasilSimulasiCicilan = if (dataSebelumTopUp.tanggalPengajuan.isNotBlank() && dataSebelumTopUp.totalPelunasan > 0) {
+                                generateCicilanKonsisten(dataSebelumTopUp.tanggalPengajuan, dataSebelumTopUp.tenor, dataSebelumTopUp.totalPelunasan)
+                            } else pelanggan.hasilSimulasiCicilan,
+                            catatanApproval = "Pengajuan top-up ditolak oleh Koordinator: $alasan",
+                            tanggalApproval = tanggalSekarang,
+                            disetujuiOleh = koordinatorName,
+                            sisaUtangLamaSebelumTopUp = 0,
+                            totalPelunasanLamaSebelumTopUp = 0,
+                            lastUpdated = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
+                        )
+                    } else {
+                        pelanggan.copy(
+                            status = "Aktif",
+                            dualApprovalInfo = updatedDualInfo,
+                            pinjamanKe = pelanggan.pinjamanKe - 1,
+                            catatanApproval = "Pengajuan top-up ditolak oleh Koordinator: $alasan",
+                            tanggalApproval = tanggalSekarang,
+                            disetujuiOleh = koordinatorName,
+                            sisaUtangLamaSebelumTopUp = 0,
+                            totalPelunasanLamaSebelumTopUp = 0,
+                            lastUpdated = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
+                        )
+                    }
+                    database.child("pelanggan").child(adminUid).child(pelangganId)
+                        .setValue(updatedPelanggan)
+                        .addOnSuccessListener {
+                            createAdminNotification(
+                                adminUid = adminUid,
+                                pelangganId = pelangganId,
+                                pelangganNama = pelanggan.namaPanggilan,
+                                alasanPenolakan = "Pengajuan top-up ditolak oleh Koordinator. Nasabah kembali ke pinjaman sebelumnya. Alasan: $alasan",
+                                pimpinanName = koordinatorName,
+                                type = "DUAL_APPROVAL_REJECTED",
+                                pimpinanNote = currentDualInfo.pimpinanApproval.note,
+                                koordinatorNote = alasan,
+                                pimpinanApprovalStatus = currentDualInfo.pimpinanApproval.status,
+                                koordinatorApprovalStatus = ApprovalStatus.REJECTED,
+                                pimpinanByName = currentDualInfo.pimpinanApproval.by,
+                                koordinatorByName = koordinatorName
+                            )
+                            hapusDariPengajuanApproval(pelangganId, cachedPelanggan.cabangId)
                             loadPendingApprovalsForKoordinator()
-                            Log.d("KoordinatorApproval", "✅ Phase 2 REJECT complete - moved to Phase 3")
+                            Log.d("KoordinatorApproval", "✅ Phase 2 REJECT (top-up) - FINAL, notif terkirim ke admin")
                             onSuccess?.invoke()
                         }
-                    }
-                    .addOnFailureListener { e ->
-                        Log.e("KoordinatorApproval", "❌ Failed: ${e.message}")
-                        onFailure?.invoke(e)
-                    }
+                        .addOnFailureListener { e ->
+                            Log.e("KoordinatorApproval", "❌ Failed: ${e.message}")
+                            onFailure?.invoke(e)
+                        }
+                } else {
+                    // NASABAH BARU DITOLAK: hapus dari pelanggan, pindah ke pelanggan_ditolak
+                    hapusDariPengajuanApproval(pelangganId, cachedPelanggan.cabangId)
+                    val rejectedData = PelangganDitolak(
+                        pelanggan = pelanggan.copy(status = "Ditolak", dualApprovalInfo = updatedDualInfo),
+                        alasanPenolakan = alasan,
+                        tanggalPenolakan = tanggalSekarang,
+                        ditolakOleh = koordinatorUid
+                    )
+                    database.child("pelanggan_ditolak").child(adminUid).child(pelangganId)
+                        .setValue(rejectedData)
+                        .addOnSuccessListener {
+                            database.child("pelanggan").child(adminUid).child(pelangganId)
+                                .removeValue()
+                                .addOnSuccessListener {
+                                    createAdminNotification(
+                                        adminUid = adminUid,
+                                        pelangganId = pelangganId,
+                                        pelangganNama = pelanggan.namaPanggilan,
+                                        alasanPenolakan = alasan,
+                                        pimpinanName = koordinatorName,
+                                        type = "DUAL_APPROVAL_REJECTED",
+                                        pimpinanNote = currentDualInfo.pimpinanApproval.note,
+                                        koordinatorNote = alasan,
+                                        pimpinanApprovalStatus = currentDualInfo.pimpinanApproval.status,
+                                        koordinatorApprovalStatus = ApprovalStatus.REJECTED,
+                                        pimpinanByName = currentDualInfo.pimpinanApproval.by,
+                                        koordinatorByName = koordinatorName
+                                    )
+                                    _pendingApprovalsKoordinator.value = _pendingApprovalsKoordinator.value.filter { it.id != pelangganId }
+                                    daftarPelanggan.removeAll { it.id == pelangganId }
+                                    safeRemovePelanggan(pelangganId)
+                                    simpanKeLokal()
+                                    loadDashboardData()
+                                    loadPendingApprovalsForKoordinator()
+                                    Log.d("KoordinatorApproval", "✅ Phase 2 REJECT (nasabah baru) - FINAL, data dipindah ke pelanggan_ditolak")
+                                    onSuccess?.invoke()
+                                }
+                                .addOnFailureListener { e ->
+                                    Log.e("KoordinatorApproval", "❌ Gagal hapus pelanggan: ${e.message}")
+                                    onFailure?.invoke(e)
+                                }
+                        }
+                        .addOnFailureListener { e ->
+                            Log.e("KoordinatorApproval", "❌ Gagal simpan ke pelanggan_ditolak: ${e.message}")
+                            onFailure?.invoke(e)
+                        }
+                }
 
             } catch (e: Exception) {
                 Log.e("KoordinatorApproval", "❌ Error: ${e.message}")
@@ -15631,6 +15862,110 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
             } catch (e: Exception) {
                 Log.e("PencairanSimpanan", "❌ Gagal menolak: ${e.message}")
                 onFailure?.invoke(e)
+            }
+        }
+    }
+
+    // =========================================================================
+    // ABSENSI KARYAWAN FUNCTIONS
+    // =========================================================================
+
+    /**
+     * Cek status absensi hari ini untuk user yang sedang login.
+     * Membaca dari `user_absensi_today/{uid}` (1 read).
+     * Jika data ditemukan dan tanggalnya cocok dengan hari ini, set absensiSendiri.
+     */
+    fun loadAbsensiSendiri() {
+        val uid = Firebase.auth.currentUser?.uid ?: return
+        val todayKey = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(java.util.Date())
+        isLoadingAbsensi.value = true
+        viewModelScope.launch {
+            try {
+                val snap = database.child("user_absensi_today").child(uid).get().await()
+                val record = snap.getValue(AbsensiRecord::class.java)
+                absensiSendiri.value = if (record != null && record.tanggal == todayKey) record else null
+                Log.d("Absensi", "✅ Status absensi loaded: ${absensiSendiri.value?.jam ?: "belum absen"}")
+            } catch (e: Exception) {
+                Log.e("Absensi", "❌ Gagal load absensi: ${e.message}")
+                absensiSendiri.value = null
+            } finally {
+                isLoadingAbsensi.value = false
+            }
+        }
+    }
+
+    /**
+     * Submit absensi untuk user yang sedang login.
+     * Menulis ke 2 path:
+     * 1. absensi/{cabangId}/{todayKey}/{uid}   - untuk tampilan kasir per cabang
+     * 2. user_absensi_today/{uid}              - untuk self-check cepat
+     */
+    fun submitAbsensi(
+        cabangId: String,
+        cabangNama: String,
+        onSuccess: () -> Unit,
+        onFailure: (String) -> Unit
+    ) {
+        val uid = Firebase.auth.currentUser?.uid ?: run { onFailure("Sesi login tidak ditemukan"); return }
+        val todayKey = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(java.util.Date())
+        val jam = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date())
+        val roleStr = when (_currentUserRole.value) {
+            UserRole.ADMIN_LAPANGAN -> "admin"
+            UserRole.KOORDINATOR -> "koordinator"
+            UserRole.PIMPINAN -> "pimpinan"
+            else -> "karyawan"
+        }
+        viewModelScope.launch {
+            try {
+                val namaSnap = database.child("metadata/admins/$uid/name").get().await()
+                val nama = namaSnap.getValue(String::class.java) ?: Firebase.auth.currentUser?.email ?: "Tidak Diketahui"
+
+                val record = AbsensiRecord(
+                    uid = uid,
+                    nama = nama,
+                    role = roleStr,
+                    cabangId = cabangId,
+                    cabangNama = cabangNama,
+                    jam = jam,
+                    tanggal = todayKey,
+                    timestamp = System.currentTimeMillis()
+                )
+
+                val updates = mapOf(
+                    "absensi/$cabangId/$todayKey/$uid" to record,
+                    "user_absensi_today/$uid" to record
+                )
+                database.updateChildren(updates).await()
+
+                absensiSendiri.value = record
+                Log.d("Absensi", "✅ Absensi berhasil: $nama pukul $jam di $cabangNama")
+                withContext(kotlinx.coroutines.Dispatchers.Main) { onSuccess() }
+            } catch (e: Exception) {
+                Log.e("Absensi", "❌ Gagal absen: ${e.message}")
+                withContext(kotlinx.coroutines.Dispatchers.Main) { onFailure(e.message ?: "Gagal menyimpan absensi") }
+            }
+        }
+    }
+
+    /**
+     * Muat daftar semua cabang dari metadata/cabang.
+     * Digunakan oleh Koordinator untuk memilih cabang saat absen.
+     */
+    fun loadDaftarCabangUntukAbsensi() {
+        if (daftarCabangUntukAbsensi.value.isNotEmpty()) return // sudah ada, skip
+        viewModelScope.launch {
+            try {
+                val snap = database.child("metadata/cabang").get().await()
+                val list = mutableListOf<CabangInfo>()
+                snap.children.forEach { child ->
+                    val cabangId = child.key ?: return@forEach
+                    val nama = child.child("name").getValue(String::class.java) ?: cabangId
+                    list.add(CabangInfo(id = cabangId, name = nama))
+                }
+                daftarCabangUntukAbsensi.value = list.sortedBy { it.name }
+                Log.d("Absensi", "✅ Loaded ${list.size} cabang")
+            } catch (e: Exception) {
+                Log.e("Absensi", "❌ Gagal load cabang: ${e.message}")
             }
         }
     }
