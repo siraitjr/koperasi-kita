@@ -1747,6 +1747,7 @@ function JurnalTransaksiScreen({ user, cabang, onBack, onLogout }) {
     tambah_bayar: 'Tambah Bayar',
     pencairan_pinjaman: 'Pencairan',
     pelunasan_sisa_utang: 'Pelunasan Sisa Utang',
+    pelunasan_tabungan: 'Pelunasan via Tabungan',
     lunas: 'Lunas',
   };
 
@@ -1755,6 +1756,7 @@ function JurnalTransaksiScreen({ user, cabang, onBack, onLogout }) {
     tambah_bayar: '#2563eb',
     pencairan_pinjaman: '#d97706',
     pelunasan_sisa_utang: '#7c3aed',
+    pelunasan_tabungan: '#9333ea',
     lunas: '#059669',
   };
 
@@ -1827,6 +1829,7 @@ function JurnalTransaksiScreen({ user, cabang, onBack, onLogout }) {
             <option value="tambah_bayar">Tambah Bayar</option>
             <option value="pencairan_pinjaman">Pencairan</option>
             <option value="pelunasan_sisa_utang">Pelunasan Sisa Utang</option>
+            <option value="pelunasan_tabungan">Pelunasan via Tabungan</option>
             <option value="lunas">Lunas</option>
           </select>
           <input

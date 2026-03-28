@@ -13097,8 +13097,75 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     return@launch
                 }
 
-                // Nasabah lunas cicilan + tabungan dicairkan → hapus dari database
-                // Tidak perlu disimpan lagi karena sudah selesai semua kewajiban
+                val cabangId = _currentUserCabang.value ?: ""
+                val currentEmail = Firebase.auth.currentUser?.email ?: ""
+
+                // Hitung sisa utang — exclude entry "Bunga..." (konsisten dengan Cloud Functions)
+                val totalDibayar = pelanggan.pembayaranList
+                    .filter { !it.tanggal.startsWith("Bunga") }
+                    .sumOf { pay ->
+                        pay.jumlah.toLong() + pay.subPembayaran.sumOf { sub -> sub.jumlah.toLong() }
+                    }
+                val sisaUtang = (pelanggan.totalPelunasan - totalDibayar).coerceAtLeast(0)
+
+                // =========================================================
+                // FIX: Jika masih ada sisa utang, catat pelunasan via tabungan
+                // ke pembayaran_harian & jurnal_transaksi SEBELUM hapus data.
+                // Agar buku pokok web tetap mencatat pelunasan ini secara permanen.
+                // =========================================================
+                if (sisaUtang > 0 && cabangId.isNotBlank()) {
+                    val dateFormat = SimpleDateFormat("dd MMM yyyy", Locale("in", "ID"))
+                    val today = dateFormat.format(Date())
+                    val yearMonthFormat = SimpleDateFormat("yyyy-MM", Locale.getDefault())
+                    val yearMonth = yearMonthFormat.format(Date())
+
+                    // Baca nama admin (1 RTDB read)
+                    val adminName = try {
+                        database.child("metadata/admins/$adminUid/name").get().await()
+                            .getValue(String::class.java) ?: currentEmail
+                    } catch (_: Exception) { currentEmail }
+
+                    // 1. Catat ke pembayaran_harian
+                    val pembayaranHarianData = mapOf(
+                        "pelangganId" to pelangganId,
+                        "namaPanggilan" to pelanggan.namaPanggilan,
+                        "namaKtp" to pelanggan.namaKtp,
+                        "adminUid" to adminUid,
+                        "adminName" to adminName,
+                        "adminEmail" to currentEmail,
+                        "jumlah" to sisaUtang,
+                        "jenis" to "pelunasan_tabungan",
+                        "tanggal" to today,
+                        "timestamp" to ServerValue.TIMESTAMP
+                    )
+                    database.child("pembayaran_harian").child(cabangId).child(today)
+                        .push().setValue(pembayaranHarianData).await()
+
+                    // 2. Catat ke jurnal_transaksi
+                    val jurnalData = mapOf(
+                        "tipe" to "pelunasan_tabungan",
+                        "pelangganId" to pelangganId,
+                        "namaPelanggan" to pelanggan.namaPanggilan,
+                        "namaKtp" to pelanggan.namaKtp,
+                        "adminUid" to adminUid,
+                        "adminName" to adminName,
+                        "jumlah" to sisaUtang,
+                        "tanggal" to today,
+                        "pinjamanKe" to pelanggan.pinjamanKe,
+                        "sisaUtangSetelah" to 0,
+                        "totalPelunasan" to pelanggan.totalPelunasan,
+                        "totalDibayar" to (totalDibayar + sisaUtang),
+                        "keterangan" to "Pelunasan sisa utang Rp $sisaUtang via tabungan (cairkan simpanan)",
+                        "timestamp" to ServerValue.TIMESTAMP,
+                        "createdAt" to SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.getDefault()).format(Date())
+                    )
+                    database.child("jurnal_transaksi").child(cabangId).child(yearMonth)
+                        .push().setValue(jurnalData).await()
+
+                    Log.d("Pencairan", "✅ Sisa utang Rp $sisaUtang tercatat ke pembayaran_harian & jurnal_transaksi")
+                }
+
+                // Nasabah lunas + tabungan dicairkan → hapus dari database
                 database.child("pelanggan").child(adminUid).child(pelangganId)
                     .removeValue()
                     .addOnSuccessListener {
@@ -13110,7 +13177,6 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                         Log.d("Pencairan", "✅ Nasabah dihapus dari database (lunas total): ${pelanggan.namaPanggilan}")
                         viewModelScope.launch {
                             try {
-                                val cabangId = _currentUserCabang.value ?: ""
                                 if (cabangId.isNotBlank()) {
                                     // Hapus dari node pelanggan_status_khusus
                                     database.child("pelanggan_status_khusus")

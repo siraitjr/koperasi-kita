@@ -163,6 +163,9 @@ exports.getJurnalTransaksi = functions
                     case 'pelunasan_sisa_utang':
                         ringkasan.totalPelunasanSisaUtang += e.jumlah || 0;
                         break;
+                    case 'pelunasan_tabungan':
+                        ringkasan.totalPelunasanSisaUtang += e.jumlah || 0;
+                        break;
                     case 'lunas':
                         ringkasan.jumlahNasabahLunas += 1;
                         break;
