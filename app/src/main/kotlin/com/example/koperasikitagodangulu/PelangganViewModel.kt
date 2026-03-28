@@ -255,6 +255,8 @@ data class AbsensiRecord(
     val role: String = "",          // "admin" | "koordinator" | "pimpinan" | "kasir_unit"
     val cabangId: String = "",
     val cabangNama: String = "",
+    val adminLapanganId: String = "",   // UID admin lapangan yang didampingi (pimpinan/koordinator)
+    val adminLapanganName: String = "", // Nama admin lapangan yang didampingi
     val jam: String = "",           // "08:30" WIB
     val tanggal: String = "",       // ISO: "2026-03-26"
     val timestamp: Long = 0L
@@ -15903,6 +15905,8 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
     fun submitAbsensi(
         cabangId: String,
         cabangNama: String,
+        adminLapanganId: String = "",
+        adminLapanganName: String = "",
         onSuccess: () -> Unit,
         onFailure: (String) -> Unit
     ) {
@@ -15926,6 +15930,8 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     role = roleStr,
                     cabangId = cabangId,
                     cabangNama = cabangNama,
+                    adminLapanganId = adminLapanganId,
+                    adminLapanganName = adminLapanganName,
                     jam = jam,
                     tanggal = todayKey,
                     timestamp = System.currentTimeMillis()
@@ -15938,7 +15944,8 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                 database.updateChildren(updates).await()
 
                 absensiSendiri.value = record
-                Log.d("Absensi", "✅ Absensi berhasil: $nama pukul $jam di $cabangNama")
+                val logAdmin = if (adminLapanganName.isNotBlank()) " mendampingi $adminLapanganName" else ""
+                Log.d("Absensi", "✅ Absensi berhasil: $nama pukul $jam di $cabangNama$logAdmin")
                 withContext(kotlinx.coroutines.Dispatchers.Main) { onSuccess() }
             } catch (e: Exception) {
                 Log.e("Absensi", "❌ Gagal absen: ${e.message}")

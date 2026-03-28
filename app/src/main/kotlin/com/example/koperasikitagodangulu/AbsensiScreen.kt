@@ -25,6 +25,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
+import com.example.koperasikitagodangulu.models.AdminSummary
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -48,13 +49,35 @@ fun AbsensiScreen(
     val daftarCabang by viewModel.daftarCabangUntukAbsensi.collectAsState()
 
     val isKoordinator = currentRole == UserRole.KOORDINATOR
+    val isPimpinan = currentRole == UserRole.PIMPINAN
+    val needsAdminSelection = isPimpinan || isKoordinator
+
+    // Data admin lapangan
+    val adminSummary by viewModel.adminSummary.collectAsState()
+    val allAdminSummaries by viewModel.allAdminSummaries.collectAsState()
 
     // Cabang yang dipilih untuk absensi hari ini
     var selectedCabang by remember { mutableStateOf<CabangInfo?>(null) }
     var showCabangDropdown by remember { mutableStateOf(false) }
+
+    // Admin lapangan yang didampingi
+    var selectedAdminId by remember { mutableStateOf("") }
+    var selectedAdminName by remember { mutableStateOf("") }
+    var showAdminDropdown by remember { mutableStateOf(false) }
+
     var isSubmitting by remember { mutableStateOf(false) }
     var errorMsg by remember { mutableStateOf("") }
     var successMsg by remember { mutableStateOf("") }
+
+    // Daftar admin berdasarkan role
+    val availableAdmins = remember(currentRole, adminSummary, allAdminSummaries, selectedCabang) {
+        when {
+            isPimpinan -> adminSummary
+            isKoordinator && selectedCabang != null ->
+                allAdminSummaries.values.filter { it.cabang == selectedCabang?.id }.toList()
+            else -> emptyList()
+        }
+    }
 
     val todayDisplay = remember {
         SimpleDateFormat("EEEE, dd MMMM yyyy", Locale("in", "ID")).format(Date())
@@ -81,6 +104,9 @@ fun AbsensiScreen(
         viewModel.loadAbsensiSendiri()
         if (isKoordinator) {
             viewModel.loadDaftarCabangUntukAbsensi()
+        }
+        if (isPimpinan) {
+            viewModel.refreshAdminSummary()
         }
     }
 
@@ -174,8 +200,11 @@ fun AbsensiScreen(
                             Column {
                                 Text(roleLabel, fontSize = 12.sp, color = Color.White.copy(alpha = 0.8f))
                                 Text(
-                                    if (isKoordinator) "Pilih cabang untuk absen hari ini"
-                                    else "Cabang: ${absenCabangNama.ifBlank { absenCabangId }}",
+                                    when {
+                                        isKoordinator -> "Pilih cabang & admin untuk absen hari ini"
+                                        isPimpinan -> "Pilih admin lapangan yang didampingi"
+                                        else -> "Cabang: ${absenCabangNama.ifBlank { absenCabangId }}"
+                                    },
                                     fontSize = 14.sp,
                                     color = Color.White,
                                     fontWeight = FontWeight.Medium
@@ -242,6 +271,99 @@ fun AbsensiScreen(
                                             onClick = {
                                                 selectedCabang = cabang
                                                 showCabangDropdown = false
+                                                // Reset pilihan admin saat cabang berubah
+                                                selectedAdminId = ""
+                                                selectedAdminName = ""
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ---- Pimpinan & Koordinator: pilih admin lapangan yang didampingi ----
+            if (needsAdminSelection) {
+                item {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(
+                            "Pilih Admin Lapangan yang Didampingi",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = textPrimary
+                        )
+
+                        val adminListReady = if (isKoordinator) selectedCabang != null else true
+
+                        if (!adminListReady) {
+                            Text(
+                                "Pilih cabang terlebih dahulu",
+                                fontSize = 13.sp,
+                                color = textMuted
+                            )
+                        } else if (availableAdmins.isEmpty()) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                modifier = Modifier.padding(vertical = 4.dp)
+                            ) {
+                                CircularProgressIndicator(modifier = Modifier.size(16.dp), color = primaryColor)
+                                Text("Memuat daftar admin...", fontSize = 13.sp, color = textMuted)
+                            }
+                        } else {
+                            ExposedDropdownMenuBox(
+                                expanded = showAdminDropdown,
+                                onExpandedChange = { showAdminDropdown = it }
+                            ) {
+                                OutlinedTextField(
+                                    value = selectedAdminName,
+                                    onValueChange = {},
+                                    readOnly = true,
+                                    placeholder = { Text("Pilih admin lapangan...", color = textMuted) },
+                                    trailingIcon = {
+                                        ExposedDropdownMenuDefaults.TrailingIcon(expanded = showAdminDropdown)
+                                    },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .menuAnchor(),
+                                    shape = RoundedCornerShape(12.dp),
+                                    colors = OutlinedTextFieldDefaults.colors(
+                                        focusedBorderColor = primaryColor,
+                                        unfocusedBorderColor = borderColor,
+                                        focusedTextColor = textPrimary,
+                                        unfocusedTextColor = textPrimary,
+                                        focusedContainerColor = cardColor,
+                                        unfocusedContainerColor = cardColor
+                                    )
+                                )
+                                ExposedDropdownMenu(
+                                    expanded = showAdminDropdown,
+                                    onDismissRequest = { showAdminDropdown = false },
+                                    modifier = Modifier.background(cardColor)
+                                ) {
+                                    availableAdmins.forEach { admin ->
+                                        DropdownMenuItem(
+                                            text = {
+                                                Column {
+                                                    Text(
+                                                        admin.adminName.ifBlank { admin.adminEmail },
+                                                        color = textPrimary,
+                                                        fontWeight = FontWeight.Medium,
+                                                        fontSize = 14.sp
+                                                    )
+                                                    Text(
+                                                        "${admin.nasabahAktif} nasabah aktif",
+                                                        fontSize = 12.sp,
+                                                        color = textMuted
+                                                    )
+                                                }
+                                            },
+                                            onClick = {
+                                                selectedAdminId = admin.adminId
+                                                selectedAdminName = admin.adminName.ifBlank { admin.adminEmail }
+                                                showAdminDropdown = false
                                             }
                                         )
                                     }
@@ -309,6 +431,15 @@ fun AbsensiScreen(
                                         fontSize = 13.sp,
                                         color = textMuted
                                     )
+                                    val adminDampingi = absensiSendiri?.adminLapanganName ?: ""
+                                    if (adminDampingi.isNotBlank()) {
+                                        Text(
+                                            "Mendampingi: $adminDampingi",
+                                            fontSize = 13.sp,
+                                            color = primaryColor,
+                                            fontWeight = FontWeight.Medium
+                                        )
+                                    }
                                 }
                             }
                         } else {
@@ -345,12 +476,21 @@ fun AbsensiScreen(
                                 }
                             }
 
-                            // Validasi: Koordinator harus pilih cabang dulu
-                            val canAbsen = if (isKoordinator) selectedCabang != null else absenCabangId.isNotBlank()
+                            // Validasi: Koordinator harus pilih cabang, Pimpinan/Koordinator harus pilih admin
+                            val cabangOk = if (isKoordinator) selectedCabang != null else absenCabangId.isNotBlank()
+                            val adminOk = if (needsAdminSelection) selectedAdminId.isNotBlank() else true
+                            val canAbsen = cabangOk && adminOk
 
-                            if (!canAbsen && isKoordinator) {
+                            if (!cabangOk && isKoordinator) {
                                 Text(
                                     "Pilih cabang terlebih dahulu",
+                                    fontSize = 12.sp,
+                                    color = Color(0xFFEF4444)
+                                )
+                            }
+                            if (cabangOk && !adminOk && needsAdminSelection) {
+                                Text(
+                                    "Pilih admin lapangan yang didampingi",
                                     fontSize = 12.sp,
                                     color = Color(0xFFEF4444)
                                 )
@@ -364,6 +504,8 @@ fun AbsensiScreen(
                                     viewModel.submitAbsensi(
                                         cabangId = absenCabangId,
                                         cabangNama = absenCabangNama,
+                                        adminLapanganId = if (needsAdminSelection) selectedAdminId else "",
+                                        adminLapanganName = if (needsAdminSelection) selectedAdminName else "",
                                         onSuccess = {
                                             isSubmitting = false
                                             successMsg = "Absensi berhasil dicatat!"
@@ -451,6 +593,9 @@ fun AbsensiScreen(
                         Text("• Absensi digunakan sebagai dasar pemberian uang operasional", fontSize = 12.sp, color = textMuted)
                         if (isKoordinator) {
                             Text("• Pilih cabang tempat Anda bekerja hari ini", fontSize = 12.sp, color = textMuted)
+                        }
+                        if (needsAdminSelection) {
+                            Text("• Pilih admin lapangan yang Anda dampingi hari ini", fontSize = 12.sp, color = textMuted)
                         }
                     }
                 }
