@@ -2219,8 +2219,8 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                                 "❌ SyncManager error, fallback ke lokal: ${e.message}"
                             )
                             // ✅ FIX: Cek duplikat berdasarkan NIK sebelum add ke list
-                            val nik = base.nikKtp.trim()
-                            val alreadyExists = nik.isNotBlank() && daftarPelanggan.any { it.nikKtp.trim() == nik }
+                            val nik = base.nik.trim()
+                            val alreadyExists = nik.isNotBlank() && daftarPelanggan.any { it.nik.trim() == nik }
                             if (alreadyExists) {
                                 Log.w("TambahPelanggan", "⚠️ Skip fallback add - nasabah dengan NIK $nik sudah ada di list")
                             } else {
