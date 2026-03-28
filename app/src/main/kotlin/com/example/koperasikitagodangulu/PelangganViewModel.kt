@@ -15873,7 +15873,62 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     ?: Firebase.auth.currentUser?.email ?: "Koordinator"
                 val dateFormat = SimpleDateFormat("dd MMM yyyy", Locale("in", "ID"))
                 val tanggalSekarang = dateFormat.format(Date())
-                // 1. ✅ Nasabah lunas total → hapus dari database
+
+                // FIX: Catat pelunasan sisa utang via tabungan SEBELUM hapus
+                // Baca data pelanggan untuk hitung sisa utang
+                val pelangganSnap = database.child("pelanggan").child(item.adminUid).child(item.pelangganId).get().await()
+                val pelanggan = pelangganSnap.getValue(Pelanggan::class.java)
+                if (pelanggan != null && item.cabangId.isNotBlank()) {
+                    val totalDibayar = pelanggan.pembayaranList
+                        .filter { !it.tanggal.startsWith("Bunga") }
+                        .sumOf { pay ->
+                            pay.jumlah.toLong() + pay.subPembayaran.sumOf { sub -> sub.jumlah.toLong() }
+                        }
+                    val sisaUtang = (pelanggan.totalPelunasan - totalDibayar).coerceAtLeast(0)
+
+                    if (sisaUtang > 0) {
+                        val yearMonth = SimpleDateFormat("yyyy-MM", Locale.getDefault()).format(Date())
+
+                        val pembayaranHarianData = mapOf(
+                            "pelangganId" to item.pelangganId,
+                            "namaPanggilan" to (pelanggan.namaPanggilan.ifBlank { pelanggan.namaKtp }),
+                            "namaKtp" to pelanggan.namaKtp,
+                            "adminUid" to item.adminUid,
+                            "adminName" to koordinatorName,
+                            "adminEmail" to (Firebase.auth.currentUser?.email ?: ""),
+                            "jumlah" to sisaUtang,
+                            "jenis" to "pelunasan_tabungan",
+                            "tanggal" to tanggalSekarang,
+                            "timestamp" to ServerValue.TIMESTAMP
+                        )
+                        database.child("pembayaran_harian").child(item.cabangId).child(tanggalSekarang)
+                            .push().setValue(pembayaranHarianData).await()
+
+                        val jurnalData = mapOf(
+                            "tipe" to "pelunasan_tabungan",
+                            "pelangganId" to item.pelangganId,
+                            "namaPelanggan" to (pelanggan.namaPanggilan.ifBlank { pelanggan.namaKtp }),
+                            "namaKtp" to pelanggan.namaKtp,
+                            "adminUid" to item.adminUid,
+                            "adminName" to koordinatorName,
+                            "jumlah" to sisaUtang,
+                            "tanggal" to tanggalSekarang,
+                            "pinjamanKe" to pelanggan.pinjamanKe,
+                            "sisaUtangSetelah" to 0,
+                            "totalPelunasan" to pelanggan.totalPelunasan,
+                            "totalDibayar" to (totalDibayar + sisaUtang),
+                            "keterangan" to "Pelunasan sisa utang Rp $sisaUtang via tabungan (disetujui koordinator)",
+                            "timestamp" to ServerValue.TIMESTAMP,
+                            "createdAt" to SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.getDefault()).format(Date())
+                        )
+                        database.child("jurnal_transaksi").child(item.cabangId).child(yearMonth)
+                            .push().setValue(jurnalData).await()
+
+                        Log.d("PencairanSimpanan", "✅ Sisa utang Rp $sisaUtang tercatat ke pembayaran_harian & jurnal_transaksi")
+                    }
+                }
+
+                // 1. Nasabah lunas total → hapus dari database
                 database.child("pelanggan").child(item.adminUid).child(item.pelangganId)
                     .removeValue().await()
                 // 2. Update status request menjadi DISETUJUI
