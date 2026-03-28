@@ -128,6 +128,13 @@ export async function deleteKasirEntry({ cabangId, bulan, entryId }) {
   return apiCall('deleteKasirEntry', { cabangId, bulan, entryId });
 }
 
+/**
+ * Sync operasional harian ke jurnal kasir sebagai entry Transport (kasir_unit only)
+ */
+export async function syncOperasionalTransport() {
+  return apiPost('syncOperasionalTransport', {});
+}
+
 // =========================================================================
 // JURNAL TRANSAKSI API
 // =========================================================================

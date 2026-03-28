@@ -10,7 +10,7 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signOut } from 'firebas
 import { auth, storage, database } from '../../lib/firebase';
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { ref as dbRef, update } from 'firebase/database';
-import { getKasirSummary, getKasirEntries, addKasirEntry, deleteKasirEntry, getBukuPokok } from '../../lib/api';
+import { getKasirSummary, getKasirEntries, addKasirEntry, deleteKasirEntry, getBukuPokok, syncOperasionalTransport } from '../../lib/api';
 import { formatRp, formatRpFull } from '../../lib/format';
 
 // =========================================================================
@@ -811,6 +811,7 @@ function JurnalScreen({ user, cabang, cabangList, onBack, onLogout }) {
                           color: entry.arah === 'masuk' ? 'var(--success)' : 'var(--danger)',
                         }}>{entry.arah === 'masuk' ? '↑ Masuk' : '↓ Keluar'}</span>
                         <span style={{ fontSize: 13, fontWeight: 600 }}>{entry.jenisLabel || entry.jenis}</span>
+                        {entry.source === 'operasional_harian' && <span style={{ fontSize: 10, fontWeight: 600, padding: '1px 6px', borderRadius: 4, background: '#dbeafe', color: '#2563eb' }}>Auto</span>}
                       </div>
                       {entry.keterangan && <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>{entry.keterangan}</p>}
                     </div>
@@ -2731,6 +2732,15 @@ function AbsensiScreen({ user, cabang, cabangList, onBack, onLogout }) {
 
       await set(dbRefFn(db, `operasional_harian/${activeCabang.id}/${todayKey}/${uid}`), record);
       setOperasionalMap(m => ({ ...m, [uid]: record }));
+
+      // Sync total operasional ke jurnal kasir sebagai entry Transport
+      try {
+        await syncOperasionalTransport();
+      } catch (syncErr) {
+        console.error('Sync operasional ke jurnal gagal:', syncErr);
+        // Tidak blocking — operasional tetap tersimpan
+      }
+
       setSuccessMsg(`Operasional ${nama} berhasil disimpan`);
       setTimeout(() => setSuccessMsg(''), 3000);
     } catch (err) {

@@ -193,6 +193,7 @@ exports.getKasirSummary = kasirApi.getKasirSummary;
 exports.getKasirEntries = kasirApi.getKasirEntries;
 exports.addKasirEntry = kasirApi.addKasirEntry;
 exports.deleteKasirEntry = kasirApi.deleteKasirEntry;
+exports.syncOperasionalTransport = kasirApi.syncOperasionalTransport;
 
 
 exports.scanDuplicateNasabah = detectDuplicate.scanDuplicateNasabah;

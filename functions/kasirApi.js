@@ -7,6 +7,7 @@
 // 2. getKasirEntries - Jurnal kasir per bulan per cabang
 // 3. addKasirEntry - Tambah transaksi kasir (kasir_unit only)
 // 4. deleteKasirEntry - Hapus transaksi kasir (kasir_unit only)
+// 5. syncOperasionalTransport - Sync total operasional harian ke jurnal kasir
 //
 // Autentikasi: Firebase ID Token (Bearer token di header)
 // Optimasi: 1 read per bulan per cabang, summary node untuk dashboard
@@ -518,6 +519,12 @@ exports.deleteKasirEntry = functions
 
             const entry = entrySnap.val();
 
+            // Cegah hapus entry otomatis dari operasional harian
+            if (entry.source === 'operasional_harian') {
+                res.status(403).json({ success: false, error: 'Entry ini otomatis dari operasional harian, tidak bisa dihapus manual. Ubah melalui menu Absensi.' });
+                return;
+            }
+
             if (entry.createdBy !== user.uid) {
                 res.status(403).json({ success: false, error: 'Hanya bisa menghapus transaksi yang Anda buat' });
                 return;
@@ -537,6 +544,154 @@ exports.deleteKasirEntry = functions
 
         } catch (error) {
             console.error('deleteKasirEntry error:', error);
+            res.status(500).json({ success: false, error: 'Terjadi kesalahan server' });
+        }
+    });
+
+// =========================================================================
+// API 5: SYNC OPERASIONAL HARIAN → JURNAL KASIR (POST - kasir_unit only)
+// =========================================================================
+// Membaca total uangMakan + transport dari operasional_harian hari ini,
+// lalu upsert 1 entry di kasir_entries dengan jenis 'transport'.
+// Entry otomatis ini ditandai source: 'operasional_harian' agar bisa
+// dibedakan dari entry transport manual.
+// =========================================================================
+exports.syncOperasionalTransport = functions
+    .region('asia-southeast1')
+    .https.onRequest(async (req, res) => {
+        setCorsHeaders(res);
+
+        if (req.method === 'OPTIONS') {
+            res.status(204).send('');
+            return;
+        }
+
+        if (req.method !== 'POST') {
+            res.status(405).json({ success: false, error: 'Method harus POST' });
+            return;
+        }
+
+        try {
+            const authResult = await verifyAuth(req);
+            if (!authResult.valid) {
+                res.status(401).json({ success: false, error: authResult.error });
+                return;
+            }
+
+            const user = await getUserRole(authResult.uid);
+            if (!user) {
+                res.status(403).json({ success: false, error: 'User tidak terdaftar' });
+                return;
+            }
+
+            if (user.role !== 'kasir_unit') {
+                res.status(403).json({ success: false, error: 'Hanya Kasir Unit yang dapat sync operasional' });
+                return;
+            }
+
+            const cabangId = user.cabang;
+            if (!cabangId) {
+                res.status(400).json({ success: false, error: 'User tidak memiliki cabang' });
+                return;
+            }
+
+            // Hitung todayKey (YYYY-MM-DD) dan tanggal format Indonesia
+            const now = new Date();
+            const wibOffset = 7 * 60 * 60 * 1000;
+            const wibDate = new Date(now.getTime() + wibOffset);
+            const yyyy = wibDate.getUTCFullYear();
+            const mm = (wibDate.getUTCMonth() + 1).toString().padStart(2, '0');
+            const dd = wibDate.getUTCDate().toString().padStart(2, '0');
+            const todayKey = `${yyyy}-${mm}-${dd}`;
+            const bulanKey = `${yyyy}-${mm}`;
+            const tanggalIndo = `${dd} ${BULAN_INDO[wibDate.getUTCMonth()]} ${yyyy}`;
+
+            // Baca semua operasional_harian untuk cabang ini hari ini
+            const opsSnap = await db.ref(`operasional_harian/${cabangId}/${todayKey}`).once('value');
+            const opsData = opsSnap.val() || {};
+
+            // Hitung total (uangMakan + transport) dari semua karyawan
+            let totalOperasional = 0;
+            const details = [];
+            Object.values(opsData).forEach(rec => {
+                const uangMakan = parseInt(rec.uangMakan) || 0;
+                const transport = parseInt(rec.transport) || 0;
+                const subtotal = uangMakan + transport;
+                if (subtotal > 0) {
+                    totalOperasional += subtotal;
+                    details.push(`${rec.nama || 'Unknown'}: ${subtotal.toLocaleString('id-ID')}`);
+                }
+            });
+
+            // Fixed entry key agar bisa di-upsert (tidak push baru setiap kali)
+            const entryKey = `auto_ops_${todayKey}`;
+            const entryRef = db.ref(`kasir_entries/${cabangId}/${bulanKey}/${entryKey}`);
+
+            // Baca entry lama untuk hitung selisih summary
+            const oldSnap = await entryRef.once('value');
+            const oldEntry = oldSnap.val();
+            const oldJumlah = oldEntry ? (oldEntry.jumlah || 0) : 0;
+
+            if (totalOperasional === 0 && !oldEntry) {
+                // Tidak ada operasional dan tidak ada entry lama — tidak perlu apa-apa
+                res.status(200).json({
+                    success: true,
+                    message: 'Tidak ada operasional untuk disync',
+                    data: { jumlah: 0 }
+                });
+                return;
+            }
+
+            if (totalOperasional === 0 && oldEntry) {
+                // Semua operasional dihapus/dinolkan — hapus entry lama
+                await entryRef.remove();
+                await updateKasirSummary(cabangId, bulanKey, 'transport', 'keluar', oldJumlah, true);
+                res.status(200).json({
+                    success: true,
+                    message: 'Entry transport operasional dihapus (total = 0)',
+                    data: { jumlah: 0, deleted: true }
+                });
+                return;
+            }
+
+            // Buat/update entry
+            const keterangan = `Operasional ${Object.keys(opsData).length} karyawan`;
+            const newEntry = {
+                jenis: 'transport',
+                arah: 'keluar',
+                jumlah: totalOperasional,
+                keterangan,
+                tanggal: tanggalIndo,
+                createdBy: user.uid,
+                createdByName: user.name,
+                createdAt: oldEntry ? (oldEntry.createdAt || admin.database.ServerValue.TIMESTAMP) : admin.database.ServerValue.TIMESTAMP,
+                updatedAt: admin.database.ServerValue.TIMESTAMP,
+                source: 'operasional_harian'
+            };
+
+            await entryRef.set(newEntry);
+
+            // Update summary: hapus nilai lama, tambah nilai baru
+            if (oldJumlah > 0) {
+                await updateKasirSummary(cabangId, bulanKey, 'transport', 'keluar', oldJumlah, true);
+            }
+            await updateKasirSummary(cabangId, bulanKey, 'transport', 'keluar', totalOperasional, false);
+
+            res.status(200).json({
+                success: true,
+                message: `Transport operasional berhasil disync: Rp ${totalOperasional.toLocaleString('id-ID')}`,
+                data: {
+                    id: entryKey,
+                    jumlah: totalOperasional,
+                    karyawan: Object.keys(opsData).length,
+                    isUpdate: !!oldEntry,
+                    cabangId,
+                    bulan: bulanKey
+                }
+            });
+
+        } catch (error) {
+            console.error('syncOperasionalTransport error:', error);
             res.status(500).json({ success: false, error: 'Terjadi kesalahan server' });
         }
     });
