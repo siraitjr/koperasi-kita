@@ -8,7 +8,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Approval
 import androidx.compose.material.icons.rounded.BarChart
-import androidx.compose.material.icons.rounded.Fingerprint
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
@@ -122,11 +121,6 @@ fun PimpinanBottomNavigation(
             route = "pimpinan_reports",
             icon = Icons.Rounded.BarChart,
             label = "Reports"
-        ),
-        BottomNavItem(
-            route = "pimpinan_absensi",
-            icon = Icons.Rounded.Fingerprint,
-            label = "Absensi"
         ),
     )
 

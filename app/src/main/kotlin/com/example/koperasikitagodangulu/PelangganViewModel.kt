@@ -15634,97 +15634,6 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
             }
         }
     }
-
-    // =========================================================================
-    // ABSENSI PENDAMPINGAN - Pimpinan & Koordinator
-    // =========================================================================
-    private val _absensiHariIni = MutableStateFlow<AbsensiData?>(null)
-    val absensiHariIni: StateFlow<AbsensiData?> = _absensiHariIni
-
-    fun checkAbsensiHariIni() {
-        val uid = Firebase.auth.currentUser?.uid ?: return
-        val todayKey = SimpleDateFormat("yyyy-MM-dd", Locale("in", "ID")).format(Date())
-
-        viewModelScope.launch {
-            try {
-                val snap = database.child("absensi").child(uid).child(todayKey).get().await()
-                if (snap.exists()) {
-                    _absensiHariIni.value = AbsensiData(
-                        adminLapanganId = snap.child("adminLapanganId").getValue(String::class.java) ?: "",
-                        adminLapanganName = snap.child("adminLapanganName").getValue(String::class.java) ?: "",
-                        keterangan = snap.child("keterangan").getValue(String::class.java) ?: "",
-                        cabangId = snap.child("cabangId").getValue(String::class.java) ?: "",
-                        cabangName = snap.child("cabangName").getValue(String::class.java) ?: "",
-                        tanggal = snap.child("tanggal").getValue(String::class.java) ?: todayKey,
-                        timestamp = snap.child("timestamp").getValue(Long::class.java) ?: 0L
-                    )
-                } else {
-                    _absensiHariIni.value = null
-                }
-            } catch (e: Exception) {
-                Log.e("Absensi", "❌ Gagal cek absensi: ${e.message}")
-            }
-        }
-    }
-
-    fun simpanAbsensi(
-        adminLapanganId: String,
-        adminLapanganName: String,
-        keterangan: String,
-        cabangId: String = "",
-        cabangName: String = "",
-        onSuccess: (() -> Unit)? = null,
-        onFailure: ((Exception) -> Unit)? = null
-    ) {
-        val uid = Firebase.auth.currentUser?.uid ?: run {
-            onFailure?.invoke(Exception("User belum login"))
-            return
-        }
-        val todayKey = SimpleDateFormat("yyyy-MM-dd", Locale("in", "ID")).format(Date())
-        val todayFormatted = SimpleDateFormat("dd MMM yyyy", Locale("in", "ID")).format(Date())
-
-        viewModelScope.launch {
-            try {
-                val userName = try {
-                    val nameSnap = database.child("metadata/admins/$uid/name").get().await()
-                    nameSnap.getValue(String::class.java) ?: Firebase.auth.currentUser?.email ?: ""
-                } catch (_: Exception) { Firebase.auth.currentUser?.email ?: "" }
-
-                val resolvedCabangId = cabangId.ifBlank { _currentUserCabang.value ?: "" }
-
-                val absensiMap = mapOf(
-                    "adminLapanganId" to adminLapanganId,
-                    "adminLapanganName" to adminLapanganName,
-                    "keterangan" to keterangan,
-                    "cabangId" to resolvedCabangId,
-                    "cabangName" to cabangName,
-                    "tanggal" to todayFormatted,
-                    "tanggalKey" to todayKey,
-                    "uid" to uid,
-                    "userName" to userName,
-                    "timestamp" to com.google.firebase.database.ServerValue.TIMESTAMP
-                )
-
-                database.child("absensi").child(uid).child(todayKey).setValue(absensiMap).await()
-
-                _absensiHariIni.value = AbsensiData(
-                    adminLapanganId = adminLapanganId,
-                    adminLapanganName = adminLapanganName,
-                    keterangan = keterangan,
-                    cabangId = resolvedCabangId,
-                    cabangName = cabangName,
-                    tanggal = todayFormatted,
-                    timestamp = System.currentTimeMillis()
-                )
-
-                Log.d("Absensi", "✅ Absensi disimpan: mendampingi $adminLapanganName")
-                onSuccess?.invoke()
-            } catch (e: Exception) {
-                Log.e("Absensi", "❌ Gagal simpan absensi: ${e.message}")
-                onFailure?.invoke(e)
-            }
-        }
-    }
 }
 
 data class PengajuanCairanSimpananItem(
@@ -15739,14 +15648,4 @@ data class PengajuanCairanSimpananItem(
     val catatan: String = "",
     val requestDate: String = "",
     val tanggalKeputusan: String = ""
-)
-
-data class AbsensiData(
-    val adminLapanganId: String = "",
-    val adminLapanganName: String = "",
-    val keterangan: String = "",
-    val cabangId: String = "",
-    val cabangName: String = "",
-    val tanggal: String = "",
-    val timestamp: Long = 0L
 )

@@ -62,12 +62,6 @@ fun KoordinatorBottomNavigation(
             icon = Icons.Rounded.Assessment,
             label = "Laporan",
             badgeCount = 0
-        ),
-        KoordinatorNavItem(
-            route = "koordinator_absensi",
-            icon = Icons.Rounded.Fingerprint,
-            label = "Absensi",
-            badgeCount = 0
         )
     )
 

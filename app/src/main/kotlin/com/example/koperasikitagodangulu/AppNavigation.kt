@@ -158,10 +158,6 @@ fun AppNavigation(navController: NavHostController, viewModel: PelangganViewMode
             PimpinanReportsScreen(navController, viewModel)
         }
 
-        composable("pimpinan_absensi") {
-            PimpinanAbsensiScreen(navController, viewModel)
-        }
-
         composable("notifikasi") {
             RiwayatPenolakanScreen(navController = navController, viewModel = viewModel)
         }
@@ -396,10 +392,6 @@ fun AppNavigation(navController: NavHostController, viewModel: PelangganViewMode
 
         composable("koordinator_reports") {
             KoordinatorReportsScreen(navController = navController, viewModel = viewModel)
-        }
-
-        composable("koordinator_absensi") {
-            KoordinatorAbsensiScreen(navController, viewModel)
         }
 
         composable("koordinatorDaftarStatusKhusus") {
