@@ -101,7 +101,10 @@ fun DaftarPelangganLunasScreen(
     val pelangganLunas by remember {
         derivedStateOf {
             daftarPelanggan.filter { pelanggan ->
-                val totalBayar = pelanggan.pembayaranList.sumOf { it.jumlah + it.subPembayaran.sumOf { sub -> sub.jumlah } }
+                // FIX: Exclude entry "Bunga..." agar konsisten dengan Cloud Functions & bukuPokokApi
+                val totalBayar = pelanggan.pembayaranList
+                    .filter { !it.tanggal.startsWith("Bunga") }
+                    .sumOf { it.jumlah + it.subPembayaran.sumOf { sub -> sub.jumlah } }
                 val sudahLunasCicilan = totalBayar >= pelanggan.totalPelunasan && pelanggan.totalPelunasan > 0
 
                 // ✅ Nasabah lunas cicilan, masih punya tabungan, belum ditandai manual Sisa Tabungan

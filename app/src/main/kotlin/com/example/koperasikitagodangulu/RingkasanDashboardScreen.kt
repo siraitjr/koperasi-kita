@@ -173,10 +173,13 @@ fun RingkasanDashboardScreen(
     }
 
     val nasabahLunasHariIni = daftarPelanggan.count { pelanggan ->
-        val totalBayar = pelanggan.pembayaranList.sumOf { pay ->
-            pay.jumlah.toLong() + pay.subPembayaran.sumOf { sub -> sub.jumlah.toLong() }
-        }
-        val isLunas = totalBayar >= pelanggan.totalPelunasan.toLong()
+        // FIX: Exclude entry "Bunga..." agar konsisten dengan Cloud Functions & bukuPokokApi
+        val totalBayar = pelanggan.pembayaranList
+            .filter { !it.tanggal.startsWith("Bunga") }
+            .sumOf { pay ->
+                pay.jumlah.toLong() + pay.subPembayaran.sumOf { sub -> sub.jumlah.toLong() }
+            }
+        val isLunas = totalBayar >= pelanggan.totalPelunasan.toLong() && pelanggan.totalPelunasan > 0
         val adaPembayaranHariIni = pelanggan.pembayaranList.any { pay ->
             pay.tanggal == today || pay.subPembayaran.any { sub -> sub.tanggal == today }
         }
@@ -184,18 +187,24 @@ fun RingkasanDashboardScreen(
     }
 
     val totalPiutang: Long = nasabahAktif.sumOf { pel ->
-        val totalBayar: Long = pel.pembayaranList.sumOf { pay ->
-            pay.jumlah.toLong() + pay.subPembayaran.sumOf { sub -> sub.jumlah.toLong() }
-        }
+        // FIX: Exclude entry "Bunga..." agar konsisten dengan Cloud Functions & bukuPokokApi
+        val totalBayar: Long = pel.pembayaranList
+            .filter { !it.tanggal.startsWith("Bunga") }
+            .sumOf { pay ->
+                pay.jumlah.toLong() + pay.subPembayaran.sumOf { sub -> sub.jumlah.toLong() }
+            }
         (pel.totalPelunasan - totalBayar).coerceAtLeast(0L)
     }
 
     val totalPelanggan = daftarPelanggan.size
 
     val pelangganLunas = daftarPelanggan.count { p ->
-        val totalBayar = p.pembayaranList.sumOf { pay ->
-            pay.jumlah.toLong() + pay.subPembayaran.sumOf { sub -> sub.jumlah.toLong() }
-        }
+        // FIX: Exclude entry "Bunga..." agar konsisten dengan Cloud Functions & bukuPokokApi
+        val totalBayar = p.pembayaranList
+            .filter { !it.tanggal.startsWith("Bunga") }
+            .sumOf { pay ->
+                pay.jumlah.toLong() + pay.subPembayaran.sumOf { sub -> sub.jumlah.toLong() }
+            }
         val isLunasCicilan = totalBayar >= p.totalPelunasan.toLong() && p.totalPelunasan > 0
 
         // ✅ Nasabah lunas cicilan tapi masih memiliki tabungan (belum dicairkan)
