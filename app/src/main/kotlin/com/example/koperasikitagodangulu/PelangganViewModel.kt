@@ -115,9 +115,11 @@ data class CabangSummary(
 
 data class GlobalSummary(
     val totalNasabah: Int = 0,
+    val nasabahAktif: Int = 0,
     val totalPinjamanAktif: Long = 0L,
     val totalTunggakan: Long = 0L,
-    val pembayaranHariIni: Int = 0,
+    val pembayaranHariIni: Long = 0L,
+    val targetHariIni: Long = 0L,
     val lastUpdated: Long = 0L
 )
 
@@ -763,11 +765,11 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
         }
 
         dashboardData.value = DashboardData(
-            totalPinjaman = formatRupiah(global.totalPinjamanAktif.toInt()),
+            totalPinjaman = formatRupiah(global.totalPinjamanAktif),
             jumlahPelanggan = global.nasabahAktif.toString(),
-            pembayaranHariIni = formatRupiah(global.pembayaranHariIni.toInt()),
-            totalTunggakan = formatRupiah(global.totalTunggakan.toInt()),
-            targetHarian = formatRupiah(global.targetHariIni.toInt())
+            pembayaranHariIni = formatRupiah(global.pembayaranHariIni),
+            totalTunggakan = formatRupiah(global.totalTunggakan),
+            targetHarian = formatRupiah(global.targetHariIni)
         )
 
         Log.d("Dashboard", "✅ Pengawas dashboard loaded from global summary: nasabahAktif=${global.nasabahAktif}, pembayaran=${global.pembayaranHariIni}, target=${global.targetHariIni}")
@@ -814,11 +816,11 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
         val totalTargetHarian = adminSummaries.sumOf { it.targetHariIni }
 
         dashboardData.value = DashboardData(
-            totalPinjaman = formatRupiah(totalPinjaman.toInt()),
+            totalPinjaman = formatRupiah(totalPinjaman),
             jumlahPelanggan = totalNasabah.toString(),
-            pembayaranHariIni = formatRupiah(totalPembayaranHariIni.toInt()),
-            totalTunggakan = formatRupiah(totalPiutang.toInt()),
-            targetHarian = formatRupiah(totalTargetHarian.toInt())
+            pembayaranHariIni = formatRupiah(totalPembayaranHariIni),
+            totalTunggakan = formatRupiah(totalPiutang),
+            targetHarian = formatRupiah(totalTargetHarian)
         )
 
         Log.d("Dashboard", "✅ Pimpinan dashboard loaded from summary: pembayaranHariIni=Rp$totalPembayaranHariIni, target=Rp$totalTargetHarian")
@@ -1079,9 +1081,11 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                             if (result.success && result.globalSummary != null) {
                                 _globalSummary.value = GlobalSummary(
                                     totalNasabah = result.globalSummary.totalNasabah,
+                                    nasabahAktif = result.globalSummary.nasabahAktif,
                                     totalPinjamanAktif = result.globalSummary.totalPinjamanAktif,
                                     totalTunggakan = result.globalSummary.totalTunggakan,
                                     pembayaranHariIni = result.globalSummary.pembayaranHariIni,
+                                    targetHariIni = result.globalSummary.targetHariIni,
                                     lastUpdated = System.currentTimeMillis()
                                 )
                             }
@@ -1381,6 +1385,11 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     private fun formatRupiah(amount: Int): String {
+        val formatter = NumberFormat.getNumberInstance(Locale("in", "ID"))
+        return "Rp ${formatter.format(amount)}"
+    }
+
+    private fun formatRupiah(amount: Long): String {
         val formatter = NumberFormat.getNumberInstance(Locale("in", "ID"))
         return "Rp ${formatter.format(amount)}"
     }
@@ -8000,9 +8009,11 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                         if (result.success && result.globalSummary != null) {
                             _globalSummary.value = GlobalSummary(
                                 totalNasabah = result.globalSummary.totalNasabah,
+                                nasabahAktif = result.globalSummary.nasabahAktif,
                                 totalPinjamanAktif = result.globalSummary.totalPinjamanAktif,
                                 totalTunggakan = result.globalSummary.totalTunggakan,
                                 pembayaranHariIni = result.globalSummary.pembayaranHariIni,
+                                targetHariIni = result.globalSummary.targetHariIni,
                                 lastUpdated = lastUpdated
                             )
                         }
