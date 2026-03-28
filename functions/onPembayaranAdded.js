@@ -352,38 +352,23 @@ exports.onPelangganApproved = functions.database
             };
             await saveToPembayaranHarian(adminUid, pelangganId, pencairanData, 'pencairan');
             
-            // ✅ PERBAIKAN: Jika lanjut pinjaman dengan sisa utang, catat ke pembayaranList
-            // agar tercatat di pembukuan (buku pokok) — bukan hanya di laporan harian
+            // ✅ PERBAIKAN: Sisa utang pinjaman lama TIDAK boleh masuk ke pembayaranList pinjaman baru
+            // karena akan dianggap sebagai cicilan pinjaman baru dan mengurangi sisa utang.
+            // Sisa utang hanya dicatat di:
+            // 1. jurnal_transaksi (catatPelunasanSisaUtang) — untuk pembukuan permanen
+            // 2. pembayaran_harian — untuk laporan harian
+            // 3. sisaUtangLamaSebelumTopUp field — untuk referensi
             const sisaUtangLama = pelanggan.sisaUtangLamaSebelumTopUp || 0;
             const pinjamanKe = pelanggan.pinjamanKe || 1;
             if (sisaUtangLama > 0 && pinjamanKe > 1) {
-                // Gunakan transaction untuk menghindari race condition pada index
+                // Catat ke pembayaran_harian sebagai pelunasan sisa utang (bukan cicilan)
                 const pelunasanEntry = {
                     jumlah: sisaUtangLama,
                     tanggal: today,
                     subPembayaran: []
                 };
-                const pembayaranListRef = db.ref(`pelanggan/${adminUid}/${pelangganId}/pembayaranList`);
-                await pembayaranListRef.transaction((currentList) => {
-                    if (!currentList) {
-                        return [pelunasanEntry];
-                    }
-                    if (Array.isArray(currentList)) {
-                        currentList.push(pelunasanEntry);
-                        return currentList;
-                    }
-                    // Object format - find next index
-                    const keys = Object.keys(currentList).map(Number).filter(n => !isNaN(n));
-                    const nextIndex = keys.length > 0 ? Math.max(...keys) + 1 : 0;
-                    currentList[nextIndex] = pelunasanEntry;
-                    return currentList;
-                });
-
-                // CATATAN: JANGAN panggil saveToPembayaranHarian di sini
-                // Penulisan ke pembayaranList otomatis trigger onPembayaranAdded
-                // yang sudah menangani penyimpanan ke pembayaran_harian
-
-                console.log(`✅ Sisa utang Rp ${sisaUtangLama} saved to pembayaranList via transaction AND will auto-save to pembayaran_harian`);
+                await saveToPembayaranHarian(adminUid, pelangganId, pelunasanEntry, 'pelunasan_sisa_utang');
+                console.log(`✅ Sisa utang Rp ${sisaUtangLama} dicatat ke pembayaran_harian (TIDAK ke pembayaranList)`);
             }
             
             // 2. ✅ Simpan ke event_harian/nasabah_baru
