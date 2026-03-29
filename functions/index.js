@@ -37,6 +37,7 @@ const remoteTakeover = require('./remoteTakeover');
 const kasirApi = require('./kasirApi');
 const detectDuplicate = require('./detectDuplicateNasabah');
 const { cleanupDuplicateApprovals } = require('./cleanupDuplicateApprovals');
+const auditDataSampah = require('./auditDataSampah');
 
 // =========================================================================
 // PELANGGAN TRIGGERS
@@ -198,6 +199,11 @@ exports.syncOperasionalTransport = kasirApi.syncOperasionalTransport;
 
 exports.scanDuplicateNasabah = detectDuplicate.scanDuplicateNasabah;
 exports.cleanupDuplicateNasabah = detectDuplicate.cleanupDuplicateNasabah;
+
+// =========================================================================
+// AUDIT DATA SAMPAH - Deteksi semua jenis data bermasalah
+// =========================================================================
+exports.auditDataSampah = auditDataSampah.auditDataSampah;
 
 // =========================================================================
 // AUTO-LOGIN TOKEN (Android App → Buku Pokok Web)
