@@ -188,6 +188,21 @@
     .pay-date { font-size: 13px; font-weight: 500; }
     .pay-note { font-size: 11px; color: #888; margin-top: 1px; }
     .pay-amount { font-size: 13px; font-weight: 600; color: #2e7d32; }
+
+    /* Sub Payment */
+    .sub-pay {
+      display: flex;
+      align-items: center;
+      padding: 6px 16px 6px 54px;
+      border-bottom: 1px solid #f0f0f0;
+      background: #fafffe;
+    }
+    .sub-pay:last-child { border-bottom: none; }
+    .sub-icon { color: #2e7d32; font-size: 14px; font-weight: 700; margin-right: 8px; }
+    .sub-info { flex: 1; }
+    .sub-date { font-size: 12px; color: #888; }
+    .sub-label { font-size: 11px; color: #999; }
+    .sub-amount { font-size: 13px; font-weight: 600; color: #2e7d32; }
     
     /* Schedule */
     .sch-item {
@@ -437,16 +452,29 @@
       const pays = d.riwayatPembayaran || [];
       $('#payCount').textContent = `${pays.length} transaksi`;
       if (pays.length) {
-        $('#payList').innerHTML = pays.map(p => `
+        $('#payList').innerHTML = pays.map(p => {
+          let html = `
           <div class="pay-item">
             <div class="pay-no">${p.no}</div>
             <div class="pay-info">
               <div class="pay-date">${p.tanggal}</div>
-              ${p.keterangan ? `<div class="pay-note">${p.keterangan}</div>` : ''}
             </div>
             <div class="pay-amount">${rp(p.jumlah)}</div>
-          </div>
-        `).join('');
+          </div>`;
+          // Sub-pembayaran di bawah parent
+          if (p.subPembayaran && p.subPembayaran.length) {
+            html += p.subPembayaran.map(s => `
+            <div class="sub-pay">
+              <div class="sub-icon">+</div>
+              <div class="sub-info">
+                <div class="sub-date">${s.tanggal}</div>
+                <div class="sub-label">${s.keterangan || 'Tambah Bayar'}</div>
+              </div>
+              <div class="sub-amount">${rp(s.jumlah)}</div>
+            </div>`).join('');
+          }
+          return html;
+        }).join('');
       }
       
       // Schedule

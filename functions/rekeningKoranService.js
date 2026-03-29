@@ -91,29 +91,30 @@ async function generateRekeningKoranData(adminUid, pelangganId) {
     
     pembayaranArray.forEach((pay) => {
         if (!pay.tanggal || pay.tanggal.startsWith('Bunga')) return;
-        
+
         const jumlah = pay.jumlah || 0;
         totalDibayar += jumlah;
-        
-        riwayatPembayaran.push({
-            no: riwayatPembayaran.length + 1,
-            tanggal: pay.tanggal,
-            jumlah: jumlah
-        });
-        
-        // Sub-pembayaran
+
+        // Sub-pembayaran sebagai array di dalam pembayaran parent
+        const subItems = [];
         if (pay.subPembayaran && Array.isArray(pay.subPembayaran)) {
             pay.subPembayaran.forEach(sub => {
                 const subJumlah = sub.jumlah || 0;
                 totalDibayar += subJumlah;
-                riwayatPembayaran.push({
-                    no: riwayatPembayaran.length + 1,
+                subItems.push({
                     tanggal: sub.tanggal,
                     jumlah: subJumlah,
                     keterangan: sub.keterangan || 'Tambah Bayar'
                 });
             });
         }
+
+        riwayatPembayaran.push({
+            no: riwayatPembayaran.length + 1,
+            tanggal: pay.tanggal,
+            jumlah: jumlah,
+            subPembayaran: subItems
+        });
     });
     
     // Hitung sisa
