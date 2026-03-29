@@ -1,21 +1,27 @@
 // =========================================================================
 // auditDataSampah.js
 // =========================================================================
-// Cloud Function untuk AUDIT data RTDB secara menyeluruh.
+// Cloud Function untuk AUDIT data RTDB PER ADMIN LAPANGAN.
+//
+// PENTING: Pengecekan duplikat hanya dalam 1 admin yang sama.
+// Nasabah yang sama di beda admin/resort dalam 1 cabang itu NORMAL.
+//
 // Mendeteksi:
-//   1. Nasabah duplikat (NIK sama, aktif >1)
-//   2. Nasabah tanpa nama
-//   3. Nasabah dengan data tidak lengkap
+//   1. Duplikat NIK dalam 1 admin yang sama
+//   2. Nasabah tanpa nama / nama hanya titik/karakter sampah
+//   3. Data rusak / ghost data (field sangat sedikit, bukan data nasabah)
 //   4. NIK dummy/palsu (000..., 111..., pola berulang)
 //   5. NIK tidak valid (bukan 16 digit angka, atau berisi 2 NIK)
-//   6. NIK sama tapi nama berbeda (kemungkinan salah input)
-//   7. Nasabah aktif tapi besarPinjaman = 0
-//   8. Nasabah tanpa status
-//   9. Nasabah aktif di >1 admin berbeda (cross-resort)
-//  10. NIK Registry inkonsisten (orphan / nama beda dengan pelanggan)
+//   6. NIK sama tapi nama berbeda dalam 1 admin
+//   7. Nasabah aktif tapi besarPinjaman = 0 / tanpa status
 //
 // Endpoint: GET /auditDataSampah
-// Response: JSON laporan lengkap semua temuan
+// Query params (optional):
+//   ?adminUid=xxx  → audit 1 admin saja
+//   ?cabang=panti  → audit semua admin di 1 cabang
+//   (tanpa param)  → audit semua admin
+//
+// Response: JSON laporan lengkap per admin
 // =========================================================================
 
 const functions = require('firebase-functions');
@@ -28,18 +34,34 @@ function normalizeName(name) {
     return (name || '').trim().toUpperCase().replace(/\s+/g, ' ');
 }
 
+// Helper: cek apakah string adalah "sampah" (hanya titik, dash, koma, spasi, 1-2 huruf)
+function isGarbageString(val) {
+    if (!val) return false;
+    const trimmed = val.trim();
+    if (!trimmed) return true;
+    // Hanya titik, dash, koma, spasi, underscore
+    if (/^[.\-,_\s]+$/.test(trimmed)) return true;
+    // Hanya 1-2 karakter yang bukan kata bermakna
+    const lettersOnly = trimmed.replace(/[^a-zA-Z]/g, '');
+    if (lettersOnly.length <= 1) return true;
+    return false;
+}
+
 // Helper: cek apakah NIK dummy/palsu
 function isDummyNik(nik) {
     if (!nik) return false;
     const cleaned = nik.replace(/\s/g, '');
-    // Semua angka sama (0000..., 1111..., dll)
+    if (!cleaned) return false;
+    // Semua angka sama atau hanya 2 jenis digit (0000..., 1111..., 1212...)
     if (new Set(cleaned).size <= 2) return true;
     // Dimulai dengan 000000
     if (cleaned.startsWith('000000')) return true;
-    // Pola berulang sederhana (1212121212121212, 6464664646464664, dll)
+    // Pola berulang (12121212... , 64646464...)
     if (cleaned.length === 16) {
         const half = cleaned.substring(0, 8);
         if (cleaned === half + half) return true;
+        const quarter = cleaned.substring(0, 4);
+        if (cleaned === quarter.repeat(4)) return true;
     }
     return false;
 }
@@ -47,393 +69,289 @@ function isDummyNik(nik) {
 // Helper: cek apakah NIK valid (16 digit angka)
 function isValidNik(nik) {
     if (!nik) return false;
-    const cleaned = nik.trim();
-    return /^\d{16}$/.test(cleaned);
+    return /^\d{16}$/.test(nik.trim());
 }
 
 // Helper: cek apakah field berisi 2 NIK (pola "NIK1 & NIK2")
 function containsMultipleNik(nik) {
     if (!nik) return false;
-    return nik.includes('&') || nik.includes('/') || nik.trim().length > 20;
+    return nik.includes('&') || (nik.trim().length > 20 && /\d{16}/.test(nik));
 }
 
+// Helper: cek apakah data ini "ghost" / rusak (field sangat sedikit)
+function isGhostData(nasabah) {
+    const essentialFields = [
+        'namaKtp', 'namaPanggilan', 'nik', 'alamatKtp',
+        'besarPinjaman', 'tenor', 'tanggalPengajuan'
+    ];
+    const presentCount = essentialFields.filter(f => {
+        const val = nasabah[f];
+        return val !== undefined && val !== null && val !== '' && val !== 0;
+    }).length;
+    // Kalau kurang dari 3 field esensial terisi, ini ghost data
+    return presentCount < 3;
+}
+
+// =============================================
+// Audit 1 admin lapangan
+// =============================================
+function auditSatuAdmin(adminUid, adminName, cabang, nasabahMap) {
+    const entries = Object.entries(nasabahMap || {});
+    const issues = [];
+
+    // Kumpulkan NIK map untuk admin ini saja
+    const nikMapLocal = {};
+
+    for (const [nasabahId, nas] of entries) {
+        if (!nas || typeof nas !== 'object') {
+            issues.push({
+                kategori: 'data_rusak',
+                path: `pelanggan/${adminUid}/${nasabahId}`,
+                masalah: `Data bukan object (tipe: ${typeof nas})`,
+                severity: 'tinggi'
+            });
+            continue;
+        }
+
+        const namaKtp = (nas.namaKtp || '').trim();
+        const namaPanggilan = (nas.namaPanggilan || '').trim();
+        const nik = (nas.nik || '').trim();
+        const status = (nas.status || '').trim();
+        const path = `pelanggan/${adminUid}/${nasabahId}`;
+
+        // --- Ghost data / data rusak (sangat sedikit field) ---
+        if (isGhostData(nas)) {
+            const fieldKeys = Object.keys(nas).filter(k => !k.startsWith('_'));
+            issues.push({
+                kategori: 'ghost_data',
+                path,
+                namaKtp: namaKtp || null,
+                status: status || null,
+                masalah: `Hanya ${fieldKeys.length} field. Data tidak lengkap seperti nasabah lain`,
+                fieldYangAda: fieldKeys,
+                severity: 'tinggi'
+            });
+            continue; // Ghost data sudah pasti bermasalah, skip cek lain
+        }
+
+        // --- Tanpa nama atau nama sampah ---
+        if (!namaKtp && !namaPanggilan) {
+            issues.push({
+                kategori: 'tanpa_nama',
+                path,
+                nik: nik || null,
+                status: status || null,
+                masalah: 'Tidak punya namaKtp maupun namaPanggilan',
+                severity: 'tinggi'
+            });
+        } else if (isGarbageString(namaKtp) && isGarbageString(namaPanggilan)) {
+            issues.push({
+                kategori: 'nama_sampah',
+                path,
+                namaKtp: namaKtp || null,
+                namaPanggilan: namaPanggilan || null,
+                nik: nik || null,
+                status: status || null,
+                masalah: 'Nama hanya berisi titik/karakter tidak bermakna',
+                severity: 'tinggi'
+            });
+        }
+
+        // --- NIK: dummy, tidak valid, atau berisi 2 NIK ---
+        if (!nik) {
+            issues.push({
+                kategori: 'tanpa_nik',
+                path,
+                namaKtp: namaKtp || namaPanggilan || null,
+                status: status || null,
+                masalah: 'Tidak memiliki NIK',
+                severity: 'sedang'
+            });
+        } else if (containsMultipleNik(nik)) {
+            issues.push({
+                kategori: 'nik_ganda',
+                path,
+                nik,
+                namaKtp: namaKtp || null,
+                status: status || null,
+                masalah: 'Field NIK berisi 2 NIK (kemungkinan suami & istri digabung)',
+                severity: 'sedang'
+            });
+        } else if (isDummyNik(nik)) {
+            issues.push({
+                kategori: 'nik_dummy',
+                path,
+                nik,
+                namaKtp: namaKtp || null,
+                status: status || null,
+                masalah: 'NIK palsu/dummy (pola angka tidak wajar)',
+                severity: 'sedang'
+            });
+        } else if (!isValidNik(nik)) {
+            issues.push({
+                kategori: 'nik_tidak_valid',
+                path,
+                nik,
+                namaKtp: namaKtp || null,
+                status: status || null,
+                masalah: `NIK ${nik.length} digit (seharusnya 16 digit angka)`,
+                severity: 'sedang'
+            });
+        }
+
+        // --- Tanpa status ---
+        if (!status) {
+            issues.push({
+                kategori: 'tanpa_status',
+                path,
+                namaKtp: namaKtp || namaPanggilan || null,
+                masalah: 'Tidak memiliki field status',
+                severity: 'sedang'
+            });
+        }
+
+        // --- Aktif tapi pinjaman 0 ---
+        if (status.toLowerCase() === 'aktif' && (!nas.besarPinjaman || nas.besarPinjaman === 0)) {
+            issues.push({
+                kategori: 'aktif_tanpa_pinjaman',
+                path,
+                namaKtp: namaKtp || namaPanggilan || null,
+                masalah: 'Status Aktif tapi besarPinjaman = 0',
+                severity: 'sedang'
+            });
+        }
+
+        // --- Kumpulkan untuk cek duplikat NIK ---
+        if (nik && nik.length >= 10 && !containsMultipleNik(nik) && !isDummyNik(nik)) {
+            if (!nikMapLocal[nik]) nikMapLocal[nik] = [];
+            nikMapLocal[nik].push({ nasabahId, namaKtp, namaPanggilan, status, path, nas });
+        }
+    }
+
+    // --- Duplikat NIK dalam admin ini ---
+    for (const [nik, nikEntries] of Object.entries(nikMapLocal)) {
+        if (nikEntries.length <= 1) continue;
+
+        // Cek apakah nama juga berbeda
+        const uniqueNames = new Set(nikEntries.map(e => normalizeName(e.namaKtp)).filter(n => n));
+        const namaBerbeda = uniqueNames.size > 1;
+
+        issues.push({
+            kategori: namaBerbeda ? 'duplikat_nik_nama_beda' : 'duplikat_nik',
+            nik,
+            masalah: namaBerbeda
+                ? `NIK sama (${nikEntries.length}x) tapi nama berbeda: ${[...uniqueNames].join(' vs ')}`
+                : `NIK sama muncul ${nikEntries.length}x dalam admin ini`,
+            severity: namaBerbeda ? 'tinggi' : 'sedang',
+            entries: nikEntries.map(e => ({
+                path: e.path,
+                namaKtp: e.namaKtp || '',
+                namaPanggilan: e.namaPanggilan || '',
+                status: e.status || '',
+                besarPinjaman: e.nas.besarPinjaman || 0,
+                pinjamanKe: e.nas.pinjamanKe || 1,
+                tanggalPengajuan: e.nas.tanggalPengajuan || ''
+            }))
+        });
+    }
+
+    return {
+        adminUid,
+        adminName,
+        cabang,
+        totalNasabah: entries.length,
+        totalMasalah: issues.length,
+        masalahTinggi: issues.filter(i => i.severity === 'tinggi').length,
+        masalahSedang: issues.filter(i => i.severity === 'sedang').length,
+        issues
+    };
+}
+
+// =============================================
+// MAIN ENDPOINT
+// =============================================
 exports.auditDataSampah = functions
     .runWith({ timeoutSeconds: 540, memory: '1GB' })
     .https.onRequest(async (req, res) => {
 
-    console.log('🔍 =====================================');
     console.log('🔍 AUDIT DATA SAMPAH - MULAI');
-    console.log('🔍 =====================================');
 
     try {
-        // =============================================
-        // STEP 1: Load semua data yang dibutuhkan
-        // =============================================
-        const [adminsSnap, pelangganSnap, nikRegistrySnap] = await Promise.all([
+        const filterAdminUid = req.query.adminUid || null;
+        const filterCabang = req.query.cabang || null;
+
+        // Load data
+        const [adminsSnap, pelangganSnap] = await Promise.all([
             db.ref('metadata/admins').once('value'),
-            db.ref('pelanggan').once('value'),
-            db.ref('nik_registry').once('value')
+            db.ref('pelanggan').once('value')
         ]);
 
         const adminsData = adminsSnap.val() || {};
         const pelangganData = pelangganSnap.val() || {};
-        const nikRegistry = nikRegistrySnap.val() || {};
 
-        // Kumpulkan semua nasabah ke flat array
-        const allNasabah = [];
-        for (const [adminUid, nasabahMap] of Object.entries(pelangganData)) {
-            if (!nasabahMap || typeof nasabahMap !== 'object') continue;
+        // Tentukan admin mana yang diaudit
+        const adminUidsToAudit = [];
+        for (const [uid, info] of Object.entries(adminsData)) {
+            if (info.role !== 'admin') continue;
+            if (filterAdminUid && uid !== filterAdminUid) continue;
+            if (filterCabang && (info.cabang || '').toLowerCase() !== filterCabang.toLowerCase()) continue;
+            adminUidsToAudit.push(uid);
+        }
+
+        // Jalankan audit per admin
+        const hasilPerAdmin = [];
+        let grandTotalNasabah = 0;
+        let grandTotalMasalah = 0;
+
+        // Ringkasan per kategori
+        const ringkasanKategori = {};
+
+        for (const adminUid of adminUidsToAudit) {
             const adminInfo = adminsData[adminUid] || {};
             const adminName = adminInfo.name || adminInfo.email || adminUid;
             const cabang = adminInfo.cabang || '';
+            const nasabahMap = pelangganData[adminUid] || {};
 
-            for (const [nasabahId, nasabah] of Object.entries(nasabahMap)) {
-                if (!nasabah || typeof nasabah !== 'object') continue;
-                allNasabah.push({
-                    ...nasabah,
-                    _adminUid: adminUid,
-                    _adminName: adminName,
-                    _cabang: cabang,
-                    _nasabahId: nasabahId,
-                    _path: `pelanggan/${adminUid}/${nasabahId}`
-                });
+            const hasil = auditSatuAdmin(adminUid, adminName, cabang, nasabahMap);
+            hasilPerAdmin.push(hasil);
+
+            grandTotalNasabah += hasil.totalNasabah;
+            grandTotalMasalah += hasil.totalMasalah;
+
+            // Hitung per kategori
+            for (const issue of hasil.issues) {
+                const kat = issue.kategori;
+                ringkasanKategori[kat] = (ringkasanKategori[kat] || 0) + 1;
             }
         }
 
-        console.log(`📊 Total nasabah loaded: ${allNasabah.length}`);
+        // Sort: admin dengan masalah terbanyak di atas
+        hasilPerAdmin.sort((a, b) => b.totalMasalah - a.totalMasalah);
 
-        // Buat lookup by nasabahId
-        const nasabahById = {};
-        for (const n of allNasabah) {
-            nasabahById[n._nasabahId] = n;
-        }
-
-        // =============================================
-        // AUDIT 1: Duplikat NIK (>1 entry aktif)
-        // =============================================
-        const nikMap = {};
-        for (const n of allNasabah) {
-            const nik = (n.nik || '').trim();
-            if (nik && nik.length >= 10 && !containsMultipleNik(nik)) {
-                if (!nikMap[nik]) nikMap[nik] = [];
-                nikMap[nik].push(n);
-            }
-        }
-
-        const duplikatNik = [];
-        for (const [nik, entries] of Object.entries(nikMap)) {
-            if (entries.length <= 1) continue;
-            const aktif = entries.filter(e => {
-                const s = (e.status || '').toLowerCase();
-                return s === 'aktif' || s === 'disetujui' || s === 'menunggu approval';
-            });
-
-            duplikatNik.push({
-                nik,
-                totalEntries: entries.length,
-                aktifCount: aktif.length,
-                entries: entries.map(e => ({
-                    path: e._path,
-                    namaKtp: e.namaKtp || '',
-                    namaPanggilan: e.namaPanggilan || '',
-                    status: e.status || '',
-                    admin: e._adminName,
-                    cabang: e._cabang,
-                    besarPinjaman: e.besarPinjaman || 0,
-                    pinjamanKe: e.pinjamanKe || 1,
-                    tanggalPengajuan: e.tanggalPengajuan || ''
-                }))
-            });
-        }
-
-        // =============================================
-        // AUDIT 2: Nasabah tanpa nama
-        // =============================================
-        const tanpaNama = allNasabah
-            .filter(n => !((n.namaKtp || '').trim()) && !((n.namaPanggilan || '').trim()))
-            .map(n => ({
-                path: n._path,
-                nik: n.nik || '',
-                status: n.status || '',
-                admin: n._adminName,
-                besarPinjaman: n.besarPinjaman || 0
-            }));
-
-        // =============================================
-        // AUDIT 3: Data tidak lengkap
-        // =============================================
-        const requiredFields = [
-            'namaKtp', 'nik', 'alamatKtp', 'cabangId',
-            'besarPinjaman', 'status', 'tanggalPengajuan', 'tenor'
-        ];
-
-        const dataTidakLengkap = [];
-        for (const n of allNasabah) {
-            const missingFields = [];
-            for (const field of requiredFields) {
-                const val = n[field];
-                if (val === undefined || val === null || val === '') {
-                    missingFields.push(field);
-                } else if ((field === 'besarPinjaman' || field === 'tenor') && val === 0) {
-                    missingFields.push(field);
-                }
-            }
-            if (missingFields.length > 0) {
-                dataTidakLengkap.push({
-                    path: n._path,
-                    namaKtp: n.namaKtp || '',
-                    status: n.status || '',
-                    admin: n._adminName,
-                    missingFields
-                });
-            }
-        }
-
-        // =============================================
-        // AUDIT 4: NIK dummy/palsu
-        // =============================================
-        const nikDummy = allNasabah
-            .filter(n => isDummyNik((n.nik || '').trim()))
-            .map(n => ({
-                path: n._path,
-                nik: n.nik || '',
-                namaKtp: n.namaKtp || '',
-                status: n.status || '',
-                admin: n._adminName,
-                cabang: n._cabang
-            }));
-
-        // =============================================
-        // AUDIT 5: NIK tidak valid (bukan 16 digit / berisi 2 NIK)
-        // =============================================
-        const nikTidakValid = allNasabah
-            .filter(n => {
-                const nik = (n.nik || '').trim();
-                if (!nik) return false; // sudah ditangani di "tidak lengkap"
-                return !isValidNik(nik);
-            })
-            .map(n => ({
-                path: n._path,
-                nik: n.nik || '',
-                namaKtp: n.namaKtp || '',
-                status: n.status || '',
-                admin: n._adminName,
-                masalah: containsMultipleNik((n.nik || '').trim())
-                    ? 'Berisi 2 NIK (suami & istri?)'
-                    : `Panjang ${(n.nik || '').trim().length} digit (harus 16)`
-            }));
-
-        // =============================================
-        // AUDIT 6: NIK sama tapi nama berbeda
-        // =============================================
-        const nikNamaBerbeda = [];
-        for (const [nik, entries] of Object.entries(nikMap)) {
-            if (entries.length <= 1) continue;
-            const uniqueNames = new Set();
-            for (const e of entries) {
-                const name = normalizeName(e.namaKtp);
-                if (name) uniqueNames.add(name);
-            }
-            if (uniqueNames.size > 1) {
-                nikNamaBerbeda.push({
-                    nik,
-                    namaBerbeda: [...uniqueNames],
-                    entries: entries.map(e => ({
-                        path: e._path,
-                        namaKtp: e.namaKtp || '',
-                        status: e.status || '',
-                        admin: e._adminName
-                    }))
-                });
-            }
-        }
-
-        // =============================================
-        // AUDIT 7: Aktif tapi besarPinjaman = 0
-        // =============================================
-        const aktifTanpaPinjaman = allNasabah
-            .filter(n => (n.status || '').toLowerCase() === 'aktif' && (!n.besarPinjaman || n.besarPinjaman === 0))
-            .map(n => ({
-                path: n._path,
-                namaKtp: n.namaKtp || '',
-                admin: n._adminName
-            }));
-
-        // =============================================
-        // AUDIT 8: Nasabah tanpa status
-        // =============================================
-        const tanpaStatus = allNasabah
-            .filter(n => !(n.status || '').trim())
-            .map(n => ({
-                path: n._path,
-                namaKtp: n.namaKtp || '',
-                nik: n.nik || '',
-                admin: n._adminName
-            }));
-
-        // =============================================
-        // AUDIT 9: Nasabah aktif di >1 admin berbeda
-        // =============================================
-        const crossAdmin = [];
-        for (const [nik, entries] of Object.entries(nikMap)) {
-            const aktif = entries.filter(e => (e.status || '').toLowerCase() === 'aktif');
-            if (aktif.length < 2) continue;
-            const uniqueAdmins = new Set(aktif.map(e => e._adminUid));
-            if (uniqueAdmins.size >= 2) {
-                crossAdmin.push({
-                    nik,
-                    namaKtp: aktif[0].namaKtp || '',
-                    jumlahAdmin: uniqueAdmins.size,
-                    entries: aktif.map(e => ({
-                        path: e._path,
-                        admin: e._adminName,
-                        cabang: e._cabang,
-                        besarPinjaman: e.besarPinjaman || 0,
-                        pinjamanKe: e.pinjamanKe || 1
-                    }))
-                });
-            }
-        }
-
-        // =============================================
-        // AUDIT 10: NIK Registry inkonsisten
-        // =============================================
-        let registryOrphan = 0;
-        let registryNamaBeda = 0;
-        const registryOrphanList = [];
-        const registryNamaBedaList = [];
-
-        for (const [nik, reg] of Object.entries(nikRegistry)) {
-            if (!reg || typeof reg !== 'object') continue;
-            const pid = reg.pelangganId || '';
-            const regNama = normalizeName(reg.nama);
-
-            if (pid && !nasabahById[pid]) {
-                registryOrphan++;
-                if (registryOrphanList.length < 20) {
-                    registryOrphanList.push({
-                        nik,
-                        pelangganId: pid,
-                        namaRegistry: reg.nama || '',
-                        adminName: reg.adminName || ''
-                    });
-                }
-            } else if (pid && nasabahById[pid]) {
-                const pel = nasabahById[pid];
-                const pelNama = normalizeName(pel.namaKtp || pel.namaPanggilan);
-                if (regNama && pelNama && regNama !== pelNama) {
-                    registryNamaBeda++;
-                    if (registryNamaBedaList.length < 20) {
-                        registryNamaBedaList.push({
-                            nik,
-                            pelangganId: pid,
-                            namaRegistry: reg.nama || '',
-                            namaPelanggan: pel.namaKtp || pel.namaPanggilan || '',
-                            path: pel._path
-                        });
-                    }
-                }
-            }
-        }
-
-        // =============================================
-        // COMPILE REPORT
-        // =============================================
         const report = {
             success: true,
             timestamp: new Date().toISOString(),
-            totalNasabah: allNasabah.length,
-            ringkasan: {
-                duplikatNik: duplikatNik.length,
-                tanpaNama: tanpaNama.length,
-                dataTidakLengkap: dataTidakLengkap.length,
-                nikDummy: nikDummy.length,
-                nikTidakValid: nikTidakValid.length,
-                nikNamaBerbeda: nikNamaBerbeda.length,
-                aktifTanpaPinjaman: aktifTanpaPinjaman.length,
-                tanpaStatus: tanpaStatus.length,
-                crossAdmin: crossAdmin.length,
-                registryOrphan,
-                registryNamaBeda,
-                totalMasalah: duplikatNik.length + tanpaNama.length +
-                    dataTidakLengkap.length + nikDummy.length +
-                    nikTidakValid.length + nikNamaBerbeda.length +
-                    aktifTanpaPinjaman.length + tanpaStatus.length +
-                    crossAdmin.length + registryOrphan + registryNamaBeda
+            filter: {
+                adminUid: filterAdminUid || 'semua',
+                cabang: filterCabang || 'semua'
             },
-            detail: {
-                '1_duplikatNik': {
-                    deskripsi: 'NIK yang muncul lebih dari 1x di database',
-                    total: duplikatNik.length,
-                    data: duplikatNik
-                },
-                '2_tanpaNama': {
-                    deskripsi: 'Nasabah tanpa namaKtp dan namaPanggilan',
-                    total: tanpaNama.length,
-                    data: tanpaNama
-                },
-                '3_dataTidakLengkap': {
-                    deskripsi: 'Nasabah dengan field wajib kosong',
-                    total: dataTidakLengkap.length,
-                    data: dataTidakLengkap
-                },
-                '4_nikDummy': {
-                    deskripsi: 'NIK palsu/dummy (000..., 111..., pola berulang)',
-                    total: nikDummy.length,
-                    data: nikDummy
-                },
-                '5_nikTidakValid': {
-                    deskripsi: 'NIK bukan 16 digit angka (termasuk yang berisi 2 NIK)',
-                    total: nikTidakValid.length,
-                    data: nikTidakValid
-                },
-                '6_nikNamaBerbeda': {
-                    deskripsi: 'NIK sama tapi nama nasabah berbeda',
-                    total: nikNamaBerbeda.length,
-                    data: nikNamaBerbeda
-                },
-                '7_aktifTanpaPinjaman': {
-                    deskripsi: 'Status Aktif tapi besarPinjaman = 0',
-                    total: aktifTanpaPinjaman.length,
-                    data: aktifTanpaPinjaman
-                },
-                '8_tanpaStatus': {
-                    deskripsi: 'Nasabah tanpa field status',
-                    total: tanpaStatus.length,
-                    data: tanpaStatus
-                },
-                '9_crossAdmin': {
-                    deskripsi: 'Nasabah aktif di lebih dari 1 admin/resort',
-                    total: crossAdmin.length,
-                    data: crossAdmin
-                },
-                '10_registryInkonsisten': {
-                    deskripsi: 'NIK Registry tidak sinkron dengan data pelanggan',
-                    orphan: {
-                        total: registryOrphan,
-                        deskripsi: 'Registry menunjuk ke pelanggan yang tidak ada',
-                        sample: registryOrphanList
-                    },
-                    namaBeda: {
-                        total: registryNamaBeda,
-                        deskripsi: 'Nama di registry berbeda dengan nama di pelanggan',
-                        sample: registryNamaBedaList
-                    }
-                }
-            }
+            ringkasan: {
+                totalAdminDiaudit: adminUidsToAudit.length,
+                totalNasabah: grandTotalNasabah,
+                totalMasalah: grandTotalMasalah,
+                perKategori: ringkasanKategori
+            },
+            hasilPerAdmin
         };
 
-        console.log('✅ Audit selesai');
-        console.log(`📊 Total masalah ditemukan: ${report.ringkasan.totalMasalah}`);
-
+        console.log(`✅ Audit selesai: ${grandTotalMasalah} masalah dari ${grandTotalNasabah} nasabah`);
         res.json(report);
 
     } catch (error) {
         console.error('❌ Audit error:', error);
         res.status(500).json({
             success: false,
-            error: error.message,
-            stack: error.stack
+            error: error.message
         });
     }
 });
