@@ -754,8 +754,8 @@ private fun ModernCustomerCard(
                             DetailRow("Simpanan (5%)", "Rp ${formatRupiah(simpananLimaPersen)}", txtColor, subtitleColor)
 
                             val simpananTambahan = pelanggan.simpanan - simpananLimaPersen - pelanggan.tarikTabungan
-// ✅ Tambah kondisi: juga tampil jika ada tarikTabungan walaupun pinjamanKe = 1
-                            if (simpananTambahan > 0 && (pelanggan.pinjamanKe >= 2 || pelanggan.tarikTabungan > 0)) {
+// ✅ Tampil jika ada simpananTambahan DAN (pinjamanKe >= 2 ATAU tarikTabungan > 0 ATAU simpanan > 5%)
+                            if (simpananTambahan > 0 && (pelanggan.pinjamanKe >= 2 || pelanggan.tarikTabungan > 0 || pelanggan.simpanan > simpananLimaPersen)) {
                                 DetailRow("Simpanan Tambahan", "Rp ${formatRupiah(simpananTambahan)}", txtColor, subtitleColor)
                             }
 
@@ -763,8 +763,8 @@ private fun ModernCustomerCard(
                                 DetailRow("Tarik Tabungan", "Rp ${formatRupiah(pelanggan.tarikTabungan)}", CustomerListColors.warning, subtitleColor)
                             }
 
-// ✅ Tambah kondisi: juga tampil jika ada tarikTabungan walaupun pinjamanKe = 1
-                            if (pelanggan.pinjamanKe >= 2 || pelanggan.tarikTabungan > 0) {
+// ✅ Tampil jika pinjamanKe >= 2 ATAU tarikTabungan > 0 ATAU simpanan > 5% (ada simpanan tambahan lama)
+                            if (pelanggan.pinjamanKe >= 2 || pelanggan.tarikTabungan > 0 || pelanggan.simpanan > simpananLimaPersen) {
                                 val totalSimpananSemua = viewModel.getTotalSimpananByNama(pelanggan.namaKtp)
                                 DetailRow("Total Simpanan", "Rp ${formatRupiah(totalSimpananSemua)}", CustomerListColors.success, subtitleColor)
                             }
