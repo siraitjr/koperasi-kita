@@ -236,6 +236,45 @@ function auditSatuAdmin(adminUid, adminName, cabang, nasabahMap) {
         const uniqueNames = new Set(nikEntries.map(e => normalizeName(e.namaKtp)).filter(n => n));
         const namaBerbeda = uniqueNames.size > 1;
 
+        // Hitung info perbandingan untuk bantu user memutuskan mana yang dihapus
+        const perbandingan = nikEntries.map(e => {
+            // Hitung total pembayaran
+            let totalDibayar = 0;
+            let jumlahPembayaran = 0;
+            if (e.nas.pembayaranList) {
+                const pList = Array.isArray(e.nas.pembayaranList)
+                    ? e.nas.pembayaranList
+                    : Object.values(e.nas.pembayaranList || {});
+                jumlahPembayaran = pList.length;
+                pList.forEach(p => {
+                    totalDibayar += p.jumlah || 0;
+                    if (p.subPembayaran) {
+                        const subList = Array.isArray(p.subPembayaran)
+                            ? p.subPembayaran
+                            : Object.values(p.subPembayaran || {});
+                        subList.forEach(sub => { totalDibayar += sub.jumlah || 0; });
+                    }
+                });
+            }
+
+            return {
+                path: e.path,
+                nasabahId: e.nasabahId,
+                namaKtp: e.namaKtp || '',
+                namaPanggilan: e.namaPanggilan || '',
+                status: e.status || '',
+                besarPinjaman: e.nas.besarPinjaman || 0,
+                totalPelunasan: e.nas.totalPelunasan || 0,
+                totalDibayar,
+                sisaUtang: Math.max(0, (e.nas.totalPelunasan || 0) - totalDibayar),
+                jumlahPembayaran,
+                pinjamanKe: e.nas.pinjamanKe || 1,
+                tanggalPengajuan: e.nas.tanggalPengajuan || '',
+                alamatKtp: e.nas.alamatKtp || '',
+                noHp: e.nas.noHp || ''
+            };
+        });
+
         issues.push({
             kategori: namaBerbeda ? 'duplikat_nik_nama_beda' : 'duplikat_nik',
             nik,
@@ -243,15 +282,8 @@ function auditSatuAdmin(adminUid, adminName, cabang, nasabahMap) {
                 ? `NIK sama (${nikEntries.length}x) tapi nama berbeda: ${[...uniqueNames].join(' vs ')}`
                 : `NIK sama muncul ${nikEntries.length}x dalam admin ini`,
             severity: namaBerbeda ? 'tinggi' : 'sedang',
-            entries: nikEntries.map(e => ({
-                path: e.path,
-                namaKtp: e.namaKtp || '',
-                namaPanggilan: e.namaPanggilan || '',
-                status: e.status || '',
-                besarPinjaman: e.nas.besarPinjaman || 0,
-                pinjamanKe: e.nas.pinjamanKe || 1,
-                tanggalPengajuan: e.nas.tanggalPengajuan || ''
-            }))
+            catatan: 'Silakan bandingkan data di bawah, lalu hapus yang salah secara manual',
+            perbandingan
         });
     }
 
