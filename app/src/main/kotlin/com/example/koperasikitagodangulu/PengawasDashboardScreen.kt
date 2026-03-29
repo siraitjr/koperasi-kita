@@ -105,12 +105,16 @@ fun PengawasDashboardScreen(
     // ✅ FIX #3: LaunchedEffect dengan pengawasDataLoaded sebagai trigger
     // =========================================================================
     LaunchedEffect(Unit) {
-        if (!pengawasDataLoaded) {
-            Log.d("PengawasDashboard", "🚀 Initial data load triggered")
-            viewModel.loadPengawasAllCabangData()
+        try {
+            if (!pengawasDataLoaded) {
+                Log.d("PengawasDashboard", "🚀 Initial data load triggered")
+                viewModel.loadPengawasAllCabangData()
+            }
+            // ✅ BARU: Load broadcast messages
+            viewModel.loadActiveBroadcasts()
+        } catch (e: Exception) {
+            Log.e("PengawasDashboard", "Error loading data: ${e.message}")
         }
-        // ✅ BARU: Load broadcast messages
-        viewModel.loadActiveBroadcasts()
     }
 
     // ✅ FIX #4: isVisible berdasarkan data yang sudah loaded

@@ -97,11 +97,15 @@ fun KoordinatorDashboardScreen(
     // ✅ FIX #3: LaunchedEffect dengan koordinatorDataLoaded sebagai trigger
     // =========================================================================
     LaunchedEffect(Unit) {
-        if (!koordinatorDataLoaded) {
-            Log.d("KoordinatorDashboard", "🚀 Initial data load triggered")
-            viewModel.loadPengawasAllCabangData()
+        try {
+            if (!koordinatorDataLoaded) {
+                Log.d("KoordinatorDashboard", "🚀 Initial data load triggered")
+                viewModel.loadPengawasAllCabangData()
+            }
+            viewModel.loadActiveBroadcasts()
+        } catch (e: Exception) {
+            Log.e("KoordinatorDashboard", "Error loading data: ${e.message}")
         }
-        viewModel.loadActiveBroadcasts()
     }
 
     // Visibility state untuk animasi

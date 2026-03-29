@@ -152,7 +152,7 @@ fun PengawasTrackingScreen(
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = "Sedang Melacak: ${trackingTarget!!.name}",
+                                text = "Sedang Melacak: ${trackingTarget?.name ?: ""}",
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 16.sp,
                                 color = PengawasColors.getTextPrimary(isDark),
@@ -180,18 +180,19 @@ fun PengawasTrackingScreen(
 
                         // Info role & cabang
                         Text(
-                            text = "Role: ${trackingTarget!!.role.replaceFirstChar { it.uppercase() }} • Cabang: ${trackingTarget!!.cabangName}",
+                            text = "Role: ${trackingTarget?.role?.replaceFirstChar { it.uppercase() } ?: ""} • Cabang: ${trackingTarget?.cabangName ?: ""}",
                             fontSize = 13.sp,
                             color = PengawasColors.getTextMuted(isDark)
                         )
 
                         // Info lokasi
                         if (targetLocation != null) {
+                            val loc = targetLocation ?: emptyMap()
                             Spacer(modifier = Modifier.height(4.dp))
-                            val lat = (targetLocation!!["latitude"] as? Number)?.toDouble() ?: 0.0
-                            val lng = (targetLocation!!["longitude"] as? Number)?.toDouble() ?: 0.0
-                            val accuracy = (targetLocation!!["accuracy"] as? Number)?.toFloat() ?: 0f
-                            val lastUpdate = (targetLocation!!["lastUpdated"] as? Number)?.toLong() ?: 0L
+                            val lat = (loc["latitude"] as? Number)?.toDouble() ?: 0.0
+                            val lng = (loc["longitude"] as? Number)?.toDouble() ?: 0.0
+                            val accuracy = (loc["accuracy"] as? Number)?.toFloat() ?: 0f
+                            val lastUpdate = (loc["lastUpdated"] as? Number)?.toLong() ?: 0L
 
                             Text(
                                 text = "📍 ${"%.6f".format(lat)}, ${"%.6f".format(lng)} (±${"%.0f".format(accuracy)}m)",
@@ -245,9 +246,10 @@ fun PengawasTrackingScreen(
 
                 // ===== GOOGLE MAPS =====
                 if (targetLocation != null) {
-                    val lat = (targetLocation!!["latitude"] as? Number)?.toDouble() ?: 0.0
-                    val lng = (targetLocation!!["longitude"] as? Number)?.toDouble() ?: 0.0
-                    val targetName = trackingTarget!!.name
+                    val mapLoc = targetLocation ?: emptyMap()
+                    val lat = (mapLoc["latitude"] as? Number)?.toDouble() ?: 0.0
+                    val lng = (mapLoc["longitude"] as? Number)?.toDouble() ?: 0.0
+                    val targetName = trackingTarget?.name ?: ""
 
                     Surface(
                         modifier = Modifier
@@ -332,16 +334,17 @@ fun PengawasTrackingScreen(
 
     // Dialog konfirmasi
     if (showConfirmDialog && selectedUser != null) {
+        val userToTrack = selectedUser ?: return
         AlertDialog(
             onDismissRequest = { showConfirmDialog = false },
             title = { Text("Konfirmasi Lacak") },
             text = {
-                Text("Aktifkan pelacakan lokasi untuk ${selectedUser!!.name} (${selectedUser!!.role})?")
+                Text("Aktifkan pelacakan lokasi untuk ${userToTrack.name} (${userToTrack.role})?")
             },
             confirmButton = {
                 TextButton(
                     onClick = {
-                        viewModel.activateTracking(selectedUser!!)
+                        viewModel.activateTracking(userToTrack)
                         showConfirmDialog = false
                     }
                 ) {

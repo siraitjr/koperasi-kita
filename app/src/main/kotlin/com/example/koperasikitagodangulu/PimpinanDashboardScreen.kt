@@ -93,19 +93,27 @@ fun PimpinanDashboardScreen(
         systemUiController.setNavigationBarColor(bgColor, darkIcons = !isDark)
     }
     LaunchedEffect(Unit) {
-        val shouldLogout = viewModel.checkForceLogoutOnStartup()
-        if (shouldLogout) {
-            Firebase.auth.signOut()
-            navController.navigate("auth") {
-                popUpTo(0) { inclusive = true }
+        try {
+            val shouldLogout = viewModel.checkForceLogoutOnStartup()
+            if (shouldLogout) {
+                Firebase.auth.signOut()
+                navController.navigate("auth") {
+                    popUpTo(0) { inclusive = true }
+                }
+                return@LaunchedEffect
             }
-            return@LaunchedEffect
+        } catch (e: Exception) {
+            Log.e("PimpinanDashboard", "Error checking force logout: ${e.message}")
         }
     }
 
     // ✅ FIX: Load broadcasts langsung tanpa menunggu currentUserCabang
     LaunchedEffect(Unit) {
-        viewModel.loadActiveBroadcasts()
+        try {
+            viewModel.loadActiveBroadcasts()
+        } catch (e: Exception) {
+            Log.e("PimpinanDashboard", "Error loading broadcasts: ${e.message}")
+        }
     }
 
     LaunchedEffect(currentUserCabang, isDataLoaded) {
@@ -149,7 +157,7 @@ fun PimpinanDashboardScreen(
     // DIALOG: Remote Takeover
     // =========================================================================
     if (showTakeoverDialog && selectedAdminForTakeover != null) {
-        val admin = selectedAdminForTakeover!!
+        val admin = selectedAdminForTakeover ?: return
         AlertDialog(
             onDismissRequest = {
                 if (takeoverStatus !is TakeoverStatus.WaitingSync &&
@@ -233,7 +241,7 @@ fun PimpinanDashboardScreen(
                             }
                         }
                         is TakeoverStatus.Error -> {
-                            val errorMsg = (takeoverStatus as TakeoverStatus.Error).message
+                            val errorMsg = (takeoverStatus as? TakeoverStatus.Error)?.message ?: "Terjadi kesalahan"
                             Text(
                                 "❌ $errorMsg",
                                 color = PimpinanColors.danger

@@ -94,13 +94,17 @@ fun PengawasApprovalScreen(
     // INITIALIZATION
     // =========================================================================
     LaunchedEffect(Unit) {
-        Log.d("PengawasApproval", "🔄 Loading pending approvals for Pengawas")
-        viewModel.loadPendingApprovalsForPengawas()
+        try {
+            Log.d("PengawasApproval", "🔄 Loading pending approvals for Pengawas")
+            viewModel.loadPendingApprovalsForPengawas()
 
-        // Mark semua notifikasi pengajuan sebagai sudah dibaca
-        viewModel.markAllPengawasPengajuanNotificationsAsRead()
+            // Mark semua notifikasi pengajuan sebagai sudah dibaca
+            viewModel.markAllPengawasPengajuanNotificationsAsRead()
 
-        viewModel.loadSerahTerimaNotificationsForPengawas()
+            viewModel.loadSerahTerimaNotificationsForPengawas()
+        } catch (e: Exception) {
+            Log.e("PengawasApproval", "Error loading data: ${e.message}")
+        }
     }
 
     // Handle operation result
@@ -244,19 +248,20 @@ fun PengawasApprovalScreen(
 
         // Dialog Setujui dengan Penyesuaian
         if (showApprovalWithAmountDialog && selectedPelangganForAmount != null) {
+            val pelangganForAmount = selectedPelangganForAmount ?: return@Scaffold
             PengawasApprovalWithAmountDialog(
-                pelanggan = selectedPelangganForAmount!!,
+                pelanggan = pelangganForAmount,
                 onConfirm = { disetujuiAmount, tenorDisetujui, catatan ->
                     isLoading = true
                     viewModel.approvePengajuanAsPengawas(
-                        pelangganId = selectedPelangganForAmount!!.id,
+                        pelangganId = pelangganForAmount.id,
                         catatan = catatan,
                         besarPinjamanDisetujui = disetujuiAmount,
                         tenorDisetujui = tenorDisetujui,
                         catatanPerubahanPinjaman = "Disetujui pengawas dengan penyesuaian jumlah dari " +
-                                "Rp ${formatRupiah(selectedPelangganForAmount!!.besarPinjaman)} menjadi " +
+                                "Rp ${formatRupiah(pelangganForAmount.besarPinjaman)} menjadi " +
                                 "Rp ${formatRupiah(disetujuiAmount)} dan tenor dari " +
-                                "${selectedPelangganForAmount!!.tenor} hari menjadi ${tenorDisetujui} hari",
+                                "${pelangganForAmount.tenor} hari menjadi ${tenorDisetujui} hari",
                         onSuccess = {
                             isLoading = false
                             operationMessage = "Pengajuan berhasil disetujui oleh Pengawas"
@@ -336,12 +341,13 @@ fun PengawasApprovalScreen(
 
         // Approval Note Dialog
         if (showApprovalDialog && selectedPelanggan != null) {
+            val pelangganForApproval = selectedPelanggan ?: return@Scaffold
             PengawasApprovalNoteDialog(
-                pelanggan = selectedPelanggan!!,
+                pelanggan = pelangganForApproval,
                 onConfirm = { catatan ->
                     isLoading = true
                     viewModel.approvePengajuanAsPengawas(
-                        pelangganId = selectedPelanggan!!.id,
+                        pelangganId = pelangganForApproval.id,
                         catatan = catatan,
                         onSuccess = {
                             isLoading = false

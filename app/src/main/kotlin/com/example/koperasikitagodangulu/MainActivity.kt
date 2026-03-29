@@ -170,20 +170,28 @@ class MainActivity : ComponentActivity() {
                     Log.d(TAG, "🎯 Role ready: $currentRole")
                     isInitialized = true
 
-                    NotificationHelper.fetchAndSaveToken()
+                    try {
+                        NotificationHelper.fetchAndSaveToken()
+                    } catch (e: Exception) {
+                        Log.e(TAG, "❌ Error fetching token: ${e.message}")
+                    }
 
-                    withContext(Dispatchers.IO) {
-                        val uid = Firebase.auth.currentUser?.uid
-                        if (!uid.isNullOrBlank()) {
-                            Log.d(TAG, "📄 Loading data for UID: $uid")
-                            vm.muatDariLokal(uid)
-                            withContext(Dispatchers.Main) {
-                                vm.listenPelangganRealtime()
-                                vm.debugFirebaseStructure()
+                    try {
+                        withContext(Dispatchers.IO) {
+                            val uid = Firebase.auth.currentUser?.uid
+                            if (!uid.isNullOrBlank()) {
+                                Log.d(TAG, "📄 Loading data for UID: $uid")
+                                vm.muatDariLokal(uid)
+                                withContext(Dispatchers.Main) {
+                                    vm.listenPelangganRealtime()
+                                    vm.debugFirebaseStructure()
+                                }
+                                delay(2000)
+                                vm.syncOfflineData()
                             }
-                            delay(2000)
-                            vm.syncOfflineData()
                         }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "❌ Error loading data: ${e.message}")
                     }
 
                     // ✅ Start location tracking untuk non-Pengawas

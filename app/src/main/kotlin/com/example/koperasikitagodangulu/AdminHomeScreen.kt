@@ -153,24 +153,32 @@ fun AdminHomeScreen(navController: NavController, viewModel: PelangganViewModel)
     }
 
     LaunchedEffect(Unit) {
-        isVisible = true
-        viewModel.loadAdminPhotoUrl()
-        viewModel.loadActiveBroadcasts()
-        viewModel.cleanupStuckMenungguPencairan()
-        viewModel.loadAdminNotifications()
-        viewModel.startNetworkMonitoring()
-        viewModel.startRemoteTakeoverListener {
-            LocationTrackingMonitor.stopMonitoring()
-            LocationCheckWorker.cancel(context)
-            auth.signOut()
-            Toast.makeText(
-                context,
-                "Pimpinan mengambil alih akun Anda. Anda akan logout otomatis.",
-                Toast.LENGTH_LONG
-            ).show()
-            navController.navigate("auth") {
-                popUpTo(0) { inclusive = true }
+        try {
+            isVisible = true
+            viewModel.loadAdminPhotoUrl()
+            viewModel.loadActiveBroadcasts()
+            viewModel.cleanupStuckMenungguPencairan()
+            viewModel.loadAdminNotifications()
+            viewModel.startNetworkMonitoring()
+            viewModel.startRemoteTakeoverListener {
+                LocationTrackingMonitor.stopMonitoring()
+                LocationCheckWorker.cancel(context)
+                auth.signOut()
+                Toast.makeText(
+                    context,
+                    "Pimpinan mengambil alih akun Anda. Anda akan logout otomatis.",
+                    Toast.LENGTH_LONG
+                ).show()
+                try {
+                    navController.navigate("auth") {
+                        popUpTo(0) { inclusive = true }
+                    }
+                } catch (e: Exception) {
+                    Log.e("AdminHome", "Navigation error on takeover: ${e.message}")
+                }
             }
+        } catch (e: Exception) {
+            Log.e("AdminHome", "Error initializing: ${e.message}")
         }
     }
 

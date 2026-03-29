@@ -113,13 +113,17 @@ fun KoordinatorApprovalScreen(
     // INITIALIZATION
     // =========================================================================
     LaunchedEffect(Unit) {
-        Log.d("KoordinatorApproval", "🔄 Loading pending approvals for Koordinator")
-        viewModel.loadPendingApprovalsForKoordinator()  // ✅ GANTI
-        viewModel.loadPendingKoordinatorFinal()          // ✅ TAMBAH
-        viewModel.loadPendingCairanSimpananForKoordinator()
+        try {
+            Log.d("KoordinatorApproval", "🔄 Loading pending approvals for Koordinator")
+            viewModel.loadPendingApprovalsForKoordinator()  // ✅ GANTI
+            viewModel.loadPendingKoordinatorFinal()          // ✅ TAMBAH
+            viewModel.loadPendingCairanSimpananForKoordinator()
 
-        viewModel.markAllPengawasPengajuanNotificationsAsRead()
-        viewModel.loadSerahTerimaNotificationsForPengawas()
+            viewModel.markAllPengawasPengajuanNotificationsAsRead()
+            viewModel.loadSerahTerimaNotificationsForPengawas()
+        } catch (e: Exception) {
+            Log.e("KoordinatorApproval", "Error loading data: ${e.message}")
+        }
     }
 
     // Handle operation result
@@ -357,12 +361,13 @@ fun KoordinatorApprovalScreen(
 
         // ✅ BARU: Dialog Tarik Tabungan untuk Finalisasi
         if (showFinalisasiTarikTabunganDialog && selectedPelangganForFinalisasi != null) {
+            val pelangganFinalisasi = selectedPelangganForFinalisasi ?: return@Scaffold
             KoordinatorFinalisasiTarikTabunganDialog(
-                pelanggan = selectedPelangganForFinalisasi!!,
+                pelanggan = pelangganFinalisasi,
                 onConfirm = { tarikTabungan, catatan ->
                     isLoading = true
                     viewModel.finalizeKoordinatorApproval(
-                        pelangganId = selectedPelangganForFinalisasi!!.id,
+                        pelangganId = pelangganFinalisasi.id,
                         catatan = catatan.ifBlank { "Dikonfirmasi dengan tarik tabungan oleh Koordinator" },
                         tarikTabungan = tarikTabungan,
                         onSuccess = {
@@ -387,19 +392,20 @@ fun KoordinatorApprovalScreen(
 
         // Dialog Setujui dengan Penyesuaian
         if (showApprovalWithAmountDialog && selectedPelangganForAmount != null) {
+            val pelangganForAmount = selectedPelangganForAmount ?: return@Scaffold
             KoordinatorApprovalWithAmountDialog(
-                pelanggan = selectedPelangganForAmount!!,
+                pelanggan = pelangganForAmount,
                 onConfirm = { disetujuiAmount, tenorDisetujui, catatan ->
                     isLoading = true
                     viewModel.approvePengajuanAsKoordinator(
-                        pelangganId = selectedPelangganForAmount!!.id,
+                        pelangganId = pelangganForAmount.id,
                         catatan = catatan,
                         besarPinjamanDisetujui = disetujuiAmount,
                         tenorDisetujui = tenorDisetujui,
                         catatanPerubahanPinjaman = "Disetujui koordinator dengan penyesuaian jumlah dari " +
-                                "Rp ${formatRupiah(selectedPelangganForAmount!!.besarPinjaman)} menjadi " +
+                                "Rp ${formatRupiah(pelangganForAmount.besarPinjaman)} menjadi " +
                                 "Rp ${formatRupiah(disetujuiAmount)} dan tenor dari " +
-                                "${selectedPelangganForAmount!!.tenor} hari menjadi ${tenorDisetujui} hari",
+                                "${pelangganForAmount.tenor} hari menjadi ${tenorDisetujui} hari",
                         onSuccess = {
                             isLoading = false
                             operationMessage = "Pengajuan berhasil disetujui oleh Koordinator"
@@ -479,7 +485,7 @@ fun KoordinatorApprovalScreen(
 
         // Dialog Setujui Cairkan Setengah Simpanan
         if (showApproveCairanSimpananDialog && selectedCairanSimpananItem != null) {
-            val item = selectedCairanSimpananItem!!
+            val item = selectedCairanSimpananItem ?: return@Scaffold
             AlertDialog(
                 onDismissRequest = {
                     showApproveCairanSimpananDialog = false
@@ -533,7 +539,7 @@ fun KoordinatorApprovalScreen(
 
         // Dialog Tolak Cairkan Setengah Simpanan
         if (showRejectCairanSimpananDialog && selectedCairanSimpananItem != null) {
-            val item = selectedCairanSimpananItem!!
+            val item = selectedCairanSimpananItem ?: return@Scaffold
             AlertDialog(
                 onDismissRequest = {
                     showRejectCairanSimpananDialog = false
@@ -595,12 +601,13 @@ fun KoordinatorApprovalScreen(
 
         // Approval Note Dialog
         if (showApprovalDialog && selectedPelanggan != null) {
+            val pelangganForApproval = selectedPelanggan ?: return@Scaffold
             KoordinatorApprovalNoteDialog(
-                pelanggan = selectedPelanggan!!,
+                pelanggan = pelangganForApproval,
                 onConfirm = { catatan ->
                     isLoading = true
                     viewModel.approvePengajuanAsKoordinator(
-                        pelangganId = selectedPelanggan!!.id,
+                        pelangganId = pelangganForApproval.id,
                         catatan = catatan,
                         onSuccess = {
                             isLoading = false

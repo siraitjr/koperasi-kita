@@ -176,32 +176,36 @@ fun PimpinanApprovalScreen(
     }
 
     LaunchedEffect(Unit) {
-        viewModel.currentUserCabang.value?.let { cabangId ->
-            Log.d("ApprovalScreen", "🔄 Loading pending approvals for cabang: $cabangId")
+        try {
+            viewModel.currentUserCabang.value?.let { cabangId ->
+                Log.d("ApprovalScreen", "🔄 Loading pending approvals for cabang: $cabangId")
 
-            // ✅ Load pending approvals (dengan cache)
-            viewModel.loadPendingApprovalsOptimized(cabangId)
+                // ✅ Load pending approvals (dengan cache)
+                viewModel.loadPendingApprovalsOptimized(cabangId)
 
-            // ✅ Setup listener hanya jika belum aktif
-            if (!viewModel.isPendingApprovalListenerActive()) {
-                viewModel.setupRealtimePendingApprovals(cabangId)
+                // ✅ Setup listener hanya jika belum aktif
+                if (!viewModel.isPendingApprovalListenerActive()) {
+                    viewModel.setupRealtimePendingApprovals(cabangId)
+                }
             }
+
+            // ✅ TAMBAHAN: Mark semua notifikasi pengajuan sebagai sudah dibaca
+            // Ini akan menghilangkan badge notifikasi saat user masuk ke halaman approval
+            viewModel.markAllPengajuanNotificationsAsRead()
+
+            viewModel.loadSerahTerimaNotifications()
+
+            viewModel.loadPendingPimpinanFinal()
+
+            // ✅ BARU: Load tenor change requests untuk Pimpinan
+            viewModel.loadTenorChangeRequests()
+
+            // ✅ BARU: Load deletion requests untuk Pimpinan
+            viewModel.loadPimpinanDeletionRequests()
+            viewModel.loadPimpinanPaymentDeletionRequests()
+        } catch (e: Exception) {
+            Log.e("ApprovalScreen", "Error loading data: ${e.message}")
         }
-
-        // ✅ TAMBAHAN: Mark semua notifikasi pengajuan sebagai sudah dibaca
-        // Ini akan menghilangkan badge notifikasi saat user masuk ke halaman approval
-        viewModel.markAllPengajuanNotificationsAsRead()
-
-        viewModel.loadSerahTerimaNotifications()
-
-        viewModel.loadPendingPimpinanFinal()
-
-        // ✅ BARU: Load tenor change requests untuk Pimpinan
-        viewModel.loadTenorChangeRequests()
-
-        // ✅ BARU: Load deletion requests untuk Pimpinan
-        viewModel.loadPimpinanDeletionRequests()
-        viewModel.loadPimpinanPaymentDeletionRequests()
     }
 
     // Handle operation result
@@ -601,20 +605,21 @@ fun PimpinanApprovalScreen(
 
         // Dialog-dialog existing (tidak berubah)
         if (showApprovalWithAmountDialog && selectedPelangganForAmount != null) {
+            val pelangganForAmount = selectedPelangganForAmount ?: return@Scaffold
             ApprovalWithAmountDialog(
-                pelanggan = selectedPelangganForAmount!!,
+                pelanggan = pelangganForAmount,
                 onConfirm = { disetujuiAmount, tenorDisetujui, catatan, tarikTabungan ->
                     isLoading = true
                     viewModel.approvePengajuan(
-                        selectedPelangganForAmount!!.id,
+                        pelangganForAmount.id,
                         catatan = catatan,
                         besarPinjamanDisetujui = disetujuiAmount,
                         tenorDisetujui = tenorDisetujui,
                         tarikTabungan = tarikTabungan,
                         catatanPerubahanPinjaman = buildString {
                             append("Disetujui dengan penyesuaian jumlah dari ")
-                            append("Rp ${formatRupiah(selectedPelangganForAmount!!.besarPinjaman)} menjadi ")
-                            append("Rp ${formatRupiah(disetujuiAmount)} dan tenor dari ${selectedPelangganForAmount!!.tenor} hari menjadi ${tenorDisetujui} hari")
+                            append("Rp ${formatRupiah(pelangganForAmount.besarPinjaman)} menjadi ")
+                            append("Rp ${formatRupiah(disetujuiAmount)} dan tenor dari ${pelangganForAmount.tenor} hari menjadi ${tenorDisetujui} hari")
                             if (tarikTabungan > 0) {
                                 append(". Tarik tabungan: Rp ${formatRupiah(tarikTabungan)}")
                             }
@@ -696,11 +701,12 @@ fun PimpinanApprovalScreen(
         }
 
         if (showApprovalDialog && selectedPelanggan != null) {
+            val pelangganForApproval = selectedPelanggan ?: return@Scaffold
             ApprovalNoteDialog(
                 onConfirm = { catatan ->
                     isLoading = true
                     viewModel.approvePengajuan(
-                        selectedPelanggan!!.id,
+                        pelangganForApproval.id,
                         catatan = catatan,
                         cabangId = viewModel.currentUserCabang.value,
                         onSuccess = {
