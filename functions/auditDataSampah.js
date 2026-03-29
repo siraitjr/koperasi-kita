@@ -387,3 +387,242 @@ exports.auditDataSampah = functions
         });
     }
 });
+
+
+// =========================================================================
+// HAPUS DATA SAMPAH (dengan backup otomatis)
+// =========================================================================
+// Endpoint: POST /hapusDataSampah
+// Body:
+// {
+//   "paths": [
+//     "pelanggan/adminUid1/nasabahId1",
+//     "pelanggan/adminUid2/nasabahId2"
+//   ],
+//   "alasan": "Duplikat NIK dalam 1 admin"   ← opsional, untuk catatan
+// }
+//
+// ALUR:
+// 1. Baca data yang akan dihapus
+// 2. Simpan backup ke "deleted_sampah/{timestamp}_{nasabahId}"
+// 3. Hapus dari pelanggan
+// 4. Hapus dari nik_registry (kalau NIK-nya menunjuk ke nasabah ini)
+// 5. Return hasil: berhasil / gagal per path
+//
+// RESTORE: Jika salah hapus, data ada di node "deleted_sampah" di Firebase
+// =========================================================================
+
+exports.hapusDataSampah = functions
+    .runWith({ timeoutSeconds: 120, memory: '256MB' })
+    .https.onRequest(async (req, res) => {
+
+    if (req.method !== 'POST') {
+        return res.status(405).json({
+            error: 'Gunakan method POST',
+            contoh: {
+                paths: ['pelanggan/adminUid/nasabahId'],
+                alasan: 'Duplikat NIK'
+            }
+        });
+    }
+
+    const { paths, alasan } = req.body;
+
+    if (!paths || !Array.isArray(paths) || paths.length === 0) {
+        return res.status(400).json({
+            error: 'Body harus berisi "paths" (array of string)',
+            contoh: {
+                paths: ['pelanggan/adminUid/nasabahId1', 'pelanggan/adminUid/nasabahId2'],
+                alasan: 'Data duplikat'
+            }
+        });
+    }
+
+    // Batas keamanan: max 20 per request agar tidak salah hapus massal
+    if (paths.length > 20) {
+        return res.status(400).json({
+            error: 'Maksimal 20 path per request untuk keamanan. Silakan hapus bertahap.'
+        });
+    }
+
+    console.log(`🗑️ HAPUS DATA SAMPAH: ${paths.length} item`);
+
+    const results = [];
+    let berhasil = 0;
+    let gagal = 0;
+
+    for (const path of paths) {
+        // Validasi: hanya boleh hapus dari node pelanggan
+        if (!path || typeof path !== 'string' || !path.startsWith('pelanggan/')) {
+            results.push({ path, status: 'DITOLAK', alasan: 'Path harus dimulai dengan "pelanggan/"' });
+            gagal++;
+            continue;
+        }
+
+        // Validasi format: pelanggan/{adminUid}/{nasabahId}
+        const parts = path.split('/');
+        if (parts.length !== 3) {
+            results.push({ path, status: 'DITOLAK', alasan: 'Format harus: pelanggan/{adminUid}/{nasabahId}' });
+            gagal++;
+            continue;
+        }
+
+        const adminUid = parts[1];
+        const nasabahId = parts[2];
+
+        try {
+            // STEP 1: Baca data
+            const snap = await db.ref(path).once('value');
+            if (!snap.exists()) {
+                results.push({ path, status: 'LEWATI', alasan: 'Data tidak ditemukan (sudah dihapus?)' });
+                continue;
+            }
+
+            const data = snap.val();
+            const nama = data.namaKtp || data.namaPanggilan || '(tanpa nama)';
+            const nik = (data.nik || '').trim();
+
+            // STEP 2: Backup ke deleted_sampah
+            const backupKey = `${Date.now()}_${nasabahId}`;
+            await db.ref(`deleted_sampah/${backupKey}`).set({
+                pathAsli: path,
+                adminUid,
+                nasabahId,
+                data,
+                dihapusPada: admin.database.ServerValue.TIMESTAMP,
+                alasan: alasan || 'Dihapus via auditDataSampah'
+            });
+
+            // STEP 3: Hapus dari pelanggan
+            await db.ref(path).remove();
+
+            // STEP 4: Hapus dari nik_registry jika NIK menunjuk ke nasabah ini
+            if (nik) {
+                const nikSnap = await db.ref(`nik_registry/${nik}`).once('value');
+                if (nikSnap.exists()) {
+                    const nikData = nikSnap.val();
+                    if (nikData && nikData.pelangganId === nasabahId) {
+                        await db.ref(`nik_registry/${nik}`).remove();
+                    }
+                }
+            }
+
+            console.log(`✅ Dihapus: ${path} (${nama})`);
+            results.push({
+                path,
+                status: 'DIHAPUS',
+                nama,
+                nik: nik || null,
+                backupKey,
+                backupPath: `deleted_sampah/${backupKey}`
+            });
+            berhasil++;
+
+        } catch (error) {
+            console.error(`❌ Gagal hapus ${path}: ${error.message}`);
+            results.push({ path, status: 'GAGAL', alasan: error.message });
+            gagal++;
+        }
+    }
+
+    console.log(`🗑️ Selesai: ${berhasil} dihapus, ${gagal} gagal`);
+
+    res.json({
+        success: true,
+        ringkasan: {
+            total: paths.length,
+            berhasil,
+            gagal
+        },
+        results,
+        catatan: 'Semua data yang dihapus sudah di-backup di node "deleted_sampah". Jika salah hapus, bisa di-restore dari sana.'
+    });
+});
+
+
+// =========================================================================
+// RESTORE DATA YANG SALAH HAPUS
+// =========================================================================
+// Endpoint: POST /restoreDataSampah
+// Body:
+// {
+//   "backupKeys": ["1234567890_-OabcXyz"]
+// }
+// =========================================================================
+
+exports.restoreDataSampah = functions
+    .runWith({ timeoutSeconds: 60, memory: '256MB' })
+    .https.onRequest(async (req, res) => {
+
+    if (req.method !== 'POST') {
+        return res.status(405).json({
+            error: 'Gunakan method POST',
+            contoh: { backupKeys: ['1234567890_-OabcXyz'] }
+        });
+    }
+
+    const { backupKeys } = req.body;
+
+    if (!backupKeys || !Array.isArray(backupKeys) || backupKeys.length === 0) {
+        return res.status(400).json({
+            error: 'Body harus berisi "backupKeys" (array of string dari hasil hapus)'
+        });
+    }
+
+    const results = [];
+    let berhasil = 0;
+    let gagal = 0;
+
+    for (const key of backupKeys) {
+        try {
+            const backupSnap = await db.ref(`deleted_sampah/${key}`).once('value');
+            if (!backupSnap.exists()) {
+                results.push({ backupKey: key, status: 'TIDAK_DITEMUKAN' });
+                gagal++;
+                continue;
+            }
+
+            const backup = backupSnap.val();
+            const pathAsli = backup.pathAsli;
+            const data = backup.data;
+            const nik = (data.nik || '').trim();
+
+            // Kembalikan data ke path asli
+            await db.ref(pathAsli).set(data);
+
+            // Kembalikan nik_registry jika perlu
+            if (nik && backup.nasabahId) {
+                await db.ref(`nik_registry/${nik}`).set({
+                    pelangganId: backup.nasabahId,
+                    adminUid: backup.adminUid,
+                    nama: data.namaKtp || data.namaPanggilan || '',
+                    status: data.status || '',
+                    lastUpdated: admin.database.ServerValue.TIMESTAMP
+                });
+            }
+
+            // Hapus dari backup setelah restore
+            await db.ref(`deleted_sampah/${key}`).remove();
+
+            const nama = data.namaKtp || data.namaPanggilan || '(tanpa nama)';
+            console.log(`✅ Restored: ${pathAsli} (${nama})`);
+            results.push({
+                backupKey: key,
+                status: 'DIKEMBALIKAN',
+                path: pathAsli,
+                nama
+            });
+            berhasil++;
+
+        } catch (error) {
+            results.push({ backupKey: key, status: 'GAGAL', alasan: error.message });
+            gagal++;
+        }
+    }
+
+    res.json({
+        success: true,
+        ringkasan: { total: backupKeys.length, berhasil, gagal },
+        results
+    });
+});

@@ -204,6 +204,8 @@ exports.cleanupDuplicateNasabah = detectDuplicate.cleanupDuplicateNasabah;
 // AUDIT DATA SAMPAH - Deteksi semua jenis data bermasalah
 // =========================================================================
 exports.auditDataSampah = auditDataSampah.auditDataSampah;
+exports.hapusDataSampah = auditDataSampah.hapusDataSampah;
+exports.restoreDataSampah = auditDataSampah.restoreDataSampah;
 
 // =========================================================================
 // AUTO-LOGIN TOKEN (Android App → Buku Pokok Web)
