@@ -176,7 +176,7 @@ export default function Home() {
     } else if (book === 'jurnalTransaksi') {
       setScreen('jurnalDashboard');
       saveNav('jurnalDashboard', null, null);
-    } else if (['jurnalKasir', 'bukuRekap', 'kasPenuntun', 'bukuTunai', 'bukuEkspedisi', 'ringkasanKas'].includes(book)) {
+    } else if (['jurnalKasir', 'bukuRekap', 'kasPenuntun', 'bukuTunai', 'bukuEkspedisi', 'ringkasanKas', 'absensiKaryawan'].includes(book)) {
       // Pimpinan/koordinator/pengawas: buka halaman kasir langsung (read-only)
       const kasirScreenMap = {
         jurnalKasir: 'jurnal',
@@ -185,6 +185,7 @@ export default function Home() {
         bukuTunai: 'bukuTunai',
         bukuEkspedisi: 'bukuEkspedisi',
         ringkasanKas: 'ringkasan',
+        absensiKaryawan: 'absensi',
       };
       window.location.href = `/kasir?screen=${kasirScreenMap[book]}`;
     }
@@ -583,6 +584,16 @@ function HomeScreen({ user, kasirCabangList, onSelectBook, onLogout }) {
       icon: (
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
           <path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/>
+        </svg>
+      ),
+      ready: true,
+    },
+    {
+      id: 'absensiKaryawan', name: 'Absensi Karyawan', desc: 'Lihat absensi harian karyawan',
+      icon: (
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+          <rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/>
+          <path d="m9 16 2 2 4-4"/>
         </svg>
       ),
       ready: true,
