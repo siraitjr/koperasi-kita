@@ -839,9 +839,7 @@ function getKategoriNasabah(nasabah) {
 
   // ==================== FILTER ====================
   const filtered = (data?.nasabah?.filter((n) => {
-    // Exclude ML (4+ bulan) dari buku pokok
-    if (getKategoriNasabah(n) === 'ML') return false;
-    // Filter tabel (PB/L1/CM/MB) — skip for stortingGlobal
+    // Filter tabel (PB/L1/CM/MB/ML) — skip for stortingGlobal
     if (tabelFilter !== 'semua' && tabelFilter !== 'stortingGlobal') {
       if (getKategoriNasabah(n) !== tabelFilter) return false;
     }
@@ -884,7 +882,7 @@ function getKategoriNasabah(nasabah) {
   // ==================== STORTING GLOBAL COMPUTATION ====================
   const stortingGlobalData = (() => {
     if (!isStortingGlobalMode || !data?.nasabah || !stortingMonth) return [];
-    const allNasabah = data.nasabah.filter(n => getKategoriNasabah(n) !== 'ML');
+    const allNasabah = data.nasabah;
     const BULAN_INDO_ARR = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
 
     // Parse stortingMonth "2026-02" → year=2026, month=1 (0-indexed)
@@ -944,7 +942,7 @@ function getKategoriNasabah(nasabah) {
     for (const dateStr of workingDates) {
       let dropKini = 0;
       let stortingKini = 0;
-      let pbKini = 0, l1Kini = 0, cmKini = 0, mbKini = 0;
+      let pbKini = 0, l1Kini = 0, cmKini = 0, mbKini = 0, mlKini = 0;
 
       allNasabah.forEach(n => {
         // Drop Kini: total uang yang dicairkan pada tanggal ini
@@ -964,6 +962,7 @@ function getKategoriNasabah(nasabah) {
           else if (kat === 'L1') l1Kini += total;
           else if (kat === 'CM') cmKini += total;
           else if (kat === 'MB') mbKini += total;
+          else mlKini += total;
         }
       });
 
@@ -986,6 +985,7 @@ function getKategoriNasabah(nasabah) {
         l1Kini,
         cmKini,
         mbKini,
+        mlKini,
       });
     }
     return rows;
@@ -1158,6 +1158,7 @@ function getKategoriNasabah(nasabah) {
               <option value="L1">L1</option>
               <option value="CM">CM</option>
               <option value="MB">MB</option>
+              <option value="ML">ML</option>
               <option value="stortingGlobal">Storting Global</option>
             </select>
             <div style={{ width: 1, height: 20, background: 'var(--border)', flexShrink: 0 }} />
@@ -1271,6 +1272,7 @@ function getKategoriNasabah(nasabah) {
                       <th rowSpan={2} className="sg-th-kat sg-th-kat-l1" style={{ textAlign: 'center', verticalAlign: 'middle', minWidth: 80 }}>L1</th>
                       <th rowSpan={2} className="sg-th-kat sg-th-kat-cm" style={{ textAlign: 'center', verticalAlign: 'middle', minWidth: 80 }}>CM</th>
                       <th rowSpan={2} className="sg-th-kat sg-th-kat-mb" style={{ textAlign: 'center', verticalAlign: 'middle', minWidth: 80 }}>MB</th>
+                      <th rowSpan={2} className="sg-th-kat sg-th-kat-ml" style={{ textAlign: 'center', verticalAlign: 'middle', minWidth: 80 }}>ML</th>
                     </tr>
                     <tr>
                       <th className="sg-th-sub" style={{ textAlign: 'center', color: '#e85d3a', minWidth: 120, fontSize: 10 }}>Berjalan</th>
@@ -1331,6 +1333,9 @@ function getKategoriNasabah(nasabah) {
                             <td style={{ textAlign: 'center', fontFamily: "'DM Mono', monospace", fontSize: 12 }}>
                               {row.mbKini > 0 ? formatRp(row.mbKini) : '-'}
                             </td>
+                            <td style={{ textAlign: 'center', fontFamily: "'DM Mono', monospace", fontSize: 12 }}>
+                              {row.mlKini > 0 ? formatRp(row.mlKini) : '-'}
+                            </td>
                           </tr>
                         );
                       })
@@ -1377,6 +1382,9 @@ function getKategoriNasabah(nasabah) {
                         </td>
                         <td style={{ textAlign: 'center', fontWeight: 700, fontFamily: "'DM Mono', monospace", fontSize: 12 }}>
                           {formatRp(stortingGlobalData.reduce((s, r) => s + r.mbKini, 0))}
+                        </td>
+                        <td style={{ textAlign: 'center', fontWeight: 700, fontFamily: "'DM Mono', monospace", fontSize: 12 }}>
+                          {formatRp(stortingGlobalData.reduce((s, r) => s + r.mlKini, 0))}
                         </td>
                       </tr>
                     </tfoot>
