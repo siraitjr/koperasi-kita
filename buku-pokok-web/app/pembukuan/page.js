@@ -1438,10 +1438,11 @@ function getKategoriNasabah(nasabah) {
                       const rowTotal = isTabelMode
                         ? displayDates.reduce((s, d) => s + (n.pembayaran?.[d]?.total || 0), 0)
                         : 0;
-                      // Nama bewarna merah untuk nasabah Sisa Tabungan atau Nasabah Lunas
+                      // Nama bewarna merah untuk nasabah Sisa Tabungan, Nasabah Lunas, atau ML
                       const isSisaTabungan = n.statusKhusus === 'MENUNGGU_PENCAIRAN';
                       const isLunasCicilan = n.sisaUtang <= 0 && n.totalPelunasan > 0;
-                      const namaColor = (isSisaTabungan || isLunasCicilan) ? '#e53e3e' : undefined;
+                      const isML = getKategoriNasabah(n) === 'ML';
+                      const namaColor = (isSisaTabungan || isLunasCicilan || isML) ? '#e53e3e' : undefined;
                       return (
                         <tr key={n.id} onClick={() => setShowDetail(n)}>
                           <td style={{ textAlign: 'center', color: '#8a9ba8', fontSize: 12 }}>{idx + 1}</td>
