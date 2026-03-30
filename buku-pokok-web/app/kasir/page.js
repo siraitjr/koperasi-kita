@@ -173,7 +173,12 @@ export default function KasirPage() {
   };
 
   const handleLogout = () => {
-    setShowLogoutModal(true);
+    // Hanya kasir_unit yang perlu absen sebelum logout
+    if (userData?.role === 'kasir_unit') {
+      setShowLogoutModal(true);
+    } else {
+      doLogout();
+    }
   };
 
   const doLogout = async () => {
