@@ -1178,8 +1178,8 @@ function getKategoriNasabah(nasabah) {
             <div className="status-tabs">
               {[
                 { key: 'aktif', label: 'Aktif' },
-                { key: 'lunas', label: 'Lunas' },
-                { key: 'semua', label: 'Semua' },
+                { key: 'sisa_tabungan', label: 'Sisa Tabungan' },
+                { key: 'nasabah_lunas', label: 'Nasabah Lunas' },
               ].map((tab) => (
                 <button
                   key={tab.key}

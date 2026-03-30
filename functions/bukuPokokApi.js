@@ -220,7 +220,7 @@ exports.getBukuPokok = functions
             // 3. Parse parameters
             const { cabangId, adminUid, status } = req.query;
             const statusFilter = (status || 'aktif').toLowerCase();
-            console.log(`[getBukuPokok] VERSION=2026-03-11-v4-riwayat, statusFilter=${statusFilter}, cabangId=${cabangId}`);
+            console.log(`[getBukuPokok] VERSION=2026-03-30-v5-tabs, statusFilter=${statusFilter}, cabangId=${cabangId}`);
 
             // 4. Determine which admins to fetch
             let adminUids = [];
@@ -357,10 +357,17 @@ exports.getBukuPokok = functions
                     }
                     if (statusFilter === 'lunas' && pStatus !== 'lunas') return;
                     if (statusFilter === 'semua' && (pStatus === 'menunggu approval' || pStatus === 'ditolak')) return;
+                    // Sisa Tabungan: hanya nasabah dengan statusKhusus MENUNGGU_PENCAIRAN
+                    if (statusFilter === 'sisa_tabungan' && (p.statusKhusus || '') !== 'MENUNGGU_PENCAIRAN') return;
 
                     const totalDibayar = calculateTotalDibayar(p.pembayaranList);
                     const totalPelunasan = p.totalPelunasan || 0;
                     const sisaUtang = Math.max(0, totalPelunasan - totalDibayar);
+
+                    // Nasabah Lunas: hanya nasabah dengan sisa utang = 0
+                    if (statusFilter === 'nasabah_lunas') {
+                        if (sisaUtang > 0 || totalPelunasan <= 0) return;
+                    }
                     const pembayaranPerTanggal = extractPembayaranPerTanggal(p.pembayaranList);
 
                     // Riwayat pinjaman lama (jika ada)
