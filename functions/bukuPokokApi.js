@@ -348,26 +348,29 @@ exports.getBukuPokok = functions
                 if (!pelangganData) return;
 
                 Object.entries(pelangganData).forEach(([pId, p]) => {
-                    // Filter by status — percaya status di database
                     const pStatus = (p.status || '').toLowerCase();
-                    // DEBUG: log nasabah yang tersaring oleh filter aktif
-                    if (statusFilter === 'aktif' && pStatus !== 'aktif' && pStatus !== 'disetujui') {
-                        console.log(`[DEBUG] FILTERED OUT: ${p.namaKtp || pId}, status="${p.status}", pStatus="${pStatus}"`);
-                        return;
-                    }
-                    if (statusFilter === 'lunas' && pStatus !== 'lunas') return;
-                    if (statusFilter === 'semua' && (pStatus === 'menunggu approval' || pStatus === 'ditolak')) return;
-                    // Sisa Tabungan: hanya nasabah dengan statusKhusus MENUNGGU_PENCAIRAN
-                    if (statusFilter === 'sisa_tabungan' && (p.statusKhusus || '') !== 'MENUNGGU_PENCAIRAN') return;
+                    const pStatusKhusus = p.statusKhusus || '';
 
+                    // Skip menunggu approval dan ditolak untuk semua filter
+                    if (pStatus === 'menunggu approval' || pStatus === 'ditolak') return;
+
+                    // Hitung sisa utang (diperlukan untuk filter aktif & nasabah_lunas)
                     const totalDibayar = calculateTotalDibayar(p.pembayaranList);
                     const totalPelunasan = p.totalPelunasan || 0;
                     const sisaUtang = Math.max(0, totalPelunasan - totalDibayar);
 
-                    // Nasabah Lunas: hanya nasabah dengan sisa utang = 0
-                    if (statusFilter === 'nasabah_lunas') {
-                        if (sisaUtang > 0 || totalPelunasan <= 0) return;
-                    }
+                    // Tentukan kategori nasabah (eksklusif, tidak boleh overlap)
+                    const isSisaTabungan = pStatusKhusus === 'MENUNGGU_PENCAIRAN';
+                    const isNasabahLunas = !isSisaTabungan && sisaUtang <= 0 && totalPelunasan > 0;
+                    const isAktif = !isSisaTabungan && !isNasabahLunas && (pStatus === 'aktif' || pStatus === 'disetujui');
+
+                    // Filter berdasarkan tab yang dipilih
+                    if (statusFilter === 'aktif' && !isAktif) return;
+                    if (statusFilter === 'sisa_tabungan' && !isSisaTabungan) return;
+                    if (statusFilter === 'nasabah_lunas' && !isNasabahLunas) return;
+                    // Legacy filters (backward compatibility)
+                    if (statusFilter === 'lunas' && pStatus !== 'lunas') return;
+                    if (statusFilter === 'semua') { /* show all except menunggu approval/ditolak */ }
                     const pembayaranPerTanggal = extractPembayaranPerTanggal(p.pembayaranList);
 
                     // Riwayat pinjaman lama (jika ada)
