@@ -11,7 +11,8 @@ import { auth } from '../../lib/firebase';
 import { getSummary, getBukuPokok, getKasirSummary, getJurnalTransaksi } from '../../lib/api';
 import { formatRp, formatRpFull, formatRpShort } from '../../lib/format';
 
-const KASIR_VIEW_ROLES = ['pimpinan', 'koordinator', 'pengawas'];
+const KASIR_VIEW_ROLES = ['pimpinan', 'koordinator', 'pengawas', 'kasir_wilayah', 'sekretaris'];
+const GLOBAL_VIEW_ROLES = ['koordinator', 'pengawas', 'kasir_wilayah', 'sekretaris'];
 
 export default function Home() {
   const [user, setUser] = useState(null);
@@ -84,14 +85,14 @@ export default function Home() {
             const urlParams = new URLSearchParams(window.location.search);
             const fromKasir = urlParams.get('from') === 'kasir';
 
-            if ((userRole === 'kasir_unit' || userRole === 'kasir_wilayah' || userRole === 'sekretaris') && !fromKasir) {
+            if (userRole === 'kasir_unit' && !fromKasir) {
               window.location.href = '/kasir';
               return;
             }
 
-            // Kasir dari /kasir: langsung ke Buku Pokok, skip home
-            if (fromKasir && (userRole === 'kasir_unit' || userRole === 'kasir_wilayah' || userRole === 'sekretaris')) {
-              if (userRole === 'kasir_unit' && result.data.cabangList.length === 1) {
+            // Kasir unit dari /kasir: langsung ke Buku Pokok, skip home
+            if (fromKasir && userRole === 'kasir_unit') {
+              if (result.data.cabangList.length === 1) {
                 setSelectedCabang(result.data.cabangList[0]);
                 setScreen('bukuPokok');
               } else {
@@ -125,13 +126,24 @@ export default function Home() {
                 setScreen('jurnalTransaksi');
               } else if (saved.screen === 'jurnalDashboard') {
                 setScreen('jurnalDashboard');
+              } else if (saved.screen === 'home' && saved.cabang && GLOBAL_VIEW_ROLES.includes(userRole)) {
+                setSelectedCabang(saved.cabang);
+                setScreen('home');
               } else if (saved.screen === 'dashboard') {
+                setScreen('dashboard');
+              } else {
+                if (GLOBAL_VIEW_ROLES.includes(userRole)) {
+                  setScreen('dashboard');
+                } else {
+                  setScreen('home');
+                }
+              }
+            } else {
+              if (GLOBAL_VIEW_ROLES.includes(userRole)) {
                 setScreen('dashboard');
               } else {
                 setScreen('home');
               }
-            } else {
-              setScreen('home');
             }
           }
         } catch (err) {
@@ -170,12 +182,23 @@ export default function Home() {
   };
 
   const handleSelectBook = (book) => {
+    const isGlobal = GLOBAL_VIEW_ROLES.includes(userData?.role);
     if (book === 'bukuPokok') {
-      setScreen('dashboard');
-      saveNav('dashboard', null, null);
+      if (isGlobal && selectedCabang) {
+        setScreen('bukuPokok');
+        saveNav('bukuPokok', selectedCabang, null);
+      } else {
+        setScreen('dashboard');
+        saveNav('dashboard', null, null);
+      }
     } else if (book === 'jurnalTransaksi') {
-      setScreen('jurnalDashboard');
-      saveNav('jurnalDashboard', null, null);
+      if (isGlobal && selectedCabang) {
+        setScreen('jurnalTransaksi');
+        saveNav('jurnalTransaksi', selectedCabang, null);
+      } else {
+        setScreen('jurnalDashboard');
+        saveNav('jurnalDashboard', null, null);
+      }
     } else if (['jurnalKasir', 'bukuRekap', 'kasPenuntun', 'bukuTunai', 'bukuEkspedisi', 'ringkasanKas', 'absensiKaryawan'].includes(book)) {
       // Pimpinan/koordinator/pengawas: buka halaman kasir langsung (read-only)
       const kasirScreenMap = {
@@ -194,8 +217,13 @@ export default function Home() {
   const handleSelectCabang = (cabang) => {
     setSelectedCabang(cabang);
     setSelectedAdmin(null);
-    setScreen('bukuPokok');
-    saveNav('bukuPokok', cabang, null);
+    if (GLOBAL_VIEW_ROLES.includes(userData?.role)) {
+      setScreen('home');
+      saveNav('home', cabang, null);
+    } else {
+      setScreen('bukuPokok');
+      saveNav('bukuPokok', cabang, null);
+    }
   };
 
   const handleSelectAdmin = (admin) => {
@@ -208,10 +236,16 @@ export default function Home() {
       window.location.href = '/kasir';
       return;
     }
-    setScreen('dashboard');
-    setSelectedCabang(null);
-    setSelectedAdmin(null);
-    saveNav('dashboard', null, null);
+    if (GLOBAL_VIEW_ROLES.includes(userData?.role)) {
+      setScreen('home');
+      setSelectedAdmin(null);
+      saveNav('home', selectedCabang, null);
+    } else {
+      setScreen('dashboard');
+      setSelectedCabang(null);
+      setSelectedAdmin(null);
+      saveNav('dashboard', null, null);
+    }
   };
 
   const handleSelectJurnalCabang = (cabang) => {
@@ -221,20 +255,32 @@ export default function Home() {
   };
 
   const handleBackFromJurnal = () => {
-    setScreen('jurnalDashboard');
-    setSelectedCabang(null);
-    saveNav('jurnalDashboard', null, null);
+    if (GLOBAL_VIEW_ROLES.includes(userData?.role)) {
+      setScreen('home');
+      saveNav('home', selectedCabang, null);
+    } else {
+      setScreen('jurnalDashboard');
+      setSelectedCabang(null);
+      saveNav('jurnalDashboard', null, null);
+    }
   };
 
   const handleBackToHome = () => {
-    if (userData?.role === 'kasir_unit' || userData?.role === 'kasir_wilayah' || userData?.role === 'sekretaris') {
+    if (userData?.role === 'kasir_unit') {
       window.location.href = '/kasir';
       return;
     }
-    setScreen('home');
-    setSelectedCabang(null);
-    setSelectedAdmin(null);
-    saveNav('home', null, null);
+    if (GLOBAL_VIEW_ROLES.includes(userData?.role)) {
+      setScreen('dashboard');
+      setSelectedCabang(null);
+      setSelectedAdmin(null);
+      saveNav('dashboard', null, null);
+    } else {
+      setScreen('home');
+      setSelectedCabang(null);
+      setSelectedAdmin(null);
+      saveNav('home', null, null);
+    }
   };
 
   // ==================== RENDER ====================
@@ -259,7 +305,9 @@ export default function Home() {
       <HomeScreen
         user={userData}
         kasirCabangList={kasirCabangList}
+        selectedCabang={selectedCabang}
         onSelectBook={handleSelectBook}
+        onBackToDashboard={GLOBAL_VIEW_ROLES.includes(userData?.role) ? handleBackToHome : null}
         onLogout={handleLogout}
       />
     );
@@ -497,7 +545,7 @@ function LoginScreen({ onLogin }) {
 // ============================================================
 // HOME SCREEN (Menu Buku)
 // ============================================================
-function HomeScreen({ user, kasirCabangList, onSelectBook, onLogout }) {
+function HomeScreen({ user, kasirCabangList, selectedCabang, onSelectBook, onBackToDashboard, onLogout }) {
   const showKasirMenus = KASIR_VIEW_ROLES.includes(user?.role) && kasirCabangList?.length > 0;
 
   const books = [
@@ -604,13 +652,29 @@ function HomeScreen({ user, kasirCabangList, onSelectBook, onLogout }) {
     <div className="page-container">
       <header className="top-bar">
         <div className="top-bar-left">
-          <div className="top-bar-logo" style={{ background: '#000000', padding: 0, overflow: 'hidden' }}>
-            <img src="/logo.png" alt="Koperasi Kita" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-          </div>
-          <div>
-            <h1>Koperasi Kita</h1>
-            <p>Sistem Pembukuan Digital</p>
-          </div>
+          {onBackToDashboard ? (
+            <>
+              <button onClick={onBackToDashboard} className="btn-back">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                  <path d="m12 19-7-7 7-7"/><path d="M19 12H5"/>
+                </svg>
+              </button>
+              <div>
+                <h1>{selectedCabang?.name || 'Pilih Cabang'}</h1>
+                <p>KSP Sigodang Ulu Jaya</p>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="top-bar-logo" style={{ background: '#000000', padding: 0, overflow: 'hidden' }}>
+                <img src="/logo.png" alt="Koperasi Kita" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              </div>
+              <div>
+                <h1>Koperasi Kita</h1>
+                <p>Sistem Pembukuan Digital</p>
+              </div>
+            </>
+          )}
         </div>
         <div className="top-bar-right">
           {user && (

@@ -188,7 +188,7 @@ export default function KasirPage() {
 
   // Untuk pimpinan/koordinator/pengawas yang datang dari pembukuan
   const isFromPembukuan = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('screen');
-  const VIEWER_ROLES = ['pimpinan', 'koordinator', 'pengawas'];
+  const VIEWER_ROLES = ['pimpinan', 'koordinator', 'pengawas', 'kasir_wilayah', 'sekretaris'];
   const isViewer = VIEWER_ROLES.includes(userData?.role);
 
   const handleBack = () => {
