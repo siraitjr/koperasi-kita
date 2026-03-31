@@ -2647,12 +2647,14 @@ function AbsensiScreen({ user, cabang, cabangList, onBack, onLogout }) {
       const opsData = opsSnap.val() || {};
       setOperasionalMap(opsData);
 
-      // Initialize input map
+      // Initialize input map (format ribuan untuk tampilan)
       const initInput = {};
       list.forEach(a => {
+        const um = opsData[a.uid]?.uangMakan;
+        const tr = opsData[a.uid]?.transport;
         initInput[a.uid] = {
-          uangMakan: opsData[a.uid]?.uangMakan ?? '',
-          transport: opsData[a.uid]?.transport ?? '',
+          uangMakan: um ? parseInt(um).toLocaleString('id-ID') : '',
+          transport: tr ? parseInt(tr).toLocaleString('id-ID') : '',
         };
       });
       setInputMap(initInput);
@@ -2716,8 +2718,8 @@ function AbsensiScreen({ user, cabang, cabangList, onBack, onLogout }) {
   const handleSaveOperasional = async (uid, nama) => {
     if (!activeCabang || !isUnit) return;
     const input = inputMap[uid] || {};
-    const uangMakan = parseInt(input.uangMakan) || 0;
-    const transport = parseInt(input.transport) || 0;
+    const uangMakan = parseInt(String(input.uangMakan).replace(/\./g, '')) || 0;
+    const transport = parseInt(String(input.transport).replace(/\./g, '')) || 0;
     if (uangMakan < 0 || transport < 0) { setError('Nominal tidak boleh negatif'); return; }
 
     setSavingMap(m => ({ ...m, [uid]: true }));
@@ -2894,9 +2896,13 @@ function AbsensiScreen({ user, cabang, cabangList, onBack, onLogout }) {
                           <div style={{ flex: 1, minWidth: 120 }}>
                             <label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Uang Makan (Rp)</label>
                             <input
-                              type="number" min="0"
+                              type="text" inputMode="numeric"
                               value={inp.uangMakan ?? ''}
-                              onChange={e => setInputMap(m => ({ ...m, [a.uid]: { ...m[a.uid], uangMakan: e.target.value } }))}
+                              onChange={e => {
+                                const raw = e.target.value.replace(/\D/g, '');
+                                const formatted = raw ? parseInt(raw).toLocaleString('id-ID') : '';
+                                setInputMap(m => ({ ...m, [a.uid]: { ...m[a.uid], uangMakan: formatted } }));
+                              }}
                               placeholder="0"
                               style={{ width: '100%', padding: '6px 10px', border: '1px solid var(--border)', borderRadius: 8, fontSize: 14, background: 'var(--background)', color: 'var(--text-primary)', boxSizing: 'border-box' }}
                             />
@@ -2904,9 +2910,13 @@ function AbsensiScreen({ user, cabang, cabangList, onBack, onLogout }) {
                           <div style={{ flex: 1, minWidth: 120 }}>
                             <label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Transport (Rp)</label>
                             <input
-                              type="number" min="0"
+                              type="text" inputMode="numeric"
                               value={inp.transport ?? ''}
-                              onChange={e => setInputMap(m => ({ ...m, [a.uid]: { ...m[a.uid], transport: e.target.value } }))}
+                              onChange={e => {
+                                const raw = e.target.value.replace(/\D/g, '');
+                                const formatted = raw ? parseInt(raw).toLocaleString('id-ID') : '';
+                                setInputMap(m => ({ ...m, [a.uid]: { ...m[a.uid], transport: formatted } }));
+                              }}
                               placeholder="0"
                               style={{ width: '100%', padding: '6px 10px', border: '1px solid var(--border)', borderRadius: 8, fontSize: 14, background: 'var(--background)', color: 'var(--text-primary)', boxSizing: 'border-box' }}
                             />
