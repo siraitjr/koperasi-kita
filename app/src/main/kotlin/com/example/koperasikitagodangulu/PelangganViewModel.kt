@@ -13165,6 +13165,81 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     Log.d("Pencairan", "✅ Sisa utang Rp $sisaUtang tercatat ke pembayaran_harian & jurnal_transaksi")
                 }
 
+                // =========================================================
+                // ARSIP ke riwayat_pinjaman SEBELUM hapus data pelanggan
+                // Format mengikuti archiveRiwayatPinjaman() di onPelangganWrite.js
+                // =========================================================
+                val pinjamanKe = pelanggan.pinjamanKe
+
+                // Bangun pembayaranList untuk arsip (termasuk pelunasan tabungan jika ada)
+                val pembayaranListForArchive = mutableListOf<Map<String, Any>>()
+                for (p in pelanggan.pembayaranList) {
+                    val payMap = mutableMapOf<String, Any>(
+                        "jumlah" to p.jumlah,
+                        "tanggal" to p.tanggal
+                    )
+                    if (p.subPembayaran.isNotEmpty()) {
+                        val subList = p.subPembayaran.map { sub ->
+                            mutableMapOf<String, Any>(
+                                "jumlah" to sub.jumlah,
+                                "tanggal" to sub.tanggal,
+                                "keterangan" to sub.keterangan
+                            )
+                        }
+                        payMap["subPembayaran"] = subList
+                    }
+                    pembayaranListForArchive.add(payMap)
+                }
+
+                // Jika ada sisa utang, tambahkan entry pelunasan_tabungan ke pembayaranList arsip
+                if (sisaUtang > 0) {
+                    val dateFormat = SimpleDateFormat("dd MMM yyyy", Locale("in", "ID"))
+                    val todayStr = dateFormat.format(Date())
+                    pembayaranListForArchive.add(mapOf(
+                        "jumlah" to sisaUtang,
+                        "tanggal" to todayStr,
+                        "keterangan" to "Pelunasan sisa utang via tabungan (cairkan simpanan)"
+                    ))
+                }
+
+                val totalDibayarFinal = totalDibayar + sisaUtang
+
+                val arsipData = mapOf<String, Any?>(
+                    // Identitas
+                    "namaKtp" to pelanggan.namaKtp,
+                    "namaPanggilan" to pelanggan.namaPanggilan,
+                    "nomorAnggota" to pelanggan.nomorAnggota,
+                    // Data pinjaman
+                    "pinjamanKe" to pinjamanKe,
+                    "besarPinjaman" to pelanggan.besarPinjaman,
+                    "totalPelunasan" to pelanggan.totalPelunasan,
+                    "totalDibayar" to totalDibayarFinal,
+                    "sisaUtang" to 0,
+                    "tenor" to pelanggan.tenor,
+                    "jasaPinjaman" to pelanggan.jasaPinjaman,
+                    "admin" to pelanggan.admin,
+                    "simpanan" to pelanggan.simpanan,
+                    "totalDiterima" to pelanggan.totalDiterima,
+                    // Tanggal
+                    "tanggalPengajuan" to pelanggan.tanggalPengajuan,
+                    "tanggalPencairan" to pelanggan.tanggalPencairan,
+                    "tanggalLunasCicilan" to pelanggan.tanggalLunasCicilan,
+                    // Status
+                    "status" to pelanggan.status,
+                    "statusKhusus" to pelanggan.statusKhusus,
+                    // Riwayat pembayaran lengkap
+                    "pembayaranList" to pembayaranListForArchive,
+                    // Metadata arsip
+                    "archivedAt" to ServerValue.TIMESTAMP,
+                    "adminUid" to adminUid
+                )
+
+                database.child("riwayat_pinjaman").child(adminUid)
+                    .child(pelangganId).child(pinjamanKe.toString())
+                    .setValue(arsipData).await()
+
+                Log.d("Pencairan", "✅ Arsip riwayat_pinjaman berhasil: ${pelanggan.namaPanggilan} pinjaman ke-$pinjamanKe")
+
                 // Nasabah lunas + tabungan dicairkan → hapus dari database
                 database.child("pelanggan").child(adminUid).child(pelangganId)
                     .removeValue()
