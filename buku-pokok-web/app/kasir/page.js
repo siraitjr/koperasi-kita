@@ -719,8 +719,11 @@ function JurnalScreen({ user, cabang, cabangList, onBack, onLogout }) {
     grouped[tgl].push(e);
   });
   const sortedDates = Object.keys(grouped).sort((a, b) => {
-    // Sort descending by date
-    return entries.findIndex(e => e.tanggal === b) - entries.findIndex(e => e.tanggal === a);
+    // Sort descending by date (terbaru ke terlama)
+    const pa = a.split(' '), pb = b.split(' ');
+    const da = new Date(parseInt(pa[2]), BULAN_INDO.indexOf(pa[1]), parseInt(pa[0]));
+    const db = new Date(parseInt(pb[2]), BULAN_INDO.indexOf(pb[1]), parseInt(pb[0]));
+    return db - da;
   });
 
   return (
