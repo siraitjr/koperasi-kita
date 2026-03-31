@@ -315,6 +315,9 @@ exports.getBukuPokok = functions
 
             // Build riwayat lookup: { pelangganId: [ {pinjamanKe, ...}, ... ] }
             const riwayatLookup = {};
+            // Juga simpan data arsip lengkap untuk nasabah yang sudah dihapus dari pelanggan
+            // Key: pelangganId, Value: { adminUid, pinjaman terakhir (pinjamanKe terbesar) }
+            const riwayatArsipLengkap = {};
             adminUids.forEach((aUid, i) => {
                 const riwayatData = riwayatResults[i].val();
                 if (!riwayatData) return;
@@ -336,6 +339,16 @@ exports.getBukuPokok = functions
                             status: data.status || '',
                             pembayaran: extractPembayaranPerTanggal(data.pembayaranList)
                         });
+
+                        // Simpan data arsip lengkap — ambil pinjaman terakhir (pinjamanKe terbesar)
+                        const pk = parseInt(pinjamanKe);
+                        if (!riwayatArsipLengkap[pId] || pk > riwayatArsipLengkap[pId].pinjamanKe) {
+                            riwayatArsipLengkap[pId] = {
+                                adminUid: aUid,
+                                pinjamanKe: pk,
+                                data: data
+                            };
+                        }
                     });
                     // Sort by pinjamanKe ascending
                     riwayatLookup[pId].sort((a, b) => a.pinjamanKe - b.pinjamanKe);
@@ -415,6 +428,63 @@ exports.getBukuPokok = functions
                     });
                 });
             });
+
+            // 6a-b. Untuk tab "Nasabah Lunas": tambahkan nasabah dari riwayat_pinjaman
+            // yang sudah dihapus dari pelanggan (setelah cairkan simpanan).
+            // Ini agar pembayaran pelunasan via tabungan tetap tercatat permanen di buku pokok,
+            // seperti pada buku pokok fisik dimana nama dicoret tapi pembayaran tetap ditulis.
+            if (statusFilter === 'nasabah_lunas') {
+                const activePelangganIds = new Set(nasabahList.map(n => n.id));
+                Object.entries(riwayatArsipLengkap).forEach(([pId, arsip]) => {
+                    // Skip jika nasabah masih ada di pelanggan aktif (sudah diproses di atas)
+                    if (activePelangganIds.has(pId)) return;
+
+                    const d = arsip.data;
+                    const aUid = arsip.adminUid;
+                    const rTotalDibayar = calculateTotalDibayar(d.pembayaranList);
+                    const rTotalPelunasan = d.totalPelunasan || 0;
+                    const pembayaranPerTanggal = extractPembayaranPerTanggal(d.pembayaranList);
+
+                    // Riwayat pinjaman lama (exclude pinjaman terakhir yg sudah jadi entry utama)
+                    const riwayat = (riwayatLookup[pId] || []).filter(r => r.pinjamanKe !== arsip.pinjamanKe);
+                    const sisaUtangLama = riwayat.reduce((sum, r) => sum + (r.sisaUtang || 0), 0);
+
+                    nasabahList.push({
+                        id: pId,
+                        namaKtp: d.namaKtp || '',
+                        namaPanggilan: d.namaPanggilan || '',
+                        nik: '',
+                        nomorAnggota: d.nomorAnggota || '',
+                        pinjamanKe: d.pinjamanKe || arsip.pinjamanKe,
+                        besarPinjaman: d.besarPinjaman || 0,
+                        totalPelunasan: rTotalPelunasan,
+                        totalDibayar: rTotalDibayar,
+                        sisaUtang: Math.max(0, rTotalPelunasan - rTotalDibayar),
+                        tenor: d.tenor || 0,
+                        status: d.status || '',
+                        statusKhusus: d.statusKhusus || '',
+                        tanggalDaftar: d.tanggalPengajuan || '',
+                        tanggalPencairan: d.tanggalPencairan || '',
+                        tanggalPengajuan: d.tanggalPengajuan || '',
+                        adminUid: aUid,
+                        adminName: adminNames[aUid] || aUid,
+                        cabangId: '',
+                        wilayah: '',
+                        simpanan: d.simpanan || 0,
+                        totalDiterima: d.totalDiterima || 0,
+                        pembayaran: pembayaranPerTanggal,
+                        fotoKtpUrl: '',
+                        fotoKtpSuamiUrl: '',
+                        fotoKtpIstriUrl: '',
+                        fotoNasabahUrl: '',
+                        sisaUtangLama: sisaUtangLama,
+                        sisaUtangLamaSebelumTopUp: 0,
+                        riwayatPinjaman: riwayat,
+                        // Penanda bahwa ini nasabah dari arsip (sudah dicairkan tabungannya)
+                        dariArsip: true
+                    });
+                });
+            }
 
             // 6b. Hitung target harian + pembayaranHariIni dari summary nodes (sudah dibaca paralel di atas)
             let totalTargetHarian = 0;
