@@ -138,17 +138,21 @@ async function ensurePengajuanApprovalExists(adminUid, pelangganId, pelangganDat
             existingSnap.forEach(child => {
                 const data = child.val();
                 const dualInfo = data.dualApprovalInfo;
-                
+
                 if (dualInfo) {
                     const phase = dualInfo.approvalPhase || '';
-                    const pimpinanStatus = dualInfo.pimpinanApproval?.status || 'pending';
-                    
-                    // Entry BASI jika: sudah melewati Phase 1, ATAU pimpinan sudah aksi
-                    if (phase !== 'awaiting_pimpinan' && phase !== '') {
-                        needsReset = true;
-                    } else if (pimpinanStatus !== 'pending') {
+
+                    // Entry BASI hanya jika approval sudah SELESAI (completed)
+                    // Fase aktif (awaiting_pimpinan, awaiting_koordinator, awaiting_pengawas,
+                    // awaiting_koordinator_final, awaiting_pimpinan_final) = sedang berjalan, JANGAN dihapus
+                    if (phase === 'completed') {
                         needsReset = true;
                     }
+                    // Jika phase kosong tapi dualInfo ada, ini entry rusak → reset
+                    else if (!phase) {
+                        needsReset = true;
+                    }
+                    // Semua fase aktif lainnya → JANGAN reset (approval sedang berjalan)
                 }
             });
             
