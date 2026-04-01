@@ -2427,13 +2427,28 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     pembayaran = pembayaranMap
                 )
 
-                // ✅ FIX: Tandai isSynced = true HANYA setelah sync berhasil
+                // ✅ FIX: Tandai isSynced = true HANYA setelah sync BENAR-BENAR selesai di server
+                // Gunakan CompletionListener untuk memastikan data sudah sampai di server,
+                // bukan hanya di-queue di Firebase SDK lokal.
                 if (result is SaveResult.Success) {
-                    val idx = daftarPelanggan.indexOfFirst { it.id == id }
-                    if (idx != -1) {
-                        daftarPelanggan[idx] = daftarPelanggan[idx].copy(isSynced = true)
-                        simpanKeLokal()
-                        Log.d("Pembayaran", "✅ Sync berhasil, isSynced = true")
+                    try {
+                        // Verifikasi data sudah ada di server dengan membaca kembali
+                        val verifySnap = database.child("pelanggan").child(adminUid)
+                            .child(pelanggan.id).child("pembayaranList")
+                            .child(pembayaranIndex.toString()).get().await()
+
+                        if (verifySnap.exists()) {
+                            val idx = daftarPelanggan.indexOfFirst { it.id == id }
+                            if (idx != -1) {
+                                daftarPelanggan[idx] = daftarPelanggan[idx].copy(isSynced = true)
+                                simpanKeLokal()
+                                Log.d("Pembayaran", "✅ Sync VERIFIED di server, isSynced = true")
+                            }
+                        } else {
+                            Log.d("Pembayaran", "⏳ Data queued tapi belum di server, isSynced tetap false")
+                        }
+                    } catch (e: Exception) {
+                        Log.d("Pembayaran", "⏳ Verifikasi gagal (mungkin offline), isSynced tetap false")
                     }
                 }
 
@@ -3715,16 +3730,58 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
 
         val updatedPelanggan = pelanggan.copy(
             pembayaranList = updatedPembayaranList,
-            status = status
+            status = status,
+            isSynced = false,
+            lastUpdated = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
         )
 
         daftarPelanggan[pelangganIdx] = updatedPelanggan
 
-        // ✅ LANGSUNG tulis ke Firebase - Firebase Persistence akan handle offline!
-        simpanPelangganKeFirebase(updatedPelanggan)
-
-        // Simpan ke local storage sebagai backup
+        // Simpan ke local storage sebagai backup (dengan isSynced=false)
         simpanKeLokal()
+
+        // Tulis ke Firebase - Firebase Persistence akan handle offline
+        val adminUid = pelanggan.adminUid.ifBlank { Firebase.auth.currentUser?.uid } ?: return
+        val subIndex = updatedSubList.size - 1
+        val subMap = mapOf(
+            "jumlah" to jumlah,
+            "tanggal" to tanggal,
+            "keterangan" to keterangan
+        )
+
+        viewModelScope.launch {
+            try {
+                // Tulis HANYA sub-pembayaran baru ke path spesifik (bukan seluruh pelanggan)
+                database.child("pelanggan").child(adminUid)
+                    .child(pelangganId).child("pembayaranList")
+                    .child(pembayaranIndex.toString()).child("subPembayaran")
+                    .child(subIndex.toString())
+                    .setValue(subMap).await()
+
+                // Update status jika berubah
+                if (status != pelanggan.status) {
+                    database.child("pelanggan").child(adminUid)
+                        .child(pelangganId).child("status")
+                        .setValue(status).await()
+                }
+
+                // Verifikasi data sudah di server
+                val verifySnap = database.child("pelanggan").child(adminUid)
+                    .child(pelangganId).child("pembayaranList")
+                    .child(pembayaranIndex.toString()).child("subPembayaran")
+                    .child(subIndex.toString()).get().await()
+
+                if (verifySnap.exists()) {
+                    val idx = daftarPelanggan.indexOfFirst { it.id == pelangganId }
+                    if (idx != -1) {
+                        daftarPelanggan[idx] = daftarPelanggan[idx].copy(isSynced = true)
+                        simpanKeLokal()
+                    }
+                }
+            } catch (e: Exception) {
+                Log.d("SubPembayaran", "⏳ Sync gagal/offline, isSynced tetap false: ${e.message}")
+            }
+        }
 
         Log.d("SubPembayaran", "✅ Sub-pembayaran disimpan: Rp $jumlah")
         Log.d("SubPembayaran", "   Mode: ${if (isOnline()) "ONLINE" else "OFFLINE (queued by Firebase)"}")
@@ -7577,20 +7634,23 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
             }
             val status = if (totalDibayar >= pelanggan.totalPelunasan) "Lunas" else "Aktif"
 
-            // ✅ FIX: Update lastUpdated dan isSynced (seperti tambahPembayaran single)
+            // ✅ FIX: SELALU isSynced = false sampai data BENAR-BENAR tersimpan di server
             val updatedPelanggan = pelanggan.copy(
                 pembayaranList = updatedPembayaranList,
                 status = status,
-                isSynced = isOnline(),
+                isSynced = false,
                 lastUpdated = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
             )
 
             daftarPelanggan[index] = updatedPelanggan
 
-            // ✅ FIX: Simpan setiap pembayaran baru via offlineRepo (seperti tambahPembayaran single)
+            // Simpan setiap pembayaran baru via offlineRepo
             val adminUid = pelanggan.adminUid.ifBlank { Firebase.auth.currentUser?.uid } ?: return
 
             viewModelScope.launch {
+                var allSuccess = true
+                val lastPembayaranIndex = startIndex + jumlahCicilan - 1
+
                 for (i in 0 until jumlahCicilan) {
                     val pembayaranIndex = startIndex + i
                     val jumlahCicilanIni = if (i == jumlahCicilan - 1) {
@@ -7605,12 +7665,13 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                         "subPembayaran" to emptyList<Map<String, Any>>()
                     )
 
-                    offlineRepo.addPembayaran(
+                    val result = offlineRepo.addPembayaran(
                         adminUid = adminUid,
                         pelangganId = pelanggan.id,
                         pembayaranIndex = pembayaranIndex,
                         pembayaran = pembayaranMap
                     )
+                    if (result !is SaveResult.Success) allSuccess = false
                 }
 
                 // Update status jika perlu
@@ -7620,6 +7681,26 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                         pelangganId = pelanggan.id,
                         updateData = mapOf("status" to status)
                     )
+                }
+
+                // Verifikasi data sudah di server sebelum set isSynced = true
+                if (allSuccess) {
+                    try {
+                        val verifySnap = database.child("pelanggan").child(adminUid)
+                            .child(pelanggan.id).child("pembayaranList")
+                            .child(lastPembayaranIndex.toString()).get().await()
+
+                        if (verifySnap.exists()) {
+                            val idx = daftarPelanggan.indexOfFirst { it.id == id }
+                            if (idx != -1) {
+                                daftarPelanggan[idx] = daftarPelanggan[idx].copy(isSynced = true)
+                                simpanKeLokal()
+                                Log.d("Pembayaran", "✅ Multiple sync VERIFIED di server, isSynced = true")
+                            }
+                        }
+                    } catch (e: Exception) {
+                        Log.d("Pembayaran", "⏳ Verifikasi gagal, isSynced tetap false")
+                    }
                 }
             }
 
