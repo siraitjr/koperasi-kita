@@ -131,6 +131,20 @@ fun LaporanHarianScreen(
                 ))
             }
         }
+        // Pelunasan sisa utang lama dari lanjut pinjaman (top-up) yang dicairkan hari ini
+        // Sisa utang tidak masuk pembayaranList tapi tetap dicatat sebagai penerimaan
+        viewModel.daftarPelanggan.forEach { pelanggan ->
+            if (pelanggan.pinjamanKe > 1 &&
+                pelanggan.sisaUtangLamaSebelumTopUp > 0 &&
+                pelanggan.tanggalPencairan == tanggalHariIni &&
+                pelanggan.status == "Aktif") {
+                pembayaranHariIni.add(TransaksiData(
+                    nama = pelanggan.namaPanggilan,
+                    jenisTransaksi = "Pelunasan Sisa Utang Lama",
+                    jumlah = pelanggan.sisaUtangLamaSebelumTopUp
+                ))
+            }
+        }
         // Tambahkan biaya awal jika ada
         if (biayaAwalHariIni > 0) {
             pembayaranHariIni.add(0, TransaksiData(

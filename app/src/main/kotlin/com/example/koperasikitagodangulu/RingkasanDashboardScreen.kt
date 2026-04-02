@@ -153,9 +153,14 @@ fun RingkasanDashboardScreen(
         }
         .sum()
 
-    // Sisa utang lanjut pinjaman sudah tercatat di pembayaranList via Cloud Function
-    // sehingga sudah terhitung di totalTagihanDariCicilan
-    val totalTagihanHariIni: Long = totalTagihanDariCicilan
+    // Pelunasan sisa utang lama dari lanjut pinjaman (top-up) yang dicairkan hari ini
+    // Sisa utang TIDAK masuk pembayaranList (agar tidak mengurangi sisa utang pinjaman baru)
+    // tapi tetap dihitung sebagai storting karena merupakan pelunasan yang sah
+    val pelunasanSisaUtangHariIni: Long = daftarPelanggan
+        .filter { it.pinjamanKe > 1 && it.sisaUtangLamaSebelumTopUp > 0 && it.tanggalPencairan == today && it.status == "Aktif" }
+        .sumOf { it.sisaUtangLamaSebelumTopUp.toLong() }
+
+    val totalTagihanHariIni: Long = totalTagihanDariCicilan + pelunasanSisaUtangHariIni
 
     // ✅ Target harian = besarPinjaman × 3% (nasabah > 3 bulan sudah difilter di nasabahAktif)
     val targetHarian: Long = nasabahAktif.sumOf { pelanggan ->
