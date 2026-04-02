@@ -1943,6 +1943,12 @@ function JurnalTransaksiScreen({ user, cabang, onBack, onLogout }) {
               <div style={{ fontSize: '11px', color: '#92400e', fontWeight: 600 }}>Pencairan</div>
               <div style={{ fontSize: '16px', color: '#d97706', fontWeight: 700 }}>{formatRpFull(ringkasan.totalPencairan)}</div>
             </div>
+            {ringkasan.totalPelunasanSisaUtang > 0 && (
+              <div style={{ background: '#fef3c7', borderRadius: '10px', padding: '12px', textAlign: 'center' }}>
+                <div style={{ fontSize: '11px', color: '#92400e', fontWeight: 600 }}>Pelunasan Sisa Utang</div>
+                <div style={{ fontSize: '16px', color: '#b45309', fontWeight: 700 }}>{formatRpFull(ringkasan.totalPelunasanSisaUtang)}</div>
+              </div>
+            )}
             <div style={{ background: '#f0fdf4', borderRadius: '10px', padding: '12px', textAlign: 'center' }}>
               <div style={{ fontSize: '11px', color: '#065f46', fontWeight: 600 }}>Nasabah Lunas</div>
               <div style={{ fontSize: '16px', color: '#059669', fontWeight: 700 }}>{ringkasan.jumlahNasabahLunas}</div>
