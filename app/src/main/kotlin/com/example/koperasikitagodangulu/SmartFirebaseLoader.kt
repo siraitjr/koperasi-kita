@@ -193,9 +193,18 @@ class SmartFirebaseLoader(
                         val localPayCount = localPelanggan.pembayaranList.sumOf { 1 + it.subPembayaran.size }
                         val firebasePayCount = firebasePelanggan.pembayaranList.sumOf { 1 + it.subPembayaran.size }
                         if (localPayCount >= firebasePayCount) {
-                            mergedList.add(localPelanggan)
+                            // Pertahankan pembayaran lokal, tapi SELALU ambil status dari Firebase
+                            // agar perubahan status (approval, pencairan, dll) tidak tertimpa data lokal
+                            mergedList.add(localPelanggan.copy(
+                                status = firebasePelanggan.status,
+                                dualApprovalInfo = firebasePelanggan.dualApprovalInfo,
+                                catatanApproval = firebasePelanggan.catatanApproval,
+                                tanggalApproval = firebasePelanggan.tanggalApproval,
+                                disetujuiOleh = firebasePelanggan.disetujuiOleh,
+                                besarPinjamanDisetujui = firebasePelanggan.besarPinjamanDisetujui
+                            ))
                             firebaseMap.remove(localPelanggan.id)
-                            Log.d(TAG, "⚠️ Using LOCAL (more/equal payments: local=$localPayCount >= firebase=$firebasePayCount): ${localPelanggan.namaPanggilan}")
+                            Log.d(TAG, "⚠️ Using LOCAL payments + FIREBASE status (local=$localPayCount >= firebase=$firebasePayCount, status=${firebasePelanggan.status}): ${localPelanggan.namaPanggilan}")
                         } else {
                             mergedList.add(firebasePelanggan)
                             firebaseMap.remove(firebasePelanggan.id)

@@ -8030,7 +8030,18 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                                                         val localPayCount = localData.pembayaranList.sumOf { 1 + it.subPembayaran.size }
                                                         val freshPayCount = freshData.pembayaranList.sumOf { 1 + it.subPembayaran.size }
                                                         if (localPayCount > freshPayCount && !localData.isSynced) {
-                                                            Log.w("NotifListener", "⚠️ Skip refresh $pelangganIdToRefresh: lokal punya lebih banyak pembayaran (local=$localPayCount > fresh=$freshPayCount)")
+                                                            // Lokal punya lebih banyak pembayaran — pertahankan pembayaran lokal
+                                                            // tapi TETAP update status dan field approval dari Firebase
+                                                            daftarPelanggan[idx] = localData.copy(
+                                                                status = freshData.status,
+                                                                dualApprovalInfo = freshData.dualApprovalInfo,
+                                                                catatanApproval = freshData.catatanApproval,
+                                                                tanggalApproval = freshData.tanggalApproval,
+                                                                disetujuiOleh = freshData.disetujuiOleh,
+                                                                besarPinjamanDisetujui = freshData.besarPinjamanDisetujui
+                                                            )
+                                                            simpanKeLokal()
+                                                            Log.w("NotifListener", "⚠️ Partial refresh $pelangganIdToRefresh: status updated ke '${freshData.status}', pembayaran lokal dipertahankan (local=$localPayCount > fresh=$freshPayCount)")
                                                         } else {
                                                             daftarPelanggan[idx] = freshData.copy(isSynced = true)
                                                             simpanKeLokal()
