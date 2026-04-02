@@ -674,6 +674,9 @@ exports.getPembayaranHariIni = functions
             const totalTambahBayar = payments
                 .filter(p => p.jenis === 'tambah_bayar')
                 .reduce((sum, p) => sum + p.jumlah, 0);
+            const totalPelunasanSisaUtang = payments
+                .filter(p => p.jenis === 'pelunasan_sisa_utang')
+                .reduce((sum, p) => sum + p.jumlah, 0);
 
             res.status(200).json({
                 success: true,
@@ -685,7 +688,8 @@ exports.getPembayaranHariIni = functions
                         totalTransaksi: payments.length,
                         totalCicilan: totalCicilan,
                         totalTambahBayar: totalTambahBayar,
-                        grandTotal: totalCicilan + totalTambahBayar
+                        totalPelunasanSisaUtang: totalPelunasanSisaUtang,
+                        grandTotal: totalCicilan + totalTambahBayar + totalPelunasanSisaUtang
                     }
                 }
             });
