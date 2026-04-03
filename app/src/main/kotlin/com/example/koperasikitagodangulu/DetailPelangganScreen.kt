@@ -163,11 +163,10 @@ fun DetailPelangganScreen(
                         val simpananLimaPersen = (pelangganDenganStatus.besarPinjaman * 5) / 100
                         InfoRow("Simpanan (5%)", "Rp ${formatRupiah(simpananLimaPersen)}")
 
-                        if (pelangganDenganStatus.pinjamanKe >= 2) {
-                            val totalSimpananSemua = viewModel.getTotalSimpananByNama(pelangganDenganStatus.namaKtp)
+                        if (pelangganDenganStatus.pinjamanKe >= 2 || pelangganDenganStatus.tarikTabungan > 0 || pelangganDenganStatus.simpanan > simpananLimaPersen) {
                             InfoRow(
                                 "Total Simpanan (Akumulasi)",
-                                "Rp ${formatRupiah(totalSimpananSemua)}"
+                                "Rp ${formatRupiah(pelangganDenganStatus.simpanan)}"
                             )
                         }
 

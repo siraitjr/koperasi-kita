@@ -3541,7 +3541,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                 // ========== HITUNG NILAI PINJAMAN BARU ==========
                 val calculation = calculatePinjamanValues(pinjamanBaru)
                 val totalPelunasanBaru = calculation.totalPelunasan
-                val totalSimpananLama = getTotalSimpananByNama(existingPelanggan.namaKtp)
+                val totalSimpananLama = existingPelanggan.simpanan
                 val totalSimpananBaru = if (existingPelanggan.statusPencairanSimpanan == "Dicairkan") {
                     calculation.simpanan
                 } else {
@@ -6947,7 +6947,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
 
                 val calculation = calculatePinjamanValues(pinjamanBaru)
                 val totalPelunasanBaru = calculation.totalPelunasan
-                val totalSimpananLama = getTotalSimpananByNama(existingPelanggan.namaKtp)
+                val totalSimpananLama = existingPelanggan.simpanan
                 val totalSimpananBaru = if (existingPelanggan.statusPencairanSimpanan == "Dicairkan") {
                     calculation.simpanan
                 } else {

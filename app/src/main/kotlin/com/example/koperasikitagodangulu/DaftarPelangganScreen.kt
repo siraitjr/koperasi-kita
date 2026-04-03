@@ -765,8 +765,7 @@ private fun ModernCustomerCard(
 
 // ✅ Tampil jika pinjamanKe >= 2 ATAU tarikTabungan > 0 ATAU simpanan > 5% (ada simpanan tambahan lama)
                             if (pelanggan.pinjamanKe >= 2 || pelanggan.tarikTabungan > 0 || pelanggan.simpanan > simpananLimaPersen) {
-                                val totalSimpananSemua = viewModel.getTotalSimpananByNama(pelanggan.namaKtp)
-                                DetailRow("Total Simpanan", "Rp ${formatRupiah(totalSimpananSemua)}", CustomerListColors.success, subtitleColor)
+                                DetailRow("Total Simpanan", "Rp ${formatRupiah(pelanggan.simpanan)}", CustomerListColors.success, subtitleColor)
                             }
 
                             DetailRow("Total Potongan (10%)", "Rp ${formatRupiah(pelanggan.jasaPinjaman)}", txtColor, subtitleColor)

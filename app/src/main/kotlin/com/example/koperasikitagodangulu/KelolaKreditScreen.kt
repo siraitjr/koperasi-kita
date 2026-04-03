@@ -701,7 +701,7 @@ fun KelolaKreditScreen(
                                         ModernInfoRowLoanDetail("Simpanan (5%)", "Rp ${formatRupiah(calculation.simpanan)}", subtitleColor)
                                         ModernInfoRowLoanDetail("Total Potongan (10%)", "Rp ${formatRupiah(calculation.jasaPinjaman)}", subtitleColor)
 
-                                        val totalSimpananAkumulasi = viewModel.getTotalSimpananByNama(pelanggan.namaKtp)
+                                        val totalSimpananAkumulasi = pelanggan.simpanan
                                         val totalSimpananBaru = if (pelanggan.statusPencairanSimpanan == "Dicairkan") {
                                             calculation.simpanan
                                         } else {
@@ -1354,7 +1354,7 @@ fun KelolaKreditScreen(
                     Text("Simpanan (5%): Rp ${formatRupiah(calculation?.simpanan ?: 0)}")
                     Text("Jasa Pinjaman (10%): Rp ${formatRupiah(calculation?.jasaPinjaman ?: 0)}")
 
-                    val totalSimpananAkumulasiKonfirmasi = viewModel.getTotalSimpananByNama(pelanggan?.namaKtp ?: "")
+                    val totalSimpananAkumulasiKonfirmasi = pelanggan?.simpanan ?: 0
                     val totalSimpananKonfirmasi = if (pelanggan?.statusPencairanSimpanan == "Dicairkan") {
                         calculation?.simpanan ?: 0
                     } else {
