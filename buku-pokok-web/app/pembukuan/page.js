@@ -1007,12 +1007,6 @@ function getKategoriNasabah(nasabah) {
       return new Date(parseInt(parts[2]), m, parseInt(parts[0]));
     };
 
-    // Target Kini = dari summary Cloud Functions (single source of truth)
-    // Dihitung oleh Cloud Functions dengan aturan SAMA PERSIS dengan Android:
-    // - besarPinjaman × 3% (flat)
-    // - Exclude > 3 bulan, menunggu pencairan, cair hari ini, sudah lunas
-    const targetHarianKini = data?.targetHarianHariIni || 0;
-
     // Hitung per tanggal
     let dropBerjalan = 0;
     let targetBerjalan = 0;
@@ -1022,7 +1016,12 @@ function getKategoriNasabah(nasabah) {
     for (const dateStr of workingDates) {
       let dropKini = 0;
       let stortingKini = 0;
+      let targetKini = 0;
       let pbKini = 0, l1Kini = 0, cmKini = 0, mbKini = 0, mlKini = 0;
+
+      const currentDate = parseDateStr(dateStr);
+      // Batas 3 bulan: tanggal 1, 3 bulan sebelum tanggal ini
+      const threeMonthsAgo = currentDate ? new Date(currentDate.getFullYear(), currentDate.getMonth() - 3, 1) : null;
 
       allNasabah.forEach(n => {
         // Drop Kini: total uang yang dicairkan pada tanggal ini
@@ -1044,19 +1043,51 @@ function getKategoriNasabah(nasabah) {
           else if (kat === 'MB') mbKini += total;
           else mlKini += total;
         }
+
+        // Target Kini: besarPinjaman × 3% untuk nasabah yang eligible pada tanggal ini
+        // Aturan sama dengan Android/Cloud Functions:
+        // - Sudah cair (tanggalPencairan ada dan sebelum tanggal ini)
+        // - Bukan cair hari itu (tanggalPencairan != tanggal ini)
+        // - Belum > 3 bulan dari tanggal ini
+        // - Belum lunas sampai tanggal ini
+        // - Bukan MENUNGGU_PENCAIRAN
+        if (tglCair && currentDate && threeMonthsAgo) {
+          const cairDate = parseDateStr(tglCair);
+          if (cairDate && cairDate < currentDate && cairDate >= threeMonthsAgo) {
+            // Cek belum lunas sampai tanggal ini
+            const totalPelunasan = n.totalPelunasan || 0;
+            if (totalPelunasan > 0) {
+              let totalBayarSampaiTanggal = 0;
+              if (n.pembayaran) {
+                for (const [payDate, payData] of Object.entries(n.pembayaran)) {
+                  const pd = parseDateStr(payDate);
+                  if (pd && pd <= currentDate) {
+                    totalBayarSampaiTanggal += payData.total || 0;
+                  }
+                }
+              }
+              if (totalBayarSampaiTanggal < totalPelunasan) {
+                // Exclude MENUNGGU_PENCAIRAN
+                if (n.statusKhusus !== 'MENUNGGU_PENCAIRAN') {
+                  targetKini += Math.floor((n.besarPinjaman || 0) * 3 / 100);
+                }
+              }
+            }
+          }
+        }
       });
 
       dropBerjalan += dropKini;
-      targetBerjalan += targetHarianKini;
+      targetBerjalan += targetKini;
       stortingBerjalan += stortingKini;
 
-      const persentase = targetHarianKini > 0 ? Math.round(stortingKini / targetHarianKini * 100) : 0;
+      const persentase = targetKini > 0 ? Math.round(stortingKini / targetKini * 100) : 0;
 
       rows.push({
         tanggal: dateStr,
         dropKini,
         dropBerjalan,
-        targetKini: targetHarianKini,
+        targetKini,
         targetBerjalan,
         stortingKini,
         stortingBerjalan,
