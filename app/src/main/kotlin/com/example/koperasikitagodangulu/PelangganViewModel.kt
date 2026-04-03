@@ -7258,6 +7258,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
     fun getTotalSimpananByNama(namaKtp: String): Int {
         return daftarPelanggan
             .filter { it.namaKtp.equals(namaKtp, ignoreCase = true) }
+            .filter { it.statusPencairanSimpanan != "Dicairkan" }
             .sumOf { it.simpanan }
     }
 
