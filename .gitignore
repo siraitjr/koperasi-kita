@@ -50,3 +50,6 @@ local.properties
 #OS
 .DS_Store
 Thumbs.db
+
+# Firebase cache
+.firebase/

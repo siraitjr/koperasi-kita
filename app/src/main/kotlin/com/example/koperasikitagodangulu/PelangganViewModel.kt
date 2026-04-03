@@ -264,7 +264,9 @@ data class AbsensiRecord(
 
 data class CabangInfo(
     val id: String = "",
-    val name: String = ""
+    val name: String = "",
+    val pimpinanUid: String = "",
+    val pimpinanName: String = ""
 )
 
 data class OperasionalHarian(
@@ -423,13 +425,6 @@ data class UserInfo(
     val cabang: String = "",    // cabangId
     val cabangName: String = "",
     val type: String = ""       // "admin" atau "pimpinan"
-)
-
-data class CabangInfo(
-    val id: String = "",
-    val name: String = "",
-    val pimpinanUid: String = "",
-    val pimpinanName: String = ""
 )
 
 sealed class TakeoverStatus {
