@@ -895,6 +895,8 @@ function getKategoriNasabah(nasabah) {
 }
 
   // ==================== FETCH DATA ====================
+  // Storting Global butuh SEMUA nasabah (termasuk lunas) agar target historis akurat
+  const effectiveStatus = tabelFilter === 'stortingGlobal' ? 'semua' : statusFilter;
   useEffect(() => {
     async function fetchData() {
       setLoading(true);
@@ -903,7 +905,7 @@ function getKategoriNasabah(nasabah) {
         const result = await getBukuPokok({
           cabangId: cabang.id,
           adminUid: selectedAdmin?.uid || '',
-          status: statusFilter,
+          status: effectiveStatus,
         });
         if (result.success && result.type === 'buku_pokok') {
           setData(result.data);
@@ -915,7 +917,7 @@ function getKategoriNasabah(nasabah) {
       }
     }
     fetchData();
-  }, [cabang.id, selectedAdmin?.uid, statusFilter]);
+  }, [cabang.id, selectedAdmin?.uid, effectiveStatus]);
 
   // ==================== FILTER ====================
   const filtered = (data?.nasabah?.filter((n) => {
@@ -1045,31 +1047,41 @@ function getKategoriNasabah(nasabah) {
         }
 
         // Target Kini: besarPinjaman × 3% untuk nasabah yang eligible pada tanggal ini
-        // Aturan sama dengan Android/Cloud Functions:
-        // - Sudah cair (tanggalPencairan ada dan sebelum tanggal ini)
-        // - Bukan cair hari itu (tanggalPencairan != tanggal ini)
+        // Aturan sama dengan Android (RingkasanDashboardScreen.kt):
+        // - Status harus Aktif/Active (case insensitive), bukan Disetujui/Tidak Aktif
+        // - Tanggal acuan: tanggalPencairan → tanggalPengajuan → tanggalDaftar (fallback)
+        // - Sudah cair/terdaftar sebelum tanggal ini (bukan hari itu)
         // - Belum > 3 bulan dari tanggal ini
         // - Belum lunas sampai tanggal ini
         // - Bukan MENUNGGU_PENCAIRAN
-        if (tglCair && currentDate && threeMonthsAgo) {
-          const cairDate = parseDateStr(tglCair);
-          if (cairDate && cairDate < currentDate && cairDate >= threeMonthsAgo) {
-            // Cek belum lunas sampai tanggal ini
-            const totalPelunasan = n.totalPelunasan || 0;
-            if (totalPelunasan > 0) {
-              let totalBayarSampaiTanggal = 0;
-              if (n.pembayaran) {
-                for (const [payDate, payData] of Object.entries(n.pembayaran)) {
-                  const pd = parseDateStr(payDate);
-                  if (pd && pd <= currentDate) {
-                    totalBayarSampaiTanggal += payData.total || 0;
+        if (currentDate && threeMonthsAgo) {
+          // Status check: harus Aktif (Android mengecek status Aktif/Active, exclude Disetujui/Tidak Aktif)
+          const nStatus = (n.status || '').toLowerCase();
+          if (nStatus !== 'aktif' && nStatus !== 'active') {
+            // skip - not active status
+          } else {
+            // Fallback tanggal acuan sama seperti Android
+            const tglAcuan = tglCair || n.tanggalPengajuan || n.tanggalDaftar || '';
+            if (tglAcuan) {
+              const acuanDate = parseDateStr(tglAcuan);
+              if (acuanDate && acuanDate < currentDate && acuanDate >= threeMonthsAgo) {
+                // Cek belum lunas sampai tanggal ini
+                const totalPelunasan = n.totalPelunasan || 0;
+                if (totalPelunasan > 0) {
+                  let totalBayarSampaiTanggal = 0;
+                  if (n.pembayaran) {
+                    for (const [payDate, payData] of Object.entries(n.pembayaran)) {
+                      const pd = parseDateStr(payDate);
+                      if (pd && pd <= currentDate) {
+                        totalBayarSampaiTanggal += payData.total || 0;
+                      }
+                    }
                   }
-                }
-              }
-              if (totalBayarSampaiTanggal < totalPelunasan) {
-                // Exclude MENUNGGU_PENCAIRAN
-                if (n.statusKhusus !== 'MENUNGGU_PENCAIRAN') {
-                  targetKini += Math.floor((n.besarPinjaman || 0) * 3 / 100);
+                  if (totalBayarSampaiTanggal < totalPelunasan) {
+                    if (n.statusKhusus !== 'MENUNGGU_PENCAIRAN') {
+                      targetKini += Math.floor((n.besarPinjaman || 0) * 3 / 100);
+                    }
+                  }
                 }
               }
             }
