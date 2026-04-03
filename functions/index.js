@@ -148,6 +148,9 @@ exports.exportExcelHarian = functions.pubsub
 // =========================================================================
 exports.resetUserPassword = resetUserPassword.resetUserPassword;
 exports.getAllUsers = resetUserPassword.getAllUsers;
+exports.createNewUser = resetUserPassword.createNewUser;
+exports.deleteExistingUser = resetUserPassword.deleteExistingUser;
+exports.getAllCabang = resetUserPassword.getAllCabang;
 
 // =========================================================================
 // ✅ BARU: BROADCAST & REQUEST NOTIFICATIONS

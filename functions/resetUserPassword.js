@@ -321,3 +321,374 @@ async function getCabangName(cabangId) {
     const snap = await db.ref(`metadata/cabang/${cabangId}/name`).once('value');
     return snap.exists() ? snap.val() : cabangId;
 }
+
+// =========================================================================
+// CLOUD FUNCTION: CREATE NEW USER
+// =========================================================================
+// Hanya Pengawas yang bisa mengakses fungsi ini
+// Membuat akun baru di Firebase Auth + metadata di RTDB
+// =========================================================================
+
+/**
+ * createNewUser - Callable Function untuk membuat user baru
+ *
+ * @param {Object} data - { email, password, name, role, cabangId }
+ *   role: 'admin' | 'pimpinan' | 'koordinator'
+ *   cabangId: required for admin & pimpinan, optional for koordinator
+ */
+exports.createNewUser = functions.https.onCall(async (data, context) => {
+    // 1. Validasi autentikasi
+    if (!context.auth) {
+        throw new functions.https.HttpsError(
+            'unauthenticated',
+            'Anda harus login untuk mengakses fungsi ini.'
+        );
+    }
+
+    const callerUid = context.auth.uid;
+    console.log(`📋 Create user request from UID: ${callerUid}`);
+
+    // 2. Validasi apakah caller adalah Pengawas
+    const pengawasSnap = await db.ref(`metadata/roles/pengawas/${callerUid}`).once('value');
+    if (!pengawasSnap.exists() || pengawasSnap.val() !== true) {
+        throw new functions.https.HttpsError(
+            'permission-denied',
+            'Hanya Pengawas yang dapat membuat akun baru.'
+        );
+    }
+
+    // 3. Validasi input
+    const { email, password, name, role, cabangId } = data;
+
+    if (!email || typeof email !== 'string' || !email.includes('@')) {
+        throw new functions.https.HttpsError('invalid-argument', 'Email tidak valid.');
+    }
+
+    if (!password || typeof password !== 'string' || password.length < 6) {
+        throw new functions.https.HttpsError('invalid-argument', 'Password harus minimal 6 karakter.');
+    }
+
+    if (!name || typeof name !== 'string' || name.trim().length === 0) {
+        throw new functions.https.HttpsError('invalid-argument', 'Nama harus diisi.');
+    }
+
+    const validRoles = ['admin', 'pimpinan', 'koordinator'];
+    if (!role || !validRoles.includes(role)) {
+        throw new functions.https.HttpsError('invalid-argument', 'Role tidak valid. Pilih: admin, pimpinan, atau koordinator.');
+    }
+
+    if ((role === 'admin' || role === 'pimpinan') && (!cabangId || typeof cabangId !== 'string')) {
+        throw new functions.https.HttpsError('invalid-argument', 'Cabang harus dipilih untuk role ini.');
+    }
+
+    try {
+        const normalizedEmail = email.trim().toLowerCase();
+
+        // 4. Untuk pimpinan, cek apakah cabang sudah punya pimpinan
+        if (role === 'pimpinan') {
+            const cabangSnap = await db.ref(`metadata/cabang/${cabangId}`).once('value');
+            if (cabangSnap.exists()) {
+                const existingPimpinanUid = cabangSnap.child('pimpinanUid').val();
+                if (existingPimpinanUid) {
+                    // Cek apakah pimpinan lama masih ada di Auth
+                    try {
+                        await admin.auth().getUser(existingPimpinanUid);
+                        const cabangName = cabangSnap.child('name').val() || cabangId;
+                        throw new functions.https.HttpsError(
+                            'already-exists',
+                            `Cabang ${cabangName} sudah memiliki Pimpinan. Hapus Pimpinan lama terlebih dahulu.`
+                        );
+                    } catch (authErr) {
+                        if (authErr.code !== 'auth/user-not-found') {
+                            throw authErr;
+                        }
+                        // Pimpinan lama tidak ada di Auth, lanjut buat baru
+                        console.log(`⚠️ Old pimpinan ${existingPimpinanUid} not found in Auth, replacing`);
+                    }
+                }
+            }
+        }
+
+        // 5. Buat user di Firebase Auth
+        const userRecord = await admin.auth().createUser({
+            email: normalizedEmail,
+            password: password,
+            displayName: name.trim()
+        });
+
+        const newUid = userRecord.uid;
+        console.log(`✅ User created in Auth: ${newUid} (${normalizedEmail})`);
+
+        // 6. Set metadata di RTDB berdasarkan role
+        const updates = {};
+
+        if (role === 'admin') {
+            updates[`metadata/admins/${newUid}`] = {
+                name: name.trim(),
+                email: normalizedEmail,
+                cabang: cabangId,
+                role: 'admin'
+            };
+        } else if (role === 'pimpinan') {
+            // Set di metadata/admins juga agar muncul di getAllUsers
+            updates[`metadata/admins/${newUid}`] = {
+                name: name.trim(),
+                email: normalizedEmail,
+                cabang: cabangId,
+                role: 'pimpinan'
+            };
+            // Set pimpinan di cabang
+            updates[`metadata/cabang/${cabangId}/pimpinanUid`] = newUid;
+            updates[`metadata/cabang/${cabangId}/pimpinanName`] = name.trim();
+        } else if (role === 'koordinator') {
+            updates[`metadata/roles/koordinator/${newUid}`] = true;
+            updates[`metadata/admins/${newUid}`] = {
+                name: name.trim(),
+                email: normalizedEmail,
+                cabang: cabangId || '',
+                role: 'koordinator'
+            };
+        }
+
+        await db.ref().update(updates);
+        console.log(`✅ Metadata saved for ${role}: ${newUid}`);
+
+        // 7. Log aktivitas
+        const logRef = db.ref('user_management_logs').push();
+        await logRef.set({
+            action: 'create_user',
+            targetUid: newUid,
+            targetEmail: normalizedEmail,
+            targetName: name.trim(),
+            targetRole: role,
+            cabangId: cabangId || '',
+            createdByUid: callerUid,
+            createdByEmail: context.auth.token.email || 'unknown',
+            timestamp: admin.database.ServerValue.TIMESTAMP
+        });
+
+        const cabangName = cabangId ? await getCabangName(cabangId) : '';
+        const roleDisplay = role === 'admin' ? 'Admin Lapangan' : (role === 'pimpinan' ? 'Pimpinan' : 'Koordinator');
+
+        return {
+            success: true,
+            message: `${roleDisplay} "${name.trim()}" berhasil dibuat.`,
+            user: {
+                uid: newUid,
+                email: normalizedEmail,
+                name: name.trim(),
+                role: role,
+                cabang: cabangId || '',
+                cabangName: cabangName,
+                type: role
+            }
+        };
+
+    } catch (error) {
+        console.error('❌ Error creating user:', error);
+
+        if (error.code === 'auth/email-already-exists') {
+            throw new functions.https.HttpsError('already-exists', 'Email sudah terdaftar di sistem.');
+        }
+
+        if (error instanceof functions.https.HttpsError) {
+            throw error;
+        }
+
+        throw new functions.https.HttpsError('internal', 'Gagal membuat akun: ' + error.message);
+    }
+});
+
+// =========================================================================
+// CLOUD FUNCTION: DELETE USER
+// =========================================================================
+// Hanya Pengawas yang bisa mengakses fungsi ini
+// Menghapus akun dari Firebase Auth + metadata dari RTDB
+// =========================================================================
+
+/**
+ * deleteExistingUser - Callable Function untuk menghapus user
+ *
+ * @param {Object} data - { targetUid: string }
+ */
+exports.deleteExistingUser = functions.https.onCall(async (data, context) => {
+    // 1. Validasi autentikasi
+    if (!context.auth) {
+        throw new functions.https.HttpsError(
+            'unauthenticated',
+            'Anda harus login untuk mengakses fungsi ini.'
+        );
+    }
+
+    const callerUid = context.auth.uid;
+    console.log(`📋 Delete user request from UID: ${callerUid}`);
+
+    // 2. Validasi apakah caller adalah Pengawas
+    const pengawasSnap = await db.ref(`metadata/roles/pengawas/${callerUid}`).once('value');
+    if (!pengawasSnap.exists() || pengawasSnap.val() !== true) {
+        throw new functions.https.HttpsError(
+            'permission-denied',
+            'Hanya Pengawas yang dapat menghapus akun.'
+        );
+    }
+
+    // 3. Validasi input
+    const { targetUid } = data;
+
+    if (!targetUid || typeof targetUid !== 'string') {
+        throw new functions.https.HttpsError('invalid-argument', 'UID target harus diisi.');
+    }
+
+    // 4. Tidak boleh hapus diri sendiri
+    if (targetUid === callerUid) {
+        throw new functions.https.HttpsError('permission-denied', 'Tidak dapat menghapus akun sendiri.');
+    }
+
+    // 5. Tidak boleh hapus Pengawas
+    const targetPengawasSnap = await db.ref(`metadata/roles/pengawas/${targetUid}`).once('value');
+    if (targetPengawasSnap.exists() && targetPengawasSnap.val() === true) {
+        throw new functions.https.HttpsError('permission-denied', 'Tidak dapat menghapus akun Pengawas.');
+    }
+
+    try {
+        // 6. Ambil info user sebelum dihapus (untuk logging)
+        let targetEmail = '';
+        let targetName = '';
+        let targetRole = '';
+        let targetCabang = '';
+
+        try {
+            const userRecord = await admin.auth().getUser(targetUid);
+            targetEmail = userRecord.email || '';
+        } catch (e) {
+            console.log(`User ${targetUid} not found in Auth`);
+        }
+
+        const adminSnap = await db.ref(`metadata/admins/${targetUid}`).once('value');
+        if (adminSnap.exists()) {
+            targetName = adminSnap.child('name').val() || '';
+            targetRole = adminSnap.child('role').val() || 'admin';
+            targetCabang = adminSnap.child('cabang').val() || '';
+        }
+
+        const isPimpinan = await checkIfPimpinan(targetUid);
+        const isKoordinator = await checkIfKoordinator(targetUid);
+
+        if (isPimpinan) targetRole = 'pimpinan';
+        if (isKoordinator) targetRole = 'koordinator';
+
+        if (!adminSnap.exists() && !isPimpinan && !isKoordinator) {
+            throw new functions.https.HttpsError('not-found', 'User tidak ditemukan dalam sistem koperasi.');
+        }
+
+        // 7. Hapus metadata dari RTDB
+        const deletions = {};
+        deletions[`metadata/admins/${targetUid}`] = null;
+        deletions[`metadata/roles/koordinator/${targetUid}`] = null;
+        deletions[`force_logout/${targetUid}`] = null;
+        deletions[`device_presence/${targetUid}`] = null;
+
+        // Hapus pimpinanUid dari cabang jika dia pimpinan
+        if (isPimpinan) {
+            const cabangSnap = await db.ref('metadata/cabang').once('value');
+            if (cabangSnap.exists()) {
+                for (const [cabangId, cabangData] of Object.entries(cabangSnap.val())) {
+                    if (cabangData.pimpinanUid === targetUid || cabangData.pimpinan === targetUid) {
+                        deletions[`metadata/cabang/${cabangId}/pimpinanUid`] = null;
+                        deletions[`metadata/cabang/${cabangId}/pimpinanName`] = null;
+                        break;
+                    }
+                }
+            }
+        }
+
+        await db.ref().update(deletions);
+        console.log(`✅ Metadata deleted for ${targetUid}`);
+
+        // 8. Hapus user dari Firebase Auth
+        try {
+            await admin.auth().deleteUser(targetUid);
+            console.log(`✅ User deleted from Auth: ${targetUid}`);
+        } catch (authError) {
+            if (authError.code !== 'auth/user-not-found') {
+                throw authError;
+            }
+            console.log(`⚠️ User ${targetUid} already deleted from Auth`);
+        }
+
+        // 9. Log aktivitas
+        const logRef = db.ref('user_management_logs').push();
+        await logRef.set({
+            action: 'delete_user',
+            targetUid: targetUid,
+            targetEmail: targetEmail,
+            targetName: targetName,
+            targetRole: targetRole,
+            targetCabang: targetCabang,
+            deletedByUid: callerUid,
+            deletedByEmail: context.auth.token.email || 'unknown',
+            timestamp: admin.database.ServerValue.TIMESTAMP
+        });
+
+        const roleDisplay = targetRole === 'admin' ? 'Admin Lapangan' :
+                            (targetRole === 'pimpinan' ? 'Pimpinan' : 'Koordinator');
+
+        return {
+            success: true,
+            message: `${roleDisplay} "${targetName || targetEmail}" berhasil dihapus.`
+        };
+
+    } catch (error) {
+        console.error('❌ Error deleting user:', error);
+
+        if (error instanceof functions.https.HttpsError) {
+            throw error;
+        }
+
+        throw new functions.https.HttpsError('internal', 'Gagal menghapus akun: ' + error.message);
+    }
+});
+
+// =========================================================================
+// CLOUD FUNCTION: GET ALL CABANG
+// =========================================================================
+
+/**
+ * getAllCabang - Callable Function untuk mendapatkan daftar cabang
+ * Hanya Pengawas yang bisa mengakses
+ */
+exports.getAllCabang = functions.https.onCall(async (data, context) => {
+    if (!context.auth) {
+        throw new functions.https.HttpsError('unauthenticated', 'Anda harus login.');
+    }
+
+    const callerUid = context.auth.uid;
+    const pengawasSnap = await db.ref(`metadata/roles/pengawas/${callerUid}`).once('value');
+    if (!pengawasSnap.exists() || pengawasSnap.val() !== true) {
+        throw new functions.https.HttpsError('permission-denied', 'Hanya Pengawas yang dapat mengakses.');
+    }
+
+    try {
+        const cabangSnap = await db.ref('metadata/cabang').once('value');
+        const cabangList = [];
+
+        if (cabangSnap.exists()) {
+            for (const [cabangId, cabangData] of Object.entries(cabangSnap.val())) {
+                cabangList.push({
+                    id: cabangId,
+                    name: cabangData.name || cabangId,
+                    pimpinanUid: cabangData.pimpinanUid || '',
+                    pimpinanName: cabangData.pimpinanName || ''
+                });
+            }
+        }
+
+        return {
+            success: true,
+            cabangList: cabangList.sort((a, b) => a.name.localeCompare(b.name))
+        };
+    } catch (error) {
+        console.error('❌ Error getting cabang:', error);
+        throw new functions.https.HttpsError('internal', 'Gagal mengambil daftar cabang.');
+    }
+});

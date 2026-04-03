@@ -425,6 +425,13 @@ data class UserInfo(
     val type: String = ""       // "admin" atau "pimpinan"
 )
 
+data class CabangInfo(
+    val id: String = "",
+    val name: String = "",
+    val pimpinanUid: String = "",
+    val pimpinanName: String = ""
+)
+
 sealed class TakeoverStatus {
     object Idle : TakeoverStatus()
     object CheckingOnline : TakeoverStatus()
@@ -14603,6 +14610,144 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                 }
 
                 onFailure(errorMessage)
+            }
+        }
+    }
+
+    /**
+     * Membuat user baru (Admin Lapangan, Pimpinan, atau Koordinator)
+     * Hanya bisa dipanggil oleh Pengawas
+     */
+    fun createNewUser(
+        email: String,
+        password: String,
+        name: String,
+        role: String,
+        cabangId: String,
+        onSuccess: (String) -> Unit,
+        onFailure: (String) -> Unit
+    ) {
+        viewModelScope.launch {
+            try {
+                Log.d("UserManagement", "➕ Creating new user: $email ($role)")
+
+                val data = hashMapOf(
+                    "email" to email.trim().lowercase(),
+                    "password" to password,
+                    "name" to name.trim(),
+                    "role" to role,
+                    "cabangId" to cabangId
+                )
+
+                val result = functions.getHttpsCallable("createNewUser")
+                    .call(data)
+                    .await()
+
+                @Suppress("UNCHECKED_CAST")
+                val response = result.data as? Map<String, Any>
+
+                if (response?.get("success") == true) {
+                    val message = response["message"] as? String ?: "User berhasil dibuat"
+                    Log.d("UserManagement", "✅ User created: $message")
+                    loadAllUsers()
+                    onSuccess(message)
+                } else {
+                    onFailure("Gagal membuat user")
+                }
+
+            } catch (e: Exception) {
+                Log.e("UserManagement", "❌ Error creating user: ${e.message}")
+
+                val errorMessage = when {
+                    e.message?.contains("already-exists") == true -> "Email sudah terdaftar di sistem"
+                    e.message?.contains("permission-denied") == true -> "Tidak memiliki izin"
+                    e.message?.contains("invalid-argument") == true -> e.message?.substringAfter("invalid-argument") ?: "Data tidak valid"
+                    else -> e.message ?: "Terjadi kesalahan"
+                }
+
+                onFailure(errorMessage)
+            }
+        }
+    }
+
+    /**
+     * Menghapus user dari sistem
+     * Hanya bisa dipanggil oleh Pengawas
+     */
+    fun deleteExistingUser(
+        targetUid: String,
+        onSuccess: (String) -> Unit,
+        onFailure: (String) -> Unit
+    ) {
+        viewModelScope.launch {
+            try {
+                Log.d("UserManagement", "🗑️ Deleting user: $targetUid")
+
+                val data = hashMapOf("targetUid" to targetUid)
+
+                val result = functions.getHttpsCallable("deleteExistingUser")
+                    .call(data)
+                    .await()
+
+                @Suppress("UNCHECKED_CAST")
+                val response = result.data as? Map<String, Any>
+
+                if (response?.get("success") == true) {
+                    val message = response["message"] as? String ?: "User berhasil dihapus"
+                    Log.d("UserManagement", "✅ User deleted: $message")
+                    loadAllUsers()
+                    onSuccess(message)
+                } else {
+                    onFailure("Gagal menghapus user")
+                }
+
+            } catch (e: Exception) {
+                Log.e("UserManagement", "❌ Error deleting user: ${e.message}")
+
+                val errorMessage = when {
+                    e.message?.contains("permission-denied") == true -> "Tidak memiliki izin"
+                    e.message?.contains("not-found") == true -> "User tidak ditemukan"
+                    else -> e.message ?: "Terjadi kesalahan"
+                }
+
+                onFailure(errorMessage)
+            }
+        }
+    }
+
+    // State untuk daftar cabang
+    private val _allCabang = MutableStateFlow<List<CabangInfo>>(emptyList())
+    val allCabang: StateFlow<List<CabangInfo>> = _allCabang
+
+    /**
+     * Memuat daftar semua cabang
+     */
+    fun loadAllCabang() {
+        viewModelScope.launch {
+            try {
+                val result = functions.getHttpsCallable("getAllCabang")
+                    .call()
+                    .await()
+
+                @Suppress("UNCHECKED_CAST")
+                val data = result.data as? Map<String, Any>
+
+                if (data?.get("success") == true) {
+                    @Suppress("UNCHECKED_CAST")
+                    val cabangData = data["cabangList"] as? List<Map<String, Any>> ?: emptyList()
+
+                    _allCabang.value = cabangData.map { c ->
+                        CabangInfo(
+                            id = c["id"] as? String ?: "",
+                            name = c["name"] as? String ?: "",
+                            pimpinanUid = c["pimpinanUid"] as? String ?: "",
+                            pimpinanName = c["pimpinanName"] as? String ?: ""
+                        )
+                    }
+                    Log.d("UserManagement", "✅ Loaded ${_allCabang.value.size} cabang")
+                }
+            } catch (e: Exception) {
+                Log.e("UserManagement", "❌ Error loading cabang: ${e.message}")
             }
         }
     }
