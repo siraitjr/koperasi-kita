@@ -710,7 +710,7 @@ private fun ModernLunasItemCard(
 ) {
     val displayName = viewModel.getDisplayName(pelanggan)
     val displayNik = viewModel.getDisplayNik(pelanggan)
-    val totalSimpanan = pelanggan.simpanan
+    val totalSimpanan = viewModel.getTotalSimpananByNama(pelanggan.namaKtp)
     val tanggalLunas = viewModel.getTanggalPelunasan(pelanggan)
 
     var expandedMenu by remember { mutableStateOf(false) }
