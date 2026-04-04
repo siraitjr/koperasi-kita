@@ -1875,22 +1875,34 @@ function KasPenuntunScreen({ user, cabang, cabangList, onBack, onLogout, onNavig
       return new Date(parseInt(parts[2]), m, parseInt(parts[0]));
     };
 
-    // Helper: hitung tunaiPasar & kasPakai per tanggal dari data nasabah
+    // Helper: hitung tunaiPasar & kasPakai per tanggal, dihitung PER RESORT lalu dijumlah
+    // (sama seperti Buku Rekap agar nilainya cocok)
+    const admins = activeCabang?.admins || [];
+    const nasabahByAdmin = {};
+    admins.forEach(adm => {
+      nasabahByAdmin[adm.uid] = allNasabah.filter(n => n.adminUid === adm.uid);
+    });
+
     const computeTunaiKasPerDate = (dateStr) => {
-      let totalStorting = 0, totalDrop = 0;
-      allNasabah.forEach(n => {
-        const pay = n.pembayaran?.[dateStr];
-        if (pay) totalStorting += pay.total || 0;
-        if ((n.tanggalPencairan || '').trim() === dateStr) totalDrop += n.besarPinjaman || 0;
-      });
-      const adminFee = Math.round(totalDrop * 0.05);
-      const tabungan = Math.round(totalDrop * 0.05);
-      const debitAsli = totalStorting + adminFee + tabungan;
-      const kreditVal = totalDrop;
-      return {
-        tunaiPasar: debitAsli >= kreditVal ? debitAsli - kreditVal : 0,
-        kasPakai: kreditVal > debitAsli ? kreditVal - debitAsli : 0,
-      };
+      let totalTunaiPasar = 0, totalKasPakai = 0;
+
+      for (const adm of admins) {
+        const resortNasabah = nasabahByAdmin[adm.uid] || [];
+        let totalStorting = 0, totalDrop = 0;
+        resortNasabah.forEach(n => {
+          const pay = n.pembayaran?.[dateStr];
+          if (pay) totalStorting += pay.total || 0;
+          if ((n.tanggalPencairan || '').trim() === dateStr) totalDrop += n.besarPinjaman || 0;
+        });
+        const adminFee = Math.round(totalDrop * 0.05);
+        const tabungan = Math.round(totalDrop * 0.05);
+        const debitAsli = totalStorting + adminFee + tabungan;
+        const kreditVal = totalDrop;
+        totalTunaiPasar += debitAsli >= kreditVal ? debitAsli - kreditVal : 0;
+        totalKasPakai += kreditVal > debitAsli ? kreditVal - debitAsli : 0;
+      }
+
+      return { tunaiPasar: totalTunaiPasar, kasPakai: totalKasPakai };
     };
 
     // ===== Compute Saldo Kas Bulan Lalu (dari data bulan sebelumnya) =====
