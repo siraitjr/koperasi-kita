@@ -90,6 +90,49 @@ function formatBulanLabel(bulanKey) {
   return `${BULAN_INDO[parseInt(m) - 1]} ${y}`;
 }
 
+// =========================================================================
+// HOLIDAY UTILS — sama persis dengan HolidaysUtils.kt di Android
+// Cek berdasarkan hari + bulan saja (tidak cek tahun), sesuai Kotlin
+// =========================================================================
+const LIBUR_NASIONAL = [
+  [1, 1],   // Jan 1  — Tahun Baru
+  [16, 1],  // Jan 16 — Hari pertama Ramadan (2026)
+  [17, 2],  // Feb 17 — Isra Mikraj
+  [19, 3],  // Mar 19 — Hari Raya Nyepi
+  [21, 3],  // Mar 21 — Hari Raya Idul Fitri
+  [3, 4],   // Apr 3  — Hari Raya Idul Fitri (cuti bersama)
+  [1, 5],   // Mei 1  — Hari Buruh
+  [14, 5],  // Mei 14 — Kenaikan Isa Almasih
+  [16, 6],  // Jun 16 — Hari Raya Idul Adha
+  [17, 8],  // Agu 17 — HUT RI
+  [25, 8],  // Agu 25 — Maulid Nabi
+  [25, 12], // Des 25 — Hari Natal
+];
+
+function isTanggalMerah(date) {
+  const d = date.getDate();
+  const m = date.getMonth() + 1; // 1-based, sama seperti Kotlin
+  return LIBUR_NASIONAL.some(([ld, lm]) => ld === d && lm === m);
+}
+
+function isMinggu(date) {
+  return date.getDay() === 0; // 0 = Sunday
+}
+
+function isHariKerja(date) {
+  return !isMinggu(date) && !isTanggalMerah(date);
+}
+
+// Parse string "07 Feb 2026" ke Date object (WIB — tidak ada timezone shift)
+function parseTanggalIndo(s) {
+  if (!s) return null;
+  const parts = s.split(' ');
+  if (parts.length !== 3) return null;
+  const bulanIdx = BULAN_INDO.indexOf(parts[1]);
+  if (bulanIdx === -1) return null;
+  return new Date(parseInt(parts[2]), bulanIdx, parseInt(parts[0]));
+}
+
 function generateBulanOptions() {
   const options = [];
   const now = new Date();
@@ -1346,8 +1389,14 @@ function BukuRekapScreen({ user, cabang, cabangList, onBack, onLogout, onNavigat
     });
   }, [activeCabang?.id]);
 
-  // 7 tanggal terakhir dari buku pokok
-  const dates = (data?.tanggalList || []).slice(0, 7);
+  // 7 tanggal terakhir dari buku pokok, skip hari Minggu dan tanggal merah
+  // (logika sama dengan HolidaysUtils.kt di Android)
+  const dates = (data?.tanggalList || [])
+    .filter(d => {
+      const dateObj = parseTanggalIndo(d);
+      return dateObj && isHariKerja(dateObj);
+    })
+    .slice(0, 7);
   const currentDate = selectedDate || dates[0] || null;
 
   // ==================== COMPUTE REKAP PER RESORT ====================
