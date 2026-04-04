@@ -1351,12 +1351,12 @@ function BukuRekapScreen({ user, cabang, cabangList, onBack, onLogout, onNavigat
   const currentDate = selectedDate || dates[0] || null;
 
   // ==================== COMPUTE REKAP PER RESORT ====================
-  const rekapRows = (() => {
+  const computeRekapRows = (dateStr) => {
     if (!data?.nasabah) return [];
 
     const allNasabah = data.nasabah;
     const admins = activeCabang?.admins || [];
-    const todayStr = currentDate || data.today || getTodayIndo();
+    const todayStr = dateStr || data.today || getTodayIndo();
 
     // Helper: parse "07 Feb 2026" ke Date object
     const BULAN_MAP_REV = {};
@@ -1476,7 +1476,9 @@ function BukuRekapScreen({ user, cabang, cabangList, onBack, onLogout, onNavigat
     }
 
     return rows;
-  })();
+  };
+
+  const rekapRows = computeRekapRows(currentDate);
 
   // Totals
   const totals = rekapRows.reduce((acc, r) => ({
@@ -1500,6 +1502,60 @@ function BukuRekapScreen({ user, cabang, cabangList, onBack, onLogout, onNavigat
     totalDrop: 0, pencairanTabungan: 0, kredit: 0, tunaiPasar: 0,
   });
   const totalPersen = totals.target > 0 ? Math.round(totals.storting / totals.target * 100) : 0;
+
+  // ==================== TOTAL KEMARIN & GABUNGAN ====================
+  // previousDate = tanggal sebelumnya di daftar, hanya jika bulan sama (awal bulan = tidak ada kemarin)
+  const currentDateIdx = dates.indexOf(currentDate);
+  const previousDate = (currentDateIdx >= 0 && currentDateIdx < dates.length - 1)
+    ? dates[currentDateIdx + 1]
+    : null;
+  const showKemarin = (() => {
+    if (!previousDate || !currentDate) return false;
+    const p1 = currentDate.split(' ');   // ["04", "Apr", "2026"]
+    const p2 = previousDate.split(' ');  // ["03", "Apr", "2026"]
+    return p1.length === 3 && p2.length === 3 && p1[1] === p2[1] && p1[2] === p2[2];
+  })();
+
+  const rekapRowsKemarin = showKemarin ? computeRekapRows(previousDate) : [];
+  const totalsKemarin = rekapRowsKemarin.reduce((acc, r) => ({
+    dropBaru: acc.dropBaru + r.dropBaru,
+    dropLama: acc.dropLama + r.dropLama,
+    target: acc.target + r.target,
+    kasPakai: acc.kasPakai + r.kasPakai,
+    storting: acc.storting + r.storting,
+    adminFee: acc.adminFee + r.adminFee,
+    tabungan: acc.tabungan + r.tabungan,
+    debit: acc.debit + r.debit,
+    nominalDropBaru: acc.nominalDropBaru + r.nominalDropBaru,
+    nominalDropLama: acc.nominalDropLama + r.nominalDropLama,
+    totalDrop: acc.totalDrop + r.totalDrop,
+    pencairanTabungan: acc.pencairanTabungan + r.pencairanTabungan,
+    kredit: acc.kredit + r.kredit,
+    tunaiPasar: acc.tunaiPasar + r.tunaiPasar,
+  }), {
+    dropBaru: 0, dropLama: 0, target: 0, kasPakai: 0, storting: 0,
+    adminFee: 0, tabungan: 0, debit: 0, nominalDropBaru: 0, nominalDropLama: 0,
+    totalDrop: 0, pencairanTabungan: 0, kredit: 0, tunaiPasar: 0,
+  });
+  const totalPersenKemarin = totalsKemarin.target > 0 ? Math.round(totalsKemarin.storting / totalsKemarin.target * 100) : 0;
+
+  const totalsGabungan = {
+    dropBaru: totals.dropBaru + totalsKemarin.dropBaru,
+    dropLama: totals.dropLama + totalsKemarin.dropLama,
+    target: totals.target + totalsKemarin.target,
+    kasPakai: totals.kasPakai + totalsKemarin.kasPakai,
+    storting: totals.storting + totalsKemarin.storting,
+    adminFee: totals.adminFee + totalsKemarin.adminFee,
+    tabungan: totals.tabungan + totalsKemarin.tabungan,
+    debit: totals.debit + totalsKemarin.debit,
+    nominalDropBaru: totals.nominalDropBaru + totalsKemarin.nominalDropBaru,
+    nominalDropLama: totals.nominalDropLama + totalsKemarin.nominalDropLama,
+    totalDrop: totals.totalDrop + totalsKemarin.totalDrop,
+    pencairanTabungan: totals.pencairanTabungan + totalsKemarin.pencairanTabungan,
+    kredit: totals.kredit + totalsKemarin.kredit,
+    tunaiPasar: totals.tunaiPasar + totalsKemarin.tunaiPasar,
+  };
+  const totalPersenGabungan = totalsGabungan.target > 0 ? Math.round(totalsGabungan.storting / totalsGabungan.target * 100) : 0;
 
   const thStyle = { padding: '8px 6px', textAlign: 'center', fontWeight: 700, fontSize: 10, whiteSpace: 'nowrap', position: 'sticky', top: 0, background: '#f8f9fa', zIndex: 2, borderBottom: '2px solid var(--border)' };
   const tdStyle = { padding: '6px', textAlign: 'right', fontFamily: "'DM Mono', monospace", fontSize: 11 };
@@ -1634,9 +1690,9 @@ function BukuRekapScreen({ user, cabang, cabangList, onBack, onLogout, onNavigat
                       <td style={{ ...tdStyle, fontWeight: 700, color: row.tunaiPasar >= 0 ? 'var(--success)' : 'var(--danger)' }}>{row.tunaiPasar !== 0 ? formatRp(row.tunaiPasar) : '-'}</td>
                     </tr>
                   ))}
-                  {/* TOTAL ROW */}
-                  <tr style={{ borderTop: '2px solid var(--border)', background: '#f8f9fa', fontWeight: 800 }}>
-                    <td style={{ ...tdNameStyle, fontWeight: 800 }}>TOTAL</td>
+                  {/* TOTAL HARI INI ROW */}
+                  <tr style={{ borderTop: '2px solid var(--border)', background: '#eff6ff', fontWeight: 800 }}>
+                    <td style={{ ...tdNameStyle, fontWeight: 800, color: '#1a56db' }}>Total Hari Ini</td>
                     <td style={{ ...tdStyle, textAlign: 'center', fontWeight: 800 }}>{totals.dropBaru}</td>
                     <td style={{ ...tdStyle, textAlign: 'center', fontWeight: 800 }}>{totals.dropLama}</td>
                     <td style={{ ...tdStyle, fontWeight: 800 }}>{formatRp(totals.target)}</td>
@@ -1653,6 +1709,48 @@ function BukuRekapScreen({ user, cabang, cabangList, onBack, onLogout, onNavigat
                     <td style={{ ...tdStyle, fontWeight: 800, color: '#d97706' }}>{formatRp(totals.kredit)}</td>
                     <td style={{ ...tdStyle, fontWeight: 800, color: totals.tunaiPasar >= 0 ? 'var(--success)' : 'var(--danger)' }}>{formatRp(totals.tunaiPasar)}</td>
                   </tr>
+                  {/* TOTAL KEMARIN ROW — hanya jika tanggal sebelumnya masih dalam bulan yang sama */}
+                  {showKemarin && (
+                    <tr style={{ borderTop: '1px solid var(--border-light)', background: '#f8f9fa', fontWeight: 800 }}>
+                      <td style={{ ...tdNameStyle, fontWeight: 800, color: '#1e293b' }}>Total Kemarin</td>
+                      <td style={{ ...tdStyle, textAlign: 'center', fontWeight: 800 }}>{totalsKemarin.dropBaru}</td>
+                      <td style={{ ...tdStyle, textAlign: 'center', fontWeight: 800 }}>{totalsKemarin.dropLama}</td>
+                      <td style={{ ...tdStyle, fontWeight: 800 }}>{formatRp(totalsKemarin.target)}</td>
+                      <td style={{ ...tdStyle, fontWeight: 800 }}>{totalsKemarin.kasPakai > 0 ? formatRp(totalsKemarin.kasPakai) : '-'}</td>
+                      <td style={{ ...tdStyle, fontWeight: 800, color: 'var(--success)' }}>{formatRp(totalsKemarin.storting)}</td>
+                      <td style={{ ...tdStyle, textAlign: 'center', fontWeight: 800 }}>{totalPersenKemarin}%</td>
+                      <td style={{ ...tdStyle, fontWeight: 800 }}>{formatRp(totalsKemarin.adminFee)}</td>
+                      <td style={{ ...tdStyle, fontWeight: 800 }}>{formatRp(totalsKemarin.tabungan)}</td>
+                      <td style={{ ...tdStyle, fontWeight: 800, color: '#1a56db' }}>{formatRp(totalsKemarin.debit)}</td>
+                      <td style={{ ...tdStyle, fontWeight: 800, color: 'var(--danger)' }}>{formatRp(totalsKemarin.nominalDropBaru)}</td>
+                      <td style={{ ...tdStyle, fontWeight: 800, color: 'var(--danger)' }}>{formatRp(totalsKemarin.nominalDropLama)}</td>
+                      <td style={{ ...tdStyle, fontWeight: 800, color: 'var(--danger)' }}>{formatRp(totalsKemarin.totalDrop)}</td>
+                      <td style={{ ...tdStyle, fontWeight: 800 }}>{totalsKemarin.pencairanTabungan > 0 ? formatRp(totalsKemarin.pencairanTabungan) : '-'}</td>
+                      <td style={{ ...tdStyle, fontWeight: 800, color: '#d97706' }}>{formatRp(totalsKemarin.kredit)}</td>
+                      <td style={{ ...tdStyle, fontWeight: 800, color: totalsKemarin.tunaiPasar >= 0 ? 'var(--success)' : 'var(--danger)' }}>{formatRp(totalsKemarin.tunaiPasar)}</td>
+                    </tr>
+                  )}
+                  {/* TOTAL (HARI INI + KEMARIN) ROW */}
+                  {showKemarin && (
+                    <tr style={{ borderTop: '2px solid #fca5a5', background: '#fff1f1', fontWeight: 800 }}>
+                      <td style={{ ...tdNameStyle, fontWeight: 800, color: 'var(--danger)' }}>Total</td>
+                      <td style={{ ...tdStyle, textAlign: 'center', fontWeight: 800 }}>{totalsGabungan.dropBaru}</td>
+                      <td style={{ ...tdStyle, textAlign: 'center', fontWeight: 800 }}>{totalsGabungan.dropLama}</td>
+                      <td style={{ ...tdStyle, fontWeight: 800 }}>{formatRp(totalsGabungan.target)}</td>
+                      <td style={{ ...tdStyle, fontWeight: 800 }}>{totalsGabungan.kasPakai > 0 ? formatRp(totalsGabungan.kasPakai) : '-'}</td>
+                      <td style={{ ...tdStyle, fontWeight: 800, color: 'var(--success)' }}>{formatRp(totalsGabungan.storting)}</td>
+                      <td style={{ ...tdStyle, textAlign: 'center', fontWeight: 800 }}>{totalPersenGabungan}%</td>
+                      <td style={{ ...tdStyle, fontWeight: 800 }}>{formatRp(totalsGabungan.adminFee)}</td>
+                      <td style={{ ...tdStyle, fontWeight: 800 }}>{formatRp(totalsGabungan.tabungan)}</td>
+                      <td style={{ ...tdStyle, fontWeight: 800, color: '#1a56db' }}>{formatRp(totalsGabungan.debit)}</td>
+                      <td style={{ ...tdStyle, fontWeight: 800, color: 'var(--danger)' }}>{formatRp(totalsGabungan.nominalDropBaru)}</td>
+                      <td style={{ ...tdStyle, fontWeight: 800, color: 'var(--danger)' }}>{formatRp(totalsGabungan.nominalDropLama)}</td>
+                      <td style={{ ...tdStyle, fontWeight: 800, color: 'var(--danger)' }}>{formatRp(totalsGabungan.totalDrop)}</td>
+                      <td style={{ ...tdStyle, fontWeight: 800 }}>{totalsGabungan.pencairanTabungan > 0 ? formatRp(totalsGabungan.pencairanTabungan) : '-'}</td>
+                      <td style={{ ...tdStyle, fontWeight: 800, color: '#d97706' }}>{formatRp(totalsGabungan.kredit)}</td>
+                      <td style={{ ...tdStyle, fontWeight: 800, color: totalsGabungan.tunaiPasar >= 0 ? 'var(--success)' : 'var(--danger)' }}>{formatRp(totalsGabungan.tunaiPasar)}</td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
