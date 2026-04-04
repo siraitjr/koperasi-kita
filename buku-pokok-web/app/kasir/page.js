@@ -2028,9 +2028,9 @@ function KasPenuntunScreen({ user, cabang, cabangList, onBack, onLogout, onNavig
       }
     });
 
-    // ===== Build result dengan 3-baris untuk Debit, Kas Pakai, Kredit, Saldo Kas =====
+    // ===== Build result dengan 3-baris untuk Tunai Pasar, Debit, Kas Pakai, Kredit, Saldo Kas =====
     const result = [];
-    let tunaiPasarAccum = 0;
+    let prevTunaiPasarTotal = 0;
     let prevDebitTotal = 0;
     let prevKasPakaiTotal = 0;
 
@@ -2042,9 +2042,7 @@ function KasPenuntunScreen({ user, cabang, cabangList, onBack, onLogout, onNavig
       const bu = buPerDate[dateStr] || 0;
       const buFaktur = buFakturPerDate[dateStr] || [];
 
-      const tunaiPasarKemarin = tunaiPasarAccum;
-      const tunaiPasarTotal = tunaiPasarHariIni + tunaiPasarKemarin;
-
+      let tunaiPasarR1, tunaiPasarR2, tunaiPasarR3;
       let debitR1, debitR2, debitR3;
       let kasPakaiR1, kasPakaiR2, kasPakaiR3;
       let kreditR1, kreditR2, kreditR3;
@@ -2052,6 +2050,10 @@ function KasPenuntunScreen({ user, cabang, cabangList, onBack, onLogout, onNavig
 
       if (idx === 0) {
         // Tanggal pertama bulan ini
+        tunaiPasarR1 = tunaiPasarHariIni;
+        tunaiPasarR2 = null;
+        tunaiPasarR3 = null;
+
         debitR1 = tunaiPasarHariIni + saldoKasBulanLalu;
         debitR2 = null;
         debitR3 = null;
@@ -2068,10 +2070,15 @@ function KasPenuntunScreen({ user, cabang, cabangList, onBack, onLogout, onNavig
         saldoKasR2 = null;
         saldoKasR3 = null;
 
+        prevTunaiPasarTotal = tunaiPasarR1;
         prevDebitTotal = debitR1;
         prevKasPakaiTotal = kasPakaiR1;
       } else {
         // Tanggal berikutnya
+        tunaiPasarR1 = tunaiPasarHariIni;
+        tunaiPasarR2 = prevTunaiPasarTotal;
+        tunaiPasarR3 = tunaiPasarR1 + tunaiPasarR2;
+
         debitR1 = tunaiPasarHariIni;
         debitR2 = prevDebitTotal;
         debitR3 = debitR1 + debitR2;
@@ -2088,13 +2095,14 @@ function KasPenuntunScreen({ user, cabang, cabangList, onBack, onLogout, onNavig
         saldoKasR2 = debitR2 - kreditR2;
         saldoKasR3 = saldoKasR1 + saldoKasR2;
 
+        prevTunaiPasarTotal = tunaiPasarR3;
         prevDebitTotal = debitR3;
         prevKasPakaiTotal = kasPakaiR3;
       }
 
       result.push({
         tanggal: dateStr,
-        tunaiPasarHariIni, tunaiPasarKemarin, tunaiPasarTotal,
+        tunaiPasarR1, tunaiPasarR2, tunaiPasarR3,
         suntikanDana, pinjamanKas,
         saldoKasBulanLalu,
         debitR1, debitR2, debitR3,
@@ -2103,8 +2111,6 @@ function KasPenuntunScreen({ user, cabang, cabangList, onBack, onLogout, onNavig
         kreditR1, kreditR2, kreditR3,
         saldoKasR1, saldoKasR2, saldoKasR3,
       });
-
-      tunaiPasarAccum = tunaiPasarTotal;
     });
 
     return result;
@@ -2191,8 +2197,8 @@ function KasPenuntunScreen({ user, cabang, cabangList, onBack, onLogout, onNavig
                       <td rowSpan={3} style={{ padding: '6px 10px', fontWeight: 700, fontSize: 12, verticalAlign: 'middle', borderRight: '1px solid var(--border)', whiteSpace: 'nowrap', background: '#fafafa' }}>
                         {row.tanggal.slice(0, 6)}
                       </td>
-                      <td style={{ ...tdR, background: '#f0fdf4', color: row.tunaiPasarHariIni >= 0 ? '#166534' : 'var(--danger)', fontWeight: 600 }}>
-                        {row.tunaiPasarHariIni !== 0 ? formatRp(row.tunaiPasarHariIni) : '-'}
+                      <td style={{ ...tdR, background: '#f0fdf4', color: row.tunaiPasarR1 >= 0 ? '#166534' : 'var(--danger)', fontWeight: 600 }}>
+                        {row.tunaiPasarR1 !== 0 ? formatRp(row.tunaiPasarR1) : '-'}
                       </td>
                       <td rowSpan={3} style={{ ...tdR, background: '#eff6ff' }}>{row.suntikanDana > 0 ? formatRp(row.suntikanDana) : '-'}</td>
                       <td rowSpan={3} style={{ ...tdR, background: '#eff6ff' }}>{row.pinjamanKas > 0 ? formatRp(row.pinjamanKas) : '-'}</td>
@@ -2216,7 +2222,7 @@ function KasPenuntunScreen({ user, cabang, cabangList, onBack, onLogout, onNavig
                     </tr>
                     <tr key={`${row.tanggal}-r2`}>
                       <td style={{ ...tdR, color: 'var(--text-muted)', fontSize: 10 }}>
-                        {row.tunaiPasarKemarin !== 0 ? formatRp(row.tunaiPasarKemarin) : '-'}
+                        {row.tunaiPasarR2 != null && row.tunaiPasarR2 !== 0 ? formatRp(row.tunaiPasarR2) : '-'}
                       </td>
                       <td style={{ ...tdR, color: 'var(--text-muted)', fontSize: 10 }}>
                         {row.debitR2 != null ? formatRp(row.debitR2) : '-'}
@@ -2233,7 +2239,7 @@ function KasPenuntunScreen({ user, cabang, cabangList, onBack, onLogout, onNavig
                     </tr>
                     <tr key={`${row.tanggal}-r3`} style={rowBorderBottom}>
                       <td style={{ ...tdR, fontWeight: 800, borderTop: '1px solid var(--border-light)' }}>
-                        {formatRp(row.tunaiPasarTotal)}
+                        {row.tunaiPasarR3 != null ? formatRp(row.tunaiPasarR3) : '-'}
                       </td>
                       <td style={{ ...tdR, fontWeight: 800, borderTop: '1px solid var(--border-light)', color: '#1d4ed8' }}>
                         {row.debitR3 != null ? formatRp(row.debitR3) : '-'}
