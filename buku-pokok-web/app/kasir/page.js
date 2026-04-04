@@ -1922,7 +1922,9 @@ function KasPenuntunScreen({ user, cabang, cabangList, onBack, onLogout, onNavig
         if (date && date >= prevMonthStart && date <= prevMonthEnd) prevDateSet.add(tgl);
       });
 
-      const prevSortedDates = Array.from(prevDateSet).sort((a, b) => parseDateStr(a) - parseDateStr(b));
+      const prevSortedDates = Array.from(prevDateSet)
+        .filter(d => { const dt = parseDateStr(d); return dt && isHariKerja(dt); })
+        .sort((a, b) => parseDateStr(a) - parseDateStr(b));
 
       // Hitung saldo bulan lalu menggunakan logika akumulasi yang sama
       let prevRunning = 0;
@@ -1988,7 +1990,9 @@ function KasPenuntunScreen({ user, cabang, cabangList, onBack, onLogout, onNavig
       if (date && date >= monthStart && date <= effectiveEnd) dateSet.add(tgl);
     });
 
-    const sortedDates = Array.from(dateSet).sort((a, b) => parseDateStr(a) - parseDateStr(b));
+    const sortedDates = Array.from(dateSet)
+      .filter(d => { const dt = parseDateStr(d); return dt && isHariKerja(dt); })
+      .sort((a, b) => parseDateStr(a) - parseDateStr(b));
 
     // Hitung tunaiPasar & kasPakai per tanggal
     const tunaiPasarPerDate = {};
