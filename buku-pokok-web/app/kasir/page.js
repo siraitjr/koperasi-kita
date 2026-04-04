@@ -196,6 +196,16 @@ export default function KasirPage() {
   const VIEWER_ROLES = ['pimpinan', 'koordinator', 'pengawas', 'kasir_wilayah', 'sekretaris'];
   const isViewer = VIEWER_ROLES.includes(userData?.role);
 
+  const handleKasirNavigate = (screenId) => {
+    const kasirScreens = ['jurnal', 'bukuRekap', 'kasPenuntun', 'bukuTunai', 'bukuEkspedisi', 'ringkasan', 'absensi'];
+    if (kasirScreens.includes(screenId)) {
+      setScreen(screenId);
+    } else {
+      // bukuPokok dan jurnalTransaksi ada di /pembukuan
+      window.location.href = '/pembukuan';
+    }
+  };
+
   const handleBack = () => {
     if (isViewer && isFromPembukuan) {
       window.location.href = '/pembukuan';
@@ -231,6 +241,7 @@ export default function KasirPage() {
         cabangList={cabangList}
         onBack={handleBack}
         onLogout={handleLogout}
+        onNavigate={isViewer ? handleKasirNavigate : null}
       />
     );
   } else if (screen === 'bukuRekap') {
@@ -241,6 +252,7 @@ export default function KasirPage() {
         cabangList={cabangList}
         onBack={handleBack}
         onLogout={handleLogout}
+        onNavigate={isViewer ? handleKasirNavigate : null}
       />
     );
   } else if (screen === 'kasPenuntun') {
@@ -251,6 +263,7 @@ export default function KasirPage() {
         cabangList={cabangList}
         onBack={handleBack}
         onLogout={handleLogout}
+        onNavigate={isViewer ? handleKasirNavigate : null}
       />
     );
   } else if (screen === 'bukuTunai') {
@@ -261,6 +274,7 @@ export default function KasirPage() {
         cabangList={cabangList}
         onBack={handleBack}
         onLogout={handleLogout}
+        onNavigate={isViewer ? handleKasirNavigate : null}
       />
     );
   } else if (screen === 'bukuEkspedisi') {
@@ -271,6 +285,7 @@ export default function KasirPage() {
         cabangList={cabangList}
         onBack={handleBack}
         onLogout={handleLogout}
+        onNavigate={isViewer ? handleKasirNavigate : null}
       />
     );
   } else if (screen === 'ringkasan') {
@@ -281,6 +296,7 @@ export default function KasirPage() {
         cabangList={cabangList}
         onBack={handleBack}
         onLogout={handleLogout}
+        onNavigate={isViewer ? handleKasirNavigate : null}
       />
     );
   } else if (screen === 'absensi') {
@@ -291,6 +307,7 @@ export default function KasirPage() {
         cabangList={cabangList}
         onBack={handleBack}
         onLogout={handleLogout}
+        onNavigate={isViewer ? handleKasirNavigate : null}
       />
     );
   } else {
@@ -373,6 +390,38 @@ function LogoutAbsensiModal({ onAbsen, onLogout, onClose }) {
         </div>
       </div>
     </div>
+  );
+}
+
+// ============================================================
+// KASIR TOP BAR NAVIGATION (shortcut menu di header)
+// ============================================================
+function KasirTopBarNav({ currentScreen, onNavigate }) {
+  const menus = [
+    { id: 'bukuPokok', label: 'Buku Pokok' },
+    { id: 'jurnalTransaksi', label: 'Jurnal Transaksi' },
+    { id: 'jurnal', label: 'Jurnal Kasir' },
+    { id: 'bukuRekap', label: 'Buku Rekap' },
+    { id: 'bukuTunai', label: 'Buku Tunai' },
+    { id: 'kasPenuntun', label: 'Kas Penuntun' },
+    { id: 'bukuEkspedisi', label: 'Buku Ekspedisi' },
+    { id: 'ringkasan', label: 'Ringkasan Kas' },
+    { id: 'absensi', label: 'Absensi' },
+  ];
+
+  return (
+    <nav className="top-bar-nav">
+      {menus.map((m) => (
+        <button
+          key={m.id}
+          className={`top-bar-nav-item${currentScreen === m.id ? ' active' : ''}`}
+          onClick={() => onNavigate(m.id)}
+          disabled={currentScreen === m.id}
+        >
+          {m.label}
+        </button>
+      ))}
+    </nav>
   );
 }
 
@@ -660,7 +709,7 @@ function HomeScreen({ user, cabangList, summaryData, selectedCabang, onSelectCab
 // ============================================================
 // JURNAL SCREEN
 // ============================================================
-function JurnalScreen({ user, cabang, cabangList, onBack, onLogout }) {
+function JurnalScreen({ user, cabang, cabangList, onBack, onLogout, onNavigate }) {
   const isUnit = user?.role === 'kasir_unit';
   const [activeCabang, setActiveCabang] = useState(cabang || cabangList[0] || null);
   const [bulan, setBulan] = useState(getCurrentMonthKey());
@@ -738,6 +787,7 @@ function JurnalScreen({ user, cabang, cabangList, onBack, onLogout }) {
             <p>{activeCabang?.name || 'Pilih Cabang'}</p>
           </div>
         </div>
+        {onNavigate && <KasirTopBarNav currentScreen="jurnal" onNavigate={onNavigate} />}
         <div className="top-bar-right">
           {isUnit && (
             <button onClick={() => setShowForm(true)} style={{
@@ -1268,7 +1318,7 @@ function BukuPokokAccessScreen({ user, cabang, cabangList, onBack, onLogout }) {
 // ============================================================
 // BUKU REKAP SCREEN (Rekap harian per resort)
 // ============================================================
-function BukuRekapScreen({ user, cabang, cabangList, onBack, onLogout }) {
+function BukuRekapScreen({ user, cabang, cabangList, onBack, onLogout, onNavigate }) {
   const isUnit = user?.role === 'kasir_unit';
   const [activeCabang, setActiveCabang] = useState(cabang || cabangList[0] || null);
   const [data, setData] = useState(null);
@@ -1467,6 +1517,7 @@ function BukuRekapScreen({ user, cabang, cabangList, onBack, onLogout }) {
             <p>{activeCabang?.name || 'Pilih Cabang'}{currentDate ? ` — ${currentDate}` : ''}</p>
           </div>
         </div>
+        {onNavigate && <KasirTopBarNav currentScreen="bukuRekap" onNavigate={onNavigate} />}
         <div className="top-bar-right">
           <button onClick={onLogout} className="btn-icon" title="Keluar">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></svg>
@@ -1615,7 +1666,7 @@ function BukuRekapScreen({ user, cabang, cabangList, onBack, onLogout }) {
 // ============================================================
 // KAS PENUNTUN SCREEN
 // ============================================================
-function KasPenuntunScreen({ user, cabang, cabangList, onBack, onLogout }) {
+function KasPenuntunScreen({ user, cabang, cabangList, onBack, onLogout, onNavigate }) {
   const isUnit = user?.role === 'kasir_unit';
   const [activeCabang, setActiveCabang] = useState(cabang || cabangList[0] || null);
   const [bulan, setBulan] = useState(getCurrentMonthKey());
@@ -1789,6 +1840,7 @@ function KasPenuntunScreen({ user, cabang, cabangList, onBack, onLogout }) {
             <p>{activeCabang?.name || 'Pilih Cabang'} — {formatBulanLabel(bulan)}</p>
           </div>
         </div>
+        {onNavigate && <KasirTopBarNav currentScreen="kasPenuntun" onNavigate={onNavigate} />}
         <div className="top-bar-right">
           <button onClick={onLogout} className="btn-icon" title="Keluar">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></svg>
@@ -1894,7 +1946,7 @@ function KasPenuntunScreen({ user, cabang, cabangList, onBack, onLogout }) {
 // Kolom: Nama Resort | Kasbon Pagi | Kas Pakai | Kembali Kasbon | Tunai Pasar | Titipan | +/-
 // Data: getBukuPokok (nasabah) + getKasirEntries (uang_kas per admin)
 // ============================================================
-function BukuTunaiScreen({ user, cabang, cabangList, onBack, onLogout }) {
+function BukuTunaiScreen({ user, cabang, cabangList, onBack, onLogout, onNavigate }) {
   const isUnit = user?.role === 'kasir_unit';
   const [activeCabang, setActiveCabang] = useState(cabang || cabangList[0] || null);
   const [bukuData, setBukuData] = useState(null);
@@ -2036,6 +2088,7 @@ function BukuTunaiScreen({ user, cabang, cabangList, onBack, onLogout }) {
             <p>{activeCabang?.name || 'Pilih Cabang'}{currentDate ? ` — ${currentDate}` : ''}</p>
           </div>
         </div>
+        {onNavigate && <KasirTopBarNav currentScreen="bukuTunai" onNavigate={onNavigate} />}
         <div className="top-bar-right">
           <button onClick={onLogout} className="btn-icon" title="Keluar">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></svg>
@@ -2160,7 +2213,7 @@ function BukuTunaiScreen({ user, cabang, cabangList, onBack, onLogout }) {
 // Kolom: Tanggal | Kembali Kasbon | Tunai Pasar | Drop Pusat |
 //        Kasbon Pagi | Transport | BU | Pengembalian Kas+SP | Tunai Kas
 // ============================================================
-function BukuEkspedisiScreen({ user, cabang, cabangList, onBack, onLogout }) {
+function BukuEkspedisiScreen({ user, cabang, cabangList, onBack, onLogout, onNavigate }) {
   const isUnit = user?.role === 'kasir_unit';
   const [activeCabang, setActiveCabang] = useState(cabang || cabangList[0] || null);
   const [bulan, setBulan] = useState(getCurrentMonthKey());
@@ -2347,6 +2400,7 @@ function BukuEkspedisiScreen({ user, cabang, cabangList, onBack, onLogout }) {
             <p>{activeCabang?.name || 'Pilih Cabang'} — {formatBulanLabel(bulan)}</p>
           </div>
         </div>
+        {onNavigate && <KasirTopBarNav currentScreen="bukuEkspedisi" onNavigate={onNavigate} />}
         <div className="top-bar-right">
           <button onClick={onLogout} className="btn-icon" title="Keluar">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></svg>
@@ -2467,7 +2521,7 @@ function BukuEkspedisiScreen({ user, cabang, cabangList, onBack, onLogout }) {
 // ============================================================
 // RINGKASAN SCREEN
 // ============================================================
-function RingkasanScreen({ user, cabang, cabangList, onBack, onLogout }) {
+function RingkasanScreen({ user, cabang, cabangList, onBack, onLogout, onNavigate }) {
   const isUnit = user?.role === 'kasir_unit';
   const [activeCabang, setActiveCabang] = useState(cabang || cabangList[0] || null);
   const [bulan, setBulan] = useState(getCurrentMonthKey());
@@ -2509,6 +2563,7 @@ function RingkasanScreen({ user, cabang, cabangList, onBack, onLogout }) {
             <p>{activeCabang?.name || 'Pilih Cabang'}</p>
           </div>
         </div>
+        {onNavigate && <KasirTopBarNav currentScreen="ringkasan" onNavigate={onNavigate} />}
         <div className="top-bar-right">
           <button onClick={onLogout} className="btn-icon" title="Keluar">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></svg>
@@ -2585,7 +2640,7 @@ function RingkasanScreen({ user, cabang, cabangList, onBack, onLogout }) {
 // ============================================================
 // ABSENSI SCREEN (Kasir - Lihat & kelola absensi harian)
 // ============================================================
-function AbsensiScreen({ user, cabang, cabangList, onBack, onLogout }) {
+function AbsensiScreen({ user, cabang, cabangList, onBack, onLogout, onNavigate }) {
   const isUnit = user?.role === 'kasir_unit';
   const [activeCabang, setActiveCabang] = useState(cabang || cabangList[0] || null);
   const [absensiList, setAbsensiList] = useState([]);
@@ -2772,6 +2827,7 @@ function AbsensiScreen({ user, cabang, cabangList, onBack, onLogout }) {
             <p>{todayDisplay}</p>
           </div>
         </div>
+        {onNavigate && <KasirTopBarNav currentScreen="absensi" onNavigate={onNavigate} />}
         <div className="top-bar-right">
           <button onClick={onLogout} className="btn-icon" title="Keluar">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
