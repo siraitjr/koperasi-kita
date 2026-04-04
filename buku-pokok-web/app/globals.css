@@ -125,6 +125,7 @@ a {
   display: flex;
   align-items: center;
   gap: 12px;
+  flex-shrink: 0;
 }
 
 .top-bar-logo {
@@ -151,10 +152,54 @@ a {
   margin-top: 1px;
 }
 
+.top-bar-nav {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+  justify-content: center;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  padding: 0 12px;
+}
+
+.top-bar-nav::-webkit-scrollbar {
+  display: none;
+}
+
+.top-bar-nav-item {
+  padding: 6px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+  font-family: inherit;
+}
+
+.top-bar-nav-item:hover:not(:disabled) {
+  background: var(--primary-light);
+  color: var(--primary);
+  border-color: var(--primary);
+}
+
+.top-bar-nav-item.active {
+  background: var(--primary);
+  color: #fff;
+  border-color: var(--primary);
+  cursor: default;
+}
+
 .top-bar-right {
   display: flex;
   align-items: center;
   gap: 12px;
+  flex-shrink: 0;
 }
 
 .user-badge {
@@ -1536,9 +1581,19 @@ a {
     grid-template-columns: 1fr 1fr;
     gap: 10px;
   }
-  
+
   .stat-value {
     font-size: 14px;
+  }
+
+  .top-bar-nav {
+    gap: 2px;
+    padding: 0 8px;
+  }
+
+  .top-bar-nav-item {
+    padding: 5px 10px;
+    font-size: 11px;
   }
 }
 
@@ -1547,11 +1602,21 @@ a {
   .top-bar {
     padding: 10px 12px;
   }
-  
+
+  .top-bar-nav {
+    padding: 0 4px;
+    gap: 2px;
+  }
+
+  .top-bar-nav-item {
+    padding: 4px 8px;
+    font-size: 10px;
+  }
+
   .top-bar h1 {
     font-size: 14px;
   }
-  
+
   .top-bar p {
     font-size: 10px;
   }

@@ -335,6 +335,8 @@ export default function Home() {
         cabang={selectedCabang}
         onBack={handleBackFromJurnal}
         onLogout={handleLogout}
+        onSelectBook={handleSelectBook}
+        showKasirMenus={KASIR_VIEW_ROLES.includes(userData?.role) && kasirCabangList?.length > 0}
       />
     );
   } else if (screen === 'bukuPokok' && selectedCabang) {
@@ -346,6 +348,8 @@ export default function Home() {
         onSelectAdmin={handleSelectAdmin}
         onBack={handleBackToDashboard}
         onLogout={handleLogout}
+        onSelectBook={handleSelectBook}
+        showKasirMenus={KASIR_VIEW_ROLES.includes(userData?.role) && kasirCabangList?.length > 0}
       />
     );
   } else {
@@ -425,6 +429,43 @@ function LogoutAbsensiModal({ onAbsen, onLogout, onClose }) {
         </div>
       </div>
     </div>
+  );
+}
+
+// ============================================================
+// TOP BAR NAVIGATION (menu cepat di header)
+// ============================================================
+function TopBarNav({ currentScreen, onSelectBook, showKasirMenus }) {
+  const menus = [
+    { id: 'bukuPokok', label: 'Buku Pokok' },
+    { id: 'jurnalTransaksi', label: 'Jurnal Transaksi' },
+  ];
+
+  const kasirMenus = showKasirMenus ? [
+    { id: 'jurnalKasir', label: 'Jurnal Kasir' },
+    { id: 'bukuRekap', label: 'Buku Rekap' },
+    { id: 'bukuTunai', label: 'Buku Tunai' },
+    { id: 'kasPenuntun', label: 'Kas Penuntun' },
+    { id: 'bukuEkspedisi', label: 'Buku Ekspedisi' },
+    { id: 'ringkasanKas', label: 'Ringkasan Kas' },
+    { id: 'absensiKaryawan', label: 'Absensi' },
+  ] : [];
+
+  const allMenus = [...menus, ...kasirMenus];
+
+  return (
+    <nav className="top-bar-nav">
+      {allMenus.map((m) => (
+        <button
+          key={m.id}
+          className={`top-bar-nav-item${currentScreen === m.id ? ' active' : ''}`}
+          onClick={() => onSelectBook(m.id)}
+          disabled={currentScreen === m.id}
+        >
+          {m.label}
+        </button>
+      ))}
+    </nav>
   );
 }
 
@@ -835,7 +876,7 @@ function DashboardScreen({ user, cabangList, onSelectCabang, onBack, onLogout, t
 // ============================================================
 // BUKU POKOK SCREEN
 // ============================================================
-function BukuPokokScreen({ user, cabang, selectedAdmin, onSelectAdmin, onBack, onLogout }) {
+function BukuPokokScreen({ user, cabang, selectedAdmin, onSelectAdmin, onBack, onLogout, onSelectBook, showKasirMenus }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -1170,6 +1211,9 @@ function getKategoriNasabah(nasabah) {
             <p>{selectedAdmin ? selectedAdmin.name : 'Semua Resort'}</p>
           </div>
         </div>
+        {onSelectBook && (
+          <TopBarNav currentScreen="bukuPokok" onSelectBook={onSelectBook} showKasirMenus={showKasirMenus} />
+        )}
         <div className="top-bar-right">
           {user && (
             <div className="user-badge">
@@ -1825,7 +1869,7 @@ function DetailModal({ nasabah, onClose }) {
 // ============================================================
 // JURNAL TRANSAKSI SCREEN
 // ============================================================
-function JurnalTransaksiScreen({ user, cabang, onBack, onLogout }) {
+function JurnalTransaksiScreen({ user, cabang, onBack, onLogout, onSelectBook, showKasirMenus }) {
   const [entries, setEntries] = useState([]);
   const [ringkasan, setRingkasan] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -1911,6 +1955,9 @@ function JurnalTransaksiScreen({ user, cabang, onBack, onLogout }) {
             <p>{cabang.name}</p>
           </div>
         </div>
+        {onSelectBook && (
+          <TopBarNav currentScreen="jurnalTransaksi" onSelectBook={onSelectBook} showKasirMenus={showKasirMenus} />
+        )}
         <div className="top-bar-right">
           {user && (
             <div className="user-badge">
