@@ -15873,9 +15873,30 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     return@launch
                 }
 
+                // ✅ FIX: Verifikasi pembayaran di index masih sama dengan yang di-request
+                // Index bisa bergeser jika ada pembayaran baru/hapus lain antara request dan approval
+                val pembayaranAtIndex = pelanggan.pembayaranList[pembayaranIndex]
+                val totalAtIndex = pembayaranAtIndex.jumlah + pembayaranAtIndex.subPembayaran.sumOf { it.jumlah }
+
+                var actualIndex = pembayaranIndex
+                if (totalAtIndex != request.jumlahPembayaran || pembayaranAtIndex.tanggal != request.tanggalPembayaran) {
+                    // Index bergeser, cari pembayaran yang cocok berdasarkan jumlah + tanggal
+                    Log.w("PaymentDeletionRequest", "⚠️ Index $pembayaranIndex tidak cocok, mencari pembayaran yang benar...")
+                    actualIndex = pelanggan.pembayaranList.indexOfFirst { p ->
+                        val pTotal = p.jumlah + p.subPembayaran.sumOf { it.jumlah }
+                        pTotal == request.jumlahPembayaran && p.tanggal == request.tanggalPembayaran
+                    }
+                    if (actualIndex == -1) {
+                        database.child("payment_deletion_requests/$requestId").removeValue().await()
+                        onFailure(Exception("Pembayaran Rp ${request.jumlahPembayaran} tanggal ${request.tanggalPembayaran} tidak ditemukan (mungkin sudah dihapus)"))
+                        return@launch
+                    }
+                    Log.d("PaymentDeletionRequest", "✅ Pembayaran ditemukan di index $actualIndex (sebelumnya $pembayaranIndex)")
+                }
+
                 // Hapus pembayaran dari list
                 val updatedPembayaranList = pelanggan.pembayaranList.toMutableList().apply {
-                    removeAt(pembayaranIndex)
+                    removeAt(actualIndex)
                 }
 
                 // Hitung ulang total yang sudah dibayar
@@ -15890,6 +15911,46 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     "status" to status
                 )
                 database.child("pelanggan/$adminUid/$pelangganId").updateChildren(updates).await()
+
+                // ✅ FIX: Koreksi summary counters (piutang harus naik karena pembayaran dihapus)
+                val deletedAmount = request.jumlahPembayaran.toLong()
+                try {
+                    val cabangId = request.cabangId
+                    // Piutang bertambah kembali karena pembayaran dibatalkan
+                    database.child("summary/perAdmin/$adminUid/totalPiutang")
+                        .setValue(ServerValue.increment(deletedAmount)).await()
+                    if (cabangId.isNotBlank()) {
+                        database.child("summary/cabang/$cabangId/totalPiutang")
+                            .setValue(ServerValue.increment(deletedAmount)).await()
+                    }
+                    database.child("summary/global/totalPiutang")
+                        .setValue(ServerValue.increment(deletedAmount)).await()
+
+                    // Jika status berubah dari Lunas ke Aktif, koreksi counter
+                    if (pelanggan.status == "Lunas" && status == "Aktif") {
+                        val lunasDecrement = (-1).toLong()
+                        val aktifIncrement = 1.toLong()
+                        database.child("summary/perAdmin/$adminUid/nasabahLunas")
+                            .setValue(ServerValue.increment(lunasDecrement)).await()
+                        database.child("summary/perAdmin/$adminUid/nasabahAktif")
+                            .setValue(ServerValue.increment(aktifIncrement)).await()
+                        if (cabangId.isNotBlank()) {
+                            database.child("summary/cabang/$cabangId/nasabahLunas")
+                                .setValue(ServerValue.increment(lunasDecrement)).await()
+                            database.child("summary/cabang/$cabangId/nasabahAktif")
+                                .setValue(ServerValue.increment(aktifIncrement)).await()
+                        }
+                        database.child("summary/global/nasabahLunas")
+                            .setValue(ServerValue.increment(lunasDecrement)).await()
+                        database.child("summary/global/nasabahAktif")
+                            .setValue(ServerValue.increment(aktifIncrement)).await()
+                    }
+
+                    Log.d("PaymentDeletionRequest", "✅ Summary counters corrected: piutang +Rp $deletedAmount")
+                } catch (e: Exception) {
+                    Log.w("PaymentDeletionRequest", "⚠️ Gagal koreksi summary: ${e.message}")
+                    // Non-fatal: summary akan terkoreksi saat refresh harian
+                }
 
                 // Hapus request
                 database.child("payment_deletion_requests/$requestId").removeValue().await()
