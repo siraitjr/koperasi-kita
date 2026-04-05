@@ -59,6 +59,7 @@ const JENIS_ARAH = {
   pinjaman_kas: 'masuk',
   sp: 'keluar',
   pengembalian_kas: 'keluar',
+  saldo_awal_kas: 'masuk',
 };
 
 
@@ -864,16 +865,21 @@ function JurnalScreen({ user, cabang, cabangList, onBack, onLogout, onNavigate }
         </div>
 
         {/* Summary cards */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10, marginBottom: 20 }}>
-          <div style={{ background: '#e8f8f0', borderRadius: 12, padding: '12px 16px' }}>
-            <p style={{ fontSize: 11, color: 'var(--text-muted)' }}>Total Masuk</p>
-            <p style={{ fontSize: 16, fontWeight: 700, color: 'var(--success)' }}>{formatRpFull(summary.totalMasuk || 0)}</p>
-          </div>
-          <div style={{ background: '#fef2f0', borderRadius: 12, padding: '12px 16px' }}>
-            <p style={{ fontSize: 11, color: 'var(--text-muted)' }}>Total Keluar</p>
-            <p style={{ fontSize: 16, fontWeight: 700, color: 'var(--danger)' }}>{formatRpFull(summary.totalKeluar || 0)}</p>
-          </div>
-        </div>
+        {(() => {
+          const saldoAwalAdj = entries.filter(e => e.jenis === 'saldo_awal_kas').reduce((s, e) => s + (e.jumlah || 0), 0);
+          return (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10, marginBottom: 20 }}>
+              <div style={{ background: '#e8f8f0', borderRadius: 12, padding: '12px 16px' }}>
+                <p style={{ fontSize: 11, color: 'var(--text-muted)' }}>Total Masuk</p>
+                <p style={{ fontSize: 16, fontWeight: 700, color: 'var(--success)' }}>{formatRpFull((summary.totalMasuk || 0) - saldoAwalAdj)}</p>
+              </div>
+              <div style={{ background: '#fef2f0', borderRadius: 12, padding: '12px 16px' }}>
+                <p style={{ fontSize: 11, color: 'var(--text-muted)' }}>Total Keluar</p>
+                <p style={{ fontSize: 16, fontWeight: 700, color: 'var(--danger)' }}>{formatRpFull(summary.totalKeluar || 0)}</p>
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Content */}
         {loading ? (
@@ -935,6 +941,7 @@ function JurnalScreen({ user, cabang, cabangList, onBack, onLogout, onNavigate }
         <FormModal
           cabangAdmins={activeCabang?.admins || []}
           cabangId={activeCabang?.id || ''}
+          bulan={bulan}
           onClose={() => setShowForm(false)}
           onSuccess={handleEntryAdded}
         />
@@ -969,7 +976,10 @@ function JurnalScreen({ user, cabang, cabangList, onBack, onLogout, onNavigate }
 // ============================================================
 // FORM MODAL (Input transaksi kasir)
 // ============================================================
-function FormModal({ cabangAdmins, cabangId, onClose, onSuccess }) {
+function FormModal({ cabangAdmins, cabangId, bulan, onClose, onSuccess }) {
+  const formJenisOptions = bulan === '2026-04'
+    ? [...JENIS_OPTIONS, { value: 'saldo_awal_kas', label: 'Saldo Awal Kas' }]
+    : JENIS_OPTIONS;
   const [jenis, setJenis] = useState('uang_kas');
   const [arah, setArah] = useState('keluar');
   const [jumlah, setJumlah] = useState('');
@@ -1054,7 +1064,7 @@ function FormModal({ cabangAdmins, cabangId, onClose, onSuccess }) {
           <label style={{ fontSize: 13, fontWeight: 600, marginBottom: 6, display: 'block' }}>Jenis Transaksi</label>
             <select value={jenis} onChange={(e) => { const v = e.target.value; setJenis(v); setArah(JENIS_ARAH[v] || 'keluar'); setTargetAdmin(''); if (v === 'penggajian') setTargetBuku(['kas_penuntun', 'ekspedisi']); }}
             style={{ width: '100%', padding: '10px 14px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 14, background: 'var(--card)' }}>
-            {JENIS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            {formJenisOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
         </div>
 
@@ -1911,7 +1921,10 @@ function KasPenuntunScreen({ user, cabang, cabangList, onBack, onLogout, onNavig
     const prevMonthEnd = new Date(parseInt(yyyy), parseInt(mm) - 1, 0);
 
     let saldoKasBulanLalu = 0;
-    {
+    const saldoAwalEntry = kasirEntries.find(e => e.jenis === 'saldo_awal_kas');
+    if (saldoAwalEntry) {
+      saldoKasBulanLalu = saldoAwalEntry.jumlah || 0;
+    } else {
       // Kumpulkan tanggal-tanggal bulan sebelumnya
       const prevDateSet = new Set();
       allNasabah.forEach(n => {
