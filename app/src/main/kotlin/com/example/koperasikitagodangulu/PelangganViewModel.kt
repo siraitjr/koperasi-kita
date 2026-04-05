@@ -4494,6 +4494,16 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     // =========================================================================
                     // PHASE LAIN: Pengajuan sudah melewati tahap Pimpinan
                     // =========================================================================
+
+                    // ✅ FIX: Jika phase sudah COMPLETED dan pimpinan sudah konfirmasi final,
+                    // berarti finalisasi sebelumnya sudah berhasil tapi UI belum ter-refresh.
+                    // Anggap sebagai sukses agar UI bisa refresh dan notifikasi dihapus.
+                    if (currentPhase == ApprovalPhase.COMPLETED && currentDualInfo.pimpinanFinalConfirmed) {
+                        Log.d("Approval", "✅ Finalisasi sudah selesai sebelumnya - dianggap sukses")
+                        onSuccess?.invoke()
+                        return@launch
+                    }
+
                     val phaseMessage = when (currentPhase) {
                         ApprovalPhase.AWAITING_KOORDINATOR -> "Pengajuan ini sudah Anda setujui dan sedang menunggu review Koordinator (Tahap 2/5)"
                         ApprovalPhase.AWAITING_PENGAWAS -> "Pengajuan ini sedang menunggu review Pengawas (Tahap 3/5)"
