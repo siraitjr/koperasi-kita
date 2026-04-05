@@ -1070,7 +1070,7 @@ function getKategoriNasabah(nasabah) {
         // Drop Kini: total uang yang dicairkan pada tanggal ini
         const tglCair = n.tanggalPencairan || '';
         if (tglCair === dateStr) {
-          dropKini += n.totalDiterima || n.besarPinjaman || 0;
+          dropKini += n.besarPinjaman || 0;
         }
 
         // Storting Kini: total cicilan/pembayaran pada tanggal ini
