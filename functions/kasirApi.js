@@ -21,7 +21,7 @@ const db = admin.database();
 // =========================================================================
 // CONSTANTS
 // =========================================================================
-const JENIS_VALID = ['uang_kas', 'penggajian', 'transport', 'suntikan_dana', 'pinjaman_kas', 'sp'];
+const JENIS_VALID = ['uang_kas', 'penggajian', 'transport', 'suntikan_dana', 'pinjaman_kas', 'sp', 'saldo_awal_kas'];
 const ARAH_VALID = ['masuk', 'keluar'];
 
 const JENIS_LABELS = {
@@ -30,7 +30,8 @@ const JENIS_LABELS = {
     transport: 'Transport',
     suntikan_dana: 'Suntikan Dana',
     pinjaman_kas: 'Pinjaman Kas',
-    sp: 'SP'
+    sp: 'SP',
+    saldo_awal_kas: 'Saldo Awal Kas'
 };
 
 // =========================================================================
