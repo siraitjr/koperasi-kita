@@ -225,6 +225,13 @@ const dataIntegrityFix = require('./dataIntegrityFix');
 exports.dataIntegrityFix = dataIntegrityFix.dataIntegrityFix;
 
 // =========================================================================
+// MIGRASI ADMIN - Transfer semua nasabah dari admin A ke admin B
+// Developer tool — jalankan sendiri via HTTP, bukan untuk user
+// =========================================================================
+const migrasiAdmin = require('./migrasiAdmin');
+exports.migrasiAdmin = migrasiAdmin.migrasiAdmin;
+
+// =========================================================================
 // JURNAL TRANSAKSI - Pencatatan Permanen Pembukuan
 // =========================================================================
 const jurnalApi = require('./jurnalTransaksiApi');
