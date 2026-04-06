@@ -373,8 +373,7 @@ exports.getBukuPokok = functions
                     const sisaUtang = Math.max(0, totalPelunasan - totalDibayar);
 
                     // Tentukan kategori nasabah (eksklusif, tidak boleh overlap)
-                    // isSisaTabungan: cerminkan logika Android — hanya jika simpanan belum dicairkan
-                    const isSisaTabungan = pStatusKhusus === 'MENUNGGU_PENCAIRAN' && (p.statusPencairanSimpanan || '') !== 'Dicairkan';
+                    const isSisaTabungan = pStatusKhusus === 'MENUNGGU_PENCAIRAN';
                     const isNasabahLunas = !isSisaTabungan && sisaUtang <= 0 && totalPelunasan > 0;
                     const isAktif = !isSisaTabungan && !isNasabahLunas && (pStatus === 'aktif' || pStatus === 'disetujui');
 
