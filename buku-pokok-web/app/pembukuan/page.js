@@ -1435,12 +1435,22 @@ function getKategoriNasabah(nasabah) {
                 >
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="m15 18-6-6 6-6"/></svg>
                 </button>
-                <span className="sg-month-label">
-                  {(() => {
-                    if (!stortingMonth) return '';
-                    const BULAN_FULL = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
-                    const [y, m] = stortingMonth.split('-').map(Number);
-                    return `${BULAN_FULL[m - 1]} ${y}`;
+                <span className="sg-month-label" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+                  <span>
+                    {(() => {
+                      if (!stortingMonth) return '';
+                      const BULAN_FULL = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+                      const [y, m] = stortingMonth.split('-').map(Number);
+                      return `${BULAN_FULL[m - 1]} ${y}`;
+                    })()}
+                  </span>
+                  {prevMonthSGTotals && (() => {
+                    const total = prevMonthSGTotals.pb + prevMonthSGTotals.l1 + prevMonthSGTotals.cm + prevMonthSGTotals.mb + prevMonthSGTotals.ml;
+                    return total > 0 ? (
+                      <span style={{ fontSize: 11, color: '#7c3aed', fontWeight: 700, fontFamily: "'DM Mono', monospace" }}>
+                        {formatRp(total)}
+                      </span>
+                    ) : null;
                   })()}
                 </span>
                 <button
@@ -1469,17 +1479,7 @@ function getKategoriNasabah(nasabah) {
                       <th rowSpan={2} className="sg-th-tanggal" style={{ position: 'sticky', left: 0, zIndex: 12, minWidth: 60, textAlign: 'center', verticalAlign: 'middle' }}>Tgl</th>
                       <th colSpan={2} className="sg-th-group sg-th-drop" style={{ textAlign: 'center', borderBottom: 'none', color: '#2d7dd2' }}>DROP</th>
                       <th colSpan={2} className="sg-th-group sg-th-target" style={{ textAlign: 'center', borderBottom: 'none', color: '#e85d3a' }}>TARGET</th>
-                      <th colSpan={2} className="sg-th-group sg-th-storting" style={{ textAlign: 'center', borderBottom: 'none', color: '#0f6b54' }}>
-                        STORTING
-                        {prevMonthSGTotals && (() => {
-                          const total = prevMonthSGTotals.pb + prevMonthSGTotals.l1 + prevMonthSGTotals.cm + prevMonthSGTotals.mb + prevMonthSGTotals.ml;
-                          return total > 0 ? (
-                            <div style={{ fontSize: 10, color: '#7c3aed', fontWeight: 700, marginTop: 2 }}>
-                              {formatRp(total)}
-                            </div>
-                          ) : null;
-                        })()}
-                      </th>
+                      <th colSpan={2} className="sg-th-group sg-th-storting" style={{ textAlign: 'center', borderBottom: 'none', color: '#0f6b54' }}>STORTING</th>
                       <th rowSpan={2} className="sg-th-persen" style={{ textAlign: 'center', verticalAlign: 'middle', minWidth: 55 }}>%</th>
                       <th rowSpan={2} className="sg-th-kat sg-th-kat-pb" style={{ textAlign: 'center', verticalAlign: 'middle', minWidth: 80 }}>PB</th>
                       <th rowSpan={2} className="sg-th-kat sg-th-kat-l1" style={{ textAlign: 'center', verticalAlign: 'middle', minWidth: 80 }}>L1</th>
