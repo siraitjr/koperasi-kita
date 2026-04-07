@@ -1490,12 +1490,9 @@ function getKategoriNasabah(nasabah) {
                     {/* Baris total storting bulan sebelumnya */}
                     {prevMonthSGTotals && (
                       <tr style={{ background: '#f5f3ff', borderBottom: '2px solid #c4b5fd' }}>
-                        <td style={{ position: 'sticky', left: 0, zIndex: 5, background: '#f5f3ff', textAlign: 'center', fontWeight: 700, fontSize: 11, color: '#7c3aed', padding: '6px 4px' }}>
-                          <span style={{ fontSize: 10, display: 'block', lineHeight: 1.2 }}>Bln</span>
-                          <span style={{ fontSize: 9, display: 'block', lineHeight: 1.2 }}>Lalu</span>
-                        </td>
-                        <td colSpan={8} style={{ textAlign: 'center', fontSize: 11, color: '#7c3aed', fontStyle: 'italic', fontWeight: 600 }}>
-                          Total Storting {prevMonthSGTotals.label}
+                        <td style={{ position: 'sticky', left: 0, zIndex: 5, background: '#f5f3ff' }} />
+                        <td colSpan={7} style={{ textAlign: 'right', fontSize: 10, color: '#9ca3af', fontStyle: 'italic', paddingRight: 8 }}>
+                          {prevMonthSGTotals.label}
                         </td>
                         <td style={{ textAlign: 'center', fontFamily: "'DM Mono', monospace", fontSize: 12, fontWeight: 700, color: '#7c3aed' }}>
                           {prevMonthSGTotals.pb > 0 ? formatRp(prevMonthSGTotals.pb) : '-'}
