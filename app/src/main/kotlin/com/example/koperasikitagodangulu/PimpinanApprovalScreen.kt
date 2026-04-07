@@ -21,6 +21,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material3.Surface
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material.icons.filled.AccountBalance
 import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.Savings
@@ -1572,8 +1573,42 @@ fun DetailPengajuanSheet(
         DetailItem(Icons.Default.CalendarToday, "Tanggal Pengajuan", pelanggan.tanggalPengajuan)
         DetailItem(Icons.Default.AttachMoney, "Total Potongan (10%)", formatRupiah(pinjamanInfo.jasaPinjaman))
         if (pelanggan.pinjamanKe >= 2) {
-            DetailItem(Icons.Default.Warning, "Sisa Utang Lama", formatRupiah(pinjamanInfo.sisaUtangLama))
-            DetailItem(Icons.Default.Savings, "Total Simpanan", formatRupiah(pinjamanInfo.totalSimpanan))  // ✅ TAMBAH
+            // Sisa Utang Lama — ditampilkan selalu untuk lanjut pinjaman
+            // Hijau = 0 (nasabah sudah lunas sebelum lanjut pinjaman)
+            // Orange = > 0 (nasabah masih punya sisa utang)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    Icons.Default.AccountBalance,
+                    contentDescription = "Sisa Utang Lama",
+                    tint = Color.Gray,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Column {
+                    Text(
+                        "Sisa Utang Lama",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.Gray
+                    )
+                    Text(
+                        formatRupiah(pinjamanInfo.sisaUtangLama),
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = if (pinjamanInfo.sisaUtangLama > 0) Color(0xFFE65100) else Color(0xFF4CAF50)
+                    )
+                    Text(
+                        if (pinjamanInfo.sisaUtangLama > 0) "Nasabah masih memiliki sisa utang" else "Nasabah sudah lunas",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (pinjamanInfo.sisaUtangLama > 0) Color(0xFFE65100) else Color(0xFF4CAF50)
+                    )
+                }
+            }
+            DetailItem(Icons.Default.Savings, "Total Simpanan", formatRupiah(pinjamanInfo.totalSimpanan))
         }
         DetailItem(Icons.Default.AccountBalanceWallet, "Jumlah Diberikan", formatRupiah(pelanggan.totalDiterima))
 
