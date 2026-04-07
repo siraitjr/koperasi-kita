@@ -237,3 +237,10 @@ exports.migrasiAdmin = migrasiAdmin.migrasiAdmin;
 const jurnalApi = require('./jurnalTransaksiApi');
 exports.getJurnalTransaksi = jurnalApi.getJurnalTransaksi;
 exports.backfillJurnalTransaksi = jurnalApi.backfillJurnalTransaksi;
+
+// =========================================================================
+// KOREKSI STORTING - Input koreksi bulan lalu per resort (pengawas only)
+// =========================================================================
+const koreksiStorting = require('./koreksiStorting');
+exports.getKoreksiStorting = koreksiStorting.getKoreksiStorting;
+exports.setKoreksiStorting = koreksiStorting.setKoreksiStorting;

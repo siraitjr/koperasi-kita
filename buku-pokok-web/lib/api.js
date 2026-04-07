@@ -152,3 +152,17 @@ export async function getJurnalTransaksi({ cabangId, bulan, tipe, adminUid }) {
 export async function backfillJurnalTransaksi({ cabangId }) {
   return apiCall('backfillJurnalTransaksi', { cabangId });
 }
+
+/**
+ * Ambil koreksi storting bulan lalu per resort untuk satu cabang
+ */
+export async function getKoreksiStorting({ cabangId, bulan }) {
+  return apiCall('getKoreksiStorting', { cabangId, bulan });
+}
+
+/**
+ * Simpan koreksi storting bulan lalu untuk satu resort (pengawas only)
+ */
+export async function setKoreksiStorting({ cabangId, adminUid, bulan, l1, cm, mb, ml }) {
+  return apiPost('setKoreksiStorting', { cabangId, adminUid, bulan, l1, cm, mb, ml });
+}

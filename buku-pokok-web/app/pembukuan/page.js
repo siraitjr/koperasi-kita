@@ -8,7 +8,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { onAuthStateChanged, signInWithEmailAndPassword, signOut, signInWithCustomToken } from 'firebase/auth';
 import { auth } from '../../lib/firebase';
-import { getSummary, getBukuPokok, getKasirSummary, getJurnalTransaksi } from '../../lib/api';
+import { getSummary, getBukuPokok, getKasirSummary, getJurnalTransaksi, getKoreksiStorting, setKoreksiStorting } from '../../lib/api';
 import { formatRp, formatRpFull, formatRpShort } from '../../lib/format';
 
 const KASIR_VIEW_ROLES = ['pimpinan', 'koordinator', 'pengawas', 'kasir_wilayah', 'sekretaris'];
@@ -886,6 +886,11 @@ function BukuPokokScreen({ user, cabang, selectedAdmin, onSelectAdmin, onBack, o
   const [visibleDateCount, setVisibleDateCount] = useState(7);
   const [tabelFilter, setTabelFilter] = useState('semua');
   const [stortingMonth, setStortingMonth] = useState(null); // format: '2026-02' (auto-set saat pilih stortingGlobal)
+  const [koreksiSGMap, setKoreksiSGMap] = useState({}); // { adminUid: { l1, cm, mb, ml } } untuk bulan lalu
+  const [showKoreksiModal, setShowKoreksiModal] = useState(false);
+  const [koreksiInput, setKoreksiInput] = useState({ l1: '', cm: '', mb: '', ml: '' });
+  const [savingKoreksi, setSavingKoreksi] = useState(false);
+  const [koreksiError, setKoreksiError] = useState('');
   const tableRef = useRef(null);
   const [stickyOffsets, setStickyOffsets] = useState({ nama: 55, panggilan: 210 });
 
@@ -959,6 +964,17 @@ function getKategoriNasabah(nasabah) {
     }
     fetchData();
   }, [cabang.id, selectedAdmin?.uid, effectiveStatus]);
+
+  // ==================== FETCH KOREKSI STORTING ====================
+  useEffect(() => {
+    if (!isStortingGlobalMode || !stortingMonth) { setKoreksiSGMap({}); return; }
+    const [smY, smM] = stortingMonth.split('-').map(Number);
+    const prev = new Date(smY, smM - 2, 1);
+    const prevBulan = `${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, '0')}`;
+    getKoreksiStorting({ cabangId: cabang.id, bulan: prevBulan })
+      .then(result => { if (result.success) setKoreksiSGMap(result.data || {}); })
+      .catch(() => {});
+  }, [isStortingGlobalMode, stortingMonth, cabang.id]);
 
   // ==================== FILTER ====================
   const filtered = (data?.nasabah?.filter((n) => {
@@ -1162,45 +1178,72 @@ function getKategoriNasabah(nasabah) {
   })();
 
   // Total storting (PB/L1/CM/MB/ML) dari bulan sebelumnya
+  // Jika koreksi tersedia untuk suatu resort, gunakan nilai koreksi; else pakai computed
   const prevMonthSGTotals = (() => {
     if (!isStortingGlobalMode || !data?.nasabah || !stortingMonth) return null;
     const [smYear, smMonth] = stortingMonth.split('-').map(Number);
     const prevDate = new Date(smYear, smMonth - 2, 1);
     const prevYear = prevDate.getFullYear();
-    const prevMonthIdx = prevDate.getMonth(); // 0-indexed
+    const prevMonthIdx = prevDate.getMonth();
     const BULAN_INDO_ARR = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
     const BULAN_FULL = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
     const prevMonthLabel = `${BULAN_FULL[prevMonthIdx]} ${prevYear}`;
-    let pb = 0, l1 = 0, cm = 0, mb = 0, ml = 0;
+    const prevBulan = `${prevYear}-${String(prevMonthIdx + 1).padStart(2, '0')}`;
+
     const LIBUR_PREV = [[1,1],[16,1],[17,2],[19,3],[21,3],[3,4],[1,5],[14,5],[16,6],[17,8],[25,8],[25,12]];
-    const isHariKerjaPrev = (d) => {
+    const isHKPrev = (d) => {
       if (d.getDay() === 0) return false;
       const dd = d.getDate(), mm = d.getMonth() + 1;
       return !LIBUR_PREV.some(([ld, lm]) => ld === dd && lm === mm);
     };
-    const endOfPrevMonth = new Date(prevYear, prevMonthIdx + 1, 0);
+
+    // Hitung per-admin dari data digital
+    const adminComputed = {};
+    const endOfPrev = new Date(prevYear, prevMonthIdx + 1, 0);
     const cur = new Date(prevYear, prevMonthIdx, 1);
-    while (cur <= endOfPrevMonth) {
-      if (isHariKerjaPrev(cur)) {
-        const dd = String(cur.getDate()).padStart(2, '0');
-        const mmm = BULAN_INDO_ARR[cur.getMonth()];
-        const dateStr = `${dd} ${mmm} ${cur.getFullYear()}`;
+    while (cur <= endOfPrev) {
+      if (isHKPrev(cur)) {
+        const dateStr = `${String(cur.getDate()).padStart(2, '0')} ${BULAN_INDO_ARR[cur.getMonth()]} ${cur.getFullYear()}`;
         data.nasabah.forEach(n => {
           const pay = n.pembayaran?.[dateStr];
           if (pay) {
+            const auid = n.adminUid || '_';
+            if (!adminComputed[auid]) adminComputed[auid] = { pb:0, l1:0, cm:0, mb:0, ml:0 };
             const total = pay.total || 0;
             const kat = getKategoriNasabah(n);
-            if (kat === 'PB') pb += total;
-            else if (kat === 'L1') l1 += total;
-            else if (kat === 'CM') cm += total;
-            else if (kat === 'MB') mb += total;
-            else ml += total;
+            if (kat === 'PB') adminComputed[auid].pb += total;
+            else if (kat === 'L1') adminComputed[auid].l1 += total;
+            else if (kat === 'CM') adminComputed[auid].cm += total;
+            else if (kat === 'MB') adminComputed[auid].mb += total;
+            else adminComputed[auid].ml += total;
           }
         });
       }
       cur.setDate(cur.getDate() + 1);
     }
-    return { pb, l1, cm, mb, ml, label: prevMonthLabel };
+
+    // Gabungkan: koreksi override computed per-admin
+    const targetUids = selectedAdmin
+      ? [selectedAdmin.uid]
+      : [...new Set([...Object.keys(adminComputed), ...Object.keys(koreksiSGMap)])];
+
+    let pb = 0, l1 = 0, cm = 0, mb = 0, ml = 0;
+    targetUids.forEach(auid => {
+      const koreksi = koreksiSGMap[auid];
+      const computed = adminComputed[auid] || { pb:0, l1:0, cm:0, mb:0, ml:0 };
+      const vals = koreksi || computed;
+      pb += vals.pb || 0;
+      l1 += vals.l1 || 0;
+      cm += vals.cm || 0;
+      mb += vals.mb || 0;
+      ml += vals.ml || 0;
+    });
+
+    const hasKoreksi = selectedAdmin
+      ? !!koreksiSGMap[selectedAdmin.uid]
+      : Object.keys(koreksiSGMap).length > 0;
+
+    return { pb, l1, cm, mb, ml, label: prevMonthLabel, prevBulan, hasKoreksi };
   })();
 
   const tabelDates = (() => {
@@ -1513,7 +1556,31 @@ function getKategoriNasabah(nasabah) {
                     {prevMonthSGTotals && (
                       <tr style={{ background: '#f5f3ff', borderBottom: '2px solid #c4b5fd' }}>
                         <td style={{ position: 'sticky', left: 0, zIndex: 5, background: '#f5f3ff' }} />
-                        <td colSpan={7} />
+                        <td colSpan={7} style={{ textAlign: 'right', paddingRight: 8 }}>
+                          {/* Tombol koreksi: hanya pengawas + resort tertentu */}
+                          {user?.role === 'pengawas' && selectedAdmin && (
+                            <button
+                              onClick={() => {
+                                const existing = koreksiSGMap[selectedAdmin.uid];
+                                setKoreksiInput({
+                                  l1: existing ? String(existing.l1) : '',
+                                  cm: existing ? String(existing.cm) : '',
+                                  mb: existing ? String(existing.mb) : '',
+                                  ml: existing ? String(existing.ml) : '',
+                                });
+                                setKoreksiError('');
+                                setShowKoreksiModal(true);
+                              }}
+                              title={prevMonthSGTotals.hasKoreksi ? 'Edit koreksi bulan lalu' : 'Input koreksi bulan lalu'}
+                              style={{ background: 'none', border: '1px solid #c4b5fd', borderRadius: 6, padding: '2px 8px', cursor: 'pointer', fontSize: 11, color: '#7c3aed' }}
+                            >
+                              {prevMonthSGTotals.hasKoreksi ? '✏️ Edit' : '✏️ Koreksi'}
+                            </button>
+                          )}
+                          {prevMonthSGTotals.hasKoreksi && (
+                            <span style={{ fontSize: 10, color: '#9ca3af', marginLeft: 6, fontStyle: 'italic' }}>terkoreksi</span>
+                          )}
+                        </td>
                         <td style={{ textAlign: 'center', fontFamily: "'DM Mono', monospace", fontSize: 12, fontWeight: 700, color: '#7c3aed' }}>
                           {prevMonthSGTotals.pb > 0 ? formatRp(prevMonthSGTotals.pb) : '-'}
                         </td>
@@ -1939,6 +2006,82 @@ function DetailModal({ nasabah, onClose }) {
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
           </button>
           <img src={zoomImage} alt="Foto diperbesar" className="zoom-image" onClick={(e) => e.stopPropagation()} />
+        </div>
+      )}
+
+      {/* ===== MODAL KOREKSI STORTING BULAN LALU ===== */}
+      {showKoreksiModal && selectedAdmin && prevMonthSGTotals && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: 16 }}>
+          <div style={{ background: '#fff', borderRadius: 16, padding: 24, width: '100%', maxWidth: 420, boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
+            <h3 style={{ margin: '0 0 4px', fontSize: 16, fontWeight: 700, color: '#1f2937' }}>Koreksi Storting Bulan Lalu</h3>
+            <p style={{ margin: '0 0 16px', fontSize: 13, color: '#6b7280' }}>
+              {selectedAdmin.name} — {prevMonthSGTotals.label}
+            </p>
+            <p style={{ margin: '0 0 16px', fontSize: 12, color: '#9ca3af', lineHeight: 1.5 }}>
+              Masukkan total storting dari buku manual. Nilai ini akan menggantikan data digital untuk bulan tersebut.
+            </p>
+            {[['L1', 'l1'], ['CM', 'cm'], ['MB', 'mb'], ['ML', 'ml']].map(([label, key]) => (
+              <div key={key} style={{ marginBottom: 12 }}>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 4 }}>{label}</label>
+                <input
+                  type="number"
+                  min="0"
+                  value={koreksiInput[key]}
+                  onChange={(e) => setKoreksiInput(prev => ({ ...prev, [key]: e.target.value }))}
+                  placeholder="0"
+                  style={{ width: '100%', padding: '8px 12px', borderRadius: 8, border: '1px solid #d1d5db', fontSize: 13, boxSizing: 'border-box' }}
+                />
+              </div>
+            ))}
+            {koreksiError && <p style={{ color: '#ef4444', fontSize: 12, margin: '0 0 12px' }}>{koreksiError}</p>}
+            <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+              <button
+                onClick={() => setShowKoreksiModal(false)}
+                style={{ flex: 1, padding: '10px', borderRadius: 8, border: '1px solid #d1d5db', background: '#fff', fontSize: 13, cursor: 'pointer' }}
+              >
+                Batal
+              </button>
+              <button
+                disabled={savingKoreksi}
+                onClick={async () => {
+                  setSavingKoreksi(true);
+                  setKoreksiError('');
+                  try {
+                    const result = await setKoreksiStorting({
+                      cabangId: cabang.id,
+                      adminUid: selectedAdmin.uid,
+                      bulan: prevMonthSGTotals.prevBulan,
+                      l1: parseInt(koreksiInput.l1) || 0,
+                      cm: parseInt(koreksiInput.cm) || 0,
+                      mb: parseInt(koreksiInput.mb) || 0,
+                      ml: parseInt(koreksiInput.ml) || 0,
+                    });
+                    if (result.success) {
+                      setKoreksiSGMap(prev => ({
+                        ...prev,
+                        [selectedAdmin.uid]: {
+                          l1: parseInt(koreksiInput.l1) || 0,
+                          cm: parseInt(koreksiInput.cm) || 0,
+                          mb: parseInt(koreksiInput.mb) || 0,
+                          ml: parseInt(koreksiInput.ml) || 0,
+                        },
+                      }));
+                      setShowKoreksiModal(false);
+                    } else {
+                      setKoreksiError('Gagal menyimpan. Coba lagi.');
+                    }
+                  } catch (e) {
+                    setKoreksiError(e.message || 'Gagal menyimpan.');
+                  } finally {
+                    setSavingKoreksi(false);
+                  }
+                }}
+                style={{ flex: 1, padding: '10px', borderRadius: 8, border: 'none', background: savingKoreksi ? '#a78bfa' : '#7c3aed', color: '#fff', fontSize: 13, fontWeight: 600, cursor: savingKoreksi ? 'not-allowed' : 'pointer' }}
+              >
+                {savingKoreksi ? 'Menyimpan...' : 'Simpan'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
