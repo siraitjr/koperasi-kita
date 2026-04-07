@@ -1025,11 +1025,17 @@ function getKategoriNasabah(nasabah) {
       ? todayDate
       : new Date(selectedYear, selectedMonth + 1, 0); // Hari terakhir bulan itu
 
-    // Generate hari kerja bulan yang dipilih (tanggal 1 s/d endDate, skip Minggu)
+    // Generate hari kerja bulan yang dipilih (skip Minggu & tanggal merah)
+    const LIBUR_NASIONAL_SG = [[1,1],[16,1],[17,2],[19,3],[21,3],[3,4],[1,5],[14,5],[16,6],[17,8],[25,8],[25,12]];
+    const isHariKerjaSG = (d) => {
+      if (d.getDay() === 0) return false;
+      const dd = d.getDate(), mm = d.getMonth() + 1;
+      return !LIBUR_NASIONAL_SG.some(([ld, lm]) => ld === dd && lm === mm);
+    };
     const workingDates = [];
     const cur = new Date(selectedYear, selectedMonth, 1);
     while (cur <= endDate) {
-      if (cur.getDay() !== 0) { // Skip Minggu
+      if (isHariKerjaSG(cur)) {
         const dd = String(cur.getDate()).padStart(2, '0');
         const mmm = BULAN_INDO_ARR[cur.getMonth()];
         const yyyy = cur.getFullYear();
@@ -1166,10 +1172,16 @@ function getKategoriNasabah(nasabah) {
     const BULAN_FULL = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
     const prevMonthLabel = `${BULAN_FULL[prevMonthIdx]} ${prevYear}`;
     let pb = 0, l1 = 0, cm = 0, mb = 0, ml = 0;
+    const LIBUR_PREV = [[1,1],[16,1],[17,2],[19,3],[21,3],[3,4],[1,5],[14,5],[16,6],[17,8],[25,8],[25,12]];
+    const isHariKerjaPrev = (d) => {
+      if (d.getDay() === 0) return false;
+      const dd = d.getDate(), mm = d.getMonth() + 1;
+      return !LIBUR_PREV.some(([ld, lm]) => ld === dd && lm === mm);
+    };
     const endOfPrevMonth = new Date(prevYear, prevMonthIdx + 1, 0);
     const cur = new Date(prevYear, prevMonthIdx, 1);
     while (cur <= endOfPrevMonth) {
-      if (cur.getDay() !== 0) {
+      if (isHariKerjaPrev(cur)) {
         const dd = String(cur.getDate()).padStart(2, '0');
         const mmm = BULAN_INDO_ARR[cur.getMonth()];
         const dateStr = `${dd} ${mmm} ${cur.getFullYear()}`;
@@ -1581,19 +1593,19 @@ function getKategoriNasabah(nasabah) {
                       <tr>
                         <td style={{ fontWeight: 700, textAlign: 'center' }}>TOTAL</td>
                         <td style={{ textAlign: 'center', fontWeight: 700, fontFamily: "'DM Mono', monospace" }}>
-                          {formatRp(stortingGlobalData[stortingGlobalData.length - 1]?.dropBerjalan || 0)}
+                          {formatRp(stortingGlobalData.reduce((s, r) => s + r.dropBerjalan, 0))}
                         </td>
                         <td style={{ textAlign: 'center', fontWeight: 700, fontFamily: "'DM Mono', monospace" }}>
                           {formatRp(stortingGlobalData.reduce((s, r) => s + r.dropKini, 0))}
                         </td>
                         <td style={{ textAlign: 'center', fontWeight: 700, fontFamily: "'DM Mono', monospace" }}>
-                          {formatRp(stortingGlobalData[stortingGlobalData.length - 1]?.targetBerjalan || 0)}
+                          {formatRp(stortingGlobalData.reduce((s, r) => s + r.targetBerjalan, 0))}
                         </td>
                         <td style={{ textAlign: 'center', fontWeight: 700, fontFamily: "'DM Mono', monospace" }}>
                           {formatRp(stortingGlobalData.reduce((s, r) => s + r.targetKini, 0))}
                         </td>
                         <td style={{ textAlign: 'center', fontWeight: 700, fontFamily: "'DM Mono', monospace" }}>
-                          {formatRp(stortingGlobalData[stortingGlobalData.length - 1]?.stortingBerjalan || 0)}
+                          {formatRp(stortingGlobalData.reduce((s, r) => s + r.stortingBerjalan, 0))}
                         </td>
                         <td style={{ textAlign: 'center', fontWeight: 700, fontFamily: "'DM Mono', monospace" }}>
                           {formatRp(stortingGlobalData.reduce((s, r) => s + r.stortingKini, 0))}
