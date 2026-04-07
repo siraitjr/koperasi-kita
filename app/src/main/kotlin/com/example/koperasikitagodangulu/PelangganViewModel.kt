@@ -16426,7 +16426,8 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
      */
     fun loadAbsensiSendiri() {
         val uid = Firebase.auth.currentUser?.uid ?: return
-        val todayKey = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(java.util.Date())
+        val wibZone = java.util.TimeZone.getTimeZone("Asia/Jakarta")
+        val todayKey = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale("id", "ID")).apply { timeZone = wibZone }.format(java.util.Date())
         isLoadingAbsensi.value = true
         viewModelScope.launch {
             try {
@@ -16458,8 +16459,9 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
         onFailure: (String) -> Unit
     ) {
         val uid = Firebase.auth.currentUser?.uid ?: run { onFailure("Sesi login tidak ditemukan"); return }
-        val todayKey = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(java.util.Date())
-        val jam = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date())
+        val wibZone = java.util.TimeZone.getTimeZone("Asia/Jakarta")
+        val todayKey = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale("id", "ID")).apply { timeZone = wibZone }.format(java.util.Date())
+        val jam = java.text.SimpleDateFormat("HH:mm", java.util.Locale("id", "ID")).apply { timeZone = wibZone }.format(java.util.Date())
         val roleStr = when (_currentUserRole.value) {
             UserRole.ADMIN_LAPANGAN -> "admin"
             UserRole.KOORDINATOR -> "koordinator"
