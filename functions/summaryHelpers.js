@@ -832,27 +832,36 @@ async function fullRecalculateAdminSummary(adminUid) {
                         nasabahLunas++;
                         if (adaPembayaranPadaTanggal(p, today)) nasabahLunasHariIni++;
                     }
-                                } else {
-                    if (!isMenungguPencairanManual) {
+                    // ✅ FIX: Nasabah lunas cicilan HARI INI tetap masuk target sampai besok
+                    const tanggalLunasCicilan = (p.tanggalLunasCicilan || '').trim();
+                    if (!isHariLibur && tanggalLunasCicilan === today) {
+                        targetHariIni += Math.floor((p.besarPinjaman || 0) * 3 / 100);
+                    }
+                } else {
+                    // ✅ FIX: Nasabah ditandai MENUNGGU_PENCAIRAN HARI INI tetap masuk target sampai besok
+                    const tanggalStatusKhusus = (p.tanggalStatusKhusus || '').trim();
+                    const isMenungguPencairanHariIni = isMenungguPencairanManual && tanggalStatusKhusus === today;
+
+                    if (!isMenungguPencairanManual || isMenungguPencairanHariIni) {
                         // ✅ FIX: Exclude nasabah cair hari ini dari nasabahAktif
                         // Konsisten dengan PDL (RingkasanDashboardScreen.kt line 119-121)
                         // Nasabah yang dicairkan hari ini belum dihitung aktif, baru besok
                         const tglCair = (p.tanggalPencairan || '').trim();
                         const isCairHariIni = tglCair !== '' && tglCair === today;
-                        
+
                         // ✅ FIX: Exclude nasabah > 3 bulan dari nasabahAktif
                         // Konsisten dengan PDL (RingkasanDashboardScreen.kt line 113-116)
                         const tglAcuanAktif = (p.tanggalPencairan || '').trim()
                             || (p.tanggalPengajuan || '').trim()
                             || (p.tanggalDaftar || '').trim();
                         const isOverThreeMonthsAktif = isOverThreeMonths(tglAcuanAktif);
-                        
-                        if (!isCairHariIni && !isOverThreeMonthsAktif) {
+
+                        if (!isCairHariIni && !isOverThreeMonthsAktif && !isMenungguPencairanHariIni) {
                             nasabahAktif++;
                             totalPinjamanAktif += totalPelunasan;
                             totalPiutang += Math.max(0, totalPelunasan - totalDibayar);
                         }
-                        
+
                         if (!isHariLibur) {
                             // ✅ BARU: Exclude nasabah macet (> 4 bulan)
                             const tglAcuan = (p.tanggalPencairan || '').trim()
@@ -860,8 +869,8 @@ async function fullRecalculateAdminSummary(adminUid) {
                                 || (p.tanggalDaftar || '').trim();
                             if (!isOverThreeMonths(tglAcuan)) {
                                 // Exclude nasabah cair hari ini (konsisten Android)
-                                const tglCair = (p.tanggalPencairan || '').trim();
-                                if (tglCair !== today) {
+                                const tglCair2 = (p.tanggalPencairan || '').trim();
+                                if (tglCair2 !== today) {
                                     // Flat 3% — konsisten dengan Android
                                     targetHariIni += Math.floor((p.besarPinjaman || 0) * 3 / 100);
                                 }

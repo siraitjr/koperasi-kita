@@ -130,11 +130,21 @@ fun RingkasanDashboardScreen(
         // ✅ PERBAIKAN: Nasabah yang dicairkan hari ini belum dihitung, baru mulai besok
         val isCairHariIni = pelanggan.tanggalPencairan.isNotBlank() && pelanggan.tanggalPencairan == today
 
-        isBelumLunas && !isMenungguPencairan && !isOverThreeMonths && !isCairHariIni && (
-                pelanggan.status == "Aktif" ||
-                        pelanggan.status.equals("aktif", ignoreCase = true) ||
-                        pelanggan.status == "Active"
-                )
+        // ✅ FIX: Nasabah yang lunas cicilan HARI INI tetap masuk target sampai besok
+        val isLunasHariIni = !isBelumLunas && pelanggan.tanggalLunasCicilan == today
+
+        // ✅ FIX: Nasabah yang ditandai MENUNGGU_PENCAIRAN HARI INI tetap masuk target sampai besok
+        val isMenungguPencairanHariIni = isMenungguPencairan && pelanggan.tanggalStatusKhusus == today
+
+        val isStatusAktif = pelanggan.status == "Aktif" ||
+                pelanggan.status.equals("aktif", ignoreCase = true) ||
+                pelanggan.status == "Active"
+
+        // Nasabah masuk target jika: (belum lunas ATAU lunas hari ini) DAN (bukan menunggu pencairan ATAU ditandai hari ini)
+        (isBelumLunas || isLunasHariIni) &&
+                (!isMenungguPencairan || isMenungguPencairanHariIni) &&
+                !isOverThreeMonths && !isCairHariIni &&
+                (isStatusAktif || isLunasHariIni || isMenungguPencairanHariIni)
     }
 
     val totalTagihanDariCicilan: Long = daftarPelanggan

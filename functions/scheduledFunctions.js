@@ -122,30 +122,41 @@ exports.dailyTargetRecalc = functions.pubsub
                     if (!p) return;
                     
                     // ===== FILTER: SAMA PERSIS DENGAN Android RingkasanDashboardScreen.kt =====
-                    
-                    // 1. Hanya status Aktif/Active
+
+                    // 1. Hanya status Aktif/Active (atau lunas/menunggu pencairan HARI INI)
                     const status = (p.status || '').toLowerCase();
-                    if (status !== 'aktif' && status !== 'active') return;
-                    
-                    // 2. Exclude MENUNGGU_PENCAIRAN
                     const statusKhusus = (p.statusKhusus || '').toUpperCase().replace(/ /g, '_');
-                    if (statusKhusus === 'MENUNGGU_PENCAIRAN') return;
-                    
+                    const isStatusAktif = status === 'aktif' || status === 'active';
+
+                    // 2. Cek lunas & menunggu pencairan
+                    const totalDibayar = calculateTotalDibayar(p);
+                    const totalPelunasan = p.totalPelunasan || 0;
+                    const isBelumLunas = !(totalPelunasan > 0 && totalDibayar >= totalPelunasan);
+                    const isMenungguPencairan = statusKhusus === 'MENUNGGU_PENCAIRAN';
+
+                    // ✅ FIX: Nasabah lunas cicilan HARI INI tetap masuk target sampai besok
+                    const tanggalLunasCicilan = (p.tanggalLunasCicilan || '').trim();
+                    const isLunasHariIni = !isBelumLunas && tanggalLunasCicilan === today;
+
+                    // ✅ FIX: Nasabah ditandai MENUNGGU_PENCAIRAN HARI INI tetap masuk target sampai besok
+                    const tanggalStatusKhusus = (p.tanggalStatusKhusus || '').trim();
+                    const isMenungguPencairanHariIni = isMenungguPencairan && tanggalStatusKhusus === today;
+
                     // 3. Exclude nasabah > 3 bulan (dari tanggal 1 bulan ke-3 ke belakang)
                     const tglAcuan = (p.tanggalPencairan || '').trim()
                         || (p.tanggalPengajuan || '').trim()
                         || (p.tanggalDaftar || '').trim();
                     if (isOverThreeMonths(tglAcuan)) return;
-                    
+
                     // 4. Exclude nasabah cair hari ini (baru mulai besok)
                     const tglCair = (p.tanggalPencairan || '').trim();
                     if (tglCair === today) return;
-                    
-                    // 5. Belum lunas — hitung totalDibayar
-                    const totalDibayar = calculateTotalDibayar(p);
-                    const totalPelunasan = p.totalPelunasan || 0;
-                    if (totalPelunasan > 0 && totalDibayar >= totalPelunasan) return;
-                    
+
+                    // 5. Filter gabungan: (belum lunas ATAU lunas hari ini) DAN (bukan menunggu pencairan ATAU ditandai hari ini)
+                    if (!(isBelumLunas || isLunasHariIni)) return;
+                    if (isMenungguPencairan && !isMenungguPencairanHariIni) return;
+                    if (!isStatusAktif && !isLunasHariIni && !isMenungguPencairanHariIni) return;
+
                     // ===== HITUNG TARGET: Flat 3% dari besarPinjaman =====
                     adminTarget += Math.floor((p.besarPinjaman || 0) * 3 / 100);
                 });

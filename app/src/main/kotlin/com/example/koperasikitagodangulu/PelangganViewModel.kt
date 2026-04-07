@@ -911,21 +911,28 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
             }.time
 
             val activeCustomers = daftarPelanggan.filter { pelanggan ->
-                // 1. Status harus Aktif
+                // 1. Status harus Aktif (atau lunas/menunggu pencairan hari ini)
                 val isStatusAktif = pelanggan.status == "Aktif" ||
                         pelanggan.status.equals("aktif", ignoreCase = true) ||
                         pelanggan.status == "Active"
-                if (!isStatusAktif) return@filter false
 
                 // 2. Belum lunas
                 val totalBayar = pelanggan.pembayaranList.sumOf { pay ->
                     pay.jumlah.toLong() + pay.subPembayaran.sumOf { sub -> sub.jumlah.toLong() }
                 }
                 val isBelumLunas = totalBayar < pelanggan.totalPelunasan.toLong()
-                if (!isBelumLunas) return@filter false
 
                 // 3. Bukan MENUNGGU_PENCAIRAN
-                if (pelanggan.statusKhusus == "MENUNGGU_PENCAIRAN") return@filter false
+                val isMenungguPencairan = pelanggan.statusKhusus == "MENUNGGU_PENCAIRAN"
+
+                // ✅ FIX: Nasabah lunas cicilan HARI INI tetap masuk target sampai besok
+                val isLunasHariIni = !isBelumLunas && pelanggan.tanggalLunasCicilan == today
+
+                // ✅ FIX: Nasabah ditandai MENUNGGU_PENCAIRAN HARI INI tetap masuk target sampai besok
+                val isMenungguPencairanHariIni = isMenungguPencairan && pelanggan.tanggalStatusKhusus == today
+
+                if (!(isBelumLunas || isLunasHariIni)) return@filter false
+                if (isMenungguPencairan && !isMenungguPencairanHariIni) return@filter false
 
                 // 4. Tidak lebih dari 3 bulan
                 val tglAcuan = pelanggan.tanggalPencairan.ifBlank {
@@ -940,6 +947,8 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                 // 5. Bukan cair hari ini
                 val isCairHariIni = pelanggan.tanggalPencairan.isNotBlank() && pelanggan.tanggalPencairan == today
                 if (isCairHariIni) return@filter false
+
+                if (!isStatusAktif && !isLunasHariIni && !isMenungguPencairanHariIni) return@filter false
 
                 true
             }
@@ -13051,17 +13060,25 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                                 pay.tanggal == today || pay.subPembayaran.any { it.tanggal == today }
                             }
                             if (adaPembayaranHariIni) nasabahLunasHariIni++
+
+                            // ✅ FIX: Nasabah lunas cicilan HARI INI tetap masuk target sampai besok
+                            if (pelanggan.tanggalLunasCicilan == today) {
+                                targetHariIni += pelanggan.besarPinjaman * 3L / 100L
+                            }
                         } else {
                             nasabahAktif++
                             totalPinjamanAktif += totalPelunasanValue
                             totalPiutang += (totalPelunasanValue - totalDibayar).coerceAtLeast(0)
 
                             // Hitung target hari ini — SAMA dengan calculateTargetHarian() admin lapangan:
-                            // 1. Skip jika statusKhusus == MENUNGGU_PENCAIRAN
+                            // 1. Skip jika statusKhusus == MENUNGGU_PENCAIRAN (kecuali ditandai hari ini)
                             // 2. Skip jika > 3 bulan
                             // 3. Skip jika cair hari ini
                             // 4. Flat 3% dari besarPinjaman
-                            val skipTarget = pelanggan.statusKhusus == "MENUNGGU_PENCAIRAN"
+                            val isMenungguPencairan = pelanggan.statusKhusus == "MENUNGGU_PENCAIRAN"
+                            // ✅ FIX: Nasabah ditandai MENUNGGU_PENCAIRAN HARI INI tetap masuk target sampai besok
+                            val isMenungguPencairanHariIni = isMenungguPencairan && pelanggan.tanggalStatusKhusus == today
+                            val skipTarget = isMenungguPencairan && !isMenungguPencairanHariIni
                             val tglAcuan = pelanggan.tanggalPencairan.ifBlank {
                                 pelanggan.tanggalPengajuan.ifBlank { pelanggan.tanggalDaftar }
                             }

@@ -191,7 +191,9 @@ fun PelangganYangHarusDikunjungiScreen(
     }.time
 
     val targetHarian = daftarPelanggan.filter { pelanggan ->
-        if (pelanggan.status != "Aktif" && !pelanggan.status.equals("aktif", ignoreCase = true) && pelanggan.status != "Active") return@filter false
+        val isStatusAktif = pelanggan.status == "Aktif" ||
+                pelanggan.status.equals("aktif", ignoreCase = true) ||
+                pelanggan.status == "Active"
 
         val totalBayar = pelanggan.pembayaranList.sumOf { pay ->
             pay.jumlah.toLong() + pay.subPembayaran.sumOf { sub -> sub.jumlah.toLong() }
@@ -209,7 +211,16 @@ fun PelangganYangHarusDikunjungiScreen(
 
         val isCairHariIni = pelanggan.tanggalPencairan.isNotBlank() && pelanggan.tanggalPencairan == tanggalIni
 
-        isBelumLunas && !isMenungguPencairan && !isOverThreeMonths && !isCairHariIni
+        // ✅ FIX: Nasabah yang lunas cicilan HARI INI tetap masuk target sampai besok
+        val isLunasHariIni = !isBelumLunas && pelanggan.tanggalLunasCicilan == tanggalIni
+
+        // ✅ FIX: Nasabah yang ditandai MENUNGGU_PENCAIRAN HARI INI tetap masuk target sampai besok
+        val isMenungguPencairanHariIni = isMenungguPencairan && pelanggan.tanggalStatusKhusus == tanggalIni
+
+        (isBelumLunas || isLunasHariIni) &&
+                (!isMenungguPencairan || isMenungguPencairanHariIni) &&
+                !isOverThreeMonths && !isCairHariIni &&
+                (isStatusAktif || isLunasHariIni || isMenungguPencairanHariIni)
     }.sumOf { it.besarPinjaman * 3L / 100L }.toInt()
 
     val totalCicilanFiltered = targetHarian
