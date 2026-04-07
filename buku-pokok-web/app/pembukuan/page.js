@@ -967,14 +967,14 @@ function getKategoriNasabah(nasabah) {
 
   // ==================== FETCH KOREKSI STORTING ====================
   useEffect(() => {
-    if (!isStortingGlobalMode || !stortingMonth) { setKoreksiSGMap({}); return; }
+    if (tabelFilter !== 'stortingGlobal' || !stortingMonth) { setKoreksiSGMap({}); return; }
     const [smY, smM] = stortingMonth.split('-').map(Number);
     const prev = new Date(smY, smM - 2, 1);
     const prevBulan = `${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, '0')}`;
     getKoreksiStorting({ cabangId: cabang.id, bulan: prevBulan })
       .then(result => { if (result.success) setKoreksiSGMap(result.data || {}); })
       .catch(() => {});
-  }, [isStortingGlobalMode, stortingMonth, cabang.id]);
+  }, [tabelFilter, stortingMonth, cabang.id]);
 
   // ==================== FILTER ====================
   const filtered = (data?.nasabah?.filter((n) => {
