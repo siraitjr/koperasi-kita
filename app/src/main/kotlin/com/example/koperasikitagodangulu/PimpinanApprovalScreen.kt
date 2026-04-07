@@ -159,10 +159,6 @@ fun PimpinanApprovalScreen(
     val pimpinanDeletionRequests by viewModel.pimpinanDeletionRequests.collectAsState()
     val unreadPimpinanDeletionCount by viewModel.unreadPimpinanDeletionCount.collectAsState()
 
-    // ✅ Payment Deletion Requests
-    val pimpinanPaymentDeletionRequests by viewModel.pimpinanPaymentDeletionRequests.collectAsState()
-    val unreadPimpinanPaymentDeletionCount by viewModel.unreadPimpinanPaymentDeletionCount.collectAsState()
-
     // =========================================================================
     // ✅ BARU: Dark Mode State
     // =========================================================================
@@ -202,7 +198,6 @@ fun PimpinanApprovalScreen(
 
             // ✅ BARU: Load deletion requests untuk Pimpinan
             viewModel.loadPimpinanDeletionRequests()
-            viewModel.loadPimpinanPaymentDeletionRequests()
         } catch (e: Exception) {
             Log.e("ApprovalScreen", "Error loading data: ${e.message}")
         }
@@ -342,7 +337,7 @@ fun PimpinanApprovalScreen(
                     icon = {
                         Box {
                             Icon(Icons.Default.DeleteSweep, contentDescription = null)
-                            if (pimpinanDeletionRequests.isNotEmpty() || pimpinanPaymentDeletionRequests.isNotEmpty()) {
+                            if (pimpinanDeletionRequests.isNotEmpty()) {
                                 Box(
                                     modifier = Modifier
                                         .size(8.dp)
@@ -540,64 +535,6 @@ fun PimpinanApprovalScreen(
                             }
                         }
 
-                        // Section 2: Penghapusan Pembayaran
-                        item {
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Text(
-                                "Penghapusan Pembayaran",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = if (isDark) Color.White else Color.Black
-                            )
-                        }
-
-                        if (pimpinanPaymentDeletionRequests.isEmpty()) {
-                            item {
-                                Card(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    colors = CardDefaults.cardColors(
-                                        containerColor = if (isDark) Color(0xFF1E293B) else Color.White
-                                    )
-                                ) {
-                                    Text(
-                                        "Tidak ada pengajuan penghapusan pembayaran",
-                                        modifier = Modifier.padding(16.dp),
-                                        color = Color.Gray
-                                    )
-                                }
-                            }
-                        } else {
-                            items(pimpinanPaymentDeletionRequests) { request ->
-                                PimpinanPaymentDeletionRequestCard(
-                                    request = request,
-                                    onApprove = {
-                                        viewModel.approvePaymentDeletionRequest(
-                                            requestId = request.id,
-                                            onSuccess = {
-                                                Toast.makeText(context, "Penghapusan pembayaran disetujui", Toast.LENGTH_SHORT).show()
-                                                viewModel.loadPimpinanPaymentDeletionRequests()
-                                            },
-                                            onFailure = { e ->
-                                                Toast.makeText(context, "Gagal: ${e.message}", Toast.LENGTH_SHORT).show()
-                                            }
-                                        )
-                                    },
-                                    onReject = { alasan ->
-                                        viewModel.rejectPaymentDeletionRequest(
-                                            requestId = request.id,
-                                            catatanPimpinan = alasan,
-                                            onSuccess = {
-                                                Toast.makeText(context, "Penghapusan pembayaran ditolak", Toast.LENGTH_SHORT).show()
-                                                viewModel.loadPimpinanPaymentDeletionRequests()
-                                            },
-                                            onFailure = { e ->
-                                                Toast.makeText(context, "Gagal: ${e.message}", Toast.LENGTH_SHORT).show()
-                                            }
-                                        )
-                                    }
-                                )
-                            }
-                        }
                     }
                 }
             }

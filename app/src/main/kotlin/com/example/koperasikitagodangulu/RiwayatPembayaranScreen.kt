@@ -32,8 +32,6 @@ import com.example.koperasikitagodangulu.utils.formatRupiah
 import kotlin.math.max
 import android.widget.Toast
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.CircularProgressIndicator
 import com.google.accompanist.systemuicontroller.rememberSystemUiController
 
 // Modern Color Palette
@@ -100,7 +98,6 @@ fun RiwayatPembayaranScreen(
         pembayaranListState.addAll(pelanggan.pembayaranList)
     }
 
-    var showDialogIndex by remember { mutableStateOf<Int?>(null) }
     var showSubDeleteDialog by remember { mutableStateOf<Pair<Int, Int>?>(null) }
     var showHapusStatusDialog by remember { mutableStateOf(false) }
     var expandedReferensi by remember { mutableStateOf(false) }
@@ -274,9 +271,6 @@ fun RiwayatPembayaranScreen(
                                 PaymentHistoryCard(
                                     pembayaran = pembayaran,
                                     nomor = nomor,
-                                    originalIndex = originalIndex,
-                                    reversedIndex = reversedIndex,
-                                    showDialogIndex = showDialogIndex,
                                     isDark = isDark,
                                     cardColor = cardColor,
                                     borderColor = borderColor,
@@ -284,27 +278,6 @@ fun RiwayatPembayaranScreen(
                                     subtitleColor = subtitleColor,
                                     onAddSubPayment = {
                                         navController.navigate("tambahSubPembayaran/$pelangganId/$originalIndex")
-                                    },
-                                    onDelete = {
-                                        showDialogIndex = reversedIndex
-                                    },
-                                    onDismissDialog = { showDialogIndex = null },
-                                    onRequestPaymentDeletion = { alasan ->
-                                        viewModel.createPaymentDeletionRequest(
-                                            pelanggan = pelanggan,
-                                            pembayaranIndex = originalIndex,
-                                            pembayaran = pembayaran,
-                                            cicilanKe = nomor,
-                                            alasanPenghapusan = alasan,
-                                            onSuccess = {
-                                                showDialogIndex = null
-                                                // Tampilkan toast sukses (tambahkan context jika belum ada)
-                                            },
-                                            onFailure = { exception ->
-                                                showDialogIndex = null
-                                                // Tampilkan toast error
-                                            }
-                                        )
                                     }
                                 )
                             }
@@ -736,18 +709,12 @@ private fun ReferensiCicilanCard(
 private fun PaymentHistoryCard(
     pembayaran: Pembayaran,
     nomor: Int,
-    originalIndex: Int,
-    reversedIndex: Int,
-    showDialogIndex: Int?,
     isDark: Boolean,
     cardColor: Color,
     borderColor: Color,
     txtColor: Color,
     subtitleColor: Color,
-    onAddSubPayment: () -> Unit,
-    onDelete: () -> Unit,
-    onDismissDialog: () -> Unit,
-    onRequestPaymentDeletion: (String) -> Unit  // ✅ Ganti dari onConfirmDelete
+    onAddSubPayment: () -> Unit
 ) {
     Card(
         modifier = Modifier
@@ -871,124 +838,8 @@ private fun PaymentHistoryCard(
                         modifier = Modifier.size(22.dp)
                     )
                 }
-                IconButton(
-                    onClick = onDelete,
-                    modifier = Modifier.size(36.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.Delete,
-                        contentDescription = "Hapus",
-                        tint = HistoryColors.danger,
-                        modifier = Modifier.size(22.dp)
-                    )
-                }
             }
         }
-    }
-
-    // Delete Confirmation Dialog - Dengan Approval ke Pimpinan
-    if (showDialogIndex == reversedIndex) {
-        var alasanPenghapusan by remember { mutableStateOf("") }
-        var isSubmitting by remember { mutableStateOf(false) }
-
-        AlertDialog(
-            onDismissRequest = { if (!isSubmitting) onDismissDialog() },
-            shape = RoundedCornerShape(20.dp),
-            title = {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(40.dp)
-                            .background(HistoryColors.warning.copy(alpha = 0.15f), CircleShape),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.Delete,
-                            contentDescription = null,
-                            tint = HistoryColors.warning
-                        )
-                    }
-                    Text("Ajukan Penghapusan", fontWeight = FontWeight.Bold)
-                }
-            },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text(
-                        "Pengajuan penghapusan pembayaran Rp ${formatRupiah(pembayaran.jumlah)} akan dikirim ke Pimpinan cabang.",
-                        fontSize = 14.sp
-                    )
-
-                    OutlinedTextField(
-                        value = alasanPenghapusan,
-                        onValueChange = { alasanPenghapusan = it },
-                        label = { Text("Alasan Penghapusan *") },
-                        placeholder = { Text("Contoh: Salah input, double entry, dll...") },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp),
-                        minLines = 2,
-                        maxLines = 4,
-                        enabled = !isSubmitting
-                    )
-
-                    Surface(
-                        shape = RoundedCornerShape(8.dp),
-                        color = Color(0xFFFFF3E0)
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(12.dp),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.Info,
-                                contentDescription = null,
-                                tint = Color(0xFFE65100),
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Text(
-                                "Pembayaran tidak langsung terhapus. Pimpinan cabang akan mereview pengajuan ini.",
-                                fontSize = 12.sp,
-                                color = Color(0xFFE65100)
-                            )
-                        }
-                    }
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        onRequestPaymentDeletion(alasanPenghapusan)
-                    },
-                    enabled = alasanPenghapusan.isNotBlank() && !isSubmitting,
-                    colors = ButtonDefaults.buttonColors(containerColor = HistoryColors.warning),
-                    shape = RoundedCornerShape(10.dp)
-                ) {
-                    if (isSubmitting) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(16.dp),
-                            color = Color.White,
-                            strokeWidth = 2.dp
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                    }
-                    Text(
-                        if (isSubmitting) "Mengirim..." else "Ajukan Penghapusan",
-                        fontWeight = FontWeight.SemiBold
-                    )
-                }
-            },
-            dismissButton = {
-                TextButton(
-                    onClick = onDismissDialog,
-                    enabled = !isSubmitting
-                ) {
-                    Text("Batal")
-                }
-            }
-        )
     }
 }
 
