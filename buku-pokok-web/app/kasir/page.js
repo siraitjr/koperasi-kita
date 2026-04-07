@@ -140,7 +140,7 @@ function generateBulanOptions() {
   const jakartaOffset = 7 * 60;
   const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
   const jakarta = new Date(utc + (jakartaOffset * 60000));
-  for (let i = 0; i < 12; i++) {
+  for (let i = 0; i < 4; i++) {
     const d = new Date(jakarta.getFullYear(), jakarta.getMonth() - i, 1);
     const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
     const label = `${BULAN_INDO[d.getMonth()]} ${d.getFullYear()}`;

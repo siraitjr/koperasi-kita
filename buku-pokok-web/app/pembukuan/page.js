@@ -1386,11 +1386,11 @@ function getKategoriNasabah(nasabah) {
                     if (!stortingMonth) return;
                     const [y, m] = stortingMonth.split('-').map(Number);
                     const prev = new Date(y, m - 2, 1);
-                    // Batas: 12 bulan ke belakang
+                    // Batas: 3 bulan ke belakang
                     const now = new Date();
                     const wibOff = 7 * 60 * 60 * 1000;
                     const wib = new Date(now.getTime() + (now.getTimezoneOffset() * 60000) + wibOff);
-                    const minDate = new Date(wib.getFullYear() - 1, wib.getMonth(), 1);
+                    const minDate = new Date(wib.getFullYear(), wib.getMonth() - 3, 1);
                     if (prev >= minDate) {
                       setStortingMonth(`${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, '0')}`);
                     }
@@ -1981,6 +1981,17 @@ function JurnalTransaksiScreen({ user, cabang, onBack, onLogout, onSelectBook, s
           <input
             type="month"
             value={bulan}
+            min={(() => {
+              const now = new Date();
+              const wib = new Date(now.getTime() + (now.getTimezoneOffset() * 60000) + 7 * 60 * 60 * 1000);
+              const d = new Date(wib.getUTCFullYear(), wib.getUTCMonth() - 3, 1);
+              return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+            })()}
+            max={(() => {
+              const now = new Date();
+              const wib = new Date(now.getTime() + (now.getTimezoneOffset() * 60000) + 7 * 60 * 60 * 1000);
+              return `${wib.getUTCFullYear()}-${String(wib.getUTCMonth() + 1).padStart(2, '0')}`;
+            })()}
             onChange={(e) => setBulan(e.target.value)}
             style={{
               padding: '8px 12px', borderRadius: '8px', border: '1px solid #d1d5db',
