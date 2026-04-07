@@ -1447,7 +1447,7 @@ function getKategoriNasabah(nasabah) {
                   {prevMonthSGTotals && (() => {
                     const total = prevMonthSGTotals.pb + prevMonthSGTotals.l1 + prevMonthSGTotals.cm + prevMonthSGTotals.mb + prevMonthSGTotals.ml;
                     return total > 0 ? (
-                      <span style={{ fontSize: 11, color: '#7c3aed', fontWeight: 700, fontFamily: "'DM Mono', monospace" }}>
+                      <span style={{ fontSize: 14, color: '#7c3aed', fontWeight: 700, fontFamily: "'DM Mono', monospace" }}>
                         {formatRp(total)}
                       </span>
                     ) : null;
