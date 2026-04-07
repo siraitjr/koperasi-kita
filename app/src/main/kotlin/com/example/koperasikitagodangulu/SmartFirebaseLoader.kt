@@ -186,30 +186,14 @@ class SmartFirebaseLoader(
                     }
 
                     // Kasus 2: Data ada di Firebase dan lokal, keduanya sudah synced
+                    // → Firebase adalah sumber kebenaran karena data segar dari server.
+                    //   Data lokal yang belum sync sudah dilindungi di Kasus 1.
+                    //   Firebase persistence (setPersistenceEnabled=true) sudah otomatis
+                    //   menyertakan pending writes lokal ke hasil get(), jadi aman.
                     firebasePelanggan != null -> {
-                        // ✅ FIX: Safety check — jangan sampai kehilangan pembayaran!
-                        // Jika lokal punya lebih banyak pembayaran, prioritaskan lokal
-                        // (bisa terjadi jika sync pembayaran belum selesai tapi isSynced=true)
-                        val localPayCount = localPelanggan.pembayaranList.sumOf { 1 + it.subPembayaran.size }
-                        val firebasePayCount = firebasePelanggan.pembayaranList.sumOf { 1 + it.subPembayaran.size }
-                        if (localPayCount >= firebasePayCount) {
-                            // Pertahankan pembayaran lokal, tapi SELALU ambil status dari Firebase
-                            // agar perubahan status (approval, pencairan, dll) tidak tertimpa data lokal
-                            mergedList.add(localPelanggan.copy(
-                                status = firebasePelanggan.status,
-                                dualApprovalInfo = firebasePelanggan.dualApprovalInfo,
-                                catatanApproval = firebasePelanggan.catatanApproval,
-                                tanggalApproval = firebasePelanggan.tanggalApproval,
-                                disetujuiOleh = firebasePelanggan.disetujuiOleh,
-                                besarPinjamanDisetujui = firebasePelanggan.besarPinjamanDisetujui
-                            ))
-                            firebaseMap.remove(localPelanggan.id)
-                            Log.d(TAG, "⚠️ Using LOCAL payments + FIREBASE status (local=$localPayCount >= firebase=$firebasePayCount, status=${firebasePelanggan.status}): ${localPelanggan.namaPanggilan}")
-                        } else {
-                            mergedList.add(firebasePelanggan)
-                            firebaseMap.remove(firebasePelanggan.id)
-                            Log.d(TAG, "📌 Using FIREBASE (synced, server is truth): ${firebasePelanggan.namaPanggilan}")
-                        }
+                        mergedList.add(firebasePelanggan)
+                        firebaseMap.remove(firebasePelanggan.id)
+                        Log.d(TAG, "📌 Using FIREBASE (both synced, server is truth): ${firebasePelanggan.namaPanggilan}")
                     }
 
                     // Kasus 3: Data hanya ada di lokal dan sudah synced, tapi TIDAK ada di Firebase
