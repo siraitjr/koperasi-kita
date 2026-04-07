@@ -1155,6 +1155,42 @@ function getKategoriNasabah(nasabah) {
     return rows;
   })();
 
+  // Total storting (PB/L1/CM/MB/ML) dari bulan sebelumnya
+  const prevMonthSGTotals = (() => {
+    if (!isStortingGlobalMode || !data?.nasabah || !stortingMonth) return null;
+    const [smYear, smMonth] = stortingMonth.split('-').map(Number);
+    const prevDate = new Date(smYear, smMonth - 2, 1);
+    const prevYear = prevDate.getFullYear();
+    const prevMonthIdx = prevDate.getMonth(); // 0-indexed
+    const BULAN_INDO_ARR = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+    const BULAN_FULL = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+    const prevMonthLabel = `${BULAN_FULL[prevMonthIdx]} ${prevYear}`;
+    let pb = 0, l1 = 0, cm = 0, mb = 0, ml = 0;
+    const endOfPrevMonth = new Date(prevYear, prevMonthIdx + 1, 0);
+    const cur = new Date(prevYear, prevMonthIdx, 1);
+    while (cur <= endOfPrevMonth) {
+      if (cur.getDay() !== 0) {
+        const dd = String(cur.getDate()).padStart(2, '0');
+        const mmm = BULAN_INDO_ARR[cur.getMonth()];
+        const dateStr = `${dd} ${mmm} ${cur.getFullYear()}`;
+        data.nasabah.forEach(n => {
+          const pay = n.pembayaran?.[dateStr];
+          if (pay) {
+            const total = pay.total || 0;
+            const kat = getKategoriNasabah(n);
+            if (kat === 'PB') pb += total;
+            else if (kat === 'L1') l1 += total;
+            else if (kat === 'CM') cm += total;
+            else if (kat === 'MB') mb += total;
+            else ml += total;
+          }
+        });
+      }
+      cur.setDate(cur.getDate() + 1);
+    }
+    return { pb, l1, cm, mb, ml, label: prevMonthLabel };
+  })();
+
   const tabelDates = (() => {
     if (!isTabelMode || filtered.length === 0) return [];
     const BULAN_INDO_ARR = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
@@ -1451,6 +1487,33 @@ function getKategoriNasabah(nasabah) {
                     </tr>
                   </thead>
                   <tbody>
+                    {/* Baris total storting bulan sebelumnya */}
+                    {prevMonthSGTotals && (
+                      <tr style={{ background: '#f5f3ff', borderBottom: '2px solid #c4b5fd' }}>
+                        <td style={{ position: 'sticky', left: 0, zIndex: 5, background: '#f5f3ff', textAlign: 'center', fontWeight: 700, fontSize: 11, color: '#7c3aed', padding: '6px 4px' }}>
+                          <span style={{ fontSize: 10, display: 'block', lineHeight: 1.2 }}>Bln</span>
+                          <span style={{ fontSize: 9, display: 'block', lineHeight: 1.2 }}>Lalu</span>
+                        </td>
+                        <td colSpan={8} style={{ textAlign: 'center', fontSize: 11, color: '#7c3aed', fontStyle: 'italic', fontWeight: 600 }}>
+                          Total Storting {prevMonthSGTotals.label}
+                        </td>
+                        <td style={{ textAlign: 'center', fontFamily: "'DM Mono', monospace", fontSize: 12, fontWeight: 700, color: '#7c3aed' }}>
+                          {prevMonthSGTotals.pb > 0 ? formatRp(prevMonthSGTotals.pb) : '-'}
+                        </td>
+                        <td style={{ textAlign: 'center', fontFamily: "'DM Mono', monospace", fontSize: 12, fontWeight: 700, color: '#7c3aed' }}>
+                          {prevMonthSGTotals.l1 > 0 ? formatRp(prevMonthSGTotals.l1) : '-'}
+                        </td>
+                        <td style={{ textAlign: 'center', fontFamily: "'DM Mono', monospace", fontSize: 12, fontWeight: 700, color: '#7c3aed' }}>
+                          {prevMonthSGTotals.cm > 0 ? formatRp(prevMonthSGTotals.cm) : '-'}
+                        </td>
+                        <td style={{ textAlign: 'center', fontFamily: "'DM Mono', monospace", fontSize: 12, fontWeight: 700, color: '#7c3aed' }}>
+                          {prevMonthSGTotals.mb > 0 ? formatRp(prevMonthSGTotals.mb) : '-'}
+                        </td>
+                        <td style={{ textAlign: 'center', fontFamily: "'DM Mono', monospace", fontSize: 12, fontWeight: 700, color: '#7c3aed' }}>
+                          {prevMonthSGTotals.ml > 0 ? formatRp(prevMonthSGTotals.ml) : '-'}
+                        </td>
+                      </tr>
+                    )}
                     {stortingGlobalData.length === 0 ? (
                       <tr>
                         <td colSpan={13} className="empty-cell">Tidak ada data untuk bulan ini</td>
