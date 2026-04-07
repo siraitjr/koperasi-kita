@@ -2307,58 +2307,48 @@ function BukuTunaiScreen({ user, cabang, cabangList, onBack, onLogout, onNavigat
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [selectedDate, setSelectedDate] = useState(null);
+  const bulanOptions = generateBulanOptions();
+  const [selectedBulan, setSelectedBulan] = useState(bulanOptions[0]?.key || '');
 
+  // Fetch buku pokok (hanya saat activeCabang berubah)
+  useEffect(() => {
+    if (!activeCabang) return;
+    setBukuData(null);
+    setSelectedDate(null);
+    getBukuPokok({ cabangId: activeCabang.id, adminUid: '', status: 'aktif' })
+      .then(result => {
+        if (result.success && result.type === 'buku_pokok') {
+          setBukuData(result.data);
+        }
+      })
+      .catch(() => {});
+  }, [activeCabang?.id]);
+
+  // Fetch kasir entries (saat activeCabang atau selectedBulan berubah)
   useEffect(() => {
     if (!activeCabang) return;
     setLoading(true);
     setError('');
-    setBukuData(null);
     setKasirEntries([]);
     setSelectedDate(null);
-
-    // Tentukan bulan-bulan yang perlu di-fetch untuk kasir entries
-    const now = new Date();
-    const wibOffset = 7 * 60 * 60 * 1000;
-    const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
-    const wib = new Date(utc + wibOffset);
-    const bulanCurrent = `${wib.getFullYear()}-${String(wib.getMonth() + 1).padStart(2, '0')}`;
-    // Fetch bulan sebelumnya hanya jika tanggal <= 10 (7 hari kerja bisa lintas bulan)
-    const needPrevMonth = wib.getDate() <= 10;
-    const bulanPrev = (() => {
-      const d = new Date(wib.getFullYear(), wib.getMonth() - 1, 1);
-      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-    })();
-
-    const promises = [
-      getBukuPokok({ cabangId: activeCabang.id, adminUid: '', status: 'aktif' }),
-      getKasirEntries({ cabangId: activeCabang.id, bulan: bulanCurrent }),
-    ];
-    if (needPrevMonth) {
-      promises.push(getKasirEntries({ cabangId: activeCabang.id, bulan: bulanPrev }));
-    }
-
-    Promise.all(promises)
-      .then(([bukuResult, kasirCurrent, kasirPrev]) => {
-        if (bukuResult.success && bukuResult.type === 'buku_pokok') {
-          setBukuData(bukuResult.data);
-        }
-        const allEntries = [
-          ...(kasirCurrent?.success ? kasirCurrent.data.entries || [] : []),
-          ...(kasirPrev?.success ? kasirPrev?.data?.entries || [] : []),
-        ];
-        setKasirEntries(allEntries);
+    getKasirEntries({ cabangId: activeCabang.id, bulan: selectedBulan })
+      .then(result => {
+        setKasirEntries(result?.success ? result.data.entries || [] : []);
       })
       .catch(err => setError('Gagal memuat data: ' + err.message))
       .finally(() => setLoading(false));
-  }, [activeCabang?.id]);
+  }, [activeCabang?.id, selectedBulan]);
 
-  // 7 tanggal terakhir dari buku pokok
-  const dates = (bukuData?.tanggalList || []).slice(0, 7);
+  // Tanggal dalam bulan yang dipilih
+  const [selBulanYear, selBulanMonth] = selectedBulan.split('-').map(Number);
+  const dates = (bukuData?.tanggalList || []).filter(d => {
+    const parts = d.split(' ');
+    if (parts.length < 3) return false;
+    const dMonth = BULAN_INDO.indexOf(parts[1]) + 1;
+    const dYear = parseInt(parts[2]);
+    return dYear === selBulanYear && dMonth === selBulanMonth;
+  });
   const currentDate = selectedDate || dates[0] || null;
-
-  // Helper parse tanggal "07 Feb 2026"
-  const BULAN_MAP_REV_T = {};
-  BULAN_INDO.forEach((b, i) => { BULAN_MAP_REV_T[b] = i; });
 
   // Hitung baris per resort untuk tanggal terpilih
   const tunaiRows = (() => {
@@ -2460,7 +2450,18 @@ function BukuTunaiScreen({ user, cabang, cabangList, onBack, onLogout, onNavigat
           </div>
         )}
 
-        {/* Tab tanggal — 7 hari terakhir */}
+        {/* Pilih bulan */}
+        <div style={{ marginBottom: 12 }}>
+          <select
+            value={selectedBulan}
+            onChange={(e) => setSelectedBulan(e.target.value)}
+            style={{ padding: '8px 12px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 13, background: 'var(--card)', color: 'var(--text)' }}
+          >
+            {bulanOptions.map(o => <option key={o.key} value={o.key}>{o.label}</option>)}
+          </select>
+        </div>
+
+        {/* Tab tanggal — hari kerja pada bulan terpilih */}
         {!loading && dates.length > 0 && (
           <div style={{ display: 'flex', gap: 6, marginBottom: 16, overflowX: 'auto', paddingBottom: 4 }}>
             {dates.map(d => {
