@@ -414,6 +414,7 @@ exports.getBukuPokok = functions
                         cabangId: p.cabangId || '',
                         wilayah: p.wilayah || '',
                         simpanan: p.simpanan || 0,
+                        tarikTabungan: p.tarikTabungan || 0,
                         totalDiterima: p.totalDiterima || 0,
                         pembayaran: pembayaranPerTanggal,
                         // Foto nasabah & KTP (sudah ada di data pelanggan, tanpa tambahan RTDB read)
@@ -471,6 +472,7 @@ exports.getBukuPokok = functions
                         cabangId: '',
                         wilayah: '',
                         simpanan: d.simpanan || 0,
+                        tarikTabungan: d.tarikTabungan || 0,
                         totalDiterima: d.totalDiterima || 0,
                         pembayaran: pembayaranPerTanggal,
                         fotoKtpUrl: '',

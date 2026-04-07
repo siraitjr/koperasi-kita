@@ -1504,6 +1504,9 @@ function BukuRekapScreen({ user, cabang, cabangList, onBack, onLogout, onNavigat
       // Tabungan = 5% dari total besar pinjaman hari ini
       const tabungan = Math.round(totalDrop * 0.05);
 
+      // Tarik Tabungan = jumlah tarik tabungan dari nasabah yang dicairkan hari ini
+      const tarikTabunganTotal = droppedToday.reduce((s, n) => s + (n.tarikTabungan || 0), 0);
+
       // Debit asli = Storting + Admin + Tabungan
       const debitAsli = storting + adminFee + tabungan;
 
@@ -1529,6 +1532,7 @@ function BukuRekapScreen({ user, cabang, cabangList, onBack, onLogout, onNavigat
         storting,
         persen,
         adminFee,
+        tarikTabungan: tarikTabunganTotal,
         tabungan,
         debit,
         nominalDropBaru,
@@ -1553,6 +1557,7 @@ function BukuRekapScreen({ user, cabang, cabangList, onBack, onLogout, onNavigat
     kasPakai: acc.kasPakai + r.kasPakai,
     storting: acc.storting + r.storting,
     adminFee: acc.adminFee + r.adminFee,
+    tarikTabungan: acc.tarikTabungan + r.tarikTabungan,
     tabungan: acc.tabungan + r.tabungan,
     debit: acc.debit + r.debit,
     nominalDropBaru: acc.nominalDropBaru + r.nominalDropBaru,
@@ -1563,7 +1568,7 @@ function BukuRekapScreen({ user, cabang, cabangList, onBack, onLogout, onNavigat
     tunaiPasar: acc.tunaiPasar + r.tunaiPasar,
   }), {
     dropBaru: 0, dropLama: 0, target: 0, kasPakai: 0, storting: 0,
-    adminFee: 0, tabungan: 0, debit: 0, nominalDropBaru: 0, nominalDropLama: 0,
+    adminFee: 0, tarikTabungan: 0, tabungan: 0, debit: 0, nominalDropBaru: 0, nominalDropLama: 0,
     totalDrop: 0, pencairanTabungan: 0, kredit: 0, tunaiPasar: 0,
   });
   const totalPersen = totals.target > 0 ? Math.round(totals.storting / totals.target * 100) : 0;
@@ -1589,6 +1594,7 @@ function BukuRekapScreen({ user, cabang, cabangList, onBack, onLogout, onNavigat
     kasPakai: acc.kasPakai + r.kasPakai,
     storting: acc.storting + r.storting,
     adminFee: acc.adminFee + r.adminFee,
+    tarikTabungan: acc.tarikTabungan + r.tarikTabungan,
     tabungan: acc.tabungan + r.tabungan,
     debit: acc.debit + r.debit,
     nominalDropBaru: acc.nominalDropBaru + r.nominalDropBaru,
@@ -1599,7 +1605,7 @@ function BukuRekapScreen({ user, cabang, cabangList, onBack, onLogout, onNavigat
     tunaiPasar: acc.tunaiPasar + r.tunaiPasar,
   }), {
     dropBaru: 0, dropLama: 0, target: 0, kasPakai: 0, storting: 0,
-    adminFee: 0, tabungan: 0, debit: 0, nominalDropBaru: 0, nominalDropLama: 0,
+    adminFee: 0, tarikTabungan: 0, tabungan: 0, debit: 0, nominalDropBaru: 0, nominalDropLama: 0,
     totalDrop: 0, pencairanTabungan: 0, kredit: 0, tunaiPasar: 0,
   });
   const totalPersenKemarin = totalsKemarin.target > 0 ? Math.round(totalsKemarin.storting / totalsKemarin.target * 100) : 0;
@@ -1611,6 +1617,7 @@ function BukuRekapScreen({ user, cabang, cabangList, onBack, onLogout, onNavigat
     kasPakai: totals.kasPakai + totalsKemarin.kasPakai,
     storting: totals.storting + totalsKemarin.storting,
     adminFee: totals.adminFee + totalsKemarin.adminFee,
+    tarikTabungan: totals.tarikTabungan + totalsKemarin.tarikTabungan,
     tabungan: totals.tabungan + totalsKemarin.tabungan,
     debit: totals.debit + totalsKemarin.debit,
     nominalDropBaru: totals.nominalDropBaru + totalsKemarin.nominalDropBaru,
@@ -1735,6 +1742,7 @@ function BukuRekapScreen({ user, cabang, cabangList, onBack, onLogout, onNavigat
                     <th style={{ ...thStyle, background: '#dff5eb' }}>Storting</th>
                     <th style={{ ...thStyle, background: '#dff5eb' }}>%</th>
                     <th style={thStyle}>Admin</th>
+                    <th style={thStyle}>Tarik Tab.</th>
                     <th style={thStyle}>Tabungan</th>
                     <th style={{ ...thStyle, background: '#e0ecff' }}>Debit</th>
                     <th style={{ ...thStyle, background: '#fef2f0' }}>Drop Baru (Rp)</th>
@@ -1756,6 +1764,7 @@ function BukuRekapScreen({ user, cabang, cabangList, onBack, onLogout, onNavigat
                       <td style={{ ...tdStyle, color: 'var(--success)', fontWeight: 600 }}>{row.storting > 0 ? formatRp(row.storting) : '-'}</td>
                       <td style={{ ...tdStyle, textAlign: 'center', fontWeight: 700, color: row.persen >= 100 ? 'var(--success)' : row.persen >= 50 ? '#b8860b' : 'var(--danger)' }}>{row.persen > 0 ? `${row.persen}%` : '-'}</td>
                       <td style={tdStyle}>{row.adminFee > 0 ? formatRp(row.adminFee) : '-'}</td>
+                      <td style={tdStyle}>{row.tarikTabungan > 0 ? formatRp(row.tarikTabungan) : '-'}</td>
                       <td style={tdStyle}>{row.tabungan > 0 ? formatRp(row.tabungan) : '-'}</td>
                       <td style={{ ...tdStyle, color: '#1a56db', fontWeight: 600 }}>{row.debit > 0 ? formatRp(row.debit) : '-'}</td>
                       <td style={{ ...tdStyle, color: 'var(--danger)' }}>{row.nominalDropBaru > 0 ? formatRp(row.nominalDropBaru) : '-'}</td>
@@ -1776,6 +1785,7 @@ function BukuRekapScreen({ user, cabang, cabangList, onBack, onLogout, onNavigat
                     <td style={{ ...tdStyle, fontWeight: 800, color: 'var(--success)' }}>{formatRp(totals.storting)}</td>
                     <td style={{ ...tdStyle, textAlign: 'center', fontWeight: 800 }}>{totalPersen}%</td>
                     <td style={{ ...tdStyle, fontWeight: 800 }}>{formatRp(totals.adminFee)}</td>
+                    <td style={{ ...tdStyle, fontWeight: 800 }}>{totals.tarikTabungan > 0 ? formatRp(totals.tarikTabungan) : '-'}</td>
                     <td style={{ ...tdStyle, fontWeight: 800 }}>{formatRp(totals.tabungan)}</td>
                     <td style={{ ...tdStyle, fontWeight: 800, color: '#1a56db' }}>{formatRp(totals.debit)}</td>
                     <td style={{ ...tdStyle, fontWeight: 800, color: 'var(--danger)' }}>{formatRp(totals.nominalDropBaru)}</td>
@@ -1796,6 +1806,7 @@ function BukuRekapScreen({ user, cabang, cabangList, onBack, onLogout, onNavigat
                       <td style={{ ...tdStyle, fontWeight: 800, color: 'var(--success)' }}>{formatRp(totalsKemarin.storting)}</td>
                       <td style={{ ...tdStyle, textAlign: 'center', fontWeight: 800 }}>{totalPersenKemarin}%</td>
                       <td style={{ ...tdStyle, fontWeight: 800 }}>{formatRp(totalsKemarin.adminFee)}</td>
+                      <td style={{ ...tdStyle, fontWeight: 800 }}>{totalsKemarin.tarikTabungan > 0 ? formatRp(totalsKemarin.tarikTabungan) : '-'}</td>
                       <td style={{ ...tdStyle, fontWeight: 800 }}>{formatRp(totalsKemarin.tabungan)}</td>
                       <td style={{ ...tdStyle, fontWeight: 800, color: '#1a56db' }}>{formatRp(totalsKemarin.debit)}</td>
                       <td style={{ ...tdStyle, fontWeight: 800, color: 'var(--danger)' }}>{formatRp(totalsKemarin.nominalDropBaru)}</td>
@@ -1817,6 +1828,7 @@ function BukuRekapScreen({ user, cabang, cabangList, onBack, onLogout, onNavigat
                       <td style={{ ...tdStyle, fontWeight: 800, color: 'var(--success)' }}>{formatRp(totalsGabungan.storting)}</td>
                       <td style={{ ...tdStyle, textAlign: 'center', fontWeight: 800 }}>{totalPersenGabungan}%</td>
                       <td style={{ ...tdStyle, fontWeight: 800 }}>{formatRp(totalsGabungan.adminFee)}</td>
+                      <td style={{ ...tdStyle, fontWeight: 800 }}>{totalsGabungan.tarikTabungan > 0 ? formatRp(totalsGabungan.tarikTabungan) : '-'}</td>
                       <td style={{ ...tdStyle, fontWeight: 800 }}>{formatRp(totalsGabungan.tabungan)}</td>
                       <td style={{ ...tdStyle, fontWeight: 800, color: '#1a56db' }}>{formatRp(totalsGabungan.debit)}</td>
                       <td style={{ ...tdStyle, fontWeight: 800, color: 'var(--danger)' }}>{formatRp(totalsGabungan.nominalDropBaru)}</td>
