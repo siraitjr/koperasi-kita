@@ -1378,6 +1378,8 @@ function BukuRekapScreen({ user, cabang, cabangList, onBack, onLogout, onNavigat
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [selectedDate, setSelectedDate] = useState(null);
+  const bulanOptions = generateBulanOptions();
+  const [selectedBulan, setSelectedBulan] = useState(bulanOptions[0]?.key || '');
 
   useEffect(() => {
     if (!activeCabang) return;
@@ -1399,14 +1401,18 @@ function BukuRekapScreen({ user, cabang, cabangList, onBack, onLogout, onNavigat
     });
   }, [activeCabang?.id]);
 
-  // 7 tanggal terakhir dari buku pokok, skip hari Minggu dan tanggal merah
-  // (logika sama dengan HolidaysUtils.kt di Android)
+  // Tanggal hari kerja pada bulan yang dipilih
+  const [selBulanYear, selBulanMonth] = selectedBulan.split('-').map(Number);
   const dates = (data?.tanggalList || [])
     .filter(d => {
+      const parts = d.split(' ');
+      if (parts.length < 3) return false;
+      const dMonth = BULAN_INDO.indexOf(parts[1]) + 1;
+      const dYear = parseInt(parts[2]);
+      if (dYear !== selBulanYear || dMonth !== selBulanMonth) return false;
       const dateObj = parseTanggalIndo(d);
       return dateObj && isHariKerja(dateObj);
-    })
-    .slice(0, 7);
+    });
   const currentDate = selectedDate || dates[0] || null;
 
   // ==================== COMPUTE REKAP PER RESORT ====================
@@ -1651,7 +1657,18 @@ function BukuRekapScreen({ user, cabang, cabangList, onBack, onLogout, onNavigat
           </div>
         )}
 
-        {/* Tab tanggal — 7 hari terakhir */}
+        {/* Pilih bulan */}
+        <div style={{ marginBottom: 12 }}>
+          <select
+            value={selectedBulan}
+            onChange={(e) => { setSelectedBulan(e.target.value); setSelectedDate(null); }}
+            style={{ padding: '8px 12px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 13, background: 'var(--card)', color: 'var(--text)' }}
+          >
+            {bulanOptions.map(o => <option key={o.key} value={o.key}>{o.label}</option>)}
+          </select>
+        </div>
+
+        {/* Tab tanggal — hari kerja pada bulan terpilih */}
         {!loading && dates.length > 0 && (
           <div style={{ display: 'flex', gap: 6, marginBottom: 16, overflowX: 'auto', paddingBottom: 4 }}>
             {dates.map(d => {
