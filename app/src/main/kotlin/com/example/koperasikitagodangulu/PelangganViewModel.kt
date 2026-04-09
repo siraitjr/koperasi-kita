@@ -2678,6 +2678,11 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     fun debugFirebaseStructure() {
+        // ⚠️ DINONAKTIFKAN: Fungsi ini membaca SELURUH node "pelanggan" (semua admin + semua nasabah)
+        // menyebabkan pembengkakan bandwidth RTDB yang signifikan
+        Log.d("Firebase", "⚠️ debugFirebaseStructure() dinonaktifkan untuk hemat bandwidth")
+        return
+        @Suppress("UNREACHABLE_CODE")
         val ref = database.child("pelanggan")
 
         Log.d("Firebase", "🏗️ Starting Firebase Structure Debug...")
@@ -5126,18 +5131,21 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
             }
 
             // =====================================================================
-            // LANGKAH 4: Fallback - cari di semua admin (tanpa query index)
+            // LANGKAH 4: Fallback - cari per admin via metadata (HEMAT BANDWIDTH)
+            // SEBELUMNYA: database.child("pelanggan").get() → download SELURUH database
+            // SEKARANG: baca metadata/admins (ringan) lalu cari spesifik per admin
             // =====================================================================
-            Log.d("Approval", "🔄 Fallback: mencari di semua admin...")
+            Log.d("Approval", "🔄 Fallback: mencari per admin via metadata...")
 
-            val adminsSnap = database.child("pelanggan").get().await()
-
-            for (adminSnap in adminsSnap.children) {
-                val pelangganSnap = adminSnap.child(pelangganId)
+            val metadataSnap = database.child("metadata").child("admins").get().await()
+            for (adminEntry in metadataSnap.children) {
+                val adminUid = adminEntry.key ?: continue
+                val pelangganSnap = database.child("pelanggan")
+                    .child(adminUid).child(pelangganId).get().await()
                 if (pelangganSnap.exists()) {
                     val pelanggan = pelangganSnap.getValue(Pelanggan::class.java)
                     if (pelanggan != null) {
-                        Log.d("Approval", "✅ Ditemukan di admin: ${adminSnap.key}")
+                        Log.d("Approval", "✅ Ditemukan di admin: $adminUid")
                         return pelanggan
                     }
                 }
@@ -7518,6 +7526,8 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
 //    misalnya dekat baris 439 di mana lastLoadedKey dideklarasikan):
     private var lastDataUpdateTimestamp: Long = 0L
     private var isRefreshingFromListener: Boolean = false
+    private var lastRefreshTimeMillis: Long = 0L
+    private val REFRESH_THROTTLE_MS = 30_000L // 30 detik minimum antar refresh untuk hemat bandwidth
 
     // ✅ GANTI seluruh isi fungsi setupDataUpdateListener:
     fun setupDataUpdateListener(adminUid: String) {
@@ -7532,6 +7542,14 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                         return
                     }
                     lastDataUpdateTimestamp = timestamp
+
+                    // ✅ THROTTLE: Minimal 30 detik antar refresh untuk hemat bandwidth
+                    val now = System.currentTimeMillis()
+                    if (now - lastRefreshTimeMillis < REFRESH_THROTTLE_MS) {
+                        Log.d("DataUpdate", "⏭️ Throttled: ${(REFRESH_THROTTLE_MS - (now - lastRefreshTimeMillis)) / 1000}s remaining")
+                        return
+                    }
+                    lastRefreshTimeMillis = now
 
                     Log.d("DataUpdate", "🔄 Data update detected at: $timestamp")
 
@@ -8416,6 +8434,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
         val approvalRef = database.child("pengajuan_approval").child(cabangId)
             .orderByChild("status")
             .equalTo("Menunggu Approval")
+            .limitToLast(1) // OPTIMASI: Hanya deteksi perubahan terbaru, data aktual di-load via smartLoader
 
         pengajuanApprovalListener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {

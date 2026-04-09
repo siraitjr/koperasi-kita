@@ -71,6 +71,7 @@
     },
       
     "pencairan_simpanan_requests": {
+      ".indexOn": ["status", "cabangId", "timestamp"],
       "$requestId": {
         ".read": "auth != null",
         ".write": "auth != null"

@@ -75,9 +75,12 @@ class MyApp : Application() {
             // - Saat OFFLINE: data di-queue di local cache
             // - Saat KEMBALI ONLINE: Firebase AUTO-SYNC dari cache
             // =========================================================
-            FirebaseDatabase.getInstance("https://koperasikitagodangulu-default-rtdb.asia-southeast1.firebasedatabase.app").setPersistenceEnabled(true)
+            val dbInstance = FirebaseDatabase.getInstance("https://koperasikitagodangulu-default-rtdb.asia-southeast1.firebasedatabase.app")
+            dbInstance.setPersistenceEnabled(true)
+            // OPTIMASI: Naikkan cache dari default 10MB ke 50MB agar data tidak perlu di-download ulang
+            dbInstance.setPersistenceCacheSizeBytes(50 * 1024 * 1024)
 
-            Log.d(TAG, "✅ Firebase Persistence ENABLED")
+            Log.d(TAG, "✅ Firebase Persistence ENABLED (cache: 50MB)")
             Log.d(TAG, "   → Offline writes akan otomatis di-queue")
             Log.d(TAG, "   → Auto-sync saat kembali online")
 

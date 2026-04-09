@@ -109,6 +109,7 @@ exports.dailyTargetRecalc = functions.pubsub
         try {
             const adminsSnap = await db.ref('metadata/admins').once('value');
             const cabangTargets = {};
+            const targetUpdates = {};
             let globalTarget = 0;
             
             for (const [adminUid, adminData] of Object.entries(adminsSnap.val() || {})) {
@@ -161,8 +162,8 @@ exports.dailyTargetRecalc = functions.pubsub
                     adminTarget += Math.floor((p.besarPinjaman || 0) * 3 / 100);
                 });
                 
-                // Update admin summary
-                await db.ref(`summary/perAdmin/${adminUid}/targetHariIni`).set(adminTarget);
+                // Collect update (batch write di akhir untuk hemat operasi)
+                targetUpdates[`summary/perAdmin/${adminUid}/targetHariIni`] = adminTarget;
                 
                 // Accumulate ke cabang
                 const cabangId = adminData.cabang;
@@ -178,11 +179,16 @@ exports.dailyTargetRecalc = functions.pubsub
                 await new Promise(r => setTimeout(r, 100));
             }
             
-            // Update cabang summaries
+            // Collect cabang updates
             for (const [cabangId, target] of Object.entries(cabangTargets)) {
-                await db.ref(`summary/perCabang/${cabangId}/targetHariIni`).set(target);
+                targetUpdates[`summary/perCabang/${cabangId}/targetHariIni`] = target;
             }
-            
+
+            // OPTIMASI: Single batch write (sebelumnya N+M individual writes)
+            if (Object.keys(targetUpdates).length > 0) {
+                await db.ref().update(targetUpdates);
+            }
+
             console.log(`✅ [AUTO] Daily target recalc done. Global target: ${globalTarget}`);
             return null;
         } catch (error) {
@@ -228,22 +234,23 @@ exports.weeklyFullRecalc = functions.pubsub
                 let nasabahBaruHariIni = 0, nasabahLunasHariIni = 0, targetHariIni = 0;
                 let pembayaranHariIni = 0;  // v5: DITAMBAHKAN
                 
-                for (const adminUid of adminList) {
-                    const adminSummary = await db.ref(`summary/perAdmin/${adminUid}`).once('value');
-                    const data = adminSummary.val();
-                    
+                // OPTIMASI: Baca semua admin summary secara PARALEL (sebelumnya sequential)
+                const adminSummaryResults = await Promise.all(
+                    adminList.map(uid => db.ref(`summary/perAdmin/${uid}`).once('value').then(s => s.val()))
+                );
+                for (const data of adminSummaryResults) {
                     if (data) {
                         totalNasabah += data.totalNasabah || 0;
                         nasabahAktif += data.nasabahAktif || 0;
                         nasabahLunas += data.nasabahLunas || 0;
-                        nasabahMenunggu += data.nasabahMenunggu || 0;                      // v5
-                        nasabahMenungguPencairan += data.nasabahMenungguPencairan || 0;    // v5
+                        nasabahMenunggu += data.nasabahMenunggu || 0;
+                        nasabahMenungguPencairan += data.nasabahMenungguPencairan || 0;
                         totalPinjamanAktif += data.totalPinjamanAktif || 0;
                         totalPiutang += data.totalPiutang || 0;
                         nasabahBaruHariIni += data.nasabahBaruHariIni || 0;
                         nasabahLunasHariIni += data.nasabahLunasHariIni || 0;
                         targetHariIni += data.targetHariIni || 0;
-                        pembayaranHariIni += data.pembayaranHariIni || 0;                  // v5
+                        pembayaranHariIni += data.pembayaranHariIni || 0;
                     }
                 }
                 
