@@ -111,80 +111,47 @@ exports.dailyTargetRecalc = functions.pubsub
             const cabangTargets = {};
             const targetUpdates = {};
             let globalTarget = 0;
-            
-            for (const [adminUid, adminData] of Object.entries(adminsSnap.val() || {})) {
-                if (adminData.role !== 'admin') continue;
-                
-                const pelangganSnap = await db.ref(`pelanggan/${adminUid}`).once('value');
-                let adminTarget = 0;
-                
-                pelangganSnap.forEach(child => {
-                    const p = child.val();
-                    if (!p) return;
-                    
-                    // ===== FILTER: SAMA PERSIS DENGAN Android RingkasanDashboardScreen.kt =====
 
-                    // 1. Hanya status Aktif/Active (atau lunas/menunggu pencairan HARI INI)
-                    const status = (p.status || '').toLowerCase();
-                    const statusKhusus = (p.statusKhusus || '').toUpperCase().replace(/ /g, '_');
-                    const isStatusAktif = status === 'aktif' || status === 'active';
+            // ================================================================
+            // OPTIMASI BANDWIDTH: Baca targetHariIni dari summary yang sudah
+            // dihitung oleh weeklyFullRecalc (02:00 WIB) via fullRecalculateAdminSummary
+            //
+            // SEBELUMNYA: Membaca SELURUH pelanggan tree per admin (~ratusan MB/hari)
+            // SEKARANG: Membaca summary/perAdmin saja (~beberapa KB)
+            //
+            // AKURASI: 100% — fullRecalculateAdminSummary di summaryHelpers.js
+            // menggunakan logika IDENTIK (cek status aktif, lunas, > 3 bulan,
+            // cair hari ini, menunggu pencairan, lunas hari ini, dll)
+            // ================================================================
+            const adminEntries = Object.entries(adminsSnap.val() || {})
+                .filter(([_, d]) => d.role === 'admin');
 
-                    // 2. Cek lunas & menunggu pencairan
-                    const totalDibayar = calculateTotalDibayar(p);
-                    const totalPelunasan = p.totalPelunasan || 0;
-                    const isBelumLunas = !(totalPelunasan > 0 && totalDibayar >= totalPelunasan);
-                    const isMenungguPencairan = statusKhusus === 'MENUNGGU_PENCAIRAN';
+            // Baca semua admin summary targetHariIni secara PARALEL
+            const summaryResults = await Promise.all(
+                adminEntries.map(([adminUid, adminData]) =>
+                    db.ref(`summary/perAdmin/${adminUid}/targetHariIni`).once('value')
+                        .then(snap => ({ adminUid, adminData, target: snap.val() || 0 }))
+                )
+            );
 
-                    // ✅ FIX: Nasabah lunas cicilan HARI INI tetap masuk target sampai besok
-                    const tanggalLunasCicilan = (p.tanggalLunasCicilan || '').trim();
-                    const isLunasHariIni = !isBelumLunas && tanggalLunasCicilan === today;
-
-                    // ✅ FIX: Nasabah ditandai MENUNGGU_PENCAIRAN HARI INI tetap masuk target sampai besok
-                    const tanggalStatusKhusus = (p.tanggalStatusKhusus || '').trim();
-                    const isMenungguPencairanHariIni = isMenungguPencairan && tanggalStatusKhusus === today;
-
-                    // 3. Exclude nasabah > 3 bulan (dari tanggal 1 bulan ke-3 ke belakang)
-                    const tglAcuan = (p.tanggalPencairan || '').trim()
-                        || (p.tanggalPengajuan || '').trim()
-                        || (p.tanggalDaftar || '').trim();
-                    if (isOverThreeMonths(tglAcuan)) return;
-
-                    // 4. Exclude nasabah cair hari ini (baru mulai besok)
-                    const tglCair = (p.tanggalPencairan || '').trim();
-                    if (tglCair === today) return;
-
-                    // 5. Filter gabungan: (belum lunas ATAU lunas hari ini) DAN (bukan menunggu pencairan ATAU ditandai hari ini)
-                    if (!(isBelumLunas || isLunasHariIni)) return;
-                    if (isMenungguPencairan && !isMenungguPencairanHariIni) return;
-                    if (!isStatusAktif && !isLunasHariIni && !isMenungguPencairanHariIni) return;
-
-                    // ===== HITUNG TARGET: Flat 3% dari besarPinjaman =====
-                    adminTarget += Math.floor((p.besarPinjaman || 0) * 3 / 100);
-                });
-                
-                // Collect update (batch write di akhir untuk hemat operasi)
-                targetUpdates[`summary/perAdmin/${adminUid}/targetHariIni`] = adminTarget;
-                
+            for (const { adminUid, adminData, target } of summaryResults) {
                 // Accumulate ke cabang
                 const cabangId = adminData.cabang;
                 if (cabangId) {
-                    cabangTargets[cabangId] = (cabangTargets[cabangId] || 0) + adminTarget;
+                    cabangTargets[cabangId] = (cabangTargets[cabangId] || 0) + target;
                 }
-                
-                globalTarget += adminTarget;
-                
-                console.log(`   Admin ${adminUid}: target ${adminTarget}`);
-                
-                // Delay untuk mencegah overload
-                await new Promise(r => setTimeout(r, 100));
+
+                globalTarget += target;
+
+                console.log(`   Admin ${adminUid}: target ${target}`);
             }
-            
+
             // Collect cabang updates
             for (const [cabangId, target] of Object.entries(cabangTargets)) {
                 targetUpdates[`summary/perCabang/${cabangId}/targetHariIni`] = target;
             }
 
-            // OPTIMASI: Single batch write (sebelumnya N+M individual writes)
+            // OPTIMASI: Single batch write untuk agregasi cabang + global
             if (Object.keys(targetUpdates).length > 0) {
                 await db.ref().update(targetUpdates);
             }
