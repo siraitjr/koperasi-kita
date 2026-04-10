@@ -19,6 +19,22 @@ const admin = require('firebase-admin');
 const db = admin.database();
 
 // =========================================================================
+// METADATA CACHE — Hemat RTDB reads untuk data yang jarang berubah
+// =========================================================================
+const METADATA_CACHE_TTL_MS = 10 * 60 * 1000; // 10 menit
+let metadataCache = { data: null, timestamp: 0 };
+
+async function getCachedMetadata() {
+    if (metadataCache.data && (Date.now() - metadataCache.timestamp) < METADATA_CACHE_TTL_MS) {
+        return metadataCache.data;
+    }
+    const metadataSnap = await db.ref('metadata').once('value');
+    const metadata = metadataSnap.val() || {};
+    metadataCache = { data: metadata, timestamp: Date.now() };
+    return metadata;
+}
+
+// =========================================================================
 // CONSTANTS
 // =========================================================================
 const JENIS_VALID = ['uang_kas', 'penggajian', 'transport', 'suntikan_dana', 'pinjaman_kas', 'sp', 'saldo_awal_kas'];
@@ -174,9 +190,8 @@ exports.getKasirSummary = functions
                 return;
             }
 
-            // Get metadata
-            const metadataSnap = await db.ref('metadata').once('value');
-            const metadata = metadataSnap.val() || {};
+            // Get metadata — ✅ OPTIMASI: gunakan cache (10 menit TTL)
+            const metadata = await getCachedMetadata();
             const cabangData = metadata.cabang || {};
             const adminsData = metadata.admins || {};
 

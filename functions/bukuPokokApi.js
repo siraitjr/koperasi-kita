@@ -16,6 +16,66 @@ const admin = require('firebase-admin');
 const db = admin.database();
 
 // =========================================================================
+// SERVER-SIDE CACHE — Mengurangi read RTDB secara drastis
+// =========================================================================
+// Cloud Functions instance bisa hidup beberapa menit sampai jam.
+// Selama instance hidup, cache di memory tetap ada.
+// Jika instance baru di-spawn, cache kosong → baca dari RTDB → cache ulang.
+//
+// CARA KERJA:
+// 1. Request masuk → cek cache berdasarkan key (cabangId + statusFilter)
+// 2. Jika cache ada DAN belum expired → return dari cache (0 RTDB reads)
+// 3. Jika cache tidak ada ATAU expired → baca dari RTDB → simpan ke cache
+//
+// AMAN karena:
+// - TTL 5 menit: data buku pokok tidak berubah setiap detik
+// - Jika admin input pembayaran, perubahan terlihat max 5 menit kemudian di web
+// - Ini sama seperti perilaku cache browser pada umumnya
+// =========================================================================
+const CACHE_TTL_MS = 5 * 60 * 1000;  // 5 menit
+const METADATA_CACHE_TTL_MS = 10 * 60 * 1000;  // 10 menit (metadata jarang berubah)
+
+// Cache untuk getBukuPokok: key = "cabangId:statusFilter:adminUid"
+const bukuPokokCache = new Map();
+
+// Cache untuk metadata (dipakai oleh getBukuPokokSummary dan getKasirSummary)
+let metadataCache = { data: null, timestamp: 0 };
+
+function getCacheKey(cabangId, statusFilter, adminUid) {
+    return `${cabangId || 'all'}:${statusFilter}:${adminUid || 'all'}`;
+}
+
+function getFromCache(key) {
+    const cached = bukuPokokCache.get(key);
+    if (cached && (Date.now() - cached.timestamp) < CACHE_TTL_MS) {
+        return cached.data;
+    }
+    // Expired atau tidak ada
+    if (cached) bukuPokokCache.delete(key);
+    return null;
+}
+
+function setToCache(key, data) {
+    // Bersihkan cache lama jika terlalu banyak (max 50 entries untuk hemat memory)
+    if (bukuPokokCache.size > 50) {
+        const oldest = bukuPokokCache.keys().next().value;
+        bukuPokokCache.delete(oldest);
+    }
+    bukuPokokCache.set(key, { data, timestamp: Date.now() });
+}
+
+async function getCachedMetadata() {
+    if (metadataCache.data && (Date.now() - metadataCache.timestamp) < METADATA_CACHE_TTL_MS) {
+        return metadataCache.data;
+    }
+    // Baca dari RTDB dan cache
+    const metadataSnap = await db.ref('metadata').once('value');
+    const metadata = metadataSnap.val() || {};
+    metadataCache = { data: metadata, timestamp: Date.now() };
+    return metadata;
+}
+
+// =========================================================================
 // HELPER: Verify Firebase ID Token
 // =========================================================================
 async function verifyAuth(req) {
@@ -292,20 +352,45 @@ exports.getBukuPokok = functions
                 }
             }
 
-            // 5. Generate tanggal hari kerja berurutan (seperti buku pokok fisik)
+            // 5. Cek cache dulu sebelum baca RTDB
+            const cacheKey = getCacheKey(cabangId, statusFilter, adminUid);
+            const cachedResponse = getFromCache(cacheKey);
+            if (cachedResponse) {
+                console.log(`[getBukuPokok] ✅ CACHE HIT: ${cacheKey}`);
+                res.status(200).json(cachedResponse);
+                return;
+            }
+            console.log(`[getBukuPokok] 📖 CACHE MISS: ${cacheKey}, reading from RTDB...`);
+
+            // 6. Generate tanggal hari kerja berurutan (seperti buku pokok fisik)
             const hariKerja = generateHariKerja(60); // 60 hari kerja ke belakang
 
-            // 6. Fetch pelanggan data per admin — ✅ OPTIMASI: Parallel reads
+            // 7. Fetch pelanggan data per admin — ✅ OPTIMASI: Parallel reads
             let nasabahList = [];
             const adminNames = {};
 
-            // Batch read: admin metadata + pelanggan data + summary + riwayat — semua paralel
-            const [adminMetaResults, pelangganResults, summaryResults, riwayatResults] = await Promise.all([
+            // ✅ OPTIMASI: riwayat_pinjaman HANYA dibaca jika tab "nasabah_lunas"
+            // Tab lain tidak membutuhkan data riwayat dari RTDB
+            // SEBELUMNYA: SELALU baca riwayat_pinjaman (boros bandwidth)
+            // SEKARANG: hanya baca jika statusFilter membutuhkan
+            const needsRiwayat = (statusFilter === 'nasabah_lunas' || statusFilter === 'semua');
+
+            const readPromises = [
                 Promise.all(adminUids.map(aUid => db.ref(`metadata/admins/${aUid}`).once('value'))),
                 Promise.all(adminUids.map(aUid => db.ref(`pelanggan/${aUid}`).once('value'))),
-                Promise.all(adminUids.map(aUid => db.ref(`summary/perAdmin/${aUid}`).once('value'))),
-                Promise.all(adminUids.map(aUid => db.ref(`riwayat_pinjaman/${aUid}`).once('value')))
-            ]);
+                Promise.all(adminUids.map(aUid => db.ref(`summary/perAdmin/${aUid}`).once('value')))
+            ];
+
+            // Hanya baca riwayat_pinjaman jika dibutuhkan
+            if (needsRiwayat) {
+                readPromises.push(
+                    Promise.all(adminUids.map(aUid => db.ref(`riwayat_pinjaman/${aUid}`).once('value')))
+                );
+            }
+
+            const results = await Promise.all(readPromises);
+            const [adminMetaResults, pelangganResults, summaryResults] = results;
+            const riwayatResults = needsRiwayat ? results[3] : [];
 
             // Process admin names
             adminUids.forEach((aUid, i) => {
@@ -318,8 +403,8 @@ exports.getBukuPokok = functions
             // Juga simpan data arsip lengkap untuk nasabah yang sudah dihapus dari pelanggan
             // Key: pelangganId, Value: { adminUid, pinjaman terakhir (pinjamanKe terbesar) }
             const riwayatArsipLengkap = {};
-            adminUids.forEach((aUid, i) => {
-                const riwayatData = riwayatResults[i].val();
+            if (needsRiwayat) adminUids.forEach((aUid, i) => {
+                const riwayatData = riwayatResults[i] ? riwayatResults[i].val() : null;
                 if (!riwayatData) return;
                 Object.entries(riwayatData).forEach(([pId, pinjamanMap]) => {
                     if (!riwayatLookup[pId]) riwayatLookup[pId] = [];
@@ -504,7 +589,7 @@ exports.getBukuPokok = functions
                 return (a.nomorAnggota || '').localeCompare(b.nomorAnggota || '');
             });
 
-            res.status(200).json({
+            const responseBody = {
                 success: true,
                 type: 'buku_pokok',
                 data: {
@@ -518,7 +603,13 @@ exports.getBukuPokok = functions
                     pembayaranHariIni: totalPembayaranHariIni,
                     targetHarianHariIni: totalTargetHarian
                 }
-            });
+            };
+
+            // Simpan ke cache untuk request berikutnya
+            setToCache(cacheKey, responseBody);
+            console.log(`[getBukuPokok] 💾 Cached: ${cacheKey} (${nasabahList.length} nasabah)`);
+
+            res.status(200).json(responseBody);
 
         } catch (error) {
             console.error('getBukuPokok error:', error);
@@ -555,13 +646,10 @@ exports.getBukuPokokSummary = functions
                 return;
             }
 
-            // Get metadata for cabang list
-            const metadataSnap = await db.ref('metadata').once('value');
-            const metadata = metadataSnap.val() || {};
+            // Get metadata for cabang list — ✅ OPTIMASI: gunakan cache
+            const metadata = await getCachedMetadata();
             const cabangData = metadata.cabang || {};
             const adminsData = metadata.admins || {};
-
-
 
             const cabangList = [];
 

@@ -131,17 +131,12 @@ exports.repairAdminSummary = summaryRepair.repairAdminSummary;
 
 
 // =========================================================================
-// EXPORT EXCEL HARIAN (PRODUCTION)
+// EXPORT EXCEL HARIAN — DINONAKTIFKAN (tidak digunakan lagi)
+// Pembukuan sekarang murni menggunakan web app (buku pokok, jurnal, kasir).
+// Fungsi ini sebelumnya berjalan setiap jam 23:00 WIB dan membaca SELURUH
+// node pelanggan dari RTDB — menjadi salah satu pemicu bandwidth besar.
+// File exportExcel.js tetap ada di repo sebagai arsip jika diperlukan.
 // =========================================================================
-const { exportHarian } = require("./exportExcel");
-
-exports.exportExcelHarian = functions.pubsub
-  .schedule("0 23 * * *")
-  .timeZone("Asia/Jakarta")
-  .onRun(async () => {
-    await exportHarian();
-    return null;
-  });
 
 // =========================================================================
 // USER MANAGEMENT FUNCTIONS (PENGAWAS ONLY)
