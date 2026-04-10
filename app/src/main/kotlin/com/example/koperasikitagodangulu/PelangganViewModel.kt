@@ -4948,7 +4948,8 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                 }
             }
 
-            if (pimpinanUid.isNullOrBlank()) {
+            val resolvedUid = pimpinanUid
+            if (resolvedUid.isNullOrBlank()) {
                 Log.e("CairkanBatalNotif", "❌ Pimpinan tidak ditemukan untuk cabang: $cabangId")
                 return
             }
@@ -4966,7 +4967,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                 "read" to false
             )
 
-            database.child("admin_notifications").child(pimpinanUid).child(notificationId)
+            database.child("admin_notifications").child(resolvedUid).child(notificationId)
                 .setValue(notificationData).await()
 
             Log.d("CairkanBatalNotif", "✅ Notifikasi dikirim ke pimpinan: $pimpinanUid")
