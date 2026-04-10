@@ -999,12 +999,21 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     sharedPrefs.getString("last_nomor_anggota_$currentUid", "0")?.toIntOrNull() ?: 0
 
                 // 4. Ambil nomor terbesar dari Firebase HANYA jika online (dengan timeout)
+                // OPTIMASI: Gunakan orderByChild + limitToLast(5) agar Firebase hanya kirim
+                // beberapa record terakhir, BUKAN seluruh list pelanggan.
+                // SEBELUMNYA: download SEMUA pelanggan milik admin (puluhan-ratusan KB)
+                // SEKARANG: download hanya 5 record terakhir (beberapa KB)
+                // Catatan: limitToLast(5) bukan 1, untuk antisipasi jika ada nomorAnggota non-numerik
+                // PENTING: Agar optimal di server, tambahkan .indexOn: ["nomorAnggota"] di rules
+                //          pada path pelanggan/$uid
                 var maxFromFirebase = 0
                 if (isOnline()) {
                     try {
-                        // Gunakan withTimeout untuk mencegah stuck saat koneksi lambat
                         maxFromFirebase = kotlinx.coroutines.withTimeoutOrNull(5000L) {
-                            val snapshot = database.child("pelanggan").child(currentUid).get().await()
+                            val snapshot = database.child("pelanggan").child(currentUid)
+                                .orderByChild("nomorAnggota")
+                                .limitToLast(5)
+                                .get().await()
                             var maxNomor = 0
                             snapshot.children.forEach { child ->
                                 val nomor = child.child("nomorAnggota").getValue(String::class.java)
@@ -4872,6 +4881,13 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
+    /**
+     * OPTIMASI: Konsolidasi 4 sequential reads menjadi 2 parallel + 1 fallback
+     * SEBELUMNYA: 4 read berturut-turut (Path 1 → Path 2 → Path 3 → Path 4)
+     * SEKARANG:
+     *   - Parallel: Path 1 (metadata/roles/pimpinan/{cabangId}) + Path 2&3 gabung (metadata/cabang/{cabangId})
+     *   - Fallback: Path 4 hanya jika keduanya gagal (metadata/roles/pimpinan - iterate case-insensitive)
+     */
     private suspend fun sendNotifToPimpinan(
         cabangId: String,
         pelangganId: String,
@@ -4883,32 +4899,36 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
         try {
             var pimpinanUid: String? = null
 
-            // Path 1: metadata/roles/pimpinan/{cabangId} (exact match)
+            // PARALLEL: Baca Path 1 dan Path 2+3 sekaligus (2 read, bukan 3)
             try {
-                val snap = database.child("metadata").child("roles").child("pimpinan").child(cabangId).get().await()
-                pimpinanUid = snap.getValue(String::class.java)
-                Log.d("CairkanBatalNotif", "📍 Path 1 (metadata/roles/pimpinan/$cabangId): $pimpinanUid")
+                kotlinx.coroutines.coroutineScope {
+                    val deferredRoles = async {
+                        database.child("metadata").child("roles").child("pimpinan").child(cabangId).get().await()
+                    }
+                    val deferredCabang = async {
+                        database.child("metadata").child("cabang").child(cabangId).get().await()
+                    }
+
+                    // Path 1: metadata/roles/pimpinan/{cabangId}
+                    val rolesSnap = deferredRoles.await()
+                    pimpinanUid = rolesSnap.getValue(String::class.java)
+                    Log.d("CairkanBatalNotif", "📍 Path 1 (metadata/roles/pimpinan/$cabangId): $pimpinanUid")
+
+                    // Path 2+3: metadata/cabang/{cabangId} — baca 1x, cek pimpinanUid dan pimpinan
+                    if (pimpinanUid.isNullOrBlank()) {
+                        val cabangSnap = deferredCabang.await()
+                        pimpinanUid = cabangSnap.child("pimpinanUid").getValue(String::class.java)
+                        Log.d("CairkanBatalNotif", "📍 Path 2 (metadata/cabang/$cabangId/pimpinanUid): $pimpinanUid")
+
+                        if (pimpinanUid.isNullOrBlank()) {
+                            pimpinanUid = cabangSnap.child("pimpinan").getValue(String::class.java)
+                            Log.d("CairkanBatalNotif", "📍 Path 3 (metadata/cabang/$cabangId/pimpinan): $pimpinanUid")
+                        }
+                    }
+                }
             } catch (_: Exception) {}
 
-            // Path 2: metadata/cabang/{cabangId}/pimpinanUid (SAMA DENGAN CLOUD FUNCTION)
-            if (pimpinanUid.isNullOrBlank()) {
-                try {
-                    val snap = database.child("metadata").child("cabang").child(cabangId).child("pimpinanUid").get().await()
-                    pimpinanUid = snap.getValue(String::class.java)
-                    Log.d("CairkanBatalNotif", "📍 Path 2 (metadata/cabang/$cabangId/pimpinanUid): $pimpinanUid")
-                } catch (_: Exception) {}
-            }
-
-            // Path 3: metadata/cabang/{cabangId}/pimpinan
-            if (pimpinanUid.isNullOrBlank()) {
-                try {
-                    val snap = database.child("metadata").child("cabang").child(cabangId).child("pimpinan").get().await()
-                    pimpinanUid = snap.getValue(String::class.java)
-                    Log.d("CairkanBatalNotif", "📍 Path 3 (metadata/cabang/$cabangId/pimpinan): $pimpinanUid")
-                } catch (_: Exception) {}
-            }
-
-            // Path 4: Iterasi metadata/roles/pimpinan/* (case-insensitive, SAMA DENGAN SERAH TERIMA)
+            // FALLBACK: Path 4 hanya jika parallel reads tidak menemukan
             if (pimpinanUid.isNullOrBlank()) {
                 try {
                     Log.d("CairkanBatalNotif", "🔄 Path 4: Iterasi semua pimpinan...")
@@ -4930,11 +4950,6 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
 
             if (pimpinanUid.isNullOrBlank()) {
                 Log.e("CairkanBatalNotif", "❌ Pimpinan tidak ditemukan untuk cabang: $cabangId")
-                Log.e("CairkanBatalNotif", "   Checked paths:")
-                Log.e("CairkanBatalNotif", "   1. metadata/roles/pimpinan/$cabangId")
-                Log.e("CairkanBatalNotif", "   2. metadata/cabang/$cabangId/pimpinanUid")
-                Log.e("CairkanBatalNotif", "   3. metadata/cabang/$cabangId/pimpinan")
-                Log.e("CairkanBatalNotif", "   4. Iterasi metadata/roles/pimpinan/* (case-insensitive)")
                 return
             }
 
@@ -4960,6 +4975,11 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
+    /**
+     * OPTIMASI: Batch write semua notifikasi koordinator dalam 1 updateChildren
+     * SEBELUMNYA: N sequential setValue (1 write per koordinator)
+     * SEKARANG: 1 batch updateChildren (semua koordinator sekaligus)
+     */
     private suspend fun sendNotifToKoordinator(
         pelangganId: String,
         title: String,
@@ -4975,8 +4995,10 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
             }
 
             val koordinatorUids = koordinatorSnapshot.children.mapNotNull { it.key }
+            val hourBucket = System.currentTimeMillis() / 3_600_000L
+            val batchUpdates = mutableMapOf<String, Any>()
+
             for (uid in koordinatorUids) {
-                val hourBucket = System.currentTimeMillis() / 3_600_000L
                 val notificationId = "${notifType.lowercase()}_koordinator_${pelangganId}_${hourBucket}"
                 val notificationData = mapOf(
                     "id" to notificationId,
@@ -4988,15 +5010,23 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     "timestamp" to System.currentTimeMillis(),
                     "read" to false
                 )
-                database.child("admin_notifications/$uid/$notificationId")
-                    .setValue(notificationData).await()
-                Log.d("CairkanBatalNotif", "✅ Notifikasi dikirim ke koordinator: $uid")
+                batchUpdates["admin_notifications/$uid/$notificationId"] = notificationData
+            }
+
+            if (batchUpdates.isNotEmpty()) {
+                database.updateChildren(batchUpdates).await()
+                Log.d("CairkanBatalNotif", "✅ Notifikasi batch dikirim ke ${koordinatorUids.size} koordinator")
             }
         } catch (e: Exception) {
             Log.e("CairkanBatalNotif", "❌ Gagal kirim ke koordinator: ${e.message}")
         }
     }
 
+    /**
+     * OPTIMASI: Batch write semua notifikasi pengawas dalam 1 updateChildren
+     * SEBELUMNYA: N sequential setValue (1 write per pengawas)
+     * SEKARANG: 1 batch updateChildren (semua pengawas sekaligus)
+     */
     private suspend fun sendNotifToPengawas(
         pelangganId: String,
         title: String,
@@ -5012,8 +5042,10 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
             }
 
             val pengawasUids = pengawasSnapshot.children.mapNotNull { it.key }
+            val hourBucket = System.currentTimeMillis() / 3_600_000L
+            val batchUpdates = mutableMapOf<String, Any>()
+
             for (uid in pengawasUids) {
-                val hourBucket = System.currentTimeMillis() / 3_600_000L
                 val notificationId = "${notifType.lowercase()}_pengawas_${pelangganId}_${hourBucket}"
                 val notificationData = mapOf(
                     "id" to notificationId,
@@ -5025,9 +5057,12 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     "timestamp" to System.currentTimeMillis(),
                     "read" to false
                 )
-                database.child("admin_notifications/$uid/$notificationId")
-                    .setValue(notificationData).await()
-                Log.d("CairkanBatalNotif", "✅ Notifikasi dikirim ke pengawas: $uid")
+                batchUpdates["admin_notifications/$uid/$notificationId"] = notificationData
+            }
+
+            if (batchUpdates.isNotEmpty()) {
+                database.updateChildren(batchUpdates).await()
+                Log.d("CairkanBatalNotif", "✅ Notifikasi batch dikirim ke ${pengawasUids.size} pengawas")
             }
         } catch (e: Exception) {
             Log.e("CairkanBatalNotif", "❌ Gagal kirim ke pengawas: ${e.message}")
@@ -10231,14 +10266,19 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
     /**
      * ✅ FUNGSI BARU: Cari pelanggan dari SEMUA admin (fallback terakhir)
      * Returns Pair<Pelanggan?, AdminUid?>
+     *
+     * OPTIMASI: Baca metadata/admins (ringan, hanya daftar UID) lalu cari spesifik per admin.
+     * SEBELUMNYA: database.child("pelanggan").get() → download SELURUH pelanggan tree (puluhan MB)
+     * SEKARANG: metadata/admins (beberapa KB) + pencarian spesifik per admin (beberapa KB per hit)
      */
     private suspend fun findPelangganFromAllAdmins(pelangganId: String): Pair<Pelanggan?, String?> {
         return try {
-            val adminsSnap = database.child("pelanggan").get().await()
+            val metadataSnap = database.child("metadata").child("admins").get().await()
 
-            for (adminSnap in adminsSnap.children) {
-                val adminUid = adminSnap.key ?: continue
-                val pelangganSnap = adminSnap.child(pelangganId)
+            for (adminEntry in metadataSnap.children) {
+                val adminUid = adminEntry.key ?: continue
+                val pelangganSnap = database.child("pelanggan")
+                    .child(adminUid).child(pelangganId).get().await()
 
                 if (pelangganSnap.exists()) {
                     val pelanggan = pelangganSnap.getValue(Pelanggan::class.java)
