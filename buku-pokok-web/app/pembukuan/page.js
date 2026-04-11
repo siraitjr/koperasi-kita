@@ -1879,6 +1879,82 @@ function getKategoriNasabah(nasabah) {
       {showDetail && (
         <DetailModal nasabah={showDetail} onClose={() => setShowDetail(null)} />
       )}
+
+      {/* ===== MODAL KOREKSI STORTING BULAN LALU ===== */}
+      {showKoreksiModal && selectedAdmin && prevMonthSGTotals && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: 16 }}>
+          <div style={{ background: '#fff', borderRadius: 16, padding: 24, width: '100%', maxWidth: 420, boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
+            <h3 style={{ margin: '0 0 4px', fontSize: 16, fontWeight: 700, color: '#1f2937' }}>Koreksi Storting Bulan Lalu</h3>
+            <p style={{ margin: '0 0 16px', fontSize: 13, color: '#6b7280' }}>
+              {selectedAdmin.name} — {prevMonthSGTotals.label}
+            </p>
+            <p style={{ margin: '0 0 16px', fontSize: 12, color: '#9ca3af', lineHeight: 1.5 }}>
+              Masukkan total storting dari buku manual. Nilai ini akan menggantikan data digital untuk bulan tersebut.
+            </p>
+            {[['L1', 'l1'], ['CM', 'cm'], ['MB', 'mb'], ['ML', 'ml']].map(([label, key]) => (
+              <div key={key} style={{ marginBottom: 12 }}>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 4 }}>{label}</label>
+                <input
+                  type="number"
+                  min="0"
+                  value={koreksiInput[key]}
+                  onChange={(e) => setKoreksiInput(prev => ({ ...prev, [key]: e.target.value }))}
+                  placeholder="0"
+                  style={{ width: '100%', padding: '8px 12px', borderRadius: 8, border: '1px solid #d1d5db', fontSize: 13, boxSizing: 'border-box' }}
+                />
+              </div>
+            ))}
+            {koreksiError && <p style={{ color: '#ef4444', fontSize: 12, margin: '0 0 12px' }}>{koreksiError}</p>}
+            <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+              <button
+                onClick={() => setShowKoreksiModal(false)}
+                style={{ flex: 1, padding: '10px', borderRadius: 8, border: '1px solid #d1d5db', background: '#fff', fontSize: 13, cursor: 'pointer' }}
+              >
+                Batal
+              </button>
+              <button
+                disabled={savingKoreksi}
+                onClick={async () => {
+                  setSavingKoreksi(true);
+                  setKoreksiError('');
+                  try {
+                    const result = await setKoreksiStorting({
+                      cabangId: cabang.id,
+                      adminUid: selectedAdmin.uid,
+                      bulan: prevMonthSGTotals.prevBulan,
+                      l1: parseInt(koreksiInput.l1) || 0,
+                      cm: parseInt(koreksiInput.cm) || 0,
+                      mb: parseInt(koreksiInput.mb) || 0,
+                      ml: parseInt(koreksiInput.ml) || 0,
+                    });
+                    if (result.success) {
+                      setKoreksiSGMap(prev => ({
+                        ...prev,
+                        [selectedAdmin.uid]: {
+                          l1: parseInt(koreksiInput.l1) || 0,
+                          cm: parseInt(koreksiInput.cm) || 0,
+                          mb: parseInt(koreksiInput.mb) || 0,
+                          ml: parseInt(koreksiInput.ml) || 0,
+                        },
+                      }));
+                      setShowKoreksiModal(false);
+                    } else {
+                      setKoreksiError('Gagal menyimpan. Coba lagi.');
+                    }
+                  } catch (e) {
+                    setKoreksiError(e.message || 'Gagal menyimpan.');
+                  } finally {
+                    setSavingKoreksi(false);
+                  }
+                }}
+                style={{ flex: 1, padding: '10px', borderRadius: 8, border: 'none', background: savingKoreksi ? '#a78bfa' : '#7c3aed', color: '#fff', fontSize: 13, fontWeight: 600, cursor: savingKoreksi ? 'not-allowed' : 'pointer' }}
+              >
+                {savingKoreksi ? 'Menyimpan...' : 'Simpan'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -2006,82 +2082,6 @@ function DetailModal({ nasabah, onClose }) {
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
           </button>
           <img src={zoomImage} alt="Foto diperbesar" className="zoom-image" onClick={(e) => e.stopPropagation()} />
-        </div>
-      )}
-
-      {/* ===== MODAL KOREKSI STORTING BULAN LALU ===== */}
-      {showKoreksiModal && selectedAdmin && prevMonthSGTotals && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: 16 }}>
-          <div style={{ background: '#fff', borderRadius: 16, padding: 24, width: '100%', maxWidth: 420, boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
-            <h3 style={{ margin: '0 0 4px', fontSize: 16, fontWeight: 700, color: '#1f2937' }}>Koreksi Storting Bulan Lalu</h3>
-            <p style={{ margin: '0 0 16px', fontSize: 13, color: '#6b7280' }}>
-              {selectedAdmin.name} — {prevMonthSGTotals.label}
-            </p>
-            <p style={{ margin: '0 0 16px', fontSize: 12, color: '#9ca3af', lineHeight: 1.5 }}>
-              Masukkan total storting dari buku manual. Nilai ini akan menggantikan data digital untuk bulan tersebut.
-            </p>
-            {[['L1', 'l1'], ['CM', 'cm'], ['MB', 'mb'], ['ML', 'ml']].map(([label, key]) => (
-              <div key={key} style={{ marginBottom: 12 }}>
-                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 4 }}>{label}</label>
-                <input
-                  type="number"
-                  min="0"
-                  value={koreksiInput[key]}
-                  onChange={(e) => setKoreksiInput(prev => ({ ...prev, [key]: e.target.value }))}
-                  placeholder="0"
-                  style={{ width: '100%', padding: '8px 12px', borderRadius: 8, border: '1px solid #d1d5db', fontSize: 13, boxSizing: 'border-box' }}
-                />
-              </div>
-            ))}
-            {koreksiError && <p style={{ color: '#ef4444', fontSize: 12, margin: '0 0 12px' }}>{koreksiError}</p>}
-            <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-              <button
-                onClick={() => setShowKoreksiModal(false)}
-                style={{ flex: 1, padding: '10px', borderRadius: 8, border: '1px solid #d1d5db', background: '#fff', fontSize: 13, cursor: 'pointer' }}
-              >
-                Batal
-              </button>
-              <button
-                disabled={savingKoreksi}
-                onClick={async () => {
-                  setSavingKoreksi(true);
-                  setKoreksiError('');
-                  try {
-                    const result = await setKoreksiStorting({
-                      cabangId: cabang.id,
-                      adminUid: selectedAdmin.uid,
-                      bulan: prevMonthSGTotals.prevBulan,
-                      l1: parseInt(koreksiInput.l1) || 0,
-                      cm: parseInt(koreksiInput.cm) || 0,
-                      mb: parseInt(koreksiInput.mb) || 0,
-                      ml: parseInt(koreksiInput.ml) || 0,
-                    });
-                    if (result.success) {
-                      setKoreksiSGMap(prev => ({
-                        ...prev,
-                        [selectedAdmin.uid]: {
-                          l1: parseInt(koreksiInput.l1) || 0,
-                          cm: parseInt(koreksiInput.cm) || 0,
-                          mb: parseInt(koreksiInput.mb) || 0,
-                          ml: parseInt(koreksiInput.ml) || 0,
-                        },
-                      }));
-                      setShowKoreksiModal(false);
-                    } else {
-                      setKoreksiError('Gagal menyimpan. Coba lagi.');
-                    }
-                  } catch (e) {
-                    setKoreksiError(e.message || 'Gagal menyimpan.');
-                  } finally {
-                    setSavingKoreksi(false);
-                  }
-                }}
-                style={{ flex: 1, padding: '10px', borderRadius: 8, border: 'none', background: savingKoreksi ? '#a78bfa' : '#7c3aed', color: '#fff', fontSize: 13, fontWeight: 600, cursor: savingKoreksi ? 'not-allowed' : 'pointer' }}
-              >
-                {savingKoreksi ? 'Menyimpan...' : 'Simpan'}
-              </button>
-            </div>
-          </div>
         </div>
       )}
     </div>
