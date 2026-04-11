@@ -21,7 +21,7 @@ const db = admin.database();
 // =========================================================================
 // METADATA CACHE — Hemat RTDB reads untuk data yang jarang berubah
 // =========================================================================
-const METADATA_CACHE_TTL_MS = 10 * 60 * 1000; // 10 menit
+const METADATA_CACHE_TTL_MS = 15 * 60 * 1000; // 15 menit (metadata sangat jarang berubah)
 let metadataCache = { data: null, timestamp: 0 };
 
 async function getCachedMetadata() {

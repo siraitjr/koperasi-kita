@@ -28,12 +28,13 @@ const db = admin.database();
 // 3. Jika cache tidak ada ATAU expired → baca dari RTDB → simpan ke cache
 //
 // AMAN karena:
-// - TTL 5 menit: data buku pokok tidak berubah setiap detik
-// - Jika admin input pembayaran, perubahan terlihat max 5 menit kemudian di web
+// - TTL 10 menit: data buku pokok hanya berubah saat admin input pembayaran dari Android
+// - Delay 10 menit sangat wajar untuk pembukuan (bukan real-time dashboard)
+// - Jika admin input pembayaran, perubahan terlihat max 10 menit kemudian di web
 // - Ini sama seperti perilaku cache browser pada umumnya
 // =========================================================================
-const CACHE_TTL_MS = 5 * 60 * 1000;  // 5 menit
-const METADATA_CACHE_TTL_MS = 10 * 60 * 1000;  // 10 menit (metadata jarang berubah)
+const CACHE_TTL_MS = 10 * 60 * 1000;  // 10 menit
+const METADATA_CACHE_TTL_MS = 15 * 60 * 1000;  // 15 menit (metadata sangat jarang berubah)
 
 // Cache untuk getBukuPokok: key = "cabangId:statusFilter:adminUid"
 const bukuPokokCache = new Map();
