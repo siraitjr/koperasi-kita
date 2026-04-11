@@ -472,6 +472,23 @@ exports.getBukuPokok = functions
                     if (statusFilter === 'semua') { /* show all except menunggu approval/ditolak */ }
                     const pembayaranPerTanggal = extractPembayaranPerTanggal(p.pembayaranList);
 
+                    // ✅ Inject pelunasan sisa utang ke pembayaranPerTanggal (untuk storting global)
+                    // SETELAH totalDibayar/sisaUtang agar tidak mempengaruhi sisa utang pinjaman baru
+                    const sisaUtangLamaTopUp = p.sisaUtangLamaSebelumTopUp || 0;
+                    const pinjamanKeN = p.pinjamanKe || 1;
+                    const tglPencairan = (p.tanggalPencairan || '').trim();
+                    if (sisaUtangLamaTopUp > 0 && pinjamanKeN > 1 && tglPencairan) {
+                        if (!pembayaranPerTanggal[tglPencairan]) {
+                            pembayaranPerTanggal[tglPencairan] = { total: 0, entries: [] };
+                        }
+                        pembayaranPerTanggal[tglPencairan].total += sisaUtangLamaTopUp;
+                        pembayaranPerTanggal[tglPencairan].entries.push({
+                            jumlah: sisaUtangLamaTopUp,
+                            keterangan: 'Pelunasan sisa utang',
+                            type: 'pelunasan_sisa_utang'
+                        });
+                    }
+
                     // Riwayat pinjaman lama (jika ada)
                     const riwayat = riwayatLookup[pId] || [];
 

@@ -807,7 +807,7 @@ async function fullRecalculateAdminSummary(adminUid) {
         if (p.pembayaranList) {
             const pembayaranList = Array.isArray(p.pembayaranList)
                 ? p.pembayaranList : Object.values(p.pembayaranList || {});
-            
+
             pembayaranList.forEach(pay => {
                 if (pay.tanggal === today) pembayaranHariIni += pay.jumlah || 0;
                 if (pay.subPembayaran) {
@@ -818,6 +818,16 @@ async function fullRecalculateAdminSummary(adminUid) {
                     });
                 }
             });
+        }
+
+        // ✅ Hitung pelunasan sisa utang dari lanjut pinjaman yang dicairkan hari ini
+        // Sisa utang TIDAK ada di pembayaranList (agar tidak mengurangi sisa utang pinjaman baru)
+        // tapi tetap dihitung sebagai pembayaranHariIni karena merupakan pelunasan yang sah
+        const sisaUtangLamaSebelumTopUp = p.sisaUtangLamaSebelumTopUp || 0;
+        const pinjamanKeP = p.pinjamanKe || 1;
+        const tanggalPencairan = (p.tanggalPencairan || '').trim();
+        if (sisaUtangLamaSebelumTopUp > 0 && pinjamanKeP > 1 && tanggalPencairan === today) {
+            pembayaranHariIni += sisaUtangLamaSebelumTopUp;
         }
         
         switch (status) {

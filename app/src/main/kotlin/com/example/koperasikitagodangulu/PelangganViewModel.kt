@@ -1410,9 +1410,17 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
             }
         }
 
-        Log.d("Dashboard", "💳 Total pembayaran hari ini (termasuk sub): Rp $todayTotalPayments")
+        // ✅ Hitung pelunasan sisa utang dari lanjut pinjaman yang dicairkan hari ini
+        // Sisa utang TIDAK ada di pembayaranList (agar tidak mengurangi sisa utang pinjaman baru)
+        // tapi tetap dihitung sebagai pembayaranHariIni karena merupakan pelunasan yang sah
+        val pelunasanSisaUtangTotal = daftarPelanggan
+            .filter { it.pinjamanKe > 1 && it.sisaUtangLamaSebelumTopUp > 0 && it.tanggalPencairan == today && it.status == "Aktif" }
+            .sumOf { it.sisaUtangLamaSebelumTopUp }
 
-        return todayTotalPayments
+        val totalDenganPelunasan = todayTotalPayments + pelunasanSisaUtangTotal
+        Log.d("Dashboard", "💳 Total pembayaran hari ini (termasuk sub + pelunasan sisa utang): Rp $totalDenganPelunasan")
+
+        return totalDenganPelunasan
     }
 
     private fun calculateTotalTunggakan(): Int {

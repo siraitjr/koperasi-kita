@@ -15,7 +15,7 @@ const admin = require('firebase-admin');
 
 const db = admin.database();
 
-const { processPembayaranBaru, getTodayIndonesia } = require('./summaryHelpers');
+const { processPembayaranBaru, getTodayIndonesia, incrementAdminSummary, incrementCabangSummary, incrementGlobalSummary } = require('./summaryHelpers');
 
 // ✅ JURNAL TRANSAKSI - Pencatatan permanen untuk pembukuan profesional
 const jurnal = require('./jurnalTransaksi');
@@ -383,6 +383,16 @@ exports.onPelangganApproved = functions.database
                 // Jika lanjut pinjaman, catat juga pelunasan sisa utang lama
                 if (sisaUtangLama > 0 && pinjamanKe > 1) {
                     await jurnal.catatPelunasanSisaUtang(adminUid, pelangganId, pelanggan, adminDataJ, sisaUtangLama);
+
+                    // ✅ Update summary: pelunasan sisa utang dihitung sebagai pembayaranHariIni
+                    const pelunasanDelta = { pembayaranHariIniChange: sisaUtangLama };
+                    const cabangIdJ = adminDataJ.cabang;
+                    await Promise.all([
+                        incrementAdminSummary(adminUid, pelunasanDelta),
+                        cabangIdJ ? incrementCabangSummary(cabangIdJ, pelunasanDelta) : Promise.resolve(),
+                        incrementGlobalSummary(pelunasanDelta)
+                    ]);
+                    console.log(`✅ Summary pembayaranHariIni +Rp ${sisaUtangLama} (pelunasan sisa utang)`);
                 }
             }
 
