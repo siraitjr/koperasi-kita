@@ -1655,54 +1655,6 @@ function getKategoriNasabah(nasabah) {
                       })
                     )}
                   </tbody>
-                  {stortingGlobalData.length > 0 && (
-                    <tfoot>
-                      <tr>
-                        <td style={{ fontWeight: 700, textAlign: 'center' }}>TOTAL</td>
-                        <td style={{ textAlign: 'center', fontWeight: 700, fontFamily: "'DM Mono', monospace" }}>
-                          {formatRp(stortingGlobalData.reduce((s, r) => s + r.dropBerjalan, 0))}
-                        </td>
-                        <td style={{ textAlign: 'center', fontWeight: 700, fontFamily: "'DM Mono', monospace" }}>
-                          {formatRp(stortingGlobalData.reduce((s, r) => s + r.dropKini, 0))}
-                        </td>
-                        <td style={{ textAlign: 'center', fontWeight: 700, fontFamily: "'DM Mono', monospace" }}>
-                          {formatRp(stortingGlobalData.reduce((s, r) => s + r.targetBerjalan, 0))}
-                        </td>
-                        <td style={{ textAlign: 'center', fontWeight: 700, fontFamily: "'DM Mono', monospace" }}>
-                          {formatRp(stortingGlobalData.reduce((s, r) => s + r.targetKini, 0))}
-                        </td>
-                        <td style={{ textAlign: 'center', fontWeight: 700, fontFamily: "'DM Mono', monospace" }}>
-                          {formatRp(stortingGlobalData.reduce((s, r) => s + r.stortingBerjalan, 0))}
-                        </td>
-                        <td style={{ textAlign: 'center', fontWeight: 700, fontFamily: "'DM Mono', monospace" }}>
-                          {formatRp(stortingGlobalData.reduce((s, r) => s + r.stortingKini, 0))}
-                        </td>
-                        <td style={{ textAlign: 'center', fontWeight: 700, fontSize: 12 }}>
-                          {(() => {
-                            const totalStorting = stortingGlobalData.reduce((s, r) => s + r.stortingKini, 0);
-                            const totalTarget = stortingGlobalData.reduce((s, r) => s + r.targetKini, 0);
-                            const avg = totalTarget > 0 ? Math.round(totalStorting / totalTarget * 100) : 0;
-                            return avg > 0 ? `${avg}%` : '-';
-                          })()}
-                        </td>
-                        <td style={{ textAlign: 'center', fontWeight: 700, fontFamily: "'DM Mono', monospace", fontSize: 12 }}>
-                          {formatRp(stortingGlobalData.reduce((s, r) => s + r.pbKini, 0))}
-                        </td>
-                        <td style={{ textAlign: 'center', fontWeight: 700, fontFamily: "'DM Mono', monospace", fontSize: 12 }}>
-                          {formatRp(stortingGlobalData.reduce((s, r) => s + r.l1Kini, 0))}
-                        </td>
-                        <td style={{ textAlign: 'center', fontWeight: 700, fontFamily: "'DM Mono', monospace", fontSize: 12 }}>
-                          {formatRp(stortingGlobalData.reduce((s, r) => s + r.cmKini, 0))}
-                        </td>
-                        <td style={{ textAlign: 'center', fontWeight: 700, fontFamily: "'DM Mono', monospace", fontSize: 12 }}>
-                          {formatRp(stortingGlobalData.reduce((s, r) => s + r.mbKini, 0))}
-                        </td>
-                        <td style={{ textAlign: 'center', fontWeight: 700, fontFamily: "'DM Mono', monospace", fontSize: 12 }}>
-                          {formatRp(stortingGlobalData.reduce((s, r) => s + r.mlKini, 0))}
-                        </td>
-                      </tr>
-                    </tfoot>
-                  )}
                 </table>
               </div>
               </>
