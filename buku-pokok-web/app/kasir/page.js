@@ -1469,21 +1469,41 @@ function BukuRekapScreen({ user, cabang, cabangList, onBack, onLogout, onNavigat
       const totalDrop = nominalDropBaru + nominalDropLama;
 
       // Target = sum of besarPinjaman * 3% for eligible nasabah
+      // ✅ Konsisten dengan logika storting global di buku pokok (pembukuan/page.js)
       let target = 0;
+      const currentDateParsed = parseDateStr(todayStr);
+      const threeMonthsAgoTarget = currentDateParsed
+        ? new Date(currentDateParsed.getFullYear(), currentDateParsed.getMonth() - 3, 1)
+        : threeMonthsAgo;
       resortNasabah.forEach(n => {
+        // Status harus Aktif (konsisten dengan buku pokok storting global)
+        const nStatus = (n.status || '').toLowerCase();
+        if (nStatus !== 'aktif' && nStatus !== 'active') return;
         // Exclude menunggu pencairan
-        const sk = (n.statusKhusus || '').toUpperCase().replace(/ /g, '_');
-        if (sk === 'MENUNGGU_PENCAIRAN') return;
-        // Exclude > 3 bulan
+        if (n.statusKhusus === 'MENUNGGU_PENCAIRAN') return;
+        // Tanggal acuan: pencairan → pengajuan → daftar
         const tglAcuan = (n.tanggalPencairan || '').trim() || (n.tanggalPengajuan || '').trim() || (n.tanggalDaftar || '').trim();
         const acuanDate = parseDateStr(tglAcuan);
-        if (acuanDate && acuanDate < threeMonthsAgo) return;
-        // Exclude cair hari ini
-        if ((n.tanggalPencairan || '').trim() === todayStr) return;
-        // Exclude sudah lunas
-        if (n.totalPelunasan > 0 && n.sisaUtang <= 0) return;
+        if (!acuanDate || !currentDateParsed) return;
+        // Harus sudah cair SEBELUM tanggal ini (exclude cair hari ini)
+        if (acuanDate >= currentDateParsed) return;
+        // Exclude > 3 bulan
+        if (acuanDate < threeMonthsAgoTarget) return;
+        // Cek belum lunas sampai tanggal ini (per-tanggal, bukan total)
+        const totalPelunasan = n.totalPelunasan || 0;
+        if (totalPelunasan <= 0) return;
+        let totalBayarSampaiTanggal = 0;
+        if (n.pembayaran) {
+          for (const [payDate, payData] of Object.entries(n.pembayaran)) {
+            const pd = parseDateStr(payDate);
+            if (pd && pd <= currentDateParsed) {
+              totalBayarSampaiTanggal += payData.total || 0;
+            }
+          }
+        }
+        if (totalBayarSampaiTanggal >= totalPelunasan) return; // sudah lunas
 
-        target += Math.round((n.besarPinjaman || 0) * 0.03);
+        target += Math.floor((n.besarPinjaman || 0) * 3 / 100);
       });
 
       // Storting = total pembayaran hari ini
