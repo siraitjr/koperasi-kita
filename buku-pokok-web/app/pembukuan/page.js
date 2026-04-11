@@ -1531,24 +1531,16 @@ function getKategoriNasabah(nasabah) {
                 <table className="buku-table storting-global-table">
                   <thead>
                     <tr>
-                      <th rowSpan={2} className="sg-th-tanggal" style={{ position: 'sticky', left: 0, zIndex: 12, minWidth: 60, textAlign: 'center', verticalAlign: 'middle' }}>Tgl</th>
-                      <th colSpan={2} className="sg-th-group sg-th-drop" style={{ textAlign: 'center', borderBottom: 'none', color: '#2d7dd2' }}>DROP</th>
-                      <th colSpan={2} className="sg-th-group sg-th-target" style={{ textAlign: 'center', borderBottom: 'none', color: '#e85d3a' }}>TARGET</th>
-                      <th colSpan={2} className="sg-th-group sg-th-storting" style={{ textAlign: 'center', borderBottom: 'none', color: '#0f6b54' }}>STORTING</th>
-                      <th rowSpan={2} className="sg-th-persen" style={{ textAlign: 'center', verticalAlign: 'middle', minWidth: 55 }}>%</th>
-                      <th rowSpan={2} className="sg-th-kat sg-th-kat-pb" style={{ textAlign: 'center', verticalAlign: 'middle', minWidth: 80 }}>PB</th>
-                      <th rowSpan={2} className="sg-th-kat sg-th-kat-l1" style={{ textAlign: 'center', verticalAlign: 'middle', minWidth: 80 }}>L1</th>
-                      <th rowSpan={2} className="sg-th-kat sg-th-kat-cm" style={{ textAlign: 'center', verticalAlign: 'middle', minWidth: 80 }}>CM</th>
-                      <th rowSpan={2} className="sg-th-kat sg-th-kat-mb" style={{ textAlign: 'center', verticalAlign: 'middle', minWidth: 80 }}>MB</th>
-                      <th rowSpan={2} className="sg-th-kat sg-th-kat-ml" style={{ textAlign: 'center', verticalAlign: 'middle', minWidth: 80 }}>ML</th>
-                    </tr>
-                    <tr>
-                      <th className="sg-th-sub" style={{ textAlign: 'center', color: '#e85d3a', minWidth: 120, fontSize: 10 }}>Berjalan</th>
-                      <th className="sg-th-sub" style={{ textAlign: 'center', minWidth: 120, fontSize: 10 }}>Kini</th>
-                      <th className="sg-th-sub" style={{ textAlign: 'center', color: '#e85d3a', minWidth: 120, fontSize: 10 }}>Berjalan</th>
-                      <th className="sg-th-sub" style={{ textAlign: 'center', minWidth: 120, fontSize: 10 }}>Kini</th>
-                      <th className="sg-th-sub" style={{ textAlign: 'center', color: '#e85d3a', minWidth: 120, fontSize: 10 }}>Berjalan</th>
-                      <th className="sg-th-sub" style={{ textAlign: 'center', minWidth: 120, fontSize: 10 }}>Kini</th>
+                      <th className="sg-th-tanggal" style={{ position: 'sticky', left: 0, zIndex: 12, minWidth: 60, textAlign: 'center', verticalAlign: 'middle' }}>Tgl</th>
+                      <th className="sg-th-group sg-th-drop" style={{ textAlign: 'center', color: '#2d7dd2', minWidth: 120 }}>DROP</th>
+                      <th className="sg-th-group sg-th-target" style={{ textAlign: 'center', color: '#e85d3a', minWidth: 120 }}>TARGET</th>
+                      <th className="sg-th-group sg-th-storting" style={{ textAlign: 'center', color: '#0f6b54', minWidth: 120 }}>STORTING</th>
+                      <th className="sg-th-persen" style={{ textAlign: 'center', verticalAlign: 'middle', minWidth: 55 }}>%</th>
+                      <th className="sg-th-kat sg-th-kat-pb" style={{ textAlign: 'center', verticalAlign: 'middle', minWidth: 80 }}>PB</th>
+                      <th className="sg-th-kat sg-th-kat-l1" style={{ textAlign: 'center', verticalAlign: 'middle', minWidth: 80 }}>L1</th>
+                      <th className="sg-th-kat sg-th-kat-cm" style={{ textAlign: 'center', verticalAlign: 'middle', minWidth: 80 }}>CM</th>
+                      <th className="sg-th-kat sg-th-kat-mb" style={{ textAlign: 'center', verticalAlign: 'middle', minWidth: 80 }}>MB</th>
+                      <th className="sg-th-kat sg-th-kat-ml" style={{ textAlign: 'center', verticalAlign: 'middle', minWidth: 80 }}>ML</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1556,7 +1548,7 @@ function getKategoriNasabah(nasabah) {
                     {prevMonthSGTotals && (
                       <tr style={{ background: '#f5f3ff', borderBottom: '2px solid #c4b5fd' }}>
                         <td style={{ position: 'sticky', left: 0, zIndex: 5, background: '#f5f3ff' }} />
-                        <td colSpan={7} style={{ textAlign: 'right', paddingRight: 8 }}>
+                        <td colSpan={4} style={{ textAlign: 'right', paddingRight: 8 }}>
                           {/* Tombol koreksi: hanya pengawas + resort tertentu */}
                           {user?.role === 'pengawas' && selectedAdmin && (
                             <button
@@ -1600,7 +1592,7 @@ function getKategoriNasabah(nasabah) {
                     )}
                     {stortingGlobalData.length === 0 ? (
                       <tr>
-                        <td colSpan={13} className="empty-cell">Tidak ada data untuk bulan ini</td>
+                        <td colSpan={10} className="empty-cell">Tidak ada data untuk bulan ini</td>
                       </tr>
                     ) : (
                       stortingGlobalData.map((row, idx) => {
@@ -1612,20 +1604,11 @@ function getKategoriNasabah(nasabah) {
                               <span style={{ fontSize: 14 }}>{dayParts[0]}</span>
                               <span style={{ fontSize: 9, color: 'var(--text-muted)', display: 'block' }}>{dayParts[1]}</span>
                             </td>
-                            <td style={{ textAlign: 'center', fontFamily: "'DM Mono', monospace", color: '#e85d3a', fontWeight: 600 }}>
-                              {row.dropBerjalan > 0 ? formatRp(row.dropBerjalan) : '-'}
-                            </td>
                             <td style={{ textAlign: 'center', fontFamily: "'DM Mono', monospace" }}>
                               {row.dropKini > 0 ? formatRp(row.dropKini) : '-'}
                             </td>
-                            <td style={{ textAlign: 'center', fontFamily: "'DM Mono', monospace", color: '#e85d3a', fontWeight: 600 }}>
-                              {row.targetBerjalan > 0 ? formatRp(row.targetBerjalan) : '-'}
-                            </td>
                             <td style={{ textAlign: 'center', fontFamily: "'DM Mono', monospace" }}>
                               {row.targetKini > 0 ? formatRp(row.targetKini) : '-'}
-                            </td>
-                            <td style={{ textAlign: 'center', fontFamily: "'DM Mono', monospace", color: '#e85d3a', fontWeight: 600 }}>
-                              {row.stortingBerjalan > 0 ? formatRp(row.stortingBerjalan) : '-'}
                             </td>
                             <td style={{ textAlign: 'center', fontFamily: "'DM Mono', monospace" }}>
                               {row.stortingKini > 0 ? formatRp(row.stortingKini) : '-'}
@@ -1660,19 +1643,10 @@ function getKategoriNasabah(nasabah) {
                       <tr>
                         <td style={{ fontWeight: 700, textAlign: 'center' }}>TOTAL</td>
                         <td style={{ textAlign: 'center', fontWeight: 700, fontFamily: "'DM Mono', monospace" }}>
-                          {formatRp(stortingGlobalData.reduce((s, r) => s + r.dropBerjalan, 0))}
-                        </td>
-                        <td style={{ textAlign: 'center', fontWeight: 700, fontFamily: "'DM Mono', monospace" }}>
                           {formatRp(stortingGlobalData.reduce((s, r) => s + r.dropKini, 0))}
                         </td>
                         <td style={{ textAlign: 'center', fontWeight: 700, fontFamily: "'DM Mono', monospace" }}>
-                          {formatRp(stortingGlobalData.reduce((s, r) => s + r.targetBerjalan, 0))}
-                        </td>
-                        <td style={{ textAlign: 'center', fontWeight: 700, fontFamily: "'DM Mono', monospace" }}>
                           {formatRp(stortingGlobalData.reduce((s, r) => s + r.targetKini, 0))}
-                        </td>
-                        <td style={{ textAlign: 'center', fontWeight: 700, fontFamily: "'DM Mono', monospace" }}>
-                          {formatRp(stortingGlobalData.reduce((s, r) => s + r.stortingBerjalan, 0))}
                         </td>
                         <td style={{ textAlign: 'center', fontWeight: 700, fontFamily: "'DM Mono', monospace" }}>
                           {formatRp(stortingGlobalData.reduce((s, r) => s + r.stortingKini, 0))}
