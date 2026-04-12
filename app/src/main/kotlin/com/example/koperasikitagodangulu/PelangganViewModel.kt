@@ -3464,12 +3464,14 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                 }
                 val totalPelunasanLama = existingPelanggan.totalPelunasan
 
-                // ✅ PERBAIKAN: Jika dari "Menunggu Pencairan", sisaUtangLama = 0 (sudah lunas)
-                val sisaUtangLama = if (isFromMenungguPencairan) {
-                    0
-                } else {
-                    max(totalPelunasanLama - totalBayarSebelumnya, 0)
-                }
+                // ✅ PERBAIKAN: Selalu hitung sisaUtangLama berdasarkan data aktual.
+                // Untuk nasabah dari MENUNGGU_PENCAIRAN, sisa utang lama akan dilunasi
+                // oleh tabungan saat approval → nilai ini harus dicatat ke pembayaran_harian
+                // dan summary agar tercatat di Laporan Harian, Storting Hari Ini, Card Bayar
+                // Hari Ini, dan Storting Kini (sisaUtangLamaSebelumTopUp digunakan sebagai
+                // penanda oleh 4 lokasi tracking tersebut).
+                // sudahLunas tetap true untuk MENUNGGU_PENCAIRAN agar pembayaranList direset.
+                val sisaUtangLama = max(totalPelunasanLama - totalBayarSebelumnya, 0)
                 val sudahLunas = sisaUtangLama <= 0 || isFromMenungguPencairan
                 val pinjamanKeBaru = existingPelanggan.pinjamanKe + 1
 
@@ -6997,13 +6999,14 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                 // ✅ Cek apakah nasabah dari "Menunggu Pencairan" (sudah lunas cicilan)
                 val isFromMenungguPencairan = existingPelanggan.statusKhusus == "MENUNGGU_PENCAIRAN"
 
-
-
-                val sisaUtangLama = if (isFromMenungguPencairan) {
-                    0
-                } else {
-                    max(totalPelunasanLama - totalBayarSebelumnya, 0)
-                }
+                // ✅ PERBAIKAN: Selalu hitung sisaUtangLama berdasarkan data aktual.
+                // Untuk nasabah dari MENUNGGU_PENCAIRAN, sisa utang lama akan dilunasi
+                // oleh tabungan saat approval → nilai ini harus dicatat ke pembayaran_harian
+                // dan summary agar tercatat di Laporan Harian, Storting Hari Ini, Card Bayar
+                // Hari Ini, dan Storting Kini (sisaUtangLamaSebelumTopUp digunakan sebagai
+                // penanda oleh 4 lokasi tracking tersebut).
+                // sudahLunas tetap true untuk MENUNGGU_PENCAIRAN agar pembayaranList direset.
+                val sisaUtangLama = max(totalPelunasanLama - totalBayarSebelumnya, 0)
                 val sudahLunas = sisaUtangLama <= 0 || isFromMenungguPencairan
 
                 // ✅ PERBAIKAN: Simpan pinjamanKe yang akan digunakan
