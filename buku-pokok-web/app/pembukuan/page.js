@@ -1704,6 +1704,14 @@ function getKategoriNasabah(nasabah) {
                       const rowTotal = isTabelMode
                         ? displayDates.reduce((s, d) => s + (n.pembayaran?.[d]?.total || 0), 0)
                         : 0;
+                      // Saldo Awal rules:
+                      // - Tabel PB: besar pinjaman × 120% (= totalPelunasan), konsisten
+                      //   untuk nasabah baru maupun lanjut pinjaman.
+                      // - Tabel L1/CM/MB/ML: sisa utang per awal bulan berjalan
+                      //   (sisaUtang + rowTotal).
+                      const saldoAwalTabel = tabelFilter === 'PB'
+                        ? (n.totalPelunasan || 0)
+                        : (n.sisaUtang + rowTotal);
                       // Nama bewarna merah untuk nasabah Sisa Tabungan, Nasabah Lunas, atau ML
                       const isSisaTabungan = n.statusKhusus === 'MENUNGGU_PENCAIRAN';
                       const isLunasCicilan = n.sisaUtang <= 0 && n.totalPelunasan > 0;
@@ -1733,7 +1741,7 @@ function getKategoriNasabah(nasabah) {
                             {n.status === 'Lunas' ? (
                               <span className="lunas-badge">LUNAS</span>
                             ) : isTabelMode ? (
-                              <span style={{ fontFamily: "'DM Mono', monospace" }}>{formatRp(n.sisaUtang + rowTotal)}</span>
+                              <span style={{ fontFamily: "'DM Mono', monospace" }}>{formatRp(saldoAwalTabel)}</span>
                             ) : (
                               <span className={`saldo-amount ${n.sisaUtang > 0 ? 'saldo-utang' : 'saldo-lunas'}`}>
                                 {formatRp(n.sisaUtang)}
@@ -1781,10 +1789,12 @@ function getKategoriNasabah(nasabah) {
                       )}
                       <td style={{ textAlign: 'right', fontWeight: 700, fontFamily: "'DM Mono', monospace", borderRight: '2px solid #7c3aed' }}>
                         {isTabelMode
-                          ? formatRp(filtered.reduce((s, n) => {
-                              const rt = displayDates.reduce((sd, d) => sd + (n.pembayaran?.[d]?.total || 0), 0);
-                              return s + (n.sisaUtang || 0) + rt;
-                            }, 0))
+                          ? (tabelFilter === 'PB'
+                              ? formatRp(filtered.reduce((s, n) => s + (n.totalPelunasan || 0), 0))
+                              : formatRp(filtered.reduce((s, n) => {
+                                  const rt = displayDates.reduce((sd, d) => sd + (n.pembayaran?.[d]?.total || 0), 0);
+                                  return s + (n.sisaUtang || 0) + rt;
+                                }, 0)))
                           : formatRp(filtered.reduce((s, n) => s + (n.sisaUtang || 0), 0))
                         }
                       </td>
