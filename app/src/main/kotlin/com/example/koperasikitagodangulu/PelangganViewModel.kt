@@ -9270,10 +9270,11 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
 
             if (!dasarOk) return@filter false
 
-            // Filter pencarian nama
+            // Filter pencarian nama / detail rumah
             val namaOk = if (queryNama.isBlank()) true
             else pel.namaKtp.contains(queryNama, ignoreCase = true) ||
-                    pel.namaPanggilan.contains(queryNama, ignoreCase = true)
+                    pel.namaPanggilan.contains(queryNama, ignoreCase = true) ||
+                    pel.detailRumah.contains(queryNama, ignoreCase = true)
 
             if (!namaOk) return@filter false
 
