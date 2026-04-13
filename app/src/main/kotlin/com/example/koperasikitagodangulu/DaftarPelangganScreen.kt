@@ -680,6 +680,32 @@ private fun ModernCustomerCard(
                             )
                         }
 
+                        // Detail Rumah — ditampilkan di sebelah kanan info nama
+                        // (tidak menggeser layout lain; hanya muncul jika field terisi).
+                        if (pelanggan.detailRumah.isNotBlank()) {
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Column(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .padding(end = 40.dp, top = 20.dp)
+                            ) {
+                                Text(
+                                    text = "Detail Rumah",
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = subtitleColor
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = pelanggan.detailRumah,
+                                    fontSize = 12.sp,
+                                    color = txtColor,
+                                    maxLines = 3,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+
 //                        // Status Badge
 //                        Surface(
 //                            shape = RoundedCornerShape(10.dp),
