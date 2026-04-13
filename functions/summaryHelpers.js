@@ -630,7 +630,44 @@ function calculateDelta(before, after) {
         // - onSubPembayaranAdded.onCreate() → processPembayaranBaru()
         // =========================================================================
     }
-    
+
+    // =========================================================================
+    // ✅ FIX: PELUNASAN SISA UTANG LAMA DARI LANJUT PINJAMAN (TOP-UP)
+    // =========================================================================
+    // Konsisten dengan:
+    // - RingkasanDashboardScreen.kt:169-171 (admin lapangan)
+    // - fullRecalculateAdminSummary di summaryHelpers.js:826-830
+    //
+    // Sisa utang lama saat top-up TIDAK dicatat di pembayaranList (agar tidak
+    // mengurangi sisa utang pinjaman BARU), sehingga TIDAK ter-handle oleh
+    // processPembayaranBaru(). Tanpa fix ini, dashboard Pimpinan/Koordinator/
+    // Pengawas akan menampilkan "Storting Hari Ini" lebih kecil daripada
+    // RingkasanDashboardScreen sampai weeklyFullRecalc berikutnya (02:00 WIB).
+    //
+    // Idempotent: delta = qualified(after) - qualified(before).
+    // Berlaku untuk Case 1 (insert), Case 2 (delete), Case 3 (update).
+    // =========================================================================
+    {
+        // Ringkasan filter: pinjamanKe > 1 && sisaUtangLamaSebelumTopUp > 0
+        //                && tanggalPencairan == today && status == "Aktif"
+        const isQualified = (data) => {
+            if (!data) return false;
+            const status = (data.status || '').toLowerCase();
+            const pinjamanKe = data.pinjamanKe || 1;
+            const tglPencairan = (data.tanggalPencairan || '').trim();
+            const sisaUtang = data.sisaUtangLamaSebelumTopUp || 0;
+            return pinjamanKe > 1 && tglPencairan === today
+                && (status === 'aktif' || status === 'active') && sisaUtang > 0;
+        };
+        const beforeQualified = isQualified(before) ? (before.sisaUtangLamaSebelumTopUp || 0) : 0;
+        const afterQualified = isQualified(after) ? (after.sisaUtangLamaSebelumTopUp || 0) : 0;
+        const sisaUtangDelta = afterQualified - beforeQualified;
+        if (sisaUtangDelta !== 0) {
+            delta.pembayaranHariIniChange += sisaUtangDelta;
+            console.log(`💵 Sisa utang lama (top-up) delta: ${sisaUtangDelta} (before=${beforeQualified}, after=${afterQualified})`);
+        }
+    }
+
     return delta;
 }
 
