@@ -228,8 +228,31 @@ data class Pelanggan(
     val dicairkanOleh: String = "",
     val tanggalPencairan: String = "",
     val dualApprovalInfo: DualApprovalInfo? = null,
+    // ✅ Backup terstruktur data pinjaman sebelum top-up.
+    // Dipakai saat pengajuan top-up ditolak agar rollback lengkap,
+    // tidak bergantung pada parsing string `catatanPerubahanPinjaman`.
+    val backupSebelumTopUp: BackupTopUpData? = null,
     val isSynced: Boolean = true
 )
+
+/**
+ * Snapshot data pinjaman SEBELUM top-up.
+ * Disimpan di /pelanggan saat admin mengajukan lanjut pinjaman agar
+ * rollback pada pengajuan yang ditolak tetap lengkap walau parser
+ * `catatanPerubahanPinjaman` gagal.
+ */
+data class BackupTopUpData(
+    val pinjamanKe: Int = 0,
+    val besarPinjaman: Int = 0,
+    val admin: Int = 0,
+    val simpanan: Int = 0,
+    val totalDiterima: Int = 0,
+    val totalPelunasan: Int = 0,
+    val tenor: Int = 0,
+    val tanggalPengajuan: String = ""
+) {
+    constructor() : this(0, 0, 0, 0, 0, 0, 0, "")
+}
 
 /** Safe accessor — filter null entries yang bisa muncul dari Firebase array gaps */
 val Pelanggan.safePembayaranList: List<Pembayaran>
@@ -3659,6 +3682,19 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     sisaUtangLamaSebelumTopUp = sisaUtangLama,
                     totalPelunasanLamaSebelumTopUp = totalPelunasanLama,
 
+                    // === Backup Terstruktur utk Rollback saat Ditolak ===
+                    // Ditulis pada write yang sama (tidak menambah RTDB write).
+                    backupSebelumTopUp = BackupTopUpData(
+                        pinjamanKe = dataSebelumTopUp.pinjamanKe,
+                        besarPinjaman = dataSebelumTopUp.besarPinjaman,
+                        admin = dataSebelumTopUp.admin,
+                        simpanan = dataSebelumTopUp.simpanan,
+                        totalDiterima = dataSebelumTopUp.totalDiterima,
+                        totalPelunasan = dataSebelumTopUp.totalPelunasan,
+                        tenor = dataSebelumTopUp.tenor,
+                        tanggalPengajuan = dataSebelumTopUp.tanggalPengajuan
+                    ),
+
                     // === Catatan Perubahan ===
                     catatanPerubahanPinjaman = "DATA_SEBELUM_TOPUP:" +
                             "pinjamanKeLama=${dataSebelumTopUp.pinjamanKe}," +
@@ -4348,7 +4384,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                             val pengawasAlasan = currentDualInfo.pengawasApproval.note.ifBlank { "Ditolak oleh Pengawas" }
 
                             if (isTopUp) {
-                                val dataSebelumTopUp = extractDataSebelumTopUp(existing.catatanPerubahanPinjaman)
+                                val dataSebelumTopUp = resolveDataSebelumTopUp(existing)
                                 if (dataSebelumTopUp != null) {
                                     updatedPelanggan = existing.copy(
                                         status = "Aktif",
@@ -4369,9 +4405,11 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                                         disetujuiOleh = currentDualInfo.pengawasApproval.by,
                                         sisaUtangLamaSebelumTopUp = 0,
                                         totalPelunasanLamaSebelumTopUp = 0,
+                                        backupSebelumTopUp = null,
                                         lastUpdated = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
                                     )
                                 } else {
+                                    Log.e("Approval", "⚠️ Rollback fallback: backupSebelumTopUp & catatanPerubahanPinjaman keduanya tidak valid untuk ${existing.namaPanggilan} (${pelangganId})")
                                     updatedPelanggan = existing.copy(
                                         status = "Aktif",
                                         dualApprovalInfo = updatedDualInfo,
@@ -5319,7 +5357,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
 
                         if (isTopUp) {
                             // TOP-UP DITOLAK: kembalikan ke data pinjaman sebelumnya
-                            val dataSebelumTopUp = extractDataSebelumTopUp(pelanggan.catatanPerubahanPinjaman)
+                            val dataSebelumTopUp = resolveDataSebelumTopUp(pelanggan)
                             val updatedPelanggan = if (dataSebelumTopUp != null) {
                                 pelanggan.copy(
                                     status = "Aktif",
@@ -5341,9 +5379,11 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                                     disetujuiOleh = pimpinanName,
                                     sisaUtangLamaSebelumTopUp = 0,
                                     totalPelunasanLamaSebelumTopUp = 0,
+                                    backupSebelumTopUp = null,
                                     lastUpdated = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
                                 )
                             } else {
+                                Log.e("Rejection", "⚠️ Rollback fallback: backupSebelumTopUp & catatanPerubahanPinjaman keduanya tidak valid untuk ${pelanggan.namaPanggilan} (${pelangganId})")
                                 pelanggan.copy(
                                     status = "Aktif",
                                     dualApprovalInfo = updatedDualInfo,
@@ -5472,7 +5512,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                             val pengawasAlasan = currentDualInfo.pengawasApproval.note.ifBlank { alasan }
 
                             if (isTopUp) {
-                                val dataSebelumTopUp = extractDataSebelumTopUp(pelanggan.catatanPerubahanPinjaman)
+                                val dataSebelumTopUp = resolveDataSebelumTopUp(pelanggan)
                                 if (dataSebelumTopUp != null) {
                                     updatedPelanggan = pelanggan.copy(
                                         status = "Aktif",
@@ -5493,9 +5533,11 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                                         disetujuiOleh = currentDualInfo.pengawasApproval.by,
                                         sisaUtangLamaSebelumTopUp = 0,
                                         totalPelunasanLamaSebelumTopUp = 0,
+                                        backupSebelumTopUp = null,
                                         lastUpdated = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
                                     )
                                 } else {
+                                    Log.e("Rejection", "⚠️ Rollback fallback: backupSebelumTopUp & catatanPerubahanPinjaman keduanya tidak valid untuk ${pelanggan.namaPanggilan} (${pelangganId})")
                                     updatedPelanggan = pelanggan.copy(
                                         status = "Aktif",
                                         dualApprovalInfo = updatedDualInfo,
@@ -5699,7 +5741,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     // ==========================================
                     Log.d("Rejection", "🔄 Processing top-up rejection for: ${pelanggan.namaPanggilan}")
 
-                    val dataSebelumTopUp = extractDataSebelumTopUp(pelanggan.catatanPerubahanPinjaman)
+                    val dataSebelumTopUp = resolveDataSebelumTopUp(pelanggan)
 
                     val updatedPelanggan = if (dataSebelumTopUp != null) {
                         pelanggan.copy(
@@ -5721,9 +5763,11 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                             tanggalApproval = tanggalSekarang,
                             disetujuiOleh = pimpinanName,
                             sisaUtangLamaSebelumTopUp = 0,
-                            totalPelunasanLamaSebelumTopUp = 0
+                            totalPelunasanLamaSebelumTopUp = 0,
+                            backupSebelumTopUp = null
                         )
                     } else {
+                        Log.e("Rejection", "⚠️ Rollback fallback: backupSebelumTopUp & catatanPerubahanPinjaman keduanya tidak valid untuk ${pelanggan.namaPanggilan} (${pelangganId})")
                         pelanggan.copy(
                             status = "Aktif",
                             dualApprovalInfo = updatedDualInfo,
@@ -5968,6 +6012,35 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
             Log.e("ExtractData", "❌ Gagal extract data sebelum top-up: ${e.message}")
             null
         }
+    }
+
+    /**
+     * Mengembalikan data pinjaman sebelum top-up untuk keperluan rollback
+     * saat pengajuan ditolak. Prioritas:
+     *   1) `backupSebelumTopUp` (struktur data terjamin, diprioritaskan)
+     *   2) Fallback ke parsing string `catatanPerubahanPinjaman` (record lama
+     *      yang sudah in-flight sebelum backup terstruktur diperkenalkan).
+     *
+     * Jika kedua sumber kosong atau korup, tetap mengembalikan null dan
+     * pemanggil harus menangani path fallback konservatif.
+     */
+    private fun resolveDataSebelumTopUp(pelanggan: Pelanggan): Pelanggan? {
+        pelanggan.backupSebelumTopUp?.let { b ->
+            // Valid backup minimal harus punya pinjamanKe > 0 dan totalPelunasan > 0.
+            if (b.pinjamanKe > 0 && b.totalPelunasan > 0) {
+                return Pelanggan(
+                    pinjamanKe = b.pinjamanKe,
+                    besarPinjaman = b.besarPinjaman,
+                    admin = b.admin,
+                    simpanan = b.simpanan,
+                    totalDiterima = b.totalDiterima,
+                    totalPelunasan = b.totalPelunasan,
+                    tenor = b.tenor.coerceAtLeast(1),
+                    tanggalPengajuan = b.tanggalPengajuan
+                )
+            }
+        }
+        return extractDataSebelumTopUp(pelanggan.catatanPerubahanPinjaman)
     }
 
     fun generateCicilanKonsisten(tanggalPengajuan: String, tenor: Int, totalPelunasan: Int): List<SimulasiCicilan> {
@@ -7073,6 +7146,19 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     // Simpan data untuk referensi
                     sisaUtangLamaSebelumTopUp = sisaUtangLama,
                     totalPelunasanLamaSebelumTopUp = totalPelunasanLama,
+
+                    // Backup terstruktur untuk rollback saat pengajuan ditolak.
+                    // Ditulis pada write yang sama (tidak menambah RTDB write).
+                    backupSebelumTopUp = BackupTopUpData(
+                        pinjamanKe = dataSebelumTopUp.pinjamanKe,
+                        besarPinjaman = dataSebelumTopUp.besarPinjaman,
+                        admin = dataSebelumTopUp.admin,
+                        simpanan = dataSebelumTopUp.simpanan,
+                        totalDiterima = dataSebelumTopUp.totalDiterima,
+                        totalPelunasan = dataSebelumTopUp.totalPelunasan,
+                        tenor = dataSebelumTopUp.tenor,
+                        tanggalPengajuan = dataSebelumTopUp.tanggalPengajuan
+                    ),
 
                     catatanPerubahanPinjaman = "DATA_SEBELUM_TOPUP:" +
                             "pinjamanKeLama=${dataSebelumTopUp.pinjamanKe}," +
@@ -12151,7 +12237,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
 
                 if (isTopUp) {
                     // TOP-UP DITOLAK: kembalikan ke data pinjaman sebelumnya
-                    val dataSebelumTopUp = extractDataSebelumTopUp(pelanggan.catatanPerubahanPinjaman)
+                    val dataSebelumTopUp = resolveDataSebelumTopUp(pelanggan)
                     val updatedPelanggan = if (dataSebelumTopUp != null) {
                         pelanggan.copy(
                             status = "Aktif",
@@ -12173,9 +12259,11 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                             disetujuiOleh = koordinatorName,
                             sisaUtangLamaSebelumTopUp = 0,
                             totalPelunasanLamaSebelumTopUp = 0,
+                            backupSebelumTopUp = null,
                             lastUpdated = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
                         )
                     } else {
+                        Log.e("Rejection", "⚠️ Rollback fallback: backupSebelumTopUp & catatanPerubahanPinjaman keduanya tidak valid untuk ${pelanggan.namaPanggilan} (${pelangganId})")
                         pelanggan.copy(
                             status = "Aktif",
                             dualApprovalInfo = updatedDualInfo,
