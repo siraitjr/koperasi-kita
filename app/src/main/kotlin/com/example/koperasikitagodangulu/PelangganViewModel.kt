@@ -9025,7 +9025,14 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                 } finally {
                     isLoading.value = false
                     _isLoadingMore.value = false
-                    simpanKeLokal() // ✅ FIX: Pastikan data ter-persist setelah reload
+                    // ⚠️ JANGAN panggil simpanKeLokal() di sini!
+                    // loadPelangganPaginated hanya memuat halaman parsial (50 tertua via orderByKey().limitToFirst).
+                    // Menulis daftarPelanggan ke LocalStorage dari sini akan menimpa file cache
+                    // dengan data parsial (atau list kosong saat fetch gagal) — membuat nasabah
+                    // terbaru seolah-olah "hilang" dari DaftarPelangganScreen.
+                    // Persistensi lengkap sudah ditangani oleh:
+                    //   - SmartFirebaseLoader.loadFromFirebaseWithLocalBackup (via initAdminLapanganListeners)
+                    //   - setupDataUpdateListener (panggil simpanKeLokal setelah full refresh)
                 }
             }
         }
