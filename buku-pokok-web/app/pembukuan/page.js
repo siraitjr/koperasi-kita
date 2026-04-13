@@ -1246,6 +1246,16 @@ function getKategoriNasabah(nasabah) {
     return { pb, l1, cm, mb, ml, label: prevMonthLabel, prevBulan, hasKoreksi };
   })();
 
+  // PB Saldo Awal di baris terkoreksi (Storting Global):
+  // = dropBerjalan terakhir × 120%. Tumbuh harian seiring drop kini.
+  // Perhitungan murni dari stortingGlobalData (sudah ada di memory) — 0 RTDB read tambahan.
+  const pbSaldoAwalDariDrop = (() => {
+    if (!isStortingGlobalMode || stortingGlobalData.length === 0) return 0;
+    const last = stortingGlobalData[stortingGlobalData.length - 1];
+    const dropBerjalan = last?.dropBerjalan || 0;
+    return Math.round((dropBerjalan * 120) / 100);
+  })();
+
   const tabelDates = (() => {
     if (!isTabelMode || filtered.length === 0) return [];
     const BULAN_INDO_ARR = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
@@ -1500,7 +1510,8 @@ function getKategoriNasabah(nasabah) {
                     })()}
                   </span>
                   {prevMonthSGTotals && (() => {
-                    const total = prevMonthSGTotals.pb + prevMonthSGTotals.l1 + prevMonthSGTotals.cm + prevMonthSGTotals.mb + prevMonthSGTotals.ml;
+                    // Total saldo awal koperasi: PB pakai dropBerjalan × 120% (bukan prev month PB)
+                    const total = pbSaldoAwalDariDrop + prevMonthSGTotals.l1 + prevMonthSGTotals.cm + prevMonthSGTotals.mb + prevMonthSGTotals.ml;
                     return total > 0 ? (
                       <span style={{ fontSize: 14, color: '#7c3aed', fontWeight: 700, fontFamily: "'DM Mono', monospace" }}>
                         {formatRp(total)}
@@ -1582,7 +1593,7 @@ function getKategoriNasabah(nasabah) {
                           )}
                         </td>
                         <td style={{ textAlign: 'center', fontFamily: "'DM Mono', monospace", fontSize: 12, fontWeight: 700, color: '#7c3aed' }}>
-                          {prevMonthSGTotals.pb > 0 ? formatRp(prevMonthSGTotals.pb) : '-'}
+                          {pbSaldoAwalDariDrop > 0 ? formatRp(pbSaldoAwalDariDrop) : '-'}
                         </td>
                         <td style={{ textAlign: 'center', fontFamily: "'DM Mono', monospace", fontSize: 12, fontWeight: 700, color: '#7c3aed' }}>
                           {prevMonthSGTotals.l1 > 0 ? formatRp(prevMonthSGTotals.l1) : '-'}
