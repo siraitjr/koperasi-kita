@@ -558,7 +558,16 @@ function calculateDelta(before, after) {
                 delta.aktifChange -= 1;
                 delta.pinjamanAktifChange -= beforePelunasan;
                 delta.piutangChange -= Math.max(0, beforePelunasan - beforeDibayar);
-                delta.targetHariIniChange -= calculateTargetHariIni(before);
+                // ✅ FIX H+1: Jika transisi ke menungguPencairan/lunas terjadi HARI INI,
+                // target hari ini TIDAK dikurangi — sesuai aturan H+1 (dikurangi besok saat
+                // fullRecalc midnight). Konsisten dgn fullRecalculateAdminSummary (line 882-892)
+                // dan Android RingkasanDashboardScreen.kt (line 134-140).
+                const isTransisiHariIni = (afterCategory === 'menungguPencairan' || afterCategory === 'lunas')
+                    && ((after.tanggalLunasCicilan || '').trim() === today
+                        || (after.tanggalStatusKhusus || '').trim() === today);
+                if (!isTransisiHariIni) {
+                    delta.targetHariIniChange -= calculateTargetHariIni(before);
+                }
                             } else if (beforeCategory === 'cairHariIni' || beforeCategory === 'nonAktifMacet') {
                 // Tidak kurangi aktifChange
 

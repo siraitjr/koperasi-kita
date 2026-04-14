@@ -1110,40 +1110,37 @@ function getKategoriNasabah(nasabah) {
         }
 
         // Target Kini: besarPinjaman × 3% untuk nasabah yang eligible pada tanggal ini
-        // Aturan sama dengan Android (RingkasanDashboardScreen.kt):
-        // - Status harus Aktif/Active (case insensitive), bukan Disetujui/Tidak Aktif
-        // - Tanggal acuan: tanggalPencairan → tanggalPengajuan → tanggalDaftar (fallback)
-        // - Sudah cair/terdaftar sebelum tanggal ini (bukan hari itu)
-        // - Belum > 3 bulan dari tanggal ini
-        // - Belum lunas sampai tanggal ini
-        // - Bukan MENUNGGU_PENCAIRAN
+        // ✅ FIX H+1: Konsisten dengan Android RingkasanDashboardScreen.kt & fullRecalculateAdminSummary:
+        // - Nasabah yang lunas TEPAT pada dateStr tetap masuk target hari itu (H+1 rule)
+        //   → gunakan pembayaran SEBELUM dateStr (pd < currentDate, bukan <=)
+        // - Nasabah yang baru MENUNGGU_PENCAIRAN pada dateStr tetap masuk target hari itu
+        //   → cek tanggalStatusKhusus: hanya exclude jika berlaku sebelum dateStr
+        // - Tidak filter berdasarkan status saat ini (n.status) karena status nasabah
+        //   bisa berubah setelah dateStr (mis. sekarang Lunas tapi dulu Aktif)
         if (currentDate && threeMonthsAgo) {
-          // Status check: harus Aktif (Android mengecek status Aktif/Active, exclude Disetujui/Tidak Aktif)
-          const nStatus = (n.status || '').toLowerCase();
-          if (nStatus !== 'aktif' && nStatus !== 'active') {
-            // skip - not active status
-          } else {
-            // Fallback tanggal acuan sama seperti Android
+          const totalPelunasan = n.totalPelunasan || 0;
+          if (totalPelunasan > 0) {
             const tglAcuan = tglCair || n.tanggalPengajuan || n.tanggalDaftar || '';
             if (tglAcuan) {
               const acuanDate = parseDateStr(tglAcuan);
               if (acuanDate && acuanDate < currentDate && acuanDate >= threeMonthsAgo) {
-                // Cek belum lunas sampai tanggal ini
-                const totalPelunasan = n.totalPelunasan || 0;
-                if (totalPelunasan > 0) {
-                  let totalBayarSampaiTanggal = 0;
-                  if (n.pembayaran) {
-                    for (const [payDate, payData] of Object.entries(n.pembayaran)) {
-                      const pd = parseDateStr(payDate);
-                      if (pd && pd <= currentDate) {
-                        totalBayarSampaiTanggal += payData.total || 0;
-                      }
+                // H+1: hitung pembayaran SEBELUM dateStr (strictly before)
+                let totalBayarSebelumTanggal = 0;
+                if (n.pembayaran) {
+                  for (const [payDate, payData] of Object.entries(n.pembayaran)) {
+                    const pd = parseDateStr(payDate);
+                    if (pd && pd < currentDate) {
+                      totalBayarSebelumTanggal += payData.total || 0;
                     }
                   }
-                  if (totalBayarSampaiTanggal < totalPelunasan) {
-                    if (n.statusKhusus !== 'MENUNGGU_PENCAIRAN') {
-                      targetKini += Math.floor((n.besarPinjaman || 0) * 3 / 100);
-                    }
+                }
+                if (totalBayarSebelumTanggal < totalPelunasan) {
+                  // H+1: MENUNGGU_PENCAIRAN hanya dikecualikan jika sudah berlaku sebelum dateStr
+                  const tglStatusKhusus = n.tanggalStatusKhusus ? parseDateStr(n.tanggalStatusKhusus) : null;
+                  const isMenungguSebelumTanggal = n.statusKhusus === 'MENUNGGU_PENCAIRAN'
+                    && tglStatusKhusus && tglStatusKhusus < currentDate;
+                  if (!isMenungguSebelumTanggal) {
+                    targetKini += Math.floor((n.besarPinjaman || 0) * 3 / 100);
                   }
                 }
               }
