@@ -1441,6 +1441,12 @@ fun TambahPelangganScreen(
                             ModernGradientButton(
                                 text = if (isValidatingNik || isUploading) "Memproses..." else "Simpan Data",
                                 onClick = {
+                                    // ✅ FIX double-click guard: cegah re-entry jika sedang validasi atau upload.
+                                    // `enabled` sudah meng-handle recomposition-level, tapi tap cepat bisa
+                                    // mem-fire onClick berkali-kali SEBELUM isValidatingNik/isUploading di-set true.
+                                    if (isValidatingNik || isUploading) {
+                                        return@ModernGradientButton
+                                    }
                                     // [Logika validasi dan simpan tetap sama...]
                                     if (alamatKtp.isBlank()) {
                                         showValidationError = true

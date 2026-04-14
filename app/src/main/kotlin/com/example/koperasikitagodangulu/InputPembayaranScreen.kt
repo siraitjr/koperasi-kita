@@ -116,6 +116,7 @@ fun InputPembayaranScreen(
     val calendar = remember { Calendar.getInstance() }
     val dateFormat = remember { SimpleDateFormat("dd MMM yyyy", Locale("id", "ID")) }
     var tanggalPembayaran by remember { mutableStateOf(dateFormat.format(calendar.time)) }
+    var showSplitConfirmation by remember { mutableStateOf(false) }
 
     val datePickerDialog = DatePickerDialog(
         context,
@@ -222,22 +223,16 @@ fun InputPembayaranScreen(
                         text = if (sudahLunas) "Sudah Lunas ✓" else "Simpan Pembayaran",
                         onClick = {
                             if (jumlahInt > jumlahCicilanReferensi && jumlahCicilanReferensi > 0) {
-                                viewModel.tambahMultiplePembayaran(
-                                    pelangganId,
-                                    jumlahInt,
-                                    tanggalPembayaran,
-                                    jumlahCicilanReferensi
-                                )
+                                showSplitConfirmation = true
                             } else {
                                 viewModel.tambahPembayaran(pelangganId, jumlahInt, tanggalPembayaran)
+                                Toast.makeText(
+                                    context,
+                                    "Pembayaran berhasil disimpan.",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                                navController.popBackStack()
                             }
-
-                            Toast.makeText(
-                                context,
-                                "Pembayaran berhasil disimpan.",
-                                Toast.LENGTH_SHORT
-                            ).show()
-                            navController.popBackStack()
                         },
                         enabled = formValid,
                         gradient = if (sudahLunas) PaymentColors.tealGradient else PaymentColors.successGradient,
@@ -253,6 +248,53 @@ fun InputPembayaranScreen(
                     )
                 }
             }
+        }
+
+        if (showSplitConfirmation) {
+            val jumlahInt = jumlahPembayaran.toIntOrNull() ?: 0
+            val jumlahCicilan = if (jumlahCicilanReferensi > 0) {
+                (jumlahInt + jumlahCicilanReferensi - 1) / jumlahCicilanReferensi
+            } else 0
+            AlertDialog(
+                onDismissRequest = { showSplitConfirmation = false },
+                title = { Text("Konfirmasi Pembayaran") },
+                text = {
+                    Text(
+                        "Jumlah Rp ${formatRupiah(jumlahInt)} melebihi cicilan harian " +
+                            "(Rp ${formatRupiah(jumlahCicilanReferensi)}).\n\n" +
+                            "Pembayaran akan dipecah menjadi $jumlahCicilan transaksi. Lanjutkan?"
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        showSplitConfirmation = false
+                        viewModel.tambahMultiplePembayaran(
+                            pelangganId,
+                            jumlahInt,
+                            tanggalPembayaran,
+                            jumlahCicilanReferensi
+                        )
+                        Toast.makeText(
+                            context,
+                            "Pembayaran berhasil disimpan.",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                        navController.popBackStack()
+                    }) { Text("Ya, pecah") }
+                },
+                dismissButton = {
+                    TextButton(onClick = {
+                        showSplitConfirmation = false
+                        viewModel.tambahPembayaran(pelangganId, jumlahInt, tanggalPembayaran)
+                        Toast.makeText(
+                            context,
+                            "Pembayaran berhasil disimpan.",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                        navController.popBackStack()
+                    }) { Text("Tidak, simpan 1 transaksi") }
+                }
+            )
         }
     }
 }

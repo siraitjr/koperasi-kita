@@ -1903,9 +1903,15 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
 
                     if (cabangId.isBlank()) {
                         try {
-                            val adminMeta = database.child("metadata").child("admins")
-                                .child(targetAdminUid).get().await()
-                            cabangId = adminMeta.child("cabang").getValue(String::class.java) ?: ""
+                            // ✅ FIX: Timeout 5 detik agar tidak hang kalau jaringan putus.
+                            val adminMeta = withTimeoutOrNull(5_000L) {
+                                database.child("metadata").child("admins")
+                                    .child(targetAdminUid).get().await()
+                            }
+                            cabangId = adminMeta?.child("cabang")?.getValue(String::class.java) ?: ""
+                            if (adminMeta == null) {
+                                Log.w("Pengajuan", "⚠️ metadata admin timeout 5 detik, cabangId fallback ke cached/empty")
+                            }
                         } catch (e: Exception) {
                             Log.w("Pengajuan", "⚠️ Gagal ambil metadata: ${e.message}")
                         }
@@ -2389,39 +2395,46 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
         fotoKtpUri: Uri?,
         fotoKtpSuamiUri: Uri?,
         fotoKtpIstriUri: Uri?
-    ): Triple<String, String, String> {
+    ): Triple<String, String, String> = coroutineScope {
         val tempId = "temp_${System.currentTimeMillis()}"
 
-        // ✅ PERBAIKAN: Upload masing-masing foto secara independen
-        // Jika satu gagal, yang lain tetap berhasil
-        val ktpUrl = fotoKtpUri?.let {
-            try {
-                uploadFotoKtp(it, currentUid, tempId, "utama") ?: ""
-            } catch (e: Exception) {
-                Log.e("UploadKTP", "⚠️ Gagal upload foto KTP utama: ${e.message}")
-                ""
-            }
-        } ?: ""
+        // ✅ PERBAIKAN: Upload ketiga foto secara PARALEL.
+        // Sebelumnya sequential → total waktu = sum(upload). Sekarang paralel → total waktu ≈ max(upload).
+        // Independen: jika satu gagal, yang lain tetap jalan (return "" untuk yang gagal).
+        val ktpDeferred = async {
+            fotoKtpUri?.let {
+                try {
+                    uploadFotoKtp(it, currentUid, tempId, "utama") ?: ""
+                } catch (e: Exception) {
+                    Log.e("UploadKTP", "⚠️ Gagal upload foto KTP utama: ${e.message}")
+                    ""
+                }
+            } ?: ""
+        }
 
-        val ktpSuamiUrl = fotoKtpSuamiUri?.let {
-            try {
-                uploadFotoKtp(it, currentUid, tempId, "suami") ?: ""
-            } catch (e: Exception) {
-                Log.e("UploadKTP", "⚠️ Gagal upload foto KTP suami: ${e.message}")
-                ""
-            }
-        } ?: ""
+        val ktpSuamiDeferred = async {
+            fotoKtpSuamiUri?.let {
+                try {
+                    uploadFotoKtp(it, currentUid, tempId, "suami") ?: ""
+                } catch (e: Exception) {
+                    Log.e("UploadKTP", "⚠️ Gagal upload foto KTP suami: ${e.message}")
+                    ""
+                }
+            } ?: ""
+        }
 
-        val ktpIstriUrl = fotoKtpIstriUri?.let {
-            try {
-                uploadFotoKtp(it, currentUid, tempId, "istri") ?: ""
-            } catch (e: Exception) {
-                Log.e("UploadKTP", "⚠️ Gagal upload foto KTP istri: ${e.message}")
-                ""
-            }
-        } ?: ""
+        val ktpIstriDeferred = async {
+            fotoKtpIstriUri?.let {
+                try {
+                    uploadFotoKtp(it, currentUid, tempId, "istri") ?: ""
+                } catch (e: Exception) {
+                    Log.e("UploadKTP", "⚠️ Gagal upload foto KTP istri: ${e.message}")
+                    ""
+                }
+            } ?: ""
+        }
 
-        return Triple(ktpUrl, ktpSuamiUrl, ktpIstriUrl)
+        Triple(ktpDeferred.await(), ktpSuamiDeferred.await(), ktpIstriDeferred.await())
     }
 
     fun updatePelanggan(pelanggan: Pelanggan) {
@@ -4759,13 +4772,16 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                             daftarPelanggan[index] = updatedPelanggan
                         }
                         simpanKeLokal()
-                        loadDashboardData()
 
-                        // ✅ BARU: Kirim notifikasi ke atasan
-                        sendCairkanBatalNotification(pelanggan, isCairkan = true)
-
+                        // ✅ FIX (Bug 3): Dismiss loading UI DULU via onSuccess,
+                        // lalu eksekusi loadDashboardData + notifikasi (heavy work) di background.
+                        // Sebelumnya loadDashboardData & sendCairkanBatalNotification dieksekusi
+                        // sebelum onSuccess, bikin tombol "Cairkan" terasa lama respon.
                         Log.d("Pencairan", "✅ Pinjaman dicairkan: ${pelanggan.namaPanggilan}")
                         onSuccess?.invoke()
+
+                        loadDashboardData()
+                        sendCairkanBatalNotification(pelanggan, isCairkan = true)
                     }
                     .addOnFailureListener { e ->
                         Log.e("Pencairan", "❌ Gagal cairkan: ${e.message}")
@@ -4852,43 +4868,63 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
         viewModelScope.launch {
             try {
                 val besarPinjaman = pelanggan.besarPinjaman
-                val namaAdmin = try {
-                    val uid = Firebase.auth.currentUser?.uid ?: ""
-                    val snap = database.child("metadata/admins/$uid/name").get().await()
-                    snap.getValue(String::class.java) ?: "Admin"
-                } catch (e: Exception) { "Admin" }
 
                 // ============================================================
                 // STEP 0: RESOLVE cabangId DENGAN MULTIPLE FALLBACK
+                // ✅ FIX (Bug 3): dulu 3 sequential reads (name + 2 cabang). Sekarang:
+                //   - `name` & kedua cabang reads dijalankan PARALEL (coroutineScope + async).
+                //   - Prioritas resolve tetap: pelanggan.cabangId → _currentUserCabang →
+                //     metadata current admin → metadata pelanggan.adminUid.
+                //   - Setiap read RTDB dibungkus withTimeoutOrNull 5 detik.
                 // ============================================================
+                val currentUid = Firebase.auth.currentUser?.uid ?: ""
                 var cabangId = pelanggan.cabangId
 
-                // Fallback 1: _currentUserCabang
+                // Fallback 1: _currentUserCabang (memory, no network)
                 if (cabangId.isBlank()) {
                     cabangId = _currentUserCabang.value ?: ""
                     Log.d("CairkanBatalNotif", "📌 cabangId dari _currentUserCabang: '$cabangId'")
                 }
 
-                // Fallback 2: Baca langsung dari metadata/admins/{uid}/cabang
+                // Fallback 2 & 3: fire both RTDB reads in parallel (hanya jika masih blank).
                 if (cabangId.isBlank()) {
-                    try {
-                        val adminUid = Firebase.auth.currentUser?.uid ?: ""
-                        val snap = database.child("metadata/admins/$adminUid/cabang").get().await()
-                        cabangId = snap.getValue(String::class.java) ?: ""
-                        Log.d("CairkanBatalNotif", "📌 cabangId dari metadata/admins: '$cabangId'")
-                    } catch (e: Exception) {
-                        Log.w("CairkanBatalNotif", "⚠️ Gagal baca cabang dari metadata: ${e.message}")
-                    }
-                }
+                    coroutineScope {
+                        val currentAdminCabangDef = if (currentUid.isNotBlank()) async {
+                            try {
+                                val snap = withTimeoutOrNull(5_000L) {
+                                    database.child("metadata/admins/$currentUid/cabang").get().await()
+                                }
+                                snap?.getValue(String::class.java) ?: ""
+                            } catch (e: Exception) {
+                                Log.w("CairkanBatalNotif", "⚠️ Gagal baca cabang dari metadata: ${e.message}")
+                                ""
+                            }
+                        } else null
 
-                // Fallback 3: Cari dari adminUid pelanggan
-                if (cabangId.isBlank() && pelanggan.adminUid.isNotBlank()) {
-                    try {
-                        val snap = database.child("metadata/admins/${pelanggan.adminUid}/cabang").get().await()
-                        cabangId = snap.getValue(String::class.java) ?: ""
-                        Log.d("CairkanBatalNotif", "📌 cabangId dari pelanggan.adminUid metadata: '$cabangId'")
-                    } catch (e: Exception) {
-                        Log.w("CairkanBatalNotif", "⚠️ Gagal baca cabang dari pelanggan admin: ${e.message}")
+                        val pelangganAdminCabangDef =
+                            if (pelanggan.adminUid.isNotBlank() && pelanggan.adminUid != currentUid) async {
+                                try {
+                                    val snap = withTimeoutOrNull(5_000L) {
+                                        database.child("metadata/admins/${pelanggan.adminUid}/cabang").get().await()
+                                    }
+                                    snap?.getValue(String::class.java) ?: ""
+                                } catch (e: Exception) {
+                                    Log.w("CairkanBatalNotif", "⚠️ Gagal baca cabang dari pelanggan admin: ${e.message}")
+                                    ""
+                                }
+                            } else null
+
+                        val fromCurrent = currentAdminCabangDef?.await() ?: ""
+                        if (fromCurrent.isNotBlank()) {
+                            cabangId = fromCurrent
+                            Log.d("CairkanBatalNotif", "📌 cabangId dari metadata/admins (current): '$cabangId'")
+                        } else {
+                            val fromPelangganAdmin = pelangganAdminCabangDef?.await() ?: ""
+                            if (fromPelangganAdmin.isNotBlank()) {
+                                cabangId = fromPelangganAdmin
+                                Log.d("CairkanBatalNotif", "📌 cabangId dari pelanggan.adminUid metadata: '$cabangId'")
+                            }
+                        }
                     }
                 }
 
@@ -9160,10 +9196,21 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     .build()
 
                 val uploadTask = ktpRef.putBytes(compressedImage, metadata)
-                val task = uploadTask.await()
+                // ✅ FIX: Timeout 60 detik agar tidak hang selamanya kalau jaringan putus di tengah upload.
+                val task = withTimeoutOrNull(60_000L) { uploadTask.await() }
+                if (task == null) {
+                    Log.e("UploadKTP", "❌ Upload KTP timeout setelah 60 detik")
+                    try { uploadTask.cancel() } catch (_: Exception) {}
+                    return@withContext null
+                }
 
                 if (task.task.isSuccessful) {
-                    val downloadUrl = ktpRef.downloadUrl.await()
+                    // ✅ FIX: Timeout 15 detik untuk ambil downloadUrl (hanya query metadata).
+                    val downloadUrl = withTimeoutOrNull(15_000L) { ktpRef.downloadUrl.await() }
+                    if (downloadUrl == null) {
+                        Log.e("UploadKTP", "❌ downloadUrl timeout 15 detik")
+                        return@withContext null
+                    }
                     Log.d("UploadKTP", "✅ Berhasil upload KTP: ${compressedImage.size / 1024}KB → $downloadUrl")
                     downloadUrl.toString()
                 } else {

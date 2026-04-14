@@ -92,6 +92,7 @@ fun InputPembayaranLangsungScreen(
     var tanggalPembayaran by remember { mutableStateOf(dateFormat.format(calendar.time)) }
     var queryNama by remember { mutableStateOf("") }
     var expanded by remember { mutableStateOf(false) }
+    var showSplitConfirmation by remember { mutableStateOf(false) }
 
     val datePickerDialog = DatePickerDialog(
         context,
@@ -262,29 +263,16 @@ fun InputPembayaranLangsungScreen(
                         text = "Simpan Pembayaran",
                         onClick = {
                             if (jumlahInt > jumlahCicilanReferensi && jumlahCicilanReferensi > 0) {
-                                viewModel.tambahMultiplePembayaran(
-                                    pelangganIdSelected,
-                                    jumlahInt,
-                                    tanggalPembayaran,
-                                    jumlahCicilanReferensi
-                                )
-                                Toast.makeText(
-                                    context,
-                                    "Pembayaran berhasil disimpan sebagai ${
-                                        (jumlahInt + jumlahCicilanReferensi - 1) / jumlahCicilanReferensi
-                                    } cicilan.",
-                                    Toast.LENGTH_SHORT
-                                ).show()
+                                showSplitConfirmation = true
                             } else {
                                 viewModel.tambahPembayaran(pelangganIdSelected, jumlahInt, tanggalPembayaran)
                                 Toast.makeText(context, "Pembayaran berhasil disimpan.", Toast.LENGTH_SHORT).show()
+                                // Reset form
+                                jumlahPembayaran = ""
+                                tanggalPembayaran = dateFormat.format(Calendar.getInstance().time)
+                                selectedPelanggan = null
+                                queryNama = ""
                             }
-
-                            // Reset form
-                            jumlahPembayaran = ""
-                            tanggalPembayaran = dateFormat.format(Calendar.getInstance().time)
-                            selectedPelanggan = null
-                            queryNama = ""
                         },
                         enabled = formValid,
                         gradient = InputColors.successGradient,
@@ -300,6 +288,56 @@ fun InputPembayaranLangsungScreen(
                     )
                 }
             }
+        }
+
+        if (showSplitConfirmation) {
+            val pelangganIdSelected = selectedPelanggan?.id ?: ""
+            val jumlahInt = jumlahPembayaran.toIntOrNull() ?: 0
+            val jumlahCicilan = if (jumlahCicilanReferensi > 0) {
+                (jumlahInt + jumlahCicilanReferensi - 1) / jumlahCicilanReferensi
+            } else 0
+            AlertDialog(
+                onDismissRequest = { showSplitConfirmation = false },
+                title = { Text("Konfirmasi Pembayaran") },
+                text = {
+                    Text(
+                        "Jumlah Rp ${formatRupiah(jumlahInt)} melebihi cicilan harian " +
+                            "(Rp ${formatRupiah(jumlahCicilanReferensi)}).\n\n" +
+                            "Pembayaran akan dipecah menjadi $jumlahCicilan transaksi. Lanjutkan?"
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        showSplitConfirmation = false
+                        viewModel.tambahMultiplePembayaran(
+                            pelangganIdSelected,
+                            jumlahInt,
+                            tanggalPembayaran,
+                            jumlahCicilanReferensi
+                        )
+                        Toast.makeText(
+                            context,
+                            "Pembayaran berhasil disimpan sebagai $jumlahCicilan cicilan.",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                        jumlahPembayaran = ""
+                        tanggalPembayaran = dateFormat.format(Calendar.getInstance().time)
+                        selectedPelanggan = null
+                        queryNama = ""
+                    }) { Text("Ya, pecah") }
+                },
+                dismissButton = {
+                    TextButton(onClick = {
+                        showSplitConfirmation = false
+                        viewModel.tambahPembayaran(pelangganIdSelected, jumlahInt, tanggalPembayaran)
+                        Toast.makeText(context, "Pembayaran berhasil disimpan.", Toast.LENGTH_SHORT).show()
+                        jumlahPembayaran = ""
+                        tanggalPembayaran = dateFormat.format(Calendar.getInstance().time)
+                        selectedPelanggan = null
+                        queryNama = ""
+                    }) { Text("Tidak, simpan 1 transaksi") }
+                }
+            )
         }
     }
 }
