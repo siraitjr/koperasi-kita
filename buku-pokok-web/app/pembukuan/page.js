@@ -881,7 +881,10 @@ function BukuPokokScreen({ user, cabang, selectedAdmin, onSelectAdmin, onBack, o
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState('aktif');
+  // ✅ Tab Aktif/Sisa Tabungan/Nasabah Lunas dihilangkan — semua nasabah tampil gabungan
+  // di tabel PB/L1/CM/MB/ML; nasabah sisa tabungan & lunas ditandai nama warna merah
+  // (lihat logika `namaColor` di baris tabel).
+  const [statusFilter, setStatusFilter] = useState('semua');
   const [showDetail, setShowDetail] = useState(null);
   const [visibleDateCount, setVisibleDateCount] = useState(7);
   const [tabelFilter, setTabelFilter] = useState('semua');
@@ -1440,21 +1443,6 @@ function getKategoriNasabah(nasabah) {
             )}
           </div>
           <div className="toolbar-right">
-            <div className="status-tabs">
-              {[
-                { key: 'aktif', label: 'Aktif' },
-                { key: 'sisa_tabungan', label: 'Sisa Tabungan' },
-                { key: 'nasabah_lunas', label: 'Nasabah Lunas' },
-              ].map((tab) => (
-                <button
-                  key={tab.key}
-                  onClick={() => setStatusFilter(tab.key)}
-                  className={`status-tab ${statusFilter === tab.key ? 'active' : ''}`}
-                >
-                  {tab.label}
-                </button>
-              ))}
-            </div>
             <span className="result-count">{filtered.length} nasabah</span>
           </div>
         </div>

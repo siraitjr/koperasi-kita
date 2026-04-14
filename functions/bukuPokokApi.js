@@ -539,7 +539,9 @@ exports.getBukuPokok = functions
             // yang sudah dihapus dari pelanggan (setelah cairkan simpanan).
             // Ini agar pembayaran pelunasan via tabungan tetap tercatat permanen di buku pokok,
             // seperti pada buku pokok fisik dimana nama dicoret tapi pembayaran tetap ditulis.
-            if (statusFilter === 'nasabah_lunas') {
+            // ✅ 'semua' juga butuh arsip nasabah lunas (tabungan sudah dicairkan)
+            // agar tampil di tabel gabungan PB/L1/CM/MB/ML pada Buku Pokok web.
+            if (statusFilter === 'nasabah_lunas' || statusFilter === 'semua') {
                 const activePelangganIds = new Set(nasabahList.map(n => n.id));
                 Object.entries(riwayatArsipLengkap).forEach(([pId, arsip]) => {
                     // Skip jika nasabah masih ada di pelanggan aktif (sudah diproses di atas)
