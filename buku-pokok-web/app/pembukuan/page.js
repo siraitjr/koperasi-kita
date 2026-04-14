@@ -1495,8 +1495,10 @@ function getKategoriNasabah(nasabah) {
                     })()}
                   </span>
                   {prevMonthSGTotals && (() => {
-                    // Total saldo awal koperasi: PB pakai dropBerjalan × 120% (bukan prev month PB)
-                    const total = pbSaldoAwalDariDrop + prevMonthSGTotals.l1 + prevMonthSGTotals.cm + prevMonthSGTotals.mb + prevMonthSGTotals.ml;
+                    // Total saldo awal koperasi: HANYA L1 + CM + MB + ML (kolom kotak 2).
+                    // PB dikeluarkan dari total karena PB adalah pinjaman bulan berjalan
+                    // (saldo awal-nya berasal dari drop, bukan saldo akhir bulan lalu).
+                    const total = prevMonthSGTotals.l1 + prevMonthSGTotals.cm + prevMonthSGTotals.mb + prevMonthSGTotals.ml;
                     return total > 0 ? (
                       <span style={{ fontSize: 14, color: '#7c3aed', fontWeight: 700, fontFamily: "'DM Mono', monospace" }}>
                         {formatRp(total)}
