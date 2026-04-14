@@ -81,12 +81,23 @@ fun LaporanHarianScreen(
     // Biaya awal hari ini
     val biayaAwalHariIni by viewModel.biayaAwalHariIni.collectAsState()
 
-    // Uang kas dari kasir hari ini
+    // Uang kas dari kasir hari ini (kasbon pagi)
     val kasirUangKasHariIni by viewModel.kasirUangKasHariIni.collectAsState()
 
+    // Mengacu LaporanHarianPimpinanScreen: load biaya awal langsung (tidak butuh cabangId)
     LaunchedEffect(Unit) {
         viewModel.loadBiayaAwalHariIni()
-        viewModel.loadKasirUangKasHariIni()
+    }
+
+    // Mengacu LaporanHarianPimpinanScreen: kasbon pagi (uang_kas kasir) butuh cabangId.
+    // Dulu dipanggil dari LaunchedEffect(Unit) — jika cabangId belum siap (null), fungsi
+    // return@launch sehingga data tidak dimuat. Sekarang dipanggil setelah cabangId non-null,
+    // sama seperti pattern di LaporanHarianPimpinanScreen (LaunchedEffect(cabangId, ...)).
+    val cabangId by viewModel.currentUserCabang.collectAsState()
+    LaunchedEffect(cabangId) {
+        if (cabangId != null) {
+            viewModel.loadKasirUangKasHariIni()
+        }
     }
 
     LaunchedEffect(viewModel.daftarPelanggan.size, tanggalHariIni, biayaAwalHariIni, kasirUangKasHariIni) {
