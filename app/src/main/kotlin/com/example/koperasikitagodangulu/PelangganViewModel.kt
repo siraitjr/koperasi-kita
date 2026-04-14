@@ -4925,6 +4925,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                                 Log.d("CairkanBatalNotif", "📌 cabangId dari pelanggan.adminUid metadata: '$cabangId'")
                             }
                         }
+                        Unit // ⚠️ KOTLIN: paksa coroutineScope return Unit, bukan nested if-expression
                     }
                 }
 
