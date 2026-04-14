@@ -979,8 +979,51 @@ function getKategoriNasabah(nasabah) {
       .catch(() => {});
   }, [tabelFilter, stortingMonth, cabang.id]);
 
+  // ==================== EXPAND RIWAYAT PINJAMAN → BARIS HISTORIS ====================
+  // ✅ Saat nasabah top-up/lanjut pinjaman, pinjaman lama diarsipkan ke
+  // `riwayat_pinjaman/`. Agar pinjaman lama TETAP tampil di tabel PB/L1/CM/MB/ML
+  // sesuai tanggal pencairan-nya (historis), kita expand tiap entry `riwayatPinjaman`
+  // menjadi baris virtual dengan flag `isHistorical: true` (nama ditandai merah).
+  // 0 RTDB read tambahan: `riwayatPinjaman` sudah ikut di response bukuPokokApi.
+  // Tidak menyentuh stortingGlobalData / prevMonthSGTotals (keduanya pakai data.nasabah asli).
+  const nasabahExpanded = (() => {
+    const list = data?.nasabah || [];
+    const result = [];
+    list.forEach((n) => {
+      result.push(n);
+      (n.riwayatPinjaman || []).forEach((r) => {
+        result.push({
+          ...n,
+          id: `${n.id}__r${r.pinjamanKe}`,
+          pinjamanKe: r.pinjamanKe,
+          besarPinjaman: r.besarPinjaman || 0,
+          totalPelunasan: r.totalPelunasan || 0,
+          totalDibayar: r.totalDibayar || 0,
+          sisaUtang: r.sisaUtang || 0,
+          tenor: r.tenor || 0,
+          tanggalDaftar: r.tanggalPengajuan || '',
+          tanggalPengajuan: r.tanggalPengajuan || '',
+          tanggalPencairan: r.tanggalPencairan || '',
+          tanggalLunasCicilan: r.tanggalLunasCicilan || '',
+          status: r.status || '',
+          statusKhusus: '', // entry historis bukan MENUNGGU_PENCAIRAN
+          tanggalStatusKhusus: '',
+          pembayaran: r.pembayaran || {},
+          simpanan: 0,
+          tarikTabungan: 0,
+          totalDiterima: 0,
+          sisaUtangLama: 0,
+          sisaUtangLamaSebelumTopUp: 0,
+          riwayatPinjaman: [],
+          isHistorical: true,
+        });
+      });
+    });
+    return result;
+  })();
+
   // ==================== FILTER ====================
-  const filtered = (data?.nasabah?.filter((n) => {
+  const filtered = (nasabahExpanded.filter((n) => {
     // Filter tabel (PB/L1/CM/MB/ML) — skip for stortingGlobal
     if (tabelFilter !== 'semua' && tabelFilter !== 'stortingGlobal') {
       if (getKategoriNasabah(n) !== tabelFilter) return false;
@@ -1710,11 +1753,12 @@ function getKategoriNasabah(nasabah) {
                       const saldoAwalTabel = tabelFilter === 'PB'
                         ? (n.totalPelunasan || 0)
                         : (n.sisaUtang + rowTotal);
-                      // Nama bewarna merah untuk nasabah Sisa Tabungan, Nasabah Lunas, atau ML
+                      // Nama bewarna merah untuk: Sisa Tabungan, Nasabah Lunas, ML,
+                      // atau entri historis (pinjaman lama yang sudah diarsipkan karena top-up).
                       const isSisaTabungan = n.statusKhusus === 'MENUNGGU_PENCAIRAN';
                       const isLunasCicilan = n.sisaUtang <= 0 && n.totalPelunasan > 0;
                       const isML = getKategoriNasabah(n) === 'ML';
-                      const namaColor = (isSisaTabungan || isLunasCicilan || isML) ? '#e53e3e' : undefined;
+                      const namaColor = (n.isHistorical || isSisaTabungan || isLunasCicilan || isML) ? '#e53e3e' : undefined;
                       return (
                         <tr key={n.id} onClick={() => setShowDetail(n)}>
                           <td style={{ textAlign: 'center', color: '#8a9ba8', fontSize: 12 }}>{idx + 1}</td>
