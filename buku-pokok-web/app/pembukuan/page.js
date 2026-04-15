@@ -1759,6 +1759,11 @@ function getKategoriNasabah(nasabah) {
                       const isLunasCicilan = n.sisaUtang <= 0 && n.totalPelunasan > 0;
                       const isML = getKategoriNasabah(n) === 'ML';
                       const namaColor = (n.isHistorical || isSisaTabungan || isLunasCicilan || isML) ? '#e53e3e' : undefined;
+                      // Coretan garis horizontal merah untuk baris historis (pinjaman lama),
+                      // diaplikasikan dari kolom Nama hingga kolom Saldo Awal.
+                      const strikeStyle = n.isHistorical
+                        ? { textDecoration: 'line-through', textDecorationColor: '#e53e3e', textDecorationThickness: 2 }
+                        : null;
                       return (
                         <tr key={n.id} onClick={() => setShowDetail(n)}>
                           <td style={{ textAlign: 'center', color: '#8a9ba8', fontSize: 12 }}>{idx + 1}</td>
@@ -1769,17 +1774,17 @@ function getKategoriNasabah(nasabah) {
                           <td className="sticky-col" style={{ left: 0, textAlign: 'center' }}>
                             <span className="pinjaman-ke-badge">{n.pinjamanKe}</span>
                           </td>
-                          <td className="sticky-col" style={{ left: stickyOffsets.nama, fontWeight: 600, color: namaColor }}>
+                          <td className="sticky-col" style={{ left: stickyOffsets.nama, fontWeight: 600, color: namaColor, ...strikeStyle }}>
                             {n.namaKtp}
                             {!selectedAdmin && <div className="admin-tag">{n.adminName?.replace('Resort ', '')}</div>}
                           </td>
-                          <td className="sticky-col" style={{ left: stickyOffsets.panggilan, color: namaColor || '#5a6b7c' }}>{n.namaPanggilan}</td>
-                          <td className="nik-cell">{n.nik}</td>
-                          <td style={{ textAlign: 'right', fontFamily: "'DM Mono', monospace" }}>{formatRp(n.besarPinjaman)}</td>
+                          <td className="sticky-col" style={{ left: stickyOffsets.panggilan, color: namaColor || '#5a6b7c', ...strikeStyle }}>{n.namaPanggilan}</td>
+                          <td className="nik-cell" style={strikeStyle || undefined}>{n.nik}</td>
+                          <td style={{ textAlign: 'right', fontFamily: "'DM Mono', monospace", ...strikeStyle }}>{formatRp(n.besarPinjaman)}</td>
                           {isTabelMode && (
-                            <td style={{ textAlign: 'right', fontFamily: "'DM Mono', monospace", color: '#2d7dd2' }}>{formatRp(n.simpanan || 0)}</td>
+                            <td style={{ textAlign: 'right', fontFamily: "'DM Mono', monospace", color: '#2d7dd2', ...strikeStyle }}>{formatRp(n.simpanan || 0)}</td>
                           )}
-                          <td style={{ textAlign: 'right', borderRight: '2px solid #7c3aed' }}>
+                          <td style={{ textAlign: 'right', borderRight: '2px solid #7c3aed', ...strikeStyle }}>
                             {n.status === 'Lunas' ? (
                               <span className="lunas-badge">LUNAS</span>
                             ) : isTabelMode ? (
