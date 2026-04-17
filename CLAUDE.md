@@ -261,3 +261,179 @@ Kode Kotlin berada di `app/src/main/kotlin/com/example/koperasikitagodangulu/` (
 5. **Offline-first di Android.** Semua tulis dari Admin Lapangan boleh terjadi tanpa internet; `SyncManager` + Room queue menyinkronkan saat online. Konflik diselesaikan last-write-wins berbasis timestamp.
 6. **Approval berjenjang async via state machine.** 5 fase approval disimpan di `pengajuan_approval/{cabangId}/{pengajuanId}/dualApprovalInfo`; tiap transisi fase adalah trigger Cloud Function yang mengirim notif ke role berikutnya.
 7. **FCM dipakai sebagai sinyal, bukan payload.** Data real tetap diambil dari RTDB; notifikasi push hanya memicu user membuka layar terkait.
+
+---
+
+## 5. Struktur Database Firebase RTDB
+
+**Region:** `asia-southeast1`
+**URL:** `https://koperasikitagodangulu-default-rtdb.asia-southeast1.firebasedatabase.app`
+**Security rules:** `rulesfirebase.txt` (23+ node, role-based)
+**Bahasa key:** sebagian campuran Bahasa Indonesia (`pelanggan`, `pembayaran`, `simpanan`) dan Inggris (`summary`, `metadata`).
+
+### 5.1 Peta Top-Level Node
+
+```
+/
+├── pelanggan/                          # data nasabah (source of truth)
+├── pelanggan_ditolak/                  # pengajuan yang ditolak (arsip)
+├── pelanggan_bermasalah/               # nasabah telat bayar (index per cabang)
+├── pelanggan_status_khusus/            # nasabah dengan status khusus
+├── nik_registry/                       # index NIK anti-duplikat global
+├── nasabah_index/                      # index pencarian cepat untuk Pimpinan
+│
+├── pengajuan_approval/                 # pengajuan pinjaman ≥ 3jt (5 fase)
+├── deletion_requests/                  # permintaan hapus nasabah
+├── payment_deletion_requests/          # permintaan hapus pembayaran
+├── tenor_change_requests/              # permintaan ubah tenor
+├── pencairan_simpanan_requests/        # permintaan tarik simpanan
+│
+├── pembayaran_harian/                  # index pembayaran per cabang/tanggal
+├── event_harian/                       # event (nasabah baru, lunas) per cabang/tgl
+├── biaya_awal/                         # biaya admin awal saat pencairan
+├── jurnalTransaksi/                    # jurnal akuntansi (audit trail)
+├── koreksi_storting/                   # koreksi storting / adjustment
+├── rekening_koran/                     # data rekening koran (generated)
+│
+├── kasir_entries/                      # entri kasir per cabang/bulan
+├── kasir_summary/                      # rekap kasir (computed)
+│
+├── summary/                            # agregat statistik (global/cabang/admin)
+│
+├── metadata/                           # master data sistem
+│   ├── admins/{uid}                    # user profile
+│   ├── roles/{role}/{uid}              # mapping role
+│   └── cabang/{cabangId}               # master cabang
+│
+├── admin_notifications/                # notif ke admin lapangan
+├── pengawas_notifications/             # notif ke pengawas
+├── koordinator_notifications/          # notif ke koordinator
+├── pimpinan_final_notifications/       # notif fase 5 ke pimpinan
+├── koordinator_final_notifications/    # notif fase 4 ke koordinator
+├── serah_terima_notifications/         # notif serah terima
+├── pengawas_serah_terima_notifications/
+├── broadcast_messages/                 # pesan broadcast dari Pengawas
+│
+├── fcm_tokens/                         # FCM device token per user
+├── device_presence/                    # online/offline status user
+├── session_lock/                       # lock sesi admin (anti double login)
+├── remote_takeover/                    # session takeover Pimpinan → Admin
+├── force_logout/                       # trigger logout paksa
+├── password_reset_logs/                # audit log reset password (Pengawas)
+│
+├── location_tracking/                  # GPS target (yang di-track)
+└── user_locations/                     # GPS submission dari user
+```
+
+### 5.2 Penjelasan Node Penting
+
+#### `pelanggan/{adminUid}/{pelangganId}`
+Node inti — semua data nasabah, pinjaman, pembayaran, simpanan bersarang di sini. Partisi by `adminUid` agar security rule simpel (admin hanya akses miliknya).
+
+**Field utama:**
+- Identitas: `namaKtp`, `namaPanggilan`, `nik`, `nikSuami`/`nikIstri`, `nomorAnggota`, `alamatKtp`, `alamatRumah`, `wilayah`, `detailRumah`, `noHpAdmin`, `noHpKeluarga`.
+- Status: `status` (`aktif` | `lunas` | `menunggu_pencairan` | `ditolak`), `pinjamanKe`, `cabangId`.
+- Pinjaman: `besarPinjamanDiajukan`, `besarPinjamanDisetujui`, `besarPinjaman`, `totalDiterima`, `admin` (biaya awal), `tenor`.
+- Tanggal: `tanggalDaftar`, `tanggalCair`, `tanggalLunas` (format `"dd MMM yyyy"` string).
+- Approval legacy: `approvalPimpinan`, `approvalPengawas` (boolean — dipakai untuk pinjaman &lt; 3jt atau rute single approval).
+- Approval baru: `dualApprovalInfo` (object berisi 5 fase, lihat §6.1).
+- Array pembayaran:
+  - `pembayaran[]` — cicilan pokok per transaksi: `{jumlah, tanggal, keterangan}`.
+  - `subPembayaran[]` — tambah bayar / pelunasan tambahan.
+  - `simpanan[]` — entri simpanan: `{tanggal, jumlah, jenis}` (`cicilan` / `tambah_bayar`).
+
+> **Penting:** array disimpan sebagai array numerik RTDB (bukan push-key). Penambahan elemen **harus** lewat transaction agar tidak overwrite — logic ada di `PelangganViewModel.kt` dan trigger server di `onPembayaranAdded.js`.
+
+#### `nik_registry/{nik}`
+Index global NIK ke `{pelangganId, adminUid, status}`. Dipakai untuk cek duplikat sebelum registrasi baru. Dimaintain oleh trigger `onPelangganCreatedRegisterNik`, `onStatusChangeUpdateNik`, `onPelangganDeletedRemoveNik`.
+
+#### `nasabah_index/{cabangId}/{pelangganId}`
+Index ringan (nama, status, adminUid, tanggal) untuk listing cepat di Pimpinan/Koordinator/Pengawas tanpa harus baca node `pelanggan` penuh. Dimaintain `onNasabahIndexUpdate`.
+
+#### `pengajuan_approval/{cabangId}/{pengajuanId}`
+Pengajuan pinjaman ≥ Rp 3.000.000. Berisi snapshot data pelanggan + `dualApprovalInfo` (state machine 5 fase). Setelah `finalDecision: approved` dan `pimpinanFinalConfirmed: true`, data pelanggan di-commit ke `pelanggan/…`.
+
+**Sub-field `dualApprovalInfo`:**
+```
+dualApprovalInfo/
+├── requiresDualApproval: true
+├── approvalPhase: "AWAITING_PIMPINAN" | "AWAITING_KOORDINATOR" |
+│                  "AWAITING_PENGAWAS" | "AWAITING_KOORDINATOR_FINAL" |
+│                  "AWAITING_PIMPINAN_FINAL" | "completed"
+├── pimpinanApproval:       {status, uid, timestamp, note, adjustedAmount?, adjustedTenor?}
+├── koordinatorApproval:    {status, uid, timestamp, note, ...}
+├── pengawasApproval:       {status, uid, timestamp, note, ...}
+├── koordinatorFinalApproval: {...}
+├── pimpinanFinalApproval:  {...}
+├── finalDecision: "approved" | "rejected"
+└── pimpinanFinalConfirmed: bool
+```
+
+#### `pembayaran_harian/{cabangId}/{YYYY-MM-DD}/{paymentId}`
+Index pembayaran per tanggal per cabang — untuk dashboard Pimpinan/Pengawas agar bisa query pembayaran hari ini tanpa scan semua pelanggan. Ditulis oleh trigger `onPembayaranAdded`. **Jangan ditulis dari client.**
+
+#### `event_harian/{cabangId}/{YYYY-MM-DD}/{nasabah_baru|nasabah_lunas|...}/`
+Index event bermilestone (pencairan, lunas, dll) per hari per cabang. Dipakai untuk laporan harian & notifikasi.
+
+#### `jurnalTransaksi/{adminUid}/{pelangganId}/{timestamp}`
+Audit trail akuntansi permanen — setiap pembayaran / pencairan / koreksi dicatat di sini. Digunakan Buku Pokok, rekening koran, dan export Excel.
+
+#### `pelanggan_bermasalah/{cabangId}/{pelangganId}`
+Nasabah telat bayar, dikategori `ringan` / `sedang` / `berat`. Di-refresh harian oleh scheduled function `dailyUpdatePelangganBermasalah` dan trigger pembayaran (dikeluarkan otomatis saat kembali on-track).
+
+#### `summary/{global|perCabang/{cabangId}|perAdmin/{adminUid}}`
+Rekap agregat yang dipakai dashboard:
+- `totalNasabah`, `nasabahAktif`, `nasabahLunas`
+- `totalPiutang`, `totalSimpanan`
+- `pembayaranHariIni`, `targetHariIni`
+- `lastUpdated`
+
+Dihitung incremental oleh `summaryHelpers.js` pada setiap trigger write, plus full recalc mingguan (`weeklyFullRecalc`). **Client read-only.**
+
+#### `metadata/`
+Master data sistem:
+- `metadata/admins/{uid}` — `{name, email, cabang, role, photoUrl}`.
+- `metadata/roles/pengawas/{uid}: true` — flag role.
+- `metadata/roles/koordinator/{uid}: true`.
+- `metadata/cabang/{cabangId}` — `{name, pimpinanUid, adminList[]}`.
+
+#### `kasir_entries/{cabangId}/{YYYY-MM}/{entryId}`
+Entri kasir per bulan per cabang: kasbon pagi, BU (biaya umum), transport, dll. Ditulis via `addKasirEntry` HTTP function (bukan client langsung).
+
+#### Request nodes (`deletion_requests`, `payment_deletion_requests`, `tenor_change_requests`, `pencairan_simpanan_requests`)
+Workflow request-approval untuk operasi destruktif. Dibuat oleh Admin/Pimpinan, diapprove oleh role berwenang (Pengawas/Pimpinan). Trigger `onBroadcastAndRequests.js` mengirim notif.
+
+#### Notification nodes
+Satu node per role target: `admin_notifications/{uid}/{notifId}`, `pengawas_notifications/…`, `koordinator_notifications/…`, `pimpinan_final_notifications/…`, `koordinator_final_notifications/…`, `serah_terima_notifications/…`. Trigger `onAdminNotificationCreated` (dan saudaranya) akan fan-out ke FCM lewat `fcm_tokens/{uid}`.
+
+#### Session & tracking
+- `fcm_tokens/{uid}/{token}` — token device untuk push.
+- `device_presence/{uid}` — presence online/offline (heartbeat).
+- `session_lock/{adminUid}` — lock agar 1 user tidak login di 2 device sekaligus.
+- `remote_takeover/{adminUid}` — Pimpinan ambil alih sesi admin.
+- `force_logout/{uid}` — ditulis Pengawas untuk paksa logout.
+- `location_tracking/{targetUid}` + `user_locations/{targetUid}` — GPS tracking admin lapangan.
+
+### 5.3 Pola Read / Write Data
+
+**Aturan umum:**
+- **Client Android:**
+  - Baca/tulis langsung ke `pelanggan/{adminUid}/…`, `pengajuan_approval/…`, `kasir` (readonly), `fcm_tokens`, `device_presence`, `user_locations`, `admin_notifications/{uidMilikSendiri}`, `metadata/` (readonly).
+  - **Tidak boleh tulis** ke: `summary/*`, `pembayaran_harian/*`, `event_harian/*`, `jurnalTransaksi/*`, `nik_registry/*`, `nasabah_index/*`, `pelanggan_bermasalah/*`. Node ini derived oleh Cloud Function.
+- **Client Web (Next.js):** hanya membaca via HTTP Cloud Function. Tidak pakai RTDB client SDK untuk data bisnis.
+- **Cloud Functions:** satu-satunya pihak yang menulis ke derived node + transisi fase approval + jurnal.
+
+**Pola penulisan penting:**
+1. **Multi-path atomic update.** Operasi yang menyentuh beberapa node (mis. tambah pembayaran → update `pelanggan`, index harian, summary) dikerjakan via `ref.update({"path1": …, "path2": …})` supaya atomic. Lihat contoh di `onPembayaranAdded.js`.
+2. **Transaction untuk counter.** Array `pembayaran[]` / `simpanan[]` dan increment counter di `summary/*` memakai `runTransaction()` agar aman dari race condition.
+3. **Denormalisasi disengaja.** Data nasabah sebagian digandakan di `nasabah_index`, `pembayaran_harian`, `event_harian`. Jangan rewrite jadi query on-demand — node ini ada justru untuk menghindari scan besar di mobile.
+4. **Soft delete via status.** Hapus permanen hanya melalui request-approval (lihat `deletion_requests`). Penanda `status: "ditolak"` / arsip `pelanggan_ditolak` lebih sering dipakai daripada delete langsung.
+5. **`.indexOn` di rules.** Query by child (mis. `orderByChild("tanggalCair")`) butuh `.indexOn` di `rulesfirebase.txt`. Tambahkan di rules sebelum bikin query baru, kalau tidak akan jadi full-scan.
+
+**Pola pembacaan penting:**
+- Pimpinan/Koordinator/Pengawas **tidak** iterate seluruh `pelanggan/` — mereka baca `nasabah_index`, `summary/perCabang`, `pembayaran_harian/{cabangId}/{today}`, `event_harian/…`. Menambah beban dengan scan `pelanggan/` = **dilarang** (lihat aturan kerja di bagian akhir).
+- Admin lapangan hanya baca `pelanggan/{uidSendiri}`; tidak perlu index.
+- Dashboard web memakai endpoint `getBukuPokok`, `getBukuPokokSummary`, `getPembayaranHariIni` — logic filter ada di server.
+
+**Catatan format tanggal:**
+Banyak field tanggal disimpan sebagai **string lokal** (`"12 Nov 2025"`) alih-alih ISO/timestamp. Index harian memakai format `YYYY-MM-DD`. Timezone acuan: **Asia/Jakarta (WIB)**, helper `getTodayIndonesia()` di `summaryHelpers.js`. Jangan campur format — breaking untuk query dan laporan historis.
