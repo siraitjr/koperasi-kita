@@ -3824,7 +3824,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
         // Simpan ke local storage sebagai backup (dengan isSynced=false)
         simpanKeLokal()
 
-        // Tulis ke Firebase - Firebase Persistence akan handle offline
+        // Tulis via OfflineRepository (Room queue + SyncManager handle offline)
         val adminUid = pelanggan.adminUid.ifBlank { Firebase.auth.currentUser?.uid } ?: return
         val subIndex = updatedSubList.size - 1
         val subMap = mapOf(
@@ -3834,41 +3834,49 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
         )
 
         viewModelScope.launch {
-            try {
-                // Tulis HANYA sub-pembayaran baru ke path spesifik (bukan seluruh pelanggan)
-                database.child("pelanggan").child(adminUid)
-                    .child(pelangganId).child("pembayaranList")
-                    .child(pembayaranIndex.toString()).child("subPembayaran")
-                    .child(subIndex.toString())
-                    .setValue(subMap).await()
+            // Route via OfflineRepository → Room pending_operations → SyncManager
+            // (konsisten dengan tambahPembayaran — durable saat offline/force-close,
+            // terpantau SyncStatusUI, retry otomatis via trySyncOperation)
+            val result = offlineRepo.addSubPembayaran(
+                adminUid = adminUid,
+                pelangganId = pelangganId,
+                pembayaranIndex = pembayaranIndex,
+                subIndex = subIndex,
+                subPembayaran = subMap
+            )
 
-                // Update status jika berubah
-                if (status != pelanggan.status) {
-                    database.child("pelanggan").child(adminUid)
-                        .child(pelangganId).child("status")
-                        .setValue(status).await()
-                }
+            if (result is SaveResult.Success) {
+                try {
+                    // Verifikasi data sudah di server
+                    val verifySnap = database.child("pelanggan").child(adminUid)
+                        .child(pelangganId).child("pembayaranList")
+                        .child(pembayaranIndex.toString()).child("subPembayaran")
+                        .child(subIndex.toString()).get().await()
 
-                // Verifikasi data sudah di server
-                val verifySnap = database.child("pelanggan").child(adminUid)
-                    .child(pelangganId).child("pembayaranList")
-                    .child(pembayaranIndex.toString()).child("subPembayaran")
-                    .child(subIndex.toString()).get().await()
-
-                if (verifySnap.exists()) {
-                    val idx = daftarPelanggan.indexOfFirst { it.id == pelangganId }
-                    if (idx != -1) {
-                        daftarPelanggan[idx] = daftarPelanggan[idx].copy(isSynced = true)
-                        simpanKeLokal()
+                    if (verifySnap.exists()) {
+                        val idx = daftarPelanggan.indexOfFirst { it.id == pelangganId }
+                        if (idx != -1) {
+                            daftarPelanggan[idx] = daftarPelanggan[idx].copy(isSynced = true)
+                            simpanKeLokal()
+                        }
                     }
+                } catch (e: Exception) {
+                    Log.d("SubPembayaran", "⏳ Sync gagal/offline, isSynced tetap false: ${e.message}")
                 }
-            } catch (e: Exception) {
-                Log.d("SubPembayaran", "⏳ Sync gagal/offline, isSynced tetap false: ${e.message}")
+            }
+
+            // Update status jika berubah
+            if (status != pelanggan.status) {
+                offlineRepo.updatePelanggan(
+                    adminUid = adminUid,
+                    pelangganId = pelangganId,
+                    updateData = mapOf("status" to status)
+                )
             }
         }
 
         Log.d("SubPembayaran", "✅ Sub-pembayaran disimpan: Rp $jumlah")
-        Log.d("SubPembayaran", "   Mode: ${if (isOnline()) "ONLINE" else "OFFLINE (queued by Firebase)"}")
+        Log.d("SubPembayaran", "   Mode: ${if (isOnline()) "ONLINE" else "OFFLINE (queued in Room)"}")
 
         if (status == "Lunas") {
             updateStatusLunasCicilan(pelangganId)
