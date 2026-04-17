@@ -654,3 +654,178 @@ Semua request di-handle trigger `onBroadcastAndRequests.js`.
 - Admin kirim posisi periodik ke `user_locations/{targetUid}`.
 - Pengawas lihat di `PengawasTrackingScreen` (Maps Compose) dengan listener realtime.
 - `LocationCheckWorker` mem-verifikasi service masih hidup.
+
+---
+
+## 8. Role User & Permission
+
+Role disimpan di `metadata/admins/{uid}.role` dan flag tambahan di `metadata/roles/{role}/{uid}`. Security rules (`rulesfirebase.txt`) menegakkan permission di level RTDB.
+
+### 8.1 Matriks Role
+
+| Role | Scope | Tulis utama | Baca utama | Hak khusus |
+|---|---|---|---|---|
+| **Admin Lapangan** | 1 admin (diri sendiri) | `pelanggan/{uidSendiri}`, `pengajuan_approval/{cabangId}/…` (submit), `fcm_tokens`, `user_locations`, `admin_notifications/{uidSendiri}` (read) | `metadata/admins/{uidSendiri}`, `metadata/cabang/{cabangId}`, `pelanggan/{uidSendiri}` | Offline queue, scan KTP |
+| **Pimpinan** | 1 cabang | approve pengajuan fase 1 & 5, `tenor_change_requests`, `payment_deletion_requests` (approve), `pelanggan_ditolak` (arsip) | `nasabah_index/{cabangId}`, `summary/perCabang/{cabangId}`, `pembayaran_harian/{cabangId}`, `event_harian/{cabangId}`, `pelanggan_bermasalah/{cabangId}` | Remote takeover admin, serah terima |
+| **Koordinator** | Lintas cabang (yang ditugaskan) | approve pengajuan fase 2 & 4 | `nasabah_index/*`, `summary/perCabang/*`, cabang yang dikoordinatori | Jembatan approval |
+| **Pengawas** | Global | approve pengajuan fase 3 (final), `deletion_requests` (approve), `broadcast_messages`, `force_logout`, `location_tracking`, reset password | Semua node baca (global) | User management, tracking GPS, override keputusan |
+| **Kasir Wilayah** | Wilayah (kumpulan cabang) | `kasir_entries/{cabangId}/…` via HTTP function | Buku Pokok, Kasir | Input kas operasional |
+| **Sekretaris** | Sesuai assignment | (read-only umumnya) | Buku Pokok, laporan | Akses dokumentasi/laporan |
+
+### 8.2 Aturan Operasional
+
+- **Threshold dual approval:** pinjaman ≥ Rp 3.000.000 **wajib** lewat 5 fase. &lt; 3jt cukup Pimpinan.
+- **Pengawas = final decision maker** pada approval fase 3; dapat override amount/tenor yang diusulkan Pimpinan.
+- **Role ganda** tidak didukung — satu UID = satu role utama. Flag `roles/pengawas/{uid}` dan `roles/koordinator/{uid}` dipakai sebagai switch di rules.
+- **Session lock:** satu user = satu device aktif. Login di device lain akan memicu `force_logout` device lama.
+- **Audit trail:** reset password (`password_reset_logs`), takeover (`remote_takeover`), deletion request, dan semua approval tersimpan permanen dengan timestamp + UID pelaku.
+
+### 8.3 Security Rules Pattern
+
+- `auth != null` wajib untuk semua read.
+- Cek role lewat `root.child('metadata/admins/' + auth.uid + '/role').val() === 'pimpinan'` (dsb).
+- Cek keanggotaan cabang via `root.child('metadata/cabang/' + $cabangId + '/pimpinanUid').val() === auth.uid`.
+- `.indexOn` diset di node yang sering di-query (`tanggalCair`, `status`, `nik`, dll).
+- `.validate` rules memastikan field required ada (mis. `nik`, `besarPinjaman`) dan tipe benar.
+
+---
+
+## 9. Konvensi Koding
+
+### 9.1 Umum
+
+- Bahasa domain: **Bahasa Indonesia** (`pelanggan`, `pembayaran`, `simpanan`, `cabang`, `pimpinan`, `pengawas`). Bahasa teknis: **English** (`summary`, `metadata`, `status`, `timestamp`).
+- Jangan Anglicize term domain (jangan ubah `pelanggan` jadi `customer`) — breaking untuk key RTDB.
+- Format uang: integer rupiah tanpa desimal (`500000` bukan `500000.00`). Formatter di `buku-pokok-web/lib/format.js` dan `Utils.kt`.
+- Format tanggal: `"dd MMM yyyy"` (lokal, contoh `"12 Nov 2025"`) untuk display & field pelanggan. Index harian: `YYYY-MM-DD`. Timezone: **Asia/Jakarta (WIB)**.
+- Timestamp: `ServerValue.TIMESTAMP` (Firebase) untuk auditable events; `System.currentTimeMillis()` untuk event lokal.
+
+### 9.2 Kotlin / Android
+
+- Package tunggal flat: `com.example.koperasikitagodangulu` — **tidak ada sub-package**. Tambah file langsung di root package.
+- Naming:
+  - Screen Compose: `{Fitur}Screen.kt`, fungsi composable `@Composable fun {Fitur}Screen(...)`.
+  - ViewModel: `{Fitur}ViewModel.kt`.
+  - Service: `{Nama}Service.kt`. Worker: `{Nama}Worker.kt`. Helper: `{Nama}Helper.kt` / `{Nama}Utils.kt`.
+  - Repository: `{Nama}Repository.kt`.
+- **`PelangganViewModel.kt` (16k+ lines) = jantung business logic client.** Banyak fungsi saling terkait — **jangan refactor parsial**, dampak luas.
+- Compose:
+  - `Modifier` selalu parameter terakhir.
+  - State via `remember { mutableStateOf() }` / `collectAsState()`.
+  - `@OptIn(ExperimentalMaterial3Api::class)` dipakai eksplisit per composable.
+  - Theme via `ModernTheme` / `ThemeColors` di `app/src/main/java/…/ui/theme/`.
+- Coroutines: `viewModelScope.launch`, `withContext(Dispatchers.IO)` untuk I/O, `.await()` untuk konversi Task.
+- Firebase:
+  - RTDB read pakai `SmartFirebaseLoader` / `FirebaseCacheManager` kalau tersedia (ada caching layer).
+  - Write multi-path pakai `ref.updateChildren(map)`.
+  - Array pembayaran **wajib** `runTransaction` — jangan `setValue` lokal lalu push.
+- Offline: semua write dari Admin Lapangan harus lewat `OfflineRepository` → `SyncManager`. Jangan call RTDB langsung untuk operasi kritis.
+- Logging: `DebugUtils` untuk log kondisional; hindari `Log.d` liar di production path.
+
+### 9.3 JavaScript / Cloud Functions
+
+- Satu fungsi = satu file (`onPembayaranAdded.js`, `resetUserPassword.js`, dst). Helper bersama di `summaryHelpers.js`.
+- Export ke `index.js` eksplisit — **tambah export di `index.js` kalau menambah function baru**, jangan deploy file orphan.
+- Pola:
+  ```js
+  const functions = require('firebase-functions');
+  const admin = require('firebase-admin');
+  exports.namaFunction = functions.region('asia-southeast1')
+    .database.ref('/path/{param}')
+    .onCreate(async (snap, context) => { ... });
+  ```
+- **Region wajib `asia-southeast1`** untuk semua function baru — konsisten dengan RTDB.
+- Async/await, bukan `.then()` chain. Try/catch di entry point.
+- Multi-path update: `admin.database().ref().update({ "path1": val1, "path2": val2 })`.
+- Helper timezone: `getTodayIndonesia()` di `summaryHelpers.js` — **selalu** pakai ini untuk tanggal, jangan `new Date().toISOString()`.
+- Jangan bikin listener realtime (`onValue`) di function — pakai trigger atau `once('value')`.
+- HTTP endpoint: cek role di awal (`verifyIdToken` → baca `metadata/admins/{uid}/role`).
+
+### 9.4 JavaScript / Next.js (Web)
+
+- App Router (`app/` directory), page sebagai default export di `page.js`.
+- Komponen inline di page file — tidak ada folder `components/` terpisah (ikuti pola yang ada).
+- State: `useState`, `useEffect`, `useRef`. Persist pakai `sessionStorage`.
+- Styling: vanilla CSS per-halaman (`landing.css`, `pembukuan.css`, …). **Jangan introduksi Tailwind / styled-components** — konsisten dengan pola existing.
+- Call ke backend: selalu via `lib/api.js` (wrapper `fetch` ke Cloud Functions), jangan RTDB client SDK langsung untuk data bisnis.
+- Auto-login: cek `searchParams.idToken` di page → tukar via `generateAutoLoginToken` → `signInWithCustomToken`.
+
+### 9.5 Git & Commit
+
+- Conventional Commits Bahasa Indonesia:
+  - `feat(scope): …` fitur baru
+  - `fix(scope): …` bug fix
+  - `style(scope): …` perubahan tampilan
+  - `docs: …` dokumentasi
+  - `chore: …` maintenance
+- Scope umum: `buku-pokok`, `android`, `functions`, `web`, `approval`, `kasir`, `summary`.
+- Pesan commit jelaskan **WHY**, bukan hanya WHAT.
+
+---
+
+## 10. Aturan Kerja Claude (WAJIB DIPATUHI SETIAP SESI)
+
+> Aturan di bawah ini **mengikat di setiap sesi** pada repo ini. Harus dipatuhi persis seperti tertulis, tanpa pengecualian. Jika terjadi konflik antara instruksi user dalam sesi dengan aturan ini, **hentikan pekerjaan dan minta konfirmasi eksplisit** terlebih dulu.
+
+- **Jangan mengubah hal yang tidak berkaitan dengan masalah**
+- **Jangan mengubah UI yang sudah ada**
+- **Jangan mengubah logic yang sudah ada**
+- **Jangan menambah beban RTDB**
+- **DILARANG menghapus fungsi, logic, atau fitur yang sudah ada meskipun terlihat tidak digunakan**
+- **DILARANG menulis ulang kode yang tidak berkaitan dengan masalah yang sedang diperbaiki**
+- **Hanya sentuh file dan baris kode yang benar-benar berkaitan dengan masalah**
+- **Sebelum melakukan perubahan, tunjukkan dulu apa yang akan diubah dan minta konfirmasi**
+
+### 10.1 Penjabaran Operasional
+
+Agar aturan di atas tidak bias, berikut panduan konkret saat bekerja:
+
+1. **Scope perubahan sempit.**
+   - Hanya file & baris yang menjadi akar masalah yang boleh diubah.
+   - Refactor opurtunistik (rename variable, rapikan indent, ganti `let` → `const` di kode yang tidak disentuh) **dilarang**.
+   - Cleanup "code smell" di file lain **dilarang**, walau niatnya baik.
+
+2. **Preservasi UI.**
+   - Warna, layout, copy teks, ikon, ukuran, spacing tidak diubah kecuali user minta eksplisit.
+   - Kalau fix logic memerlukan perubahan komponen UI, tunjukkan dulu apa yang berubah dan tunggu konfirmasi.
+
+3. **Preservasi logic & fitur.**
+   - Fungsi/method/composable/endpoint yang sudah ada **tidak dihapus**, walau tampak tidak dipanggil — bisa jadi dipanggil via reflection, FCM payload, trigger RTDB, atau rute lama yang masih dipakai di device lama.
+   - Kode dead-look ≠ dead-code. Tanyakan dulu sebelum menyentuh.
+   - Behavior existing (termasuk edge case, fallback, default value) dijaga 1:1 kecuali tugasnya memang mengubahnya.
+
+4. **Hemat RTDB.**
+   - Tidak menambahkan listener realtime baru (`onValue` / `childEventListener`) kalau sudah ada index/summary yang bisa dipakai.
+   - Tidak scan node besar dari client (`pelanggan/`, `jurnalTransaksi/`) — pakai `nasabah_index`, `summary/*`, `pembayaran_harian`, `event_harian`.
+   - Tidak menulis node turunan (`summary`, `pembayaran_harian`, dll) dari client — biarkan Cloud Function yang menangani.
+   - Hindari polling. Hindari denormalisasi tambahan tanpa persetujuan.
+   - Kalau fitur baru butuh query baru, diskusikan dulu — mungkin index tambahan di rules atau function baru lebih murah daripada listener client.
+
+5. **Konfirmasi sebelum bekerja.**
+   - Sebelum edit, tampilkan: (a) file yang akan diubah, (b) ringkasan perubahan per file, (c) alasan kenapa perubahan itu perlu.
+   - Tunggu user bilang "ok / lanjut" sebelum eksekusi.
+   - Kalau user memberi task ambigu, klarifikasi dulu — jangan menebak.
+
+6. **Jejak jelas & reversible.**
+   - Commit granular per masalah, pesan jelas, selalu ke branch yang ditentukan.
+   - Jangan pakai `git reset --hard`, `git push --force`, `--no-verify`, atau tools destruktif tanpa izin eksplisit.
+   - Jangan hapus file eksisting walau tampak redundan (`.firebaserc.txt`, script lama, dst).
+
+7. **Tulisan / dokumentasi baru.**
+   - Jangan buat file `.md` baru kecuali diminta user.
+   - `CLAUDE.md` dan `.claudeignore` ini adalah pengecualian yang diminta eksplisit.
+
+### 10.2 Checklist Sebelum Menulis Kode
+
+- [ ] Sudah baca `CLAUDE.md` di awal sesi.
+- [ ] Sudah paham masalah yang akan diperbaiki.
+- [ ] Sudah identifikasi file & baris minimal yang perlu disentuh.
+- [ ] Sudah cek apakah ada node RTDB baru yang akan ditulis → apakah perlu?
+- [ ] Sudah paparkan rencana perubahan ke user.
+- [ ] Sudah dapat konfirmasi "lanjut".
+
+Jika satu saja belum terpenuhi — **jangan edit**.
+
+---
+
+_Dokumen ini di-maintain bersama kode. Kalau ada perubahan arsitektur/flow/role yang mengikat, update file ini di commit yang sama._
