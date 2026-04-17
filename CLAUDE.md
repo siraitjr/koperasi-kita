@@ -437,3 +437,220 @@ Satu node per role target: `admin_notifications/{uid}/{notifId}`, `pengawas_noti
 
 **Catatan format tanggal:**
 Banyak field tanggal disimpan sebagai **string lokal** (`"12 Nov 2025"`) alih-alih ISO/timestamp. Index harian memakai format `YYYY-MM-DD`. Timezone acuan: **Asia/Jakarta (WIB)**, helper `getTodayIndonesia()` di `summaryHelpers.js`. Jangan campur format — breaking untuk query dan laporan historis.
+
+---
+
+## 6. Fitur per Platform
+
+### 6.1 Android — Admin Lapangan
+
+Operator yang bertemu nasabah langsung di lapangan.
+
+- **Registrasi nasabah** (`TambahPelangganScreen.kt`, 3.4k lines): form identitas + scan KTP kamera → OCR ML Kit → auto-fill (`KtpScanner.kt`, `KtpParser.kt`, `ImagePreprocessing_Enhanced.kt`). Upload foto KTP ke `ktp_images/{adminUid}/{pelangganId}/`.
+- **Pengajuan pinjaman:** input besar pinjaman, tenor, jenis pembayaran. Kalau ≥ 3jt → tulis ke `pengajuan_approval/…` (bukan langsung `pelanggan/`) untuk masuk flow 5 fase.
+- **Cari & kelola pelanggan** (`CariPelangganScreen`, `DaftarPelangganScreen`, `DetailPelangganScreen`, `EditPelangganScreen`, `KelolaKreditScreen`): list, filter, edit data.
+- **Input pembayaran** (`InputPembayaranScreen`, `InputPembayaranLangsungScreen`, `EditPembayaranScreen`): catat cicilan harian, tambah bayar, pelunasan. Mendukung split payment dan simpanan.
+- **Riwayat pembayaran** (`RiwayatPembayaranScreen`): cicilan + sub-pembayaran + simpanan nasabah.
+- **Mode offline** lengkap: semua tulis antre di Room (`PendingOperationDatabase`) → `SyncWorker` & `SyncForegroundService` sync saat online. Indikator di `SyncStatusUI.kt`.
+- **Absensi** (`AbsensiScreen.kt`) + tracking GPS (`LocationTrackingService`) saat ditugaskan Pengawas.
+- **Notifikasi:** FCM (`MyFirebaseMessagingService`) menerima hasil approval, broadcast, serah terima.
+
+### 6.2 Android — Pimpinan (Branch Manager)
+
+- **Dashboard cabang** (`PimpinanDashboardScreen`): target vs realisasi pembayaran hari ini, jumlah nasabah aktif/lunas/bermasalah (baca `summary/perCabang/{cabangId}`).
+- **Listing nasabah** per status: `PimpinanDaftarSemuaNasabahScreen`, `PimpinanDaftarNasabahBaruScreen`, `PimpinanDaftarNasabahLunasScreen`, `PimpinanDaftarBermasalahScreen`, `PimpinanDaftarMenungguPencairanScreen`. Semua baca `nasabah_index` + `event_harian` + `pelanggan_bermasalah` (**bukan** scan `pelanggan/`).
+- **Approval fase 1 & fase 5** (`PimpinanApprovalScreen.kt`, 3.7k lines): review pengajuan ≥ 3jt, approve/reject/adjust amount & tenor. Fase 5 = final confirm setelah keputusan Pengawas.
+- **Serah terima** hari tutup buku: terima setoran harian dari admin.
+- **Tenor change request** & **payment deletion request**: approve permintaan dari admin.
+- **Remote takeover:** ambil alih sesi admin untuk koreksi langsung di device admin (lewat `generateTakeoverToken`).
+- **Laporan cabang** (`PimpinanReportsScreen`).
+
+### 6.3 Android — Koordinator
+
+Jembatan antara Pimpinan (per cabang) dan Pengawas (global).
+
+- **Dashboard koordinator** (`KoordinatorDashboardScreen`, 1.2k lines): agregat lintas cabang yang dikoordinatori.
+- **Approval fase 2 & fase 4** (`KoordinatorApprovalScreen`, 2.6k lines): review hasil Pimpinan lalu teruskan ke Pengawas (fase 2); konfirmasi hasil Pengawas sebelum diteruskan ke Pimpinan Final (fase 4).
+- **Listing nasabah lintas cabang** (`KoordinatorDaftarSemuaNasabahScreen`, `KoordinatorDaftarMenungguPencairanScreen`).
+- **Laporan** (`KoordinatorReportsScreen`, 1.8k lines).
+
+### 6.4 Android — Pengawas (Auditor / Supervisor)
+
+Role tertinggi, visibilitas penuh lintas cabang.
+
+- **Dashboard multi-cabang** (`PengawasDashboardScreen`, 1.5k lines): baca `summary/global` dan `summary/perCabang/*`.
+- **Approval fase 3** (`PengawasApprovalScreen`, 2k lines): final decision maker pada pengajuan ≥ 3jt, dapat override amount/tenor.
+- **User management** (`PengawasUserManagementScreen`, 1.3k lines): buat user, reset password (`resetUserPassword` Cloud Function), nonaktifkan, pindah cabang, edit role. Audit log di `password_reset_logs`.
+- **Tracking GPS** (`PengawasTrackingScreen`): lihat posisi admin di peta real-time lewat `location_tracking/…`.
+- **Broadcast** pesan ke seluruh staf → node `broadcast_messages`.
+- **Laporan lintas cabang** (`PengawasReportsScreen`, 1.7k lines) + export Excel.
+- **Approve deletion request** nasabah / pembayaran.
+- **Status khusus** (`PengawasDaftarStatusKhususScreen`).
+
+### 6.5 Web — Dashboard Buku Pokok & Kasir
+
+Diakses oleh Pimpinan / Koordinator / Pengawas / Kasir Wilayah / Sekretaris.
+
+- **Landing page** (`app/page.js`) — halaman marketing publik + login.
+- **Auto-login SSO** dari Android: URL param `?idToken=…` → `generateAutoLoginToken` → custom token → signIn.
+- **Buku Pokok** (`app/pembukuan/page.js`): ledger lengkap nasabah (PB / L1 / CM / MB / ML kolom storting), saldo awal, historical row (coretan merah untuk pinjaman lama), filter cabang/admin/status, export Excel via `exportExcel.js`.
+- **Kasir** (`app/kasir/page.js`): entri kas bulanan (kasbon pagi, BU, transport, dll), upload nota ke Storage, rekap saldo.
+- **Jurnal transaksi & koreksi storting** (via API `jurnalTransaksiApi.js`, `koreksiStorting.js`).
+- **Rekening koran** (`public/rk.html` + `rekeningKoranService.js`) — halaman standalone.
+
+### 6.6 Cloud Functions — Fitur Server-Side
+
+Sudah dirinci di §3.3. Highlight fungsional:
+
+- **Transisi fase approval otomatis:** `onNewPengajuanCreated` + trigger review per fase → fan-out notifikasi.
+- **Index harian & summary realtime:** `onPembayaranAdded` update `pembayaran_harian`, `event_harian`, `summary/*`, `jurnalTransaksi` dalam satu multi-path write.
+- **Anti-duplikat NIK:** `onNikRegistry.js` menjaga `nik_registry` konsisten dengan status pelanggan.
+- **Scheduled maintenance:** reset target harian, recalc mingguan, cleanup notif lama, health check summary.
+- **Endpoint HTTP untuk Web:** Buku Pokok, Kasir, Jurnal, user management.
+- **Auto-login SSO & Remote Takeover:** exchange ID token → custom token.
+
+---
+
+## 7. Alur Bisnis Penting
+
+### 7.1 Pengajuan Pinjaman & Approval 5 Fase
+
+**Threshold:**
+- Pinjaman **&lt; Rp 3.000.000** → rute sederhana: Admin input → `pelanggan/…` dengan `approvalPimpinan` / `approvalPengawas` flag, approval oleh Pimpinan saja.
+- Pinjaman **≥ Rp 3.000.000** → rute dual approval 5 fase via `pengajuan_approval/{cabangId}/{pengajuanId}`.
+
+**State machine dualApprovalInfo:**
+
+```
+[Admin submit]
+      │
+      ▼
+AWAITING_PIMPINAN         ── Pimpinan review ─▶ approve/reject/adjust
+      │
+      ▼
+AWAITING_KOORDINATOR      ── Koordinator review ─▶ approve/reject
+      │
+      ▼
+AWAITING_PENGAWAS         ── Pengawas review ─▶ approve/reject/adjust  (keputusan utama)
+      │
+      ▼
+AWAITING_KOORDINATOR_FINAL── Koordinator konfirmasi
+      │
+      ▼
+AWAITING_PIMPINAN_FINAL   ── Pimpinan finalisasi ─▶ pimpinanFinalConfirmed=true
+      │
+      ▼
+completed                 ── commit ke pelanggan/, notif ke Admin
+```
+
+- Setiap transisi ditulis Cloud Function (`onPimpinanReviewed`, `onKoordinatorReviewed`, `onPengawasReviewed`, `onKoordinatorFinalReviewed`, `onDualApprovalComplete`), yang sekaligus fan-out notif ke role berikutnya.
+- **Reject** di fase manapun → full rollback, status `ditolak`, data dipindah ke `pelanggan_ditolak` (kalau sudah commit) atau dihapus dari `pengajuan_approval`.
+- **Adjustment** (ubah amount/tenor) disimpan per-fase di `IndividualApproval.adjustedAmount` / `adjustedTenor` agar auditable.
+- Pinjaman lanjutan ("follow-up loan") yang ditolak → rollback lengkap ke data pinjaman sebelumnya (lihat commit `006b693`).
+
+### 7.2 Alur Pembayaran & Update Turunan
+
+```
+Admin tekan "Simpan Pembayaran"
+   │
+   ▼
+[ONLINE]                                [OFFLINE]
+   │                                        │
+   ▼                                        ▼
+RTDB write pelanggan/{uid}/{id}/     Room: antrian pending
+pembayaran[] via transaction              │
+   │                                       ▼
+   │                                   Wait online
+   │                                       │
+   │◀──────────────────────────────────────┘
+   ▼
+Trigger: onPembayaranAdded
+   │
+   ├─▶ update simpanan[], totalDibayar
+   ├─▶ cek status lunas → set tanggalLunas, status
+   ├─▶ write pembayaran_harian/{cabang}/{tgl}/{id}
+   ├─▶ write event_harian (nasabah_lunas kalau selesai)
+   ├─▶ remove dari pelanggan_bermasalah kalau on-track
+   ├─▶ increment summary/perAdmin, perCabang, global
+   └─▶ append jurnalTransaksi/{admin}/{pelanggan}/{ts}
+```
+
+- Semua update turunan dilakukan via **multi-path update** agar konsisten.
+- Admin tidak perlu (dan tidak boleh) menulis sendiri ke node turunan.
+- H+1 rule: target harian diukur berdasarkan logika "jatuh tempo H+1 dari pencairan" — konsistensi rule ada di Android, Web, dan Functions (lihat commit `de4d912`).
+
+### 7.3 Sync Offline → Online (Android)
+
+```
+User action (tulis)
+   │
+   ▼
+OfflineRepository.save()
+   ├─▶ Room: tabel pending_operations (type, path, payload, timestamp, retry_count)
+   └─▶ Optimistic UI update
+   │
+   ▼
+Trigger sync:
+   - SyncWorker (periodic, ~15m)
+   - SyncForegroundService (continuous saat app foreground)
+   - ConnectivityManager callback (saat jaringan kembali)
+   - Manual pull-to-refresh
+   │
+   ▼
+SyncManager.flush()
+   - Order by timestamp (FIFO)
+   - Per entry: RTDB write
+   - Success → delete dari Room
+   - Failure → increment retry_count, exponential backoff
+   │
+   ▼
+SyncStatus broadcast ke UI (IDLE/SYNCING/SUCCESS/PARTIAL/ERROR)
+```
+
+- **Konflik:** last-write-wins berbasis timestamp; tidak ada merge client-side.
+- **BootReceiver** men-trigger sync setelah device reboot.
+- **FirebaseConnectionKeeperService** menjaga koneksi RTDB tetap hidup agar listener tidak terputus.
+
+### 7.4 Registrasi NIK & Anti-Duplikat
+
+1. Admin input/scan KTP → client cek `nik_registry/{nik}` untuk warning duplikat.
+2. Simpan pelanggan → trigger `onPelangganCreatedRegisterNik` menulis `nik_registry/{nik}: {pelangganId, adminUid, status}`.
+3. Perubahan status (`lunas`, `ditolak`) → trigger `onStatusChangeUpdateNik` update field status.
+4. Hapus pelanggan → `onPelangganDeletedRemoveNik` remove entry.
+5. Fungsi maintenance `scanDuplicateNasabah` / `cleanupDuplicateNasabah` untuk audit massal.
+
+### 7.5 Serah Terima Harian
+
+Akhir hari, Admin Lapangan menyerahkan setoran ke Pimpinan:
+
+1. Admin tutup hari → write `serah_terima_notifications/{pimpinanUid}/{notifId}`.
+2. Trigger `onSerahTerimaCreated` → FCM push ke Pimpinan.
+3. Pimpinan verifikasi, tanda tangan digital / konfirmasi.
+4. Pengawas juga dapat notif paralel di `pengawas_serah_terima_notifications`.
+5. Jurnal serah terima tercatat di `jurnalTransaksi`.
+
+### 7.6 Request Destruktif (Deletion / Tenor Change / Pencairan Simpanan)
+
+Operasi yang berdampak finansial atau integritas data tidak boleh langsung — harus lewat request:
+
+| Request node | Requester | Approver | Aksi sukses |
+|---|---|---|---|
+| `deletion_requests` | Admin/Pimpinan | Pengawas | pindah ke `pelanggan_ditolak` + cleanup `nik_registry` |
+| `payment_deletion_requests` | Admin | Pimpinan | rollback `pembayaran[]`, summary, jurnal |
+| `tenor_change_requests` | Admin | Pimpinan | update `tenor`, recalc cicilan |
+| `pencairan_simpanan_requests` | Admin | Pimpinan | buat entri simpanan keluar + jurnal |
+
+Semua request di-handle trigger `onBroadcastAndRequests.js`.
+
+### 7.7 Remote Takeover & Auto-Login Web
+
+- **Takeover:** Pimpinan pilih admin di aplikasi → call `generateTakeoverToken` → dapat custom token admin → login sebagai admin (session admin ter-lock via `session_lock`). Restore via `restorePimpinanSession`.
+- **Auto-login Web:** Android generate ID token → buka URL web dengan `?idToken=…` → Web call `generateAutoLoginToken` → dapat custom token → `signInWithCustomToken`. Tidak perlu input password di web.
+
+### 7.8 Tracking GPS Admin Lapangan
+
+- Pengawas aktifkan tracking → write `location_tracking/{targetUid}: {active:true, activatedBy, since}`.
+- Trigger `onTrackingActivated` → FCM ke admin → admin device start `LocationTrackingService` (foreground service).
+- Admin kirim posisi periodik ke `user_locations/{targetUid}`.
+- Pengawas lihat di `PengawasTrackingScreen` (Maps Compose) dengan listener realtime.
+- `LocationCheckWorker` mem-verifikasi service masih hidup.
