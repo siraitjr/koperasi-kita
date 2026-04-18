@@ -80,6 +80,12 @@ interface PendingOperationDao {
     @Query("UPDATE pending_operations SET status = :status, errorMessage = :errorMessage, retryCount = retryCount + 1 WHERE id = :id")
     suspend fun updateStatus(id: Long, status: String, errorMessage: String? = null)
 
+    // Recovery: row yang stuck di SYNCING karena proses sebelumnya crash/dibunuh OS
+    // tidak terlihat oleh getPendingOperations() (hanya ambil PENDING/FAILED).
+    // Reset ke PENDING agar bisa di-retry di siklus berikutnya.
+    @Query("UPDATE pending_operations SET status = 'PENDING' WHERE status = 'SYNCING'")
+    suspend fun resetStuckSyncing(): Int
+
     @Query("DELETE FROM pending_operations WHERE status = 'SUCCESS'")
     suspend fun deleteSuccessful()
 

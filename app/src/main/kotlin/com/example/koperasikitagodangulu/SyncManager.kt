@@ -640,6 +640,10 @@ class SyncManager private constructor(private val context: Context) {
         return withContext(Dispatchers.IO) {
             Log.d(TAG, "🔄 syncAllPending() called")
 
+            // Recovery: reset SYNCING yang stuck (mis. proses sebelumnya crash) → PENDING
+            val resetCount = dao.resetStuckSyncing()
+            if (resetCount > 0) Log.w(TAG, "♻️ Reset $resetCount stuck SYNCING → PENDING")
+
             val pending = dao.getPendingOperations()
             Log.d(TAG, "📦 Found ${pending.size} pending operations")
 

@@ -14091,27 +14091,28 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                             pelanggan.nikIstri.takeIf { it.isNotBlank() }
                         )
 
+                        // Pre-check: kumpulkan NIK yang benar-benar milik pelanggan ini
+                        val nikToRemove = mutableListOf<String>()
                         for (nik in nikList) {
                             try {
-                                // Cek apakah NIK terdaftar dan milik pelanggan ini
                                 val nikSnap = database.child("nik_registry/$nik").get().await()
                                 if (nikSnap.exists()) {
                                     val registeredPelangganId = nikSnap.child("pelangganId").getValue(String::class.java)
-                                    if (registeredPelangganId == pelangganId) {
-                                        database.child("nik_registry/$nik").removeValue().await()
-                                        Log.d("DeletionRequest", "   ✅ NIK dihapus dari registry: $nik")
-                                    }
+                                    if (registeredPelangganId == pelangganId) nikToRemove += nik
                                 }
                             } catch (e: Exception) {
-                                Log.w("DeletionRequest", "   ⚠️ Gagal hapus NIK: ${e.message}")
+                                Log.w("DeletionRequest", "   ⚠️ Gagal cek NIK: ${e.message}")
                             }
                         }
 
-                        // =====================================================
-                        // STEP 5: Hapus data pelanggan dari RTDB
-                        // =====================================================
-                        database.child("pelanggan/$adminUid/$pelangganId").removeValue().await()
-                        Log.d("DeletionRequest", "✅ Data pelanggan dihapus dari RTDB")
+                        // STEP 4+5 ATOMIC: hapus pelanggan + nik_registry dalam satu multi-path update
+                        // Mencegah orphan state jika salah satu remove gagal di tengah jalan
+                        val deleteMap = hashMapOf<String, Any?>(
+                            "pelanggan/$adminUid/$pelangganId" to null
+                        )
+                        nikToRemove.forEach { deleteMap["nik_registry/$it"] = null }
+                        database.updateChildren(deleteMap).await()
+                        Log.d("DeletionRequest", "✅ Pelanggan + ${nikToRemove.size} NIK dihapus (atomic)")
                     }
                 }
 
