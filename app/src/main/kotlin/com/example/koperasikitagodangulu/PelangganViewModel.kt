@@ -15568,17 +15568,39 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
     fun loadKasirUangKasHariIni() {
         viewModelScope.launch {
             try {
-                val adminUid = Firebase.auth.currentUser?.uid ?: return@launch
-                val cabangId = _currentUserCabang.value ?: return@launch
+                val adminUid = Firebase.auth.currentUser?.uid ?: run {
+                    Log.w("KasirUangKas", "⚠️ currentUser null, skip load")
+                    return@launch
+                }
+
+                // Resolve cabangId: prioritas StateFlow, fallback baca langsung
+                // metadata/admins/{uid}.cabang kalau StateFlow belum terisi
+                // (terjadi saat race condition atau profile belum lengkap).
+                var cabangId = _currentUserCabang.value
+                if (cabangId.isNullOrBlank()) {
+                    val metaCabang = withTimeoutOrNull(5_000L) {
+                        database.child("metadata").child("admins").child(adminUid)
+                            .child("cabang").get().await()
+                    }
+                    cabangId = metaCabang?.getValue(String::class.java)
+                    Log.d("KasirUangKas", "🔄 Fallback metadata cabang: '$cabangId'")
+                }
+                if (cabangId.isNullOrBlank()) {
+                    Log.w("KasirUangKas", "⚠️ cabangId tidak dapat diresolve, skip load")
+                    _kasirUangKasHariIni.value = emptyList()
+                    return@launch
+                }
 
                 val bulanKey = SimpleDateFormat("yyyy-MM", Locale.getDefault()).format(Date())
                 val tanggalHariIni = SimpleDateFormat("dd MMM yyyy", Locale("id")).format(Date())
+                Log.d("KasirUangKas", "🔍 Query uid=$adminUid cabang=$cabangId bulan=$bulanKey tgl=$tanggalHariIni")
 
                 database.child("kasir_entries")
                     .child(cabangId)
                     .child(bulanKey)
                     .get()
                     .addOnSuccessListener { snapshot ->
+                        Log.d("KasirUangKas", "📦 Snapshot total children: ${snapshot.childrenCount}")
                         val result = mutableListOf<Triple<String, String, Int>>()
                         snapshot.children.forEach { entrySnap ->
                             val targetUid = entrySnap.child("targetAdminUid").getValue(String::class.java) ?: ""
@@ -15591,6 +15613,8 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                                 val createdByName = entrySnap.child("createdByName").getValue(String::class.java) ?: "Kasir"
                                 val keterangan = entrySnap.child("keterangan").getValue(String::class.java) ?: ""
                                 result.add(Triple(createdByName, keterangan, jumlah))
+                            } else if (jenis == "uang_kas") {
+                                Log.d("KasirUangKas", "⏭️ Skip uang_kas id=${entrySnap.key}: targetUid='$targetUid' vs '$adminUid', arah='$arah', tgl='$tanggal' vs '$tanggalHariIni'")
                             }
                         }
                         _kasirUangKasHariIni.value = result
