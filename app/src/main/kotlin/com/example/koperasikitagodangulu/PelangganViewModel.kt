@@ -9554,20 +9554,22 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
     )
 
     /**
-     * Promote foto pending → permanent saat approve final top-up.
+     * Finalisasi foto pending saat approve final top-up (strategi no-move).
      *
-     * Per jenis foto yang punya URL pending:
-     * 1. Download bytes dari Storage path pending (ktp_images_pending/...).
-     * 2. Upload ulang ke Storage path permanent (ktp_images/...) — overwrite foto lama.
-     * 3. Hapus file pending.
-     * 4. Return downloadUrl baru dari path permanent.
+     * Storage rules mengharuskan writer ke ktp_images/{adminUid}/... memiliki
+     * auth.uid == adminUid, sehingga Pimpinan TIDAK BISA memindahkan bytes file
+     * ke folder permanent. Alih-alih memindah, kita:
+     * 1. Hapus file lama di ktp_images/{adminUid}/{pelangganId}/ktp_$jenis.jpg
+     *    (allow delete: auth != null → Pimpinan boleh).
+     * 2. Gunakan URL pending apa adanya sebagai URL final; file tetap di
+     *    ktp_images_pending/.
      *
-     * Foto lama otomatis tergantikan karena path permanent deterministik
-     * (ktp_$jenisKtp.jpg). Bandwidth 2x (download + upload) adalah tradeoff untuk
-     * struktur folder yang rapi.
+     * Konsekuensi: fotoKtpUrl di RTDB bisa menunjuk ke folder pending setelah
+     * top-up pertama disetujui. Hal ini tidak melanggar rules karena read
+     * ktp_images_pending diizinkan untuk semua auth.
      *
-     * Jika gagal di tengah proses, field yang gagal dikembalikan `null` →
-     * caller harus fallback ke URL permanent lama (tidak mengganggu aliran approve).
+     * Jika URL pending untuk suatu jenis tidak ada, field return dikembalikan
+     * `null` → caller mempertahankan URL permanent lama.
      */
     private suspend fun commitPendingPhotosToPermanent(
         pelanggan: Pelanggan
@@ -9578,53 +9580,25 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
         val pelangganId = pelanggan.id.ifBlank { return@withContext CommittedPhotoUrls() }
         val storageRef = Firebase.storage.reference
 
-        suspend fun moveOne(jenis: String, pendingUrl: String): String? {
+        suspend fun finalizeOne(jenis: String, pendingUrl: String, oldPermanentUrl: String): String? {
             if (pendingUrl.isBlank()) return null
-            return try {
-                val pendingRef = storageRef.child("ktp_images_pending/$adminUid/$pelangganId/ktp_$jenis.jpg")
-                val permanentRef = storageRef.child("ktp_images/$adminUid/$pelangganId/ktp_$jenis.jpg")
-                // Max 1 MB — aman karena uploadFotoKtp sudah cap 700KB setelah kompresi.
-                val bytes = withTimeoutOrNull(60_000L) {
-                    pendingRef.getBytes(1_024L * 1024L).await()
-                } ?: run {
-                    Log.w("CommitKtp", "⚠️ download pending $jenis timeout/null")
-                    return null
-                }
-                val metadata = StorageMetadata.Builder()
-                    .setCustomMetadata("adminUid", adminUid)
-                    .setCustomMetadata("pelangganId", pelangganId)
-                    .setCustomMetadata("committedAt", System.currentTimeMillis().toString())
-                    .setContentType("image/jpeg")
-                    .build()
-                val uploadTask = permanentRef.putBytes(bytes, metadata)
-                val ok = withTimeoutOrNull(60_000L) { uploadTask.await() }
-                if (ok == null) {
-                    Log.w("CommitKtp", "⚠️ upload permanent $jenis timeout")
-                    return null
-                }
-                val url = withTimeoutOrNull(15_000L) { permanentRef.downloadUrl.await() }?.toString()
-                if (url == null) {
-                    Log.w("CommitKtp", "⚠️ downloadUrl permanent $jenis null")
-                    return null
-                }
-                // Best-effort: hapus pending, biarkan gagal tidak menggagalkan commit.
+            if (oldPermanentUrl.isNotBlank()) {
                 try {
-                    withTimeoutOrNull(10_000L) { pendingRef.delete().await() }
+                    val permanentRef = storageRef.child("ktp_images/$adminUid/$pelangganId/ktp_$jenis.jpg")
+                    withTimeoutOrNull(10_000L) { permanentRef.delete().await() }
+                    Log.d("CommitKtp", "🧹 Deleted old permanent: $jenis")
                 } catch (e: Exception) {
-                    Log.w("CommitKtp", "⚠️ gagal hapus pending $jenis: ${e.message}")
+                    Log.w("CommitKtp", "⚠️ Gagal hapus permanent $jenis: ${e.message}")
                 }
-                url
-            } catch (e: Exception) {
-                Log.e("CommitKtp", "❌ exception commit $jenis: ${e.message}")
-                null
             }
+            return pendingUrl
         }
 
         CommittedPhotoUrls(
-            fotoKtpUrl = moveOne("ktp", pelanggan.pendingFotoKtpUrl),
-            fotoKtpSuamiUrl = moveOne("ktp_suami", pelanggan.pendingFotoKtpSuamiUrl),
-            fotoKtpIstriUrl = moveOne("ktp_istri", pelanggan.pendingFotoKtpIstriUrl),
-            fotoNasabahUrl = moveOne("nasabah", pelanggan.pendingFotoNasabahUrl)
+            fotoKtpUrl = finalizeOne("ktp", pelanggan.pendingFotoKtpUrl, pelanggan.fotoKtpUrl),
+            fotoKtpSuamiUrl = finalizeOne("ktp_suami", pelanggan.pendingFotoKtpSuamiUrl, pelanggan.fotoKtpSuamiUrl),
+            fotoKtpIstriUrl = finalizeOne("ktp_istri", pelanggan.pendingFotoKtpIstriUrl, pelanggan.fotoKtpIstriUrl),
+            fotoNasabahUrl = finalizeOne("nasabah", pelanggan.pendingFotoNasabahUrl, pelanggan.fotoNasabahUrl)
         )
     }
 
