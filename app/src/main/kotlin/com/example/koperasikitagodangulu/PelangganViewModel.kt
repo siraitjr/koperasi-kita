@@ -249,9 +249,33 @@ data class BackupTopUpData(
     val totalDiterima: Int = 0,
     val totalPelunasan: Int = 0,
     val tenor: Int = 0,
-    val tanggalPengajuan: String = ""
+    val tanggalPengajuan: String = "",
+    // ✅ Field tambahan agar rollback top-up benar-benar pulihkan SEMUA state
+    // yang berubah saat pengajuan top-up. Tanpa ini, nasabah dari Lunas /
+    // Menunggu Pencairan tidak kembali ke layar yang benar setelah reject.
+    // Default value menjaga backward-compat dengan record lama.
+    val status: String = "",
+    val statusPencairanSimpanan: String = "",
+    val tanggalLunasCicilan: String = "",
+    val tanggalPencairanSimpanan: String = "",
+    val tanggalPencairan: String = "",
+    val dicairkanOleh: String = "",
+    val tarikTabungan: Int = 0,
+    val besarPinjamanDiajukan: Int = 0,
+    val jasaPinjaman: Int = 0,
+    val tipePinjaman: String = "",
+    val statusKhusus: String = "",
+    val catatanStatusKhusus: String = "",
+    val tanggalStatusKhusus: String = "",
+    val diberiTandaOleh: String = "",
+    val statusSerahTerima: String = "",
+    val tanggalSerahTerima: String = "",
+    val fotoSerahTerimaUrl: String = "",
+    val pendingFotoSerahTerimaUri: String = "",
+    val pembayaranList: List<Pembayaran> = emptyList(),
+    val hasilSimulasiCicilan: List<SimulasiCicilan> = emptyList()
 ) {
-    constructor() : this(0, 0, 0, 0, 0, 0, 0, "")
+    constructor() : this(pinjamanKe = 0)
 }
 
 /** Safe accessor — filter null entries yang bisa muncul dari Firebase array gaps */
@@ -3697,6 +3721,9 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
 
                     // === Backup Terstruktur utk Rollback saat Ditolak ===
                     // Ditulis pada write yang sama (tidak menambah RTDB write).
+                    // Field tambahan (status, pembayaranList, dll) wajib agar
+                    // reject top-up bisa kembalikan nasabah ke layar yang
+                    // benar (Aktif / Lunas / Menunggu Pencairan).
                     backupSebelumTopUp = BackupTopUpData(
                         pinjamanKe = dataSebelumTopUp.pinjamanKe,
                         besarPinjaman = dataSebelumTopUp.besarPinjaman,
@@ -3705,7 +3732,27 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                         totalDiterima = dataSebelumTopUp.totalDiterima,
                         totalPelunasan = dataSebelumTopUp.totalPelunasan,
                         tenor = dataSebelumTopUp.tenor,
-                        tanggalPengajuan = dataSebelumTopUp.tanggalPengajuan
+                        tanggalPengajuan = dataSebelumTopUp.tanggalPengajuan,
+                        status = existingPelanggan.status,
+                        statusPencairanSimpanan = existingPelanggan.statusPencairanSimpanan,
+                        tanggalLunasCicilan = existingPelanggan.tanggalLunasCicilan,
+                        tanggalPencairanSimpanan = existingPelanggan.tanggalPencairanSimpanan,
+                        tanggalPencairan = existingPelanggan.tanggalPencairan,
+                        dicairkanOleh = existingPelanggan.dicairkanOleh,
+                        tarikTabungan = existingPelanggan.tarikTabungan,
+                        besarPinjamanDiajukan = existingPelanggan.besarPinjamanDiajukan,
+                        jasaPinjaman = existingPelanggan.jasaPinjaman,
+                        tipePinjaman = existingPelanggan.tipePinjaman,
+                        statusKhusus = existingPelanggan.statusKhusus,
+                        catatanStatusKhusus = existingPelanggan.catatanStatusKhusus,
+                        tanggalStatusKhusus = existingPelanggan.tanggalStatusKhusus,
+                        diberiTandaOleh = existingPelanggan.diberiTandaOleh,
+                        statusSerahTerima = existingPelanggan.statusSerahTerima,
+                        tanggalSerahTerima = existingPelanggan.tanggalSerahTerima,
+                        fotoSerahTerimaUrl = existingPelanggan.fotoSerahTerimaUrl,
+                        pendingFotoSerahTerimaUri = existingPelanggan.pendingFotoSerahTerimaUri,
+                        pembayaranList = existingPelanggan.pembayaranList,
+                        hasilSimulasiCicilan = existingPelanggan.hasilSimulasiCicilan
                     ),
 
                     // === Catatan Perubahan ===
@@ -4361,6 +4408,9 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                         )
 
                         val updatedPelanggan: Pelanggan
+                        // ✅ FIX #2: Kalau top-up ditolak → pakai updateChildren (field-specific)
+                        // agar pembayaran / index harian tidak ter-overwrite full-object.
+                        var rollbackMapOptional: Map<String, Any?>? = null
 
                         if (isPengawasApproved) {
                             Log.d("Approval", "✅ Pengawas approved - Final: APPROVED")
@@ -4405,32 +4455,28 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                             val pengawasAlasan = currentDualInfo.pengawasApproval.note.ifBlank { "Ditolak oleh Pengawas" }
 
                             if (isTopUp) {
-                                val dataSebelumTopUp = resolveDataSebelumTopUp(existing)
-                                if (dataSebelumTopUp != null) {
-                                    updatedPelanggan = existing.copy(
-                                        status = "Aktif",
-                                        dualApprovalInfo = updatedDualInfo,
-                                        pinjamanKe = dataSebelumTopUp.pinjamanKe,
-                                        besarPinjaman = dataSebelumTopUp.besarPinjaman,
-                                        admin = dataSebelumTopUp.admin,
-                                        simpanan = dataSebelumTopUp.simpanan,
-                                        totalDiterima = dataSebelumTopUp.totalDiterima,
-                                        totalPelunasan = dataSebelumTopUp.totalPelunasan,
-                                        tenor = dataSebelumTopUp.tenor,
-                                        tanggalPengajuan = dataSebelumTopUp.tanggalPengajuan,
-                                        hasilSimulasiCicilan = if (dataSebelumTopUp.tanggalPengajuan.isNotBlank() && dataSebelumTopUp.totalPelunasan > 0) {
-                                            generateCicilanKonsisten(dataSebelumTopUp.tanggalPengajuan, dataSebelumTopUp.tenor, dataSebelumTopUp.totalPelunasan)
-                                        } else existing.hasilSimulasiCicilan,
-                                        catatanApproval = "Pengajuan top-up ditolak oleh Pengawas: $pengawasAlasan",
-                                        tanggalApproval = tanggalSekarang,
-                                        disetujuiOleh = currentDualInfo.pengawasApproval.by,
-                                        sisaUtangLamaSebelumTopUp = 0,
-                                        totalPelunasanLamaSebelumTopUp = 0,
-                                        backupSebelumTopUp = null,
-                                        lastUpdated = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
-                                    )
+                                val rollback = buildRollbackTopUpFromBackup(
+                                    pelanggan = existing,
+                                    updatedDualInfo = updatedDualInfo,
+                                    catatanApproval = "Pengajuan top-up ditolak oleh Pengawas: $pengawasAlasan",
+                                    tanggalSekarang = tanggalSekarang,
+                                    by = currentDualInfo.pengawasApproval.by
+                                )
+                                if (rollback != null) {
+                                    rollbackMapOptional = rollback.first
+                                    updatedPelanggan = rollback.second
                                 } else {
                                     Log.e("Approval", "⚠️ Rollback fallback: backupSebelumTopUp & catatanPerubahanPinjaman keduanya tidak valid untuk ${existing.namaPanggilan} (${pelangganId})")
+                                    val nowTs = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
+                                    rollbackMapOptional = hashMapOf(
+                                        "status" to "Aktif",
+                                        "dualApprovalInfo" to updatedDualInfo,
+                                        "pinjamanKe" to (existing.pinjamanKe - 1),
+                                        "catatanApproval" to "Pengajuan top-up ditolak oleh Pengawas: $pengawasAlasan",
+                                        "tanggalApproval" to tanggalSekarang,
+                                        "disetujuiOleh" to currentDualInfo.pengawasApproval.by,
+                                        "lastUpdated" to nowTs
+                                    )
                                     updatedPelanggan = existing.copy(
                                         status = "Aktif",
                                         dualApprovalInfo = updatedDualInfo,
@@ -4438,7 +4484,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                                         catatanApproval = "Pengajuan top-up ditolak oleh Pengawas: $pengawasAlasan",
                                         tanggalApproval = tanggalSekarang,
                                         disetujuiOleh = currentDualInfo.pengawasApproval.by,
-                                        lastUpdated = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
+                                        lastUpdated = nowTs
                                     )
                                 }
                             } else {
@@ -4455,7 +4501,9 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                         }
 
                         val ref = database.child("pelanggan").child(adminUid).child(pelangganId)
-                        ref.setValue(updatedPelanggan)
+                        val writeTask = rollbackMapOptional?.let { ref.updateChildren(it) }
+                            ?: ref.setValue(updatedPelanggan)
+                        writeTask
                             .addOnSuccessListener {
                                 cabangId?.let { branchId ->
                                     database.child("pengajuan_approval").child(branchId)
@@ -5402,34 +5450,34 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
 
                         if (isTopUp) {
                             // TOP-UP DITOLAK: kembalikan ke data pinjaman sebelumnya
-                            val dataSebelumTopUp = resolveDataSebelumTopUp(pelanggan)
-                            val updatedPelanggan = if (dataSebelumTopUp != null) {
-                                pelanggan.copy(
-                                    status = "Aktif",
-                                    dualApprovalInfo = updatedDualInfo,
-                                    pinjamanKe = dataSebelumTopUp.pinjamanKe,
-                                    besarPinjaman = dataSebelumTopUp.besarPinjaman,
-                                    admin = dataSebelumTopUp.admin,
-                                    simpanan = dataSebelumTopUp.simpanan,
-                                    totalDiterima = dataSebelumTopUp.totalDiterima,
-                                    totalPelunasan = dataSebelumTopUp.totalPelunasan,
-                                    tenor = dataSebelumTopUp.tenor,
-                                    tanggalPengajuan = dataSebelumTopUp.tanggalPengajuan,
-                                    pembayaranList = pelanggan.pembayaranList,
-                                    hasilSimulasiCicilan = if (dataSebelumTopUp.tanggalPengajuan.isNotBlank() && dataSebelumTopUp.totalPelunasan > 0) {
-                                        generateCicilanKonsisten(dataSebelumTopUp.tanggalPengajuan, dataSebelumTopUp.tenor, dataSebelumTopUp.totalPelunasan)
-                                    } else pelanggan.hasilSimulasiCicilan,
-                                    catatanApproval = "Pengajuan top-up ditolak oleh Pimpinan: $alasan",
-                                    tanggalApproval = tanggalSekarang,
-                                    disetujuiOleh = pimpinanName,
-                                    sisaUtangLamaSebelumTopUp = 0,
-                                    totalPelunasanLamaSebelumTopUp = 0,
-                                    backupSebelumTopUp = null,
-                                    lastUpdated = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
-                                )
+                            // ✅ FIX #2: updateChildren field-specific (bukan setValue full-object)
+                            val rollback = buildRollbackTopUpFromBackup(
+                                pelanggan = pelanggan,
+                                updatedDualInfo = updatedDualInfo,
+                                catatanApproval = "Pengajuan top-up ditolak oleh Pimpinan: $alasan",
+                                tanggalSekarang = tanggalSekarang,
+                                by = pimpinanName
+                            )
+                            val rollbackMap: Map<String, Any?>
+                            val updatedPelanggan: Pelanggan
+                            if (rollback != null) {
+                                rollbackMap = rollback.first
+                                updatedPelanggan = rollback.second
                             } else {
                                 Log.e("Rejection", "⚠️ Rollback fallback: backupSebelumTopUp & catatanPerubahanPinjaman keduanya tidak valid untuk ${pelanggan.namaPanggilan} (${pelangganId})")
-                                pelanggan.copy(
+                                val nowTs = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
+                                rollbackMap = hashMapOf(
+                                    "status" to "Aktif",
+                                    "dualApprovalInfo" to updatedDualInfo,
+                                    "pinjamanKe" to (pelanggan.pinjamanKe - 1),
+                                    "catatanApproval" to "Pengajuan top-up ditolak oleh Pimpinan: $alasan",
+                                    "tanggalApproval" to tanggalSekarang,
+                                    "disetujuiOleh" to pimpinanName,
+                                    "sisaUtangLamaSebelumTopUp" to 0,
+                                    "totalPelunasanLamaSebelumTopUp" to 0,
+                                    "lastUpdated" to nowTs
+                                )
+                                updatedPelanggan = pelanggan.copy(
                                     status = "Aktif",
                                     dualApprovalInfo = updatedDualInfo,
                                     pinjamanKe = pelanggan.pinjamanKe - 1,
@@ -5438,11 +5486,11 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                                     disetujuiOleh = pimpinanName,
                                     sisaUtangLamaSebelumTopUp = 0,
                                     totalPelunasanLamaSebelumTopUp = 0,
-                                    lastUpdated = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
+                                    lastUpdated = nowTs
                                 )
                             }
                             database.child("pelanggan").child(pelanggan.adminUid).child(pelangganId)
-                                .setValue(updatedPelanggan)
+                                .updateChildren(rollbackMap)
                                 .addOnSuccessListener {
                                     createAdminNotification(
                                         adminUid = pelanggan.adminUid,
@@ -5518,6 +5566,9 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                         )
 
                         val updatedPelanggan: Pelanggan
+                        // ✅ FIX #2: Kalau top-up ditolak → pakai updateChildren (field-specific)
+                        // agar pembayaran / index harian tidak ter-overwrite full-object.
+                        var rollbackMapOptional: Map<String, Any?>? = null
 
                         if (isPengawasApproved) {
                             Log.d("Rejection", "✅ Pengawas approved - Final: APPROVED")
@@ -5557,32 +5608,28 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                             val pengawasAlasan = currentDualInfo.pengawasApproval.note.ifBlank { alasan }
 
                             if (isTopUp) {
-                                val dataSebelumTopUp = resolveDataSebelumTopUp(pelanggan)
-                                if (dataSebelumTopUp != null) {
-                                    updatedPelanggan = pelanggan.copy(
-                                        status = "Aktif",
-                                        dualApprovalInfo = updatedDualInfo,
-                                        pinjamanKe = dataSebelumTopUp.pinjamanKe,
-                                        besarPinjaman = dataSebelumTopUp.besarPinjaman,
-                                        admin = dataSebelumTopUp.admin,
-                                        simpanan = dataSebelumTopUp.simpanan,
-                                        totalDiterima = dataSebelumTopUp.totalDiterima,
-                                        totalPelunasan = dataSebelumTopUp.totalPelunasan,
-                                        tenor = dataSebelumTopUp.tenor,
-                                        tanggalPengajuan = dataSebelumTopUp.tanggalPengajuan,
-                                        hasilSimulasiCicilan = if (dataSebelumTopUp.tanggalPengajuan.isNotBlank() && dataSebelumTopUp.totalPelunasan > 0) {
-                                            generateCicilanKonsisten(dataSebelumTopUp.tanggalPengajuan, dataSebelumTopUp.tenor, dataSebelumTopUp.totalPelunasan)
-                                        } else pelanggan.hasilSimulasiCicilan,
-                                        catatanApproval = "Pengajuan top-up ditolak oleh Pengawas: $pengawasAlasan",
-                                        tanggalApproval = tanggalSekarang,
-                                        disetujuiOleh = currentDualInfo.pengawasApproval.by,
-                                        sisaUtangLamaSebelumTopUp = 0,
-                                        totalPelunasanLamaSebelumTopUp = 0,
-                                        backupSebelumTopUp = null,
-                                        lastUpdated = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
-                                    )
+                                val rollback = buildRollbackTopUpFromBackup(
+                                    pelanggan = pelanggan,
+                                    updatedDualInfo = updatedDualInfo,
+                                    catatanApproval = "Pengajuan top-up ditolak oleh Pengawas: $pengawasAlasan",
+                                    tanggalSekarang = tanggalSekarang,
+                                    by = currentDualInfo.pengawasApproval.by
+                                )
+                                if (rollback != null) {
+                                    rollbackMapOptional = rollback.first
+                                    updatedPelanggan = rollback.second
                                 } else {
                                     Log.e("Rejection", "⚠️ Rollback fallback: backupSebelumTopUp & catatanPerubahanPinjaman keduanya tidak valid untuk ${pelanggan.namaPanggilan} (${pelangganId})")
+                                    val nowTs = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
+                                    rollbackMapOptional = hashMapOf(
+                                        "status" to "Aktif",
+                                        "dualApprovalInfo" to updatedDualInfo,
+                                        "pinjamanKe" to (pelanggan.pinjamanKe - 1),
+                                        "catatanApproval" to "Pengajuan top-up ditolak oleh Pengawas: $pengawasAlasan",
+                                        "tanggalApproval" to tanggalSekarang,
+                                        "disetujuiOleh" to currentDualInfo.pengawasApproval.by,
+                                        "lastUpdated" to nowTs
+                                    )
                                     updatedPelanggan = pelanggan.copy(
                                         status = "Aktif",
                                         dualApprovalInfo = updatedDualInfo,
@@ -5590,7 +5637,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                                         catatanApproval = "Pengajuan top-up ditolak oleh Pengawas: $pengawasAlasan",
                                         tanggalApproval = tanggalSekarang,
                                         disetujuiOleh = currentDualInfo.pengawasApproval.by,
-                                        lastUpdated = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
+                                        lastUpdated = nowTs
                                     )
                                 }
                             } else {
@@ -5608,8 +5655,10 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
 
                         // Simpan ke Firebase
                         val adminUidToUse = pelanggan.adminUid.ifBlank { Firebase.auth.currentUser?.uid ?: "" }
-                        database.child("pelanggan").child(adminUidToUse).child(pelangganId)
-                            .setValue(updatedPelanggan)
+                        val pelangganRef = database.child("pelanggan").child(adminUidToUse).child(pelangganId)
+                        val writeTask = rollbackMapOptional?.let { pelangganRef.updateChildren(it) }
+                            ?: pelangganRef.setValue(updatedPelanggan)
+                        writeTask
                             .addOnSuccessListener {
                                 currentUserCabang.value?.let { branchId ->
                                     database.child("pengajuan_approval").child(branchId)
@@ -5786,34 +5835,35 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     // ==========================================
                     Log.d("Rejection", "🔄 Processing top-up rejection for: ${pelanggan.namaPanggilan}")
 
-                    val dataSebelumTopUp = resolveDataSebelumTopUp(pelanggan)
-
-                    val updatedPelanggan = if (dataSebelumTopUp != null) {
-                        pelanggan.copy(
-                            status = "Aktif",
-                            dualApprovalInfo = updatedDualInfo,
-                            pinjamanKe = dataSebelumTopUp.pinjamanKe,
-                            besarPinjaman = dataSebelumTopUp.besarPinjaman,
-                            admin = dataSebelumTopUp.admin,
-                            simpanan = dataSebelumTopUp.simpanan,
-                            totalDiterima = dataSebelumTopUp.totalDiterima,
-                            totalPelunasan = dataSebelumTopUp.totalPelunasan,
-                            tenor = dataSebelumTopUp.tenor,
-                            tanggalPengajuan = dataSebelumTopUp.tanggalPengajuan,
-                            pembayaranList = pelanggan.pembayaranList,
-                            hasilSimulasiCicilan = if (dataSebelumTopUp.tanggalPengajuan.isNotBlank() && dataSebelumTopUp.totalPelunasan > 0) {
-                                generateCicilanKonsisten(dataSebelumTopUp.tanggalPengajuan, dataSebelumTopUp.tenor, dataSebelumTopUp.totalPelunasan)
-                            } else pelanggan.hasilSimulasiCicilan,
-                            catatanApproval = "Pengajuan top-up ditolak: $alasan",
-                            tanggalApproval = tanggalSekarang,
-                            disetujuiOleh = pimpinanName,
-                            sisaUtangLamaSebelumTopUp = 0,
-                            totalPelunasanLamaSebelumTopUp = 0,
-                            backupSebelumTopUp = null
-                        )
+                    // ✅ FIX #2: updateChildren field-specific (bukan setValue full-object)
+                    // agar pembayaran & index turunan tidak ter-overwrite.
+                    val rollback = buildRollbackTopUpFromBackup(
+                        pelanggan = pelanggan,
+                        updatedDualInfo = updatedDualInfo,
+                        catatanApproval = "Pengajuan top-up ditolak: $alasan",
+                        tanggalSekarang = tanggalSekarang,
+                        by = pimpinanName
+                    )
+                    val rollbackMap: Map<String, Any?>
+                    val updatedPelanggan: Pelanggan
+                    if (rollback != null) {
+                        rollbackMap = rollback.first
+                        updatedPelanggan = rollback.second
                     } else {
                         Log.e("Rejection", "⚠️ Rollback fallback: backupSebelumTopUp & catatanPerubahanPinjaman keduanya tidak valid untuk ${pelanggan.namaPanggilan} (${pelangganId})")
-                        pelanggan.copy(
+                        val nowTs = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
+                        rollbackMap = hashMapOf(
+                            "status" to "Aktif",
+                            "dualApprovalInfo" to updatedDualInfo,
+                            "pinjamanKe" to (pelanggan.pinjamanKe - 1),
+                            "catatanApproval" to "Pengajuan top-up ditolak: $alasan",
+                            "tanggalApproval" to tanggalSekarang,
+                            "disetujuiOleh" to pimpinanName,
+                            "sisaUtangLamaSebelumTopUp" to 0,
+                            "totalPelunasanLamaSebelumTopUp" to 0,
+                            "lastUpdated" to nowTs
+                        )
+                        updatedPelanggan = pelanggan.copy(
                             status = "Aktif",
                             dualApprovalInfo = updatedDualInfo,
                             pinjamanKe = pelanggan.pinjamanKe - 1,
@@ -5821,12 +5871,13 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                             tanggalApproval = tanggalSekarang,
                             disetujuiOleh = pimpinanName,
                             sisaUtangLamaSebelumTopUp = 0,
-                            totalPelunasanLamaSebelumTopUp = 0
+                            totalPelunasanLamaSebelumTopUp = 0,
+                            lastUpdated = nowTs
                         )
                     }
 
                     database.child("pelanggan").child(pelanggan.adminUid)
-                        .child(pelangganId).setValue(updatedPelanggan)
+                        .child(pelangganId).updateChildren(rollbackMap)
                         .addOnSuccessListener {
                             createAdminNotification(
                                 adminUid = pelanggan.adminUid,
@@ -6086,6 +6137,128 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
             }
         }
         return extractDataSebelumTopUp(pelanggan.catatanPerubahanPinjaman)
+    }
+
+    /**
+     * Bangun update map (untuk RTDB updateChildren) + Pelanggan rollback (untuk
+     * sync state lokal) saat pengajuan top-up DITOLAK.
+     *
+     * Tujuan: kembalikan SEMUA field yang berubah saat top-up ke nilai
+     * sebelum top-up — tanpa menulis ulang seluruh node pelanggan
+     * (yang berisiko menimpa field lain yang ditulis trigger server).
+     *
+     * Sumber data: `pelanggan.backupSebelumTopUp` (struktur baru) dengan
+     * fallback ke `resolveDataSebelumTopUp` untuk record lama.
+     *
+     * Return null jika data backup tidak valid → caller harus fallback
+     * konservatif (mis. hanya update status + dualApprovalInfo).
+     */
+    private fun buildRollbackTopUpFromBackup(
+        pelanggan: Pelanggan,
+        updatedDualInfo: DualApprovalInfo,
+        catatanApproval: String,
+        tanggalSekarang: String,
+        by: String
+    ): Pair<Map<String, Any?>, Pelanggan>? {
+        val data = resolveDataSebelumTopUp(pelanggan) ?: return null
+        val backup = pelanggan.backupSebelumTopUp
+        val nowTs = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
+
+        // Status awal: prefer backup struktur baru (mendukung Lunas / Menunggu Pencairan).
+        // Fallback "Aktif" (perilaku lama) untuk record yang belum punya field status di backup.
+        val statusAwal = backup?.status?.takeIf { it.isNotBlank() } ?: "Aktif"
+        val pembayaranListAwal = backup?.pembayaranList?.takeIf { it.isNotEmpty() }
+            ?: pelanggan.pembayaranList
+        val hasilSimulasiAwal = backup?.hasilSimulasiCicilan?.takeIf { it.isNotEmpty() }
+            ?: if (data.tanggalPengajuan.isNotBlank() && data.totalPelunasan > 0) {
+                generateCicilanKonsisten(data.tanggalPengajuan, data.tenor, data.totalPelunasan)
+            } else pelanggan.hasilSimulasiCicilan
+        val besarDiajukanAwal = backup?.besarPinjamanDiajukan?.takeIf { it > 0 } ?: data.besarPinjaman
+        val jasaAwal = backup?.jasaPinjaman?.takeIf { it > 0 } ?: pelanggan.jasaPinjaman
+        val tipeAwal = backup?.tipePinjaman?.takeIf { it.isNotBlank() } ?: pelanggan.tipePinjaman
+
+        val rollbackPelanggan = pelanggan.copy(
+            status = statusAwal,
+            dualApprovalInfo = updatedDualInfo,
+            pinjamanKe = data.pinjamanKe,
+            besarPinjaman = data.besarPinjaman,
+            besarPinjamanDiajukan = besarDiajukanAwal,
+            admin = data.admin,
+            simpanan = data.simpanan,
+            jasaPinjaman = jasaAwal,
+            totalDiterima = data.totalDiterima,
+            totalPelunasan = data.totalPelunasan,
+            tenor = data.tenor,
+            tanggalPengajuan = data.tanggalPengajuan,
+            tipePinjaman = tipeAwal,
+            statusPencairanSimpanan = backup?.statusPencairanSimpanan ?: "",
+            tanggalLunasCicilan = backup?.tanggalLunasCicilan ?: "",
+            tanggalPencairanSimpanan = backup?.tanggalPencairanSimpanan ?: "",
+            tanggalPencairan = backup?.tanggalPencairan ?: pelanggan.tanggalPencairan,
+            dicairkanOleh = backup?.dicairkanOleh ?: pelanggan.dicairkanOleh,
+            tarikTabungan = backup?.tarikTabungan ?: 0,
+            statusKhusus = backup?.statusKhusus ?: "",
+            catatanStatusKhusus = backup?.catatanStatusKhusus ?: "",
+            tanggalStatusKhusus = backup?.tanggalStatusKhusus ?: "",
+            diberiTandaOleh = backup?.diberiTandaOleh ?: "",
+            statusSerahTerima = backup?.statusSerahTerima ?: "",
+            tanggalSerahTerima = backup?.tanggalSerahTerima ?: "",
+            fotoSerahTerimaUrl = backup?.fotoSerahTerimaUrl ?: "",
+            pendingFotoSerahTerimaUri = backup?.pendingFotoSerahTerimaUri ?: "",
+            pembayaranList = pembayaranListAwal,
+            hasilSimulasiCicilan = hasilSimulasiAwal,
+            catatanApproval = catatanApproval,
+            tanggalApproval = tanggalSekarang,
+            disetujuiOleh = by,
+            sisaUtangLamaSebelumTopUp = 0,
+            totalPelunasanLamaSebelumTopUp = 0,
+            backupSebelumTopUp = null,
+            lastUpdated = nowTs
+        )
+
+        // Map untuk RTDB.updateChildren — HANYA field yang di-rollback.
+        // Field yang tidak disebut di sini (mis. pembayaran terbaru yang
+        // ditulis trigger server) tidak ter-overwrite.
+        val map: Map<String, Any?> = hashMapOf(
+            "status" to rollbackPelanggan.status,
+            "dualApprovalInfo" to rollbackPelanggan.dualApprovalInfo,
+            "pinjamanKe" to rollbackPelanggan.pinjamanKe,
+            "besarPinjaman" to rollbackPelanggan.besarPinjaman,
+            "besarPinjamanDiajukan" to rollbackPelanggan.besarPinjamanDiajukan,
+            "admin" to rollbackPelanggan.admin,
+            "simpanan" to rollbackPelanggan.simpanan,
+            "jasaPinjaman" to rollbackPelanggan.jasaPinjaman,
+            "totalDiterima" to rollbackPelanggan.totalDiterima,
+            "totalPelunasan" to rollbackPelanggan.totalPelunasan,
+            "tenor" to rollbackPelanggan.tenor,
+            "tanggalPengajuan" to rollbackPelanggan.tanggalPengajuan,
+            "tipePinjaman" to rollbackPelanggan.tipePinjaman,
+            "statusPencairanSimpanan" to rollbackPelanggan.statusPencairanSimpanan,
+            "tanggalLunasCicilan" to rollbackPelanggan.tanggalLunasCicilan,
+            "tanggalPencairanSimpanan" to rollbackPelanggan.tanggalPencairanSimpanan,
+            "tanggalPencairan" to rollbackPelanggan.tanggalPencairan,
+            "dicairkanOleh" to rollbackPelanggan.dicairkanOleh,
+            "tarikTabungan" to rollbackPelanggan.tarikTabungan,
+            "statusKhusus" to rollbackPelanggan.statusKhusus,
+            "catatanStatusKhusus" to rollbackPelanggan.catatanStatusKhusus,
+            "tanggalStatusKhusus" to rollbackPelanggan.tanggalStatusKhusus,
+            "diberiTandaOleh" to rollbackPelanggan.diberiTandaOleh,
+            "statusSerahTerima" to rollbackPelanggan.statusSerahTerima,
+            "tanggalSerahTerima" to rollbackPelanggan.tanggalSerahTerima,
+            "fotoSerahTerimaUrl" to rollbackPelanggan.fotoSerahTerimaUrl,
+            "pendingFotoSerahTerimaUri" to rollbackPelanggan.pendingFotoSerahTerimaUri,
+            "pembayaranList" to rollbackPelanggan.pembayaranList,
+            "hasilSimulasiCicilan" to rollbackPelanggan.hasilSimulasiCicilan,
+            "catatanApproval" to rollbackPelanggan.catatanApproval,
+            "tanggalApproval" to rollbackPelanggan.tanggalApproval,
+            "disetujuiOleh" to rollbackPelanggan.disetujuiOleh,
+            "sisaUtangLamaSebelumTopUp" to 0,
+            "totalPelunasanLamaSebelumTopUp" to 0,
+            "backupSebelumTopUp" to null,
+            "lastUpdated" to nowTs
+        )
+
+        return map to rollbackPelanggan
     }
 
     fun generateCicilanKonsisten(tanggalPengajuan: String, tenor: Int, totalPelunasan: Int): List<SimulasiCicilan> {
@@ -7194,6 +7367,9 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
 
                     // Backup terstruktur untuk rollback saat pengajuan ditolak.
                     // Ditulis pada write yang sama (tidak menambah RTDB write).
+                    // Field tambahan (status, pembayaranList, dll) wajib agar
+                    // reject top-up bisa kembalikan nasabah ke layar yang
+                    // benar (Aktif / Lunas / Menunggu Pencairan).
                     backupSebelumTopUp = BackupTopUpData(
                         pinjamanKe = dataSebelumTopUp.pinjamanKe,
                         besarPinjaman = dataSebelumTopUp.besarPinjaman,
@@ -7202,7 +7378,27 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                         totalDiterima = dataSebelumTopUp.totalDiterima,
                         totalPelunasan = dataSebelumTopUp.totalPelunasan,
                         tenor = dataSebelumTopUp.tenor,
-                        tanggalPengajuan = dataSebelumTopUp.tanggalPengajuan
+                        tanggalPengajuan = dataSebelumTopUp.tanggalPengajuan,
+                        status = existingPelanggan.status,
+                        statusPencairanSimpanan = existingPelanggan.statusPencairanSimpanan,
+                        tanggalLunasCicilan = existingPelanggan.tanggalLunasCicilan,
+                        tanggalPencairanSimpanan = existingPelanggan.tanggalPencairanSimpanan,
+                        tanggalPencairan = existingPelanggan.tanggalPencairan,
+                        dicairkanOleh = existingPelanggan.dicairkanOleh,
+                        tarikTabungan = existingPelanggan.tarikTabungan,
+                        besarPinjamanDiajukan = existingPelanggan.besarPinjamanDiajukan,
+                        jasaPinjaman = existingPelanggan.jasaPinjaman,
+                        tipePinjaman = existingPelanggan.tipePinjaman,
+                        statusKhusus = existingPelanggan.statusKhusus,
+                        catatanStatusKhusus = existingPelanggan.catatanStatusKhusus,
+                        tanggalStatusKhusus = existingPelanggan.tanggalStatusKhusus,
+                        diberiTandaOleh = existingPelanggan.diberiTandaOleh,
+                        statusSerahTerima = existingPelanggan.statusSerahTerima,
+                        tanggalSerahTerima = existingPelanggan.tanggalSerahTerima,
+                        fotoSerahTerimaUrl = existingPelanggan.fotoSerahTerimaUrl,
+                        pendingFotoSerahTerimaUri = existingPelanggan.pendingFotoSerahTerimaUri,
+                        pembayaranList = existingPelanggan.pembayaranList,
+                        hasilSimulasiCicilan = existingPelanggan.hasilSimulasiCicilan
                     ),
 
                     catatanPerubahanPinjaman = "DATA_SEBELUM_TOPUP:" +
@@ -12293,47 +12489,35 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
 
                 if (isTopUp) {
                     // TOP-UP DITOLAK: kembalikan ke data pinjaman sebelumnya
-                    val dataSebelumTopUp = resolveDataSebelumTopUp(pelanggan)
-                    val updatedPelanggan = if (dataSebelumTopUp != null) {
-                        pelanggan.copy(
-                            status = "Aktif",
-                            dualApprovalInfo = updatedDualInfo,
-                            pinjamanKe = dataSebelumTopUp.pinjamanKe,
-                            besarPinjaman = dataSebelumTopUp.besarPinjaman,
-                            admin = dataSebelumTopUp.admin,
-                            simpanan = dataSebelumTopUp.simpanan,
-                            totalDiterima = dataSebelumTopUp.totalDiterima,
-                            totalPelunasan = dataSebelumTopUp.totalPelunasan,
-                            tenor = dataSebelumTopUp.tenor,
-                            tanggalPengajuan = dataSebelumTopUp.tanggalPengajuan,
-                            pembayaranList = pelanggan.pembayaranList,
-                            hasilSimulasiCicilan = if (dataSebelumTopUp.tanggalPengajuan.isNotBlank() && dataSebelumTopUp.totalPelunasan > 0) {
-                                generateCicilanKonsisten(dataSebelumTopUp.tanggalPengajuan, dataSebelumTopUp.tenor, dataSebelumTopUp.totalPelunasan)
-                            } else pelanggan.hasilSimulasiCicilan,
-                            catatanApproval = "Pengajuan top-up ditolak oleh Koordinator: $alasan",
-                            tanggalApproval = tanggalSekarang,
-                            disetujuiOleh = koordinatorName,
-                            sisaUtangLamaSebelumTopUp = 0,
-                            totalPelunasanLamaSebelumTopUp = 0,
-                            backupSebelumTopUp = null,
-                            lastUpdated = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
-                        )
+                    // ✅ FIX #2: updateChildren dengan field-specific map (bukan setValue full-object)
+                    // agar data turunan yang ditulis trigger server tidak ter-overwrite.
+                    val rollback = buildRollbackTopUpFromBackup(
+                        pelanggan = pelanggan,
+                        updatedDualInfo = updatedDualInfo,
+                        catatanApproval = "Pengajuan top-up ditolak oleh Koordinator: $alasan",
+                        tanggalSekarang = tanggalSekarang,
+                        by = koordinatorName
+                    )
+                    val rollbackMap: Map<String, Any?>
+                    if (rollback != null) {
+                        rollbackMap = rollback.first
                     } else {
                         Log.e("Rejection", "⚠️ Rollback fallback: backupSebelumTopUp & catatanPerubahanPinjaman keduanya tidak valid untuk ${pelanggan.namaPanggilan} (${pelangganId})")
-                        pelanggan.copy(
-                            status = "Aktif",
-                            dualApprovalInfo = updatedDualInfo,
-                            pinjamanKe = pelanggan.pinjamanKe - 1,
-                            catatanApproval = "Pengajuan top-up ditolak oleh Koordinator: $alasan",
-                            tanggalApproval = tanggalSekarang,
-                            disetujuiOleh = koordinatorName,
-                            sisaUtangLamaSebelumTopUp = 0,
-                            totalPelunasanLamaSebelumTopUp = 0,
-                            lastUpdated = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
+                        val nowTs = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
+                        rollbackMap = hashMapOf(
+                            "status" to "Aktif",
+                            "dualApprovalInfo" to updatedDualInfo,
+                            "pinjamanKe" to (pelanggan.pinjamanKe - 1),
+                            "catatanApproval" to "Pengajuan top-up ditolak oleh Koordinator: $alasan",
+                            "tanggalApproval" to tanggalSekarang,
+                            "disetujuiOleh" to koordinatorName,
+                            "sisaUtangLamaSebelumTopUp" to 0,
+                            "totalPelunasanLamaSebelumTopUp" to 0,
+                            "lastUpdated" to nowTs
                         )
                     }
                     database.child("pelanggan").child(adminUid).child(pelangganId)
-                        .setValue(updatedPelanggan)
+                        .updateChildren(rollbackMap)
                         .addOnSuccessListener {
                             createAdminNotification(
                                 adminUid = adminUid,
