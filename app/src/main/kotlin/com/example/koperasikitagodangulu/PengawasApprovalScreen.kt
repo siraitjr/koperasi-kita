@@ -1114,6 +1114,12 @@ private fun PengawasDetailPengajuanSheet(
         // ✅ PERBAIKAN: SECTION FOTO LENGKAP
         // =========================================================================
         DetailSection(title = "Dokumen Foto") {
+            // URL foto: prioritaskan pending (foto BARU top-up) di atas permanent.
+            val fotoKtpResolved = pelanggan.pendingFotoKtpUrl.ifBlank { pelanggan.fotoKtpUrl }
+            val fotoKtpSuamiResolved = pelanggan.pendingFotoKtpSuamiUrl.ifBlank { pelanggan.fotoKtpSuamiUrl }
+            val fotoKtpIstriResolved = pelanggan.pendingFotoKtpIstriUrl.ifBlank { pelanggan.fotoKtpIstriUrl }
+            val fotoNasabahResolved = pelanggan.pendingFotoNasabahUrl.ifBlank { pelanggan.fotoNasabahUrl }
+
             Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
 
                 // Row untuk KTP Suami & Istri
@@ -1130,13 +1136,13 @@ private fun PengawasDetailPengajuanSheet(
                             color = PengawasColors.getTextSecondary(isDark),
                             modifier = Modifier.padding(bottom = 4.dp)
                         )
-                        if (pelanggan.fotoKtpSuamiUrl.isNotBlank()) {
+                        if (fotoKtpSuamiResolved.isNotBlank()) {
                             Card(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .aspectRatio(1.5f)
                                     .clickable {
-                                        zoomImageUrl = pelanggan.fotoKtpSuamiUrl
+                                        zoomImageUrl = fotoKtpSuamiResolved
                                         zoomImageTitle = "Foto KTP Suami"
                                         showZoomDialog = true
                                     },
@@ -1144,7 +1150,7 @@ private fun PengawasDetailPengajuanSheet(
                                 elevation = CardDefaults.cardElevation(2.dp)
                             ) {
                                 AsyncImage(
-                                    model = pelanggan.fotoKtpSuamiUrl,
+                                    model = fotoKtpSuamiResolved,
                                     contentDescription = "Foto KTP Suami",
                                     modifier = Modifier.fillMaxSize(),
                                     contentScale = ContentScale.Crop
@@ -1164,13 +1170,13 @@ private fun PengawasDetailPengajuanSheet(
                             color = PengawasColors.getTextSecondary(isDark),
                             modifier = Modifier.padding(bottom = 4.dp)
                         )
-                        if (pelanggan.fotoKtpIstriUrl.isNotBlank()) {
+                        if (fotoKtpIstriResolved.isNotBlank()) {
                             Card(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .aspectRatio(1.5f)
                                     .clickable {
-                                        zoomImageUrl = pelanggan.fotoKtpIstriUrl
+                                        zoomImageUrl = fotoKtpIstriResolved
                                         zoomImageTitle = "Foto KTP Istri"
                                         showZoomDialog = true
                                     },
@@ -1178,7 +1184,7 @@ private fun PengawasDetailPengajuanSheet(
                                 elevation = CardDefaults.cardElevation(2.dp)
                             ) {
                                 AsyncImage(
-                                    model = pelanggan.fotoKtpIstriUrl,
+                                    model = fotoKtpIstriResolved,
                                     contentDescription = "Foto KTP Istri",
                                     modifier = Modifier.fillMaxSize(),
                                     contentScale = ContentScale.Crop
@@ -1198,13 +1204,13 @@ private fun PengawasDetailPengajuanSheet(
                     color = PengawasColors.getTextSecondary(isDark),
                     modifier = Modifier.padding(bottom = 4.dp)
                 )
-                if (pelanggan.fotoNasabahUrl.isNotBlank()) {
+                if (fotoNasabahResolved.isNotBlank()) {
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
                             .aspectRatio(1.6f)
                             .clickable {
-                                zoomImageUrl = pelanggan.fotoNasabahUrl
+                                zoomImageUrl = fotoNasabahResolved
                                 zoomImageTitle = "Foto Nasabah"
                                 showZoomDialog = true
                             },
@@ -1212,7 +1218,7 @@ private fun PengawasDetailPengajuanSheet(
                         elevation = CardDefaults.cardElevation(2.dp)
                     ) {
                         AsyncImage(
-                            model = pelanggan.fotoNasabahUrl,
+                            model = fotoNasabahResolved,
                             contentDescription = "Foto Nasabah",
                             modifier = Modifier.fillMaxSize(),
                             contentScale = ContentScale.Crop
@@ -1223,9 +1229,9 @@ private fun PengawasDetailPengajuanSheet(
                 }
 
                 // Foto KTP (fallback jika tidak ada KTP Suami/Istri)
-                if (pelanggan.fotoKtpUrl.isNotBlank() &&
-                    pelanggan.fotoKtpSuamiUrl.isBlank() &&
-                    pelanggan.fotoKtpIstriUrl.isBlank()) {
+                if (fotoKtpResolved.isNotBlank() &&
+                    fotoKtpSuamiResolved.isBlank() &&
+                    fotoKtpIstriResolved.isBlank()) {
                     Text(
                         "Foto KTP",
                         fontSize = 12.sp,
@@ -1238,7 +1244,7 @@ private fun PengawasDetailPengajuanSheet(
                             .fillMaxWidth()
                             .aspectRatio(1.6f)
                             .clickable {
-                                zoomImageUrl = pelanggan.fotoKtpUrl
+                                zoomImageUrl = fotoKtpResolved
                                 zoomImageTitle = "Foto KTP"
                                 showZoomDialog = true
                             },
@@ -1246,7 +1252,7 @@ private fun PengawasDetailPengajuanSheet(
                         elevation = CardDefaults.cardElevation(2.dp)
                     ) {
                         AsyncImage(
-                            model = pelanggan.fotoKtpUrl,
+                            model = fotoKtpResolved,
                             contentDescription = "Foto KTP",
                             modifier = Modifier.fillMaxSize(),
                             contentScale = ContentScale.Crop

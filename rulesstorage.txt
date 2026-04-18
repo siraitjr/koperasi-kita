@@ -14,13 +14,36 @@ service firebase.storage {
     // Fallback untuk sub-folder KTP yang lebih dalam
     match /ktp_images/{adminUid}/{allPaths=**} {
       allow read: if request.auth != null && request.auth.uid == adminUid;
-      allow create, update: if request.auth != null && 
+      allow create, update: if request.auth != null &&
                                request.auth.uid == adminUid &&
                                request.resource.size < 5 * 1024 * 1024 &&
                                request.resource.contentType.matches('image/.*');
       allow delete: if request.auth != null;
     }
-    
+
+    // Pending KTP Images (top-up menunggu approval)
+    // Struktur: ktp_images_pending/{adminUid}/{pelangganId}/{imageName}
+    // Read diberikan ke semua user terautentikasi karena Pimpinan/Koordinator/Pengawas
+    // perlu membaca foto saat approval dan saat commit pending → permanent.
+    // Write hanya admin pemilik. Delete oleh admin (rollback) atau Pimpinan (commit).
+    match /ktp_images_pending/{adminUid}/{pelangganId}/{imageName} {
+      allow read: if request.auth != null;
+      allow create, update: if request.auth != null &&
+                               request.auth.uid == adminUid &&
+                               request.resource.size < 5 * 1024 * 1024 &&
+                               request.resource.contentType.matches('image/.*');
+      allow delete: if request.auth != null;
+    }
+
+    match /ktp_images_pending/{adminUid}/{allPaths=**} {
+      allow read: if request.auth != null;
+      allow create, update: if request.auth != null &&
+                               request.auth.uid == adminUid &&
+                               request.resource.size < 5 * 1024 * 1024 &&
+                               request.resource.contentType.matches('image/.*');
+      allow delete: if request.auth != null;
+    }
+
     // ✅ Foto profil admin - Path: profile_photos/{userId}/profile.jpg
     match /profile_photos/{userId}/{fileName} {
       allow read: if request.auth != null;

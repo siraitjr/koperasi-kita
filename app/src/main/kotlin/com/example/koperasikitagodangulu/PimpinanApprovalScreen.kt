@@ -1272,6 +1272,13 @@ fun DetailPengajuanSheet(
             modifier = Modifier.padding(bottom = 12.dp)
         )
 
+        // URL foto: prioritaskan URL pending (foto BARU dari top-up yang menunggu approval).
+        // Kalau blank (mis. new loan tanpa top-up) → fallback ke URL permanent.
+        val fotoKtpResolved = pelanggan.pendingFotoKtpUrl.ifBlank { pelanggan.fotoKtpUrl }
+        val fotoKtpSuamiResolved = pelanggan.pendingFotoKtpSuamiUrl.ifBlank { pelanggan.fotoKtpSuamiUrl }
+        val fotoKtpIstriResolved = pelanggan.pendingFotoKtpIstriUrl.ifBlank { pelanggan.fotoKtpIstriUrl }
+        val fotoNasabahResolved = pelanggan.pendingFotoNasabahUrl.ifBlank { pelanggan.fotoNasabahUrl }
+
         // Tampilkan foto KTP berdasarkan tipe pinjaman
         when {
             // Untuk pinjaman di bawah 3jt (single KTP + Foto Nasabah)
@@ -1280,20 +1287,20 @@ fun DetailPengajuanSheet(
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
                     // Foto KTP
-                    if (pelanggan.fotoKtpUrl.isNotBlank()) {
+                    if (fotoKtpResolved.isNotBlank()) {
                         KtpPhotoSection(
                             title = "Foto KTP",
-                            imageUrl = pelanggan.fotoKtpUrl
+                            imageUrl = fotoKtpResolved
                         )
                     } else {
                         PhotoPlaceholder("Foto KTP tidak tersedia")
                     }
 
                     // ✅ PERBAIKAN: Tampilkan Foto Nasabah juga untuk < 3jt
-                    if (pelanggan.fotoNasabahUrl.isNotBlank()) {
+                    if (fotoNasabahResolved.isNotBlank()) {
                         KtpPhotoSection(
                             title = "Foto Nasabah",
-                            imageUrl = pelanggan.fotoNasabahUrl
+                            imageUrl = fotoNasabahResolved
                         )
                     } else {
                         PhotoPlaceholder("Foto Nasabah tidak tersedia")
@@ -1312,10 +1319,10 @@ fun DetailPengajuanSheet(
                     ) {
                         // Foto KTP Suami
                         Column(modifier = Modifier.weight(1f)) {
-                            if (pelanggan.fotoKtpSuamiUrl.isNotBlank()) {
+                            if (fotoKtpSuamiResolved.isNotBlank()) {
                                 KtpPhotoSection(
                                     title = "Foto KTP Suami",
-                                    imageUrl = pelanggan.fotoKtpSuamiUrl
+                                    imageUrl = fotoKtpSuamiResolved
                                 )
                             } else {
                                 PhotoPlaceholder("Foto KTP Suami tidak tersedia")
@@ -1324,10 +1331,10 @@ fun DetailPengajuanSheet(
 
                         // Foto KTP Istri
                         Column(modifier = Modifier.weight(1f)) {
-                            if (pelanggan.fotoKtpIstriUrl.isNotBlank()) {
+                            if (fotoKtpIstriResolved.isNotBlank()) {
                                 KtpPhotoSection(
                                     title = "Foto KTP Istri",
-                                    imageUrl = pelanggan.fotoKtpIstriUrl
+                                    imageUrl = fotoKtpIstriResolved
                                 )
                             } else {
                                 PhotoPlaceholder("Foto KTP Istri tidak tersedia")
@@ -1336,10 +1343,10 @@ fun DetailPengajuanSheet(
                     }
 
                     // Foto Nasabah
-                    if (pelanggan.fotoNasabahUrl.isNotBlank()) {
+                    if (fotoNasabahResolved.isNotBlank()) {
                         KtpPhotoSection(
                             title = "Foto Nasabah",
-                            imageUrl = pelanggan.fotoNasabahUrl
+                            imageUrl = fotoNasabahResolved
                         )
                     } else {
                         PhotoPlaceholder("Foto Nasabah tidak tersedia")
@@ -1504,20 +1511,20 @@ fun DetailPengajuanSheet(
                 Column(
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    if (pelanggan.fotoKtpUrl.isNotBlank()) {
+                    if (fotoKtpResolved.isNotBlank()) {
                         KtpPhotoSection(
                             title = "Foto KTP",
-                            imageUrl = pelanggan.fotoKtpUrl
+                            imageUrl = fotoKtpResolved
                         )
                     } else {
                         PhotoPlaceholder("Foto KTP tidak tersedia")
                     }
 
                     // ✅ PERBAIKAN: Tampilkan Foto Nasabah juga di fallback
-                    if (pelanggan.fotoNasabahUrl.isNotBlank()) {
+                    if (fotoNasabahResolved.isNotBlank()) {
                         KtpPhotoSection(
                             title = "Foto Nasabah",
-                            imageUrl = pelanggan.fotoNasabahUrl
+                            imageUrl = fotoNasabahResolved
                         )
                     }
                 }

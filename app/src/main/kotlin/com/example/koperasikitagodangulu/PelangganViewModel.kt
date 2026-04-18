@@ -211,6 +211,13 @@ data class Pelanggan(
     val fotoKtpIstriUrl: String = "",
     val fotoNasabahUrl: String = "",
     val fotoSerahTerimaUrl: String = "",
+    // URL foto BARU saat top-up sedang menunggu approval.
+    // Disimpan terpisah agar fotoKtpUrl/dst tetap pointing ke foto pinjaman aktif
+    // sampai approve final (commit pending → permanent + delete old) atau reject (clear).
+    val pendingFotoKtpUrl: String = "",
+    val pendingFotoKtpSuamiUrl: String = "",
+    val pendingFotoKtpIstriUrl: String = "",
+    val pendingFotoNasabahUrl: String = "",
     var hasilSimulasiCicilan: List<SimulasiCicilan> = emptyList(),
     val pendingFotoKtpUri: String = "",
     val pendingFotoKtpSuamiUri: String = "",
@@ -3587,35 +3594,35 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                 var pendingFotoNasabahUri = ""
 
                 if (isOnline()) {
-                    Log.d("KelolaKredit", "📤 ONLINE - Uploading foto...")
+                    Log.d("KelolaKredit", "📤 ONLINE - Uploading foto (PENDING path)...")
 
                     try {
                         when (tipePinjamanBaru) {
                             "dibawah_3jt" -> {
-                                // Upload foto KTP single
+                                // Upload foto KTP single → folder pending
                                 fotoKtpUri?.let {
-                                    newFotoKtpUrl = uploadFotoKtp(it, currentUid, pelangganId, "ktp") ?: ""
-                                    Log.d("KelolaKredit", "✅ Foto KTP uploaded: $newFotoKtpUrl")
+                                    newFotoKtpUrl = uploadFotoKtp(it, currentUid, pelangganId, "ktp", isPending = true) ?: ""
+                                    Log.d("KelolaKredit", "✅ Foto KTP uploaded (pending): $newFotoKtpUrl")
                                 }
                             }
                             "diatas_3jt" -> {
-                                // Upload foto KTP suami
+                                // Upload foto KTP suami → folder pending
                                 fotoKtpSuamiUri?.let {
-                                    newFotoKtpSuamiUrl = uploadFotoKtp(it, currentUid, pelangganId, "ktp_suami") ?: ""
-                                    Log.d("KelolaKredit", "✅ Foto KTP Suami uploaded: $newFotoKtpSuamiUrl")
+                                    newFotoKtpSuamiUrl = uploadFotoKtp(it, currentUid, pelangganId, "ktp_suami", isPending = true) ?: ""
+                                    Log.d("KelolaKredit", "✅ Foto KTP Suami uploaded (pending): $newFotoKtpSuamiUrl")
                                 }
-                                // Upload foto KTP istri
+                                // Upload foto KTP istri → folder pending
                                 fotoKtpIstriUri?.let {
-                                    newFotoKtpIstriUrl = uploadFotoKtp(it, currentUid, pelangganId, "ktp_istri") ?: ""
-                                    Log.d("KelolaKredit", "✅ Foto KTP Istri uploaded: $newFotoKtpIstriUrl")
+                                    newFotoKtpIstriUrl = uploadFotoKtp(it, currentUid, pelangganId, "ktp_istri", isPending = true) ?: ""
+                                    Log.d("KelolaKredit", "✅ Foto KTP Istri uploaded (pending): $newFotoKtpIstriUrl")
                                 }
                             }
                         }
 
-                        // Upload foto nasabah (untuk semua tipe)
+                        // Upload foto nasabah (untuk semua tipe) → folder pending
                         fotoNasabahUri?.let {
-                            newFotoNasabahUrl = uploadFotoKtp(it, currentUid, pelangganId, "nasabah") ?: ""
-                            Log.d("KelolaKredit", "✅ Foto Nasabah uploaded: $newFotoNasabahUrl")
+                            newFotoNasabahUrl = uploadFotoKtp(it, currentUid, pelangganId, "nasabah", isPending = true) ?: ""
+                            Log.d("KelolaKredit", "✅ Foto Nasabah uploaded (pending): $newFotoNasabahUrl")
                         }
                     } catch (e: Exception) {
                         Log.w("KelolaKredit", "⚠️ Gagal upload foto, simpan untuk nanti: ${e.message}")
@@ -3675,11 +3682,19 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     // === Tipe Pinjaman ===
                     tipePinjaman = tipePinjamanBaru,
 
-                    // === Foto URL (yang berhasil diupload) ===
-                    fotoKtpUrl = if (newFotoKtpUrl.isNotBlank()) newFotoKtpUrl else existingPelanggan.fotoKtpUrl,
-                    fotoKtpSuamiUrl = if (newFotoKtpSuamiUrl.isNotBlank()) newFotoKtpSuamiUrl else existingPelanggan.fotoKtpSuamiUrl,
-                    fotoKtpIstriUrl = if (newFotoKtpIstriUrl.isNotBlank()) newFotoKtpIstriUrl else existingPelanggan.fotoKtpIstriUrl,
-                    fotoNasabahUrl = if (newFotoNasabahUrl.isNotBlank()) newFotoNasabahUrl else existingPelanggan.fotoNasabahUrl,
+                    // === Foto URL pinjaman aktif (tetap di foto LAMA sampai approve final) ===
+                    // Foto baru ditulis ke pendingFoto*Url di bawah; akan dipromote ke field ini
+                    // saat approve final (commitPendingPhotosToPermanent) atau dihapus saat reject.
+                    fotoKtpUrl = existingPelanggan.fotoKtpUrl,
+                    fotoKtpSuamiUrl = existingPelanggan.fotoKtpSuamiUrl,
+                    fotoKtpIstriUrl = existingPelanggan.fotoKtpIstriUrl,
+                    fotoNasabahUrl = existingPelanggan.fotoNasabahUrl,
+
+                    // === Pending Foto URL (foto BARU top-up menunggu approval) ===
+                    pendingFotoKtpUrl = newFotoKtpUrl,
+                    pendingFotoKtpSuamiUrl = newFotoKtpSuamiUrl,
+                    pendingFotoKtpIstriUrl = newFotoKtpIstriUrl,
+                    pendingFotoNasabahUrl = newFotoNasabahUrl,
 
                     // === Pending Foto URI (untuk offline sync) ===
                     pendingFotoKtpUri = pendingFotoKtpUri,
@@ -4426,6 +4441,14 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                                 calculatePinjamanValues(finalAmountPhase3)
                             } else null
 
+                            // Commit foto pending → permanent saat approve final top-up.
+                            // Untuk new loan (pinjamanKe=1) semua pendingFoto*Url blank → no-op.
+                            val hasPendingPhotos = existing.pendingFotoKtpUrl.isNotBlank() ||
+                                existing.pendingFotoKtpSuamiUrl.isNotBlank() ||
+                                existing.pendingFotoKtpIstriUrl.isNotBlank() ||
+                                existing.pendingFotoNasabahUrl.isNotBlank()
+                            val committedPhotos = if (hasPendingPhotos) commitPendingPhotosToPermanent(existing) else CommittedPhotoUrls()
+
                             updatedPelanggan = existing.copy(
                                 status = "Disetujui",
                                 statusPencairanSimpanan = "",
@@ -4445,6 +4468,15 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                                 totalPelunasan = adjustedValues?.totalPelunasan ?: existing.totalPelunasan,
                                 totalDiterima = adjustedValues?.totalDiterima ?: existing.totalDiterima,
                                 tenor = finalTenorPhase3,
+                                // Promote pending URL → permanent URL (fallback ke URL lama kalau commit gagal).
+                                fotoKtpUrl = committedPhotos.fotoKtpUrl ?: existing.fotoKtpUrl,
+                                fotoKtpSuamiUrl = committedPhotos.fotoKtpSuamiUrl ?: existing.fotoKtpSuamiUrl,
+                                fotoKtpIstriUrl = committedPhotos.fotoKtpIstriUrl ?: existing.fotoKtpIstriUrl,
+                                fotoNasabahUrl = committedPhotos.fotoNasabahUrl ?: existing.fotoNasabahUrl,
+                                pendingFotoKtpUrl = "",
+                                pendingFotoKtpSuamiUrl = "",
+                                pendingFotoKtpIstriUrl = "",
+                                pendingFotoNasabahUrl = "",
                                 pembayaranList = pembayaranListBaru,
                                 lastUpdated = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
                             )
@@ -4667,6 +4699,13 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                         finalDecisionTimestamp = timestamp
                     )
 
+                    // Commit foto pending → permanent (khusus top-up <3jt yang punya pending photos).
+                    val hasPendingPhotosSingle = existing.pendingFotoKtpUrl.isNotBlank() ||
+                        existing.pendingFotoKtpSuamiUrl.isNotBlank() ||
+                        existing.pendingFotoKtpIstriUrl.isNotBlank() ||
+                        existing.pendingFotoNasabahUrl.isNotBlank()
+                    val committedPhotosSingle = if (hasPendingPhotosSingle) commitPendingPhotosToPermanent(existing) else CommittedPhotoUrls()
+
                     val updatedPelanggan = existing.copy(
                         status = "Disetujui",
                         statusPencairanSimpanan = "",
@@ -4693,6 +4732,15 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                         pembayaranList = pembayaranListBaru,
                         tenor = finalTenor,
                         hasilSimulasiCicilan = finalSimulasiCicilan,
+                        // Promote pending URL → permanent (fallback ke URL lama kalau commit gagal).
+                        fotoKtpUrl = committedPhotosSingle.fotoKtpUrl ?: existing.fotoKtpUrl,
+                        fotoKtpSuamiUrl = committedPhotosSingle.fotoKtpSuamiUrl ?: existing.fotoKtpSuamiUrl,
+                        fotoKtpIstriUrl = committedPhotosSingle.fotoKtpIstriUrl ?: existing.fotoKtpIstriUrl,
+                        fotoNasabahUrl = committedPhotosSingle.fotoNasabahUrl ?: existing.fotoNasabahUrl,
+                        pendingFotoKtpUrl = "",
+                        pendingFotoKtpSuamiUrl = "",
+                        pendingFotoKtpIstriUrl = "",
+                        pendingFotoNasabahUrl = "",
                         lastUpdated = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
                     )
 
@@ -5584,6 +5632,13 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                                 calculatePinjamanValues(finalAmountPhase3)
                             } else null
 
+                            // Commit foto pending → permanent untuk top-up yang akhirnya disetujui.
+                            val hasPendingPhotosR = pelanggan.pendingFotoKtpUrl.isNotBlank() ||
+                                pelanggan.pendingFotoKtpSuamiUrl.isNotBlank() ||
+                                pelanggan.pendingFotoKtpIstriUrl.isNotBlank() ||
+                                pelanggan.pendingFotoNasabahUrl.isNotBlank()
+                            val committedPhotosR = if (hasPendingPhotosR) commitPendingPhotosToPermanent(pelanggan) else CommittedPhotoUrls()
+
                             updatedPelanggan = pelanggan.copy(
                                 status = "Disetujui",
                                 dualApprovalInfo = updatedDualInfo,
@@ -5597,6 +5652,14 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                                 totalPelunasan = adjustedValues?.totalPelunasan ?: pelanggan.totalPelunasan,
                                 totalDiterima = adjustedValues?.totalDiterima ?: pelanggan.totalDiterima,
                                 tenor = finalTenorPhase3,
+                                fotoKtpUrl = committedPhotosR.fotoKtpUrl ?: pelanggan.fotoKtpUrl,
+                                fotoKtpSuamiUrl = committedPhotosR.fotoKtpSuamiUrl ?: pelanggan.fotoKtpSuamiUrl,
+                                fotoKtpIstriUrl = committedPhotosR.fotoKtpIstriUrl ?: pelanggan.fotoKtpIstriUrl,
+                                fotoNasabahUrl = committedPhotosR.fotoNasabahUrl ?: pelanggan.fotoNasabahUrl,
+                                pendingFotoKtpUrl = "",
+                                pendingFotoKtpSuamiUrl = "",
+                                pendingFotoKtpIstriUrl = "",
+                                pendingFotoNasabahUrl = "",
                                 lastUpdated = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date()),
                                 sisaUtangLamaSebelumTopUp = 0,
                                 totalPelunasanLamaSebelumTopUp = 0
@@ -6205,6 +6268,12 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
             tanggalSerahTerima = backup?.tanggalSerahTerima ?: "",
             fotoSerahTerimaUrl = backup?.fotoSerahTerimaUrl ?: "",
             pendingFotoSerahTerimaUri = backup?.pendingFotoSerahTerimaUri ?: "",
+            // Top-up ditolak → kosongkan URL foto pending (foto pinjaman aktif lama
+            // tetap utuh di fotoKtpUrl dst).
+            pendingFotoKtpUrl = "",
+            pendingFotoKtpSuamiUrl = "",
+            pendingFotoKtpIstriUrl = "",
+            pendingFotoNasabahUrl = "",
             pembayaranList = pembayaranListAwal,
             hasilSimulasiCicilan = hasilSimulasiAwal,
             catatanApproval = catatanApproval,
@@ -6215,6 +6284,10 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
             backupSebelumTopUp = null,
             lastUpdated = nowTs
         )
+
+        // Fire-and-forget: hapus file foto pending dari Storage agar tidak menumpuk.
+        // Jika file tidak ada atau gagal hapus, abaikan (tidak boleh menggagalkan rollback RTDB).
+        deletePendingKtpFilesBestEffort(pelanggan)
 
         // Map untuk RTDB.updateChildren — HANYA field yang di-rollback.
         // Field yang tidak disebut di sini (mis. pembayaran terbaru yang
@@ -6247,6 +6320,10 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
             "tanggalSerahTerima" to rollbackPelanggan.tanggalSerahTerima,
             "fotoSerahTerimaUrl" to rollbackPelanggan.fotoSerahTerimaUrl,
             "pendingFotoSerahTerimaUri" to rollbackPelanggan.pendingFotoSerahTerimaUri,
+            "pendingFotoKtpUrl" to "",
+            "pendingFotoKtpSuamiUrl" to "",
+            "pendingFotoKtpIstriUrl" to "",
+            "pendingFotoNasabahUrl" to "",
             "pembayaranList" to rollbackPelanggan.pembayaranList,
             "hasilSimulasiCicilan" to rollbackPelanggan.hasilSimulasiCicilan,
             "catatanApproval" to rollbackPelanggan.catatanApproval,
@@ -9373,12 +9450,16 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
         imageUri: Uri,
         adminUid: String,
         pelangganId: String,
-        jenisKtp: String = "utama"
+        jenisKtp: String = "utama",
+        isPending: Boolean = false
     ): String? {
         return withContext(Dispatchers.IO) {
             try {
                 val storageRef = Firebase.storage.reference
-                val ktpRef = storageRef.child("ktp_images/$adminUid/$pelangganId/ktp_$jenisKtp.jpg")
+                // Top-up: upload ke folder pending agar foto pinjaman aktif lama tidak tertimpa
+                // sebelum approval selesai.
+                val folder = if (isPending) "ktp_images_pending" else "ktp_images"
+                val ktpRef = storageRef.child("$folder/$adminUid/$pelangganId/ktp_$jenisKtp.jpg")
 
                 // ✅ KOMPRESI ADVANCED
                 val compressedImage = compressImageForKtp(imageUri)
@@ -9427,6 +9508,124 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                 null
             }
         }
+    }
+
+    /**
+     * Hapus file foto KTP/nasabah yang tersimpan di folder pending Storage
+     * (ktp_images_pending/...). Dipakai saat top-up ditolak.
+     *
+     * Best-effort: kegagalan tidak boleh menggagalkan rollback RTDB.
+     * Hanya mencoba hapus untuk varian jenisKtp yang memang punya URL pending.
+     */
+    private fun deletePendingKtpFilesBestEffort(pelanggan: Pelanggan) {
+        val adminUid = pelanggan.adminUid.ifBlank { Firebase.auth.currentUser?.uid ?: return }
+        val pelangganId = pelanggan.id.ifBlank { return }
+        val jenisList = buildList {
+            if (pelanggan.pendingFotoKtpUrl.isNotBlank()) add("ktp")
+            if (pelanggan.pendingFotoKtpSuamiUrl.isNotBlank()) add("ktp_suami")
+            if (pelanggan.pendingFotoKtpIstriUrl.isNotBlank()) add("ktp_istri")
+            if (pelanggan.pendingFotoNasabahUrl.isNotBlank()) add("nasabah")
+        }
+        if (jenisList.isEmpty()) return
+        viewModelScope.launch(Dispatchers.IO) {
+            val storageRef = Firebase.storage.reference
+            jenisList.forEach { jenis ->
+                try {
+                    val ref = storageRef.child("ktp_images_pending/$adminUid/$pelangganId/ktp_$jenis.jpg")
+                    withTimeoutOrNull(10_000L) { ref.delete().await() }
+                    Log.d("PendingKtp", "🧹 Deleted pending: $jenis")
+                } catch (e: Exception) {
+                    Log.w("PendingKtp", "⚠️ Gagal hapus pending $jenis: ${e.message}")
+                }
+            }
+        }
+    }
+
+    /**
+     * URL foto permanent baru setelah commit pending → permanent.
+     * Field null berarti tidak ada foto pending untuk jenis tersebut (URL permanent
+     * lama dipertahankan apa adanya).
+     */
+    data class CommittedPhotoUrls(
+        val fotoKtpUrl: String? = null,
+        val fotoKtpSuamiUrl: String? = null,
+        val fotoKtpIstriUrl: String? = null,
+        val fotoNasabahUrl: String? = null
+    )
+
+    /**
+     * Promote foto pending → permanent saat approve final top-up.
+     *
+     * Per jenis foto yang punya URL pending:
+     * 1. Download bytes dari Storage path pending (ktp_images_pending/...).
+     * 2. Upload ulang ke Storage path permanent (ktp_images/...) — overwrite foto lama.
+     * 3. Hapus file pending.
+     * 4. Return downloadUrl baru dari path permanent.
+     *
+     * Foto lama otomatis tergantikan karena path permanent deterministik
+     * (ktp_$jenisKtp.jpg). Bandwidth 2x (download + upload) adalah tradeoff untuk
+     * struktur folder yang rapi.
+     *
+     * Jika gagal di tengah proses, field yang gagal dikembalikan `null` →
+     * caller harus fallback ke URL permanent lama (tidak mengganggu aliran approve).
+     */
+    private suspend fun commitPendingPhotosToPermanent(
+        pelanggan: Pelanggan
+    ): CommittedPhotoUrls = withContext(Dispatchers.IO) {
+        val adminUid = pelanggan.adminUid.ifBlank {
+            Firebase.auth.currentUser?.uid ?: return@withContext CommittedPhotoUrls()
+        }
+        val pelangganId = pelanggan.id.ifBlank { return@withContext CommittedPhotoUrls() }
+        val storageRef = Firebase.storage.reference
+
+        suspend fun moveOne(jenis: String, pendingUrl: String): String? {
+            if (pendingUrl.isBlank()) return null
+            return try {
+                val pendingRef = storageRef.child("ktp_images_pending/$adminUid/$pelangganId/ktp_$jenis.jpg")
+                val permanentRef = storageRef.child("ktp_images/$adminUid/$pelangganId/ktp_$jenis.jpg")
+                // Max 1 MB — aman karena uploadFotoKtp sudah cap 700KB setelah kompresi.
+                val bytes = withTimeoutOrNull(60_000L) {
+                    pendingRef.getBytes(1_024L * 1024L).await()
+                } ?: run {
+                    Log.w("CommitKtp", "⚠️ download pending $jenis timeout/null")
+                    return null
+                }
+                val metadata = StorageMetadata.Builder()
+                    .setCustomMetadata("adminUid", adminUid)
+                    .setCustomMetadata("pelangganId", pelangganId)
+                    .setCustomMetadata("committedAt", System.currentTimeMillis().toString())
+                    .setContentType("image/jpeg")
+                    .build()
+                val uploadTask = permanentRef.putBytes(bytes, metadata)
+                val ok = withTimeoutOrNull(60_000L) { uploadTask.await() }
+                if (ok == null) {
+                    Log.w("CommitKtp", "⚠️ upload permanent $jenis timeout")
+                    return null
+                }
+                val url = withTimeoutOrNull(15_000L) { permanentRef.downloadUrl.await() }?.toString()
+                if (url == null) {
+                    Log.w("CommitKtp", "⚠️ downloadUrl permanent $jenis null")
+                    return null
+                }
+                // Best-effort: hapus pending, biarkan gagal tidak menggagalkan commit.
+                try {
+                    withTimeoutOrNull(10_000L) { pendingRef.delete().await() }
+                } catch (e: Exception) {
+                    Log.w("CommitKtp", "⚠️ gagal hapus pending $jenis: ${e.message}")
+                }
+                url
+            } catch (e: Exception) {
+                Log.e("CommitKtp", "❌ exception commit $jenis: ${e.message}")
+                null
+            }
+        }
+
+        CommittedPhotoUrls(
+            fotoKtpUrl = moveOne("ktp", pelanggan.pendingFotoKtpUrl),
+            fotoKtpSuamiUrl = moveOne("ktp_suami", pelanggan.pendingFotoKtpSuamiUrl),
+            fotoKtpIstriUrl = moveOne("ktp_istri", pelanggan.pendingFotoKtpIstriUrl),
+            fotoNasabahUrl = moveOne("nasabah", pelanggan.pendingFotoNasabahUrl)
+        )
     }
 
     private fun compressImageForKtp(uri: Uri): ByteArray {

@@ -23,6 +23,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import android.widget.Toast
 import androidx.navigation.NavController
 import java.text.SimpleDateFormat
 import java.util.*
@@ -1210,6 +1211,15 @@ fun KelolaKreditScreen(
                             Log.d("KelolaKredit", "🎯 TOMBOL TAMBAH PINJAMAN DITEKAN")
                             showConfirmation = true
                         } else {
+                            // Toast eksplisit untuk foto agar user sadar harus re-scan KTP + nasabah baru
+                            // (tidak boleh pakai foto lama dari pinjaman sebelumnya).
+                            if (!isFotoValid) {
+                                Toast.makeText(
+                                    context,
+                                    "Lengkapi data (foto KTP dan foto nasabah)",
+                                    Toast.LENGTH_LONG
+                                ).show()
+                            }
                             errorMessage = when {
                                 pinjamanBaruInt <= 0 -> "Jumlah pinjaman harus lebih dari 0"
                                 tenorBaruInt !in 24..60 -> "Tenor harus antara 24-60 hari"
@@ -1225,6 +1235,8 @@ fun KelolaKreditScreen(
                     shape = RoundedCornerShape(14.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = Color.Transparent),
                     contentPadding = PaddingValues(),
+                    // Tetap clickable agar Toast bisa tampil saat foto belum lengkap.
+                    // Visual disable sudah di-handle via gradient di Box di bawah.
                     enabled = !isUploading
                 ) {
                     Box(
