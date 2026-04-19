@@ -248,6 +248,53 @@ class SyncManager private constructor(private val context: Context) {
         }
     }
 
+    suspend fun removeStatusKhususDirect(
+        cabangId: String,
+        pelangganId: String,
+        adminUid: String
+    ): SaveResult = withContext(Dispatchers.IO) {
+        val path = "pelanggan_status_khusus/$cabangId/$pelangganId"
+
+        Log.d(TAG, "🚀 removeStatusKhususDirect() CALLED!")
+
+        try {
+            val operation = PendingOperation(
+                operationType = "REMOVE_STATUS_KHUSUS",
+                firebasePath = path,
+                dataJson = "{}",
+                adminUid = adminUid,
+                pelangganId = pelangganId,
+                status = "PENDING"
+            )
+            val operationId = dao.insert(operation)
+            Log.d(TAG, "🗑️ [STEP 1] ✅ REMOVE STATUS_KHUSUS SAVED TO ROOM DB! opId=$operationId")
+
+            if (isOnline()) {
+                try {
+                    dao.updateStatus(operationId, "SYNCING")
+                    firebase.getReference(path).removeValue().await()
+                    dao.updateStatus(operationId, "SUCCESS")
+                    Log.d(TAG, "✅ REMOVE STATUS_KHUSUS SYNCED!")
+                    SaveResult.Success
+                } catch (e: Exception) {
+                    Log.e(TAG, "❌ Firebase remove failed: ${e.message}")
+                    dao.updateStatus(operationId, "PENDING", e.message)
+                    SyncForegroundService.startSync(context)
+                    SyncWorker.triggerImmediateSync(context)
+                    SaveResult.Queued
+                }
+            } else {
+                Log.d(TAG, "📵 OFFLINE! Remove saved to Room DB.")
+                SyncForegroundService.startSync(context)
+                SyncWorker.triggerImmediateSync(context)
+                SaveResult.Queued
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "❌❌❌ CRITICAL ERROR: ${e.message}")
+            SaveResult.Error(e.message ?: "Unknown error")
+        }
+    }
+
     suspend fun updatePelangganDirect(
         adminUid: String,
         pelangganId: String,
@@ -612,6 +659,9 @@ class SyncManager private constructor(private val context: Context) {
                     }
                     "UPDATE_PELANGGAN" -> {
                         ref.updateChildren(data as Map<String, Any?>).await()
+                    }
+                    "REMOVE_STATUS_KHUSUS" -> {
+                        ref.removeValue().await()
                     }
                     else -> {
                         ref.setValue(data).await()

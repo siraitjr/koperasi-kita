@@ -3813,20 +3813,16 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                 // ========== SIMPAN KE FIREBASE ==========
                 simpanPelangganKeFirebase(updatedPelanggan,
                     onSuccess = {
-                        // Update simpanan di path terpisah juga
-                        database.child("pelanggan")
-                            .child(existingPelanggan.adminUid)
-                            .child(pelangganId)
-                            .child("simpanan")
-                            .setValue(totalSimpananBaru)
-
-                        // ✅ Hapus dari pelanggan_status_khusus jika ada
+                        // ✅ Hapus dari pelanggan_status_khusus jika ada (offline-first via Room queue)
                         val cabangId = _currentUserCabang.value ?: ""
                         if (cabangId.isNotBlank()) {
-                            database.child("pelanggan_status_khusus")
-                                .child(cabangId)
-                                .child(pelangganId)
-                                .removeValue()
+                            viewModelScope.launch {
+                                offlineRepo.removeStatusKhusus(
+                                    cabangId = cabangId,
+                                    pelangganId = pelangganId,
+                                    adminUid = existingPelanggan.adminUid
+                                )
+                            }
                         }
 
                         Log.d("KelolaKredit", "✅ Data berhasil disimpan ke Firebase")
@@ -7505,11 +7501,6 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
 
                 simpanPelangganKeFirebase(updatedPelanggan,
                     onSuccess = {
-                        database.child("pelanggan")
-                            .child(existingPelanggan.adminUid)
-                            .child(pelangganId)
-                            .child("simpanan")
-                            .setValue(totalSimpananBaru)
                         onSuccess?.invoke()
                     },
                     onFailure = { exception ->

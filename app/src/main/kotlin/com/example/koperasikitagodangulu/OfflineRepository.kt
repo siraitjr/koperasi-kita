@@ -158,6 +158,28 @@ class OfflineRepository private constructor(context: Context) {
         )
     }
 
+    /**
+     * Hapus entry pelanggan_status_khusus (offline-first)
+     */
+    suspend fun removeStatusKhusus(
+        cabangId: String,
+        pelangganId: String,
+        adminUid: String
+    ): SaveResult {
+        Log.d(TAG, "========================================")
+        Log.d(TAG, "🚀 removeStatusKhusus() CALLED!")
+        Log.d(TAG, "   cabangId: $cabangId")
+        Log.d(TAG, "   pelangganId: $pelangganId")
+        Log.d(TAG, "   adminUid: $adminUid")
+        Log.d(TAG, "========================================")
+
+        return syncManager.removeStatusKhususDirect(
+            cabangId = cabangId,
+            pelangganId = pelangganId,
+            adminUid = adminUid
+        )
+    }
+
     // =========================================================================
     // STATUS & SYNC
     // =========================================================================
