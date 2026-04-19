@@ -89,7 +89,14 @@ fun RingkasanDashboardScreen(
 
     // Animation state
     var isVisible by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) { isVisible = true }
+    LaunchedEffect(Unit) {
+        isVisible = true
+        // Sumber data tambahan: pembayaran_harian (nasabah sudah dihapus,
+        // mis. setelah cairkanSimpanan). Dipakai agar storting tetap
+        // tercatat walau nasabah sudah tidak ada di daftarPelanggan.
+        viewModel.loadPelunasanEksternalHariIni()
+    }
+    val pelunasanEksternal by viewModel.pelunasanEksternalHariIni.collectAsState()
 
     // Calculations
     val dateFormat = SimpleDateFormat("dd MMM yyyy", Locale("in", "ID"))
@@ -170,7 +177,11 @@ fun RingkasanDashboardScreen(
         .filter { it.pinjamanKe > 1 && it.sisaUtangLamaSebelumTopUp > 0 && it.tanggalPencairan == today && it.status == "Aktif" }
         .sumOf { it.sisaUtangLamaSebelumTopUp.toLong() }
 
-    val totalTagihanHariIni: Long = totalTagihanDariCicilan + pelunasanSisaUtangHariIni
+    // Pelunasan yang nasabahnya sudah tidak ada di daftarPelanggan
+    // (misal: cairkanSimpanan → nasabah dihapus). Dibaca dari pembayaran_harian.
+    val pelunasanEksternalHariIni: Long = pelunasanEksternal.sumOf { it.jumlah }
+
+    val totalTagihanHariIni: Long = totalTagihanDariCicilan + pelunasanSisaUtangHariIni + pelunasanEksternalHariIni
 
     // ✅ Target harian = besarPinjaman × 3% (nasabah > 3 bulan sudah difilter di nasabahAktif)
     val targetHarian: Long = nasabahAktif.sumOf { pelanggan ->

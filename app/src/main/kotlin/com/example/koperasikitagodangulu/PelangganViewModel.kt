@@ -102,9 +102,10 @@ import kotlinx.coroutines.tasks.await
 data class Pembayaran(
     var jumlah: Int = 0,
     var tanggal: String = "",
+    var keterangan: String = "",
     var subPembayaran: List<SubPembayaran> = emptyList()
 ) {
-    constructor() : this(0, "", emptyList())
+    constructor() : this(0, "", "", emptyList())
 }
 
 data class CabangSummary(
@@ -659,6 +660,12 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
     val biayaAwalHariIni: StateFlow<Int> = _biayaAwalHariIni.asStateFlow()
     private val _kasirUangKasHariIni = MutableStateFlow<List<Triple<String, String, Int>>>(emptyList())
     val kasirUangKasHariIni: StateFlow<List<Triple<String, String, Int>>> = _kasirUangKasHariIni.asStateFlow()
+
+    // Pelunasan eksternal hari ini (dari pembayaran_harian tetapi pelangganId
+    // tidak lagi di daftarPelanggan — contoh: cairkan simpanan → nasabah dihapus).
+    // Source of Truth: pembayaran_harian/{cabangId}/{today_YYYY-MM-DD}.
+    private val _pelunasanEksternalHariIni = MutableStateFlow<List<PembayaranHarianItem>>(emptyList())
+    val pelunasanEksternalHariIni: StateFlow<List<PembayaranHarianItem>> = _pelunasanEksternalHariIni.asStateFlow()
 
     // =========================================================================
     // KOORDINATOR APPROVAL - Phase 2 & Phase 4
@@ -2027,6 +2034,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                 mapOf(
                     "jumlah" to pembayaran.jumlah,
                     "tanggal" to pembayaran.tanggal,
+                    "keterangan" to pembayaran.keterangan,
                     "subPembayaran" to pembayaran.subPembayaran.map { sub ->
                         mapOf(
                             "jumlah" to sub.jumlah,
@@ -3727,7 +3735,18 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     catatanStatusKhusus = "",
                     tanggalStatusKhusus = "",
                     diberiTandaOleh = "",
-                    pembayaranList = if (sudahLunas) emptyList() else existingPelanggan.pembayaranList,
+                    pembayaranList = run {
+                        val baseList = if (sudahLunas) emptyList() else existingPelanggan.pembayaranList
+                        if (sisaUtangLama > 0) {
+                            baseList + Pembayaran(
+                                jumlah = sisaUtangLama,
+                                tanggal = tanggalPengajuanBaru,
+                                keterangan = "Pelunasan Top-Up"
+                            )
+                        } else {
+                            baseList
+                        }
+                    },
                     hasilSimulasiCicilan = cicilanBaru,
 
                     // === Data Referensi ===
@@ -7431,7 +7450,18 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     catatanStatusKhusus = "",
                     tanggalStatusKhusus = "",
                     diberiTandaOleh = "",
-                    pembayaranList = if (sudahLunas) emptyList() else existingPelanggan.pembayaranList,
+                    pembayaranList = run {
+                        val baseList = if (sudahLunas) emptyList() else existingPelanggan.pembayaranList
+                        if (sisaUtangLama > 0) {
+                            baseList + Pembayaran(
+                                jumlah = sisaUtangLama,
+                                tanggal = tanggalPengajuanBaru,
+                                keterangan = "Pelunasan Top-Up"
+                            )
+                        } else {
+                            baseList
+                        }
+                    },
                     hasilSimulasiCicilan = cicilanBaru,
 
                     // Simpan data untuk referensi
@@ -13826,7 +13856,8 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
 
                 // =========================================================
                 // FIX: Jika masih ada sisa utang, catat pelunasan via tabungan
-                // ke pembayaran_harian & jurnal_transaksi SEBELUM hapus data.
+                // ke pembayaranList (trigger onPembayaranAdded → pembayaran_harian)
+                // & jurnal_transaksi SEBELUM hapus data.
                 // Agar buku pokok web tetap mencatat pelunasan ini secara permanen.
                 // =========================================================
                 if (sisaUtang > 0 && cabangId.isNotBlank()) {
@@ -13841,23 +13872,24 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                             .getValue(String::class.java) ?: currentEmail
                     } catch (_: Exception) { currentEmail }
 
-                    // 1. Catat ke pembayaran_harian
-                    val pembayaranHarianData = mapOf(
-                        "pelangganId" to pelangganId,
-                        "namaPanggilan" to pelanggan.namaPanggilan,
-                        "namaKtp" to pelanggan.namaKtp,
-                        "adminUid" to adminUid,
-                        "adminName" to adminName,
-                        "adminEmail" to currentEmail,
-                        "jumlah" to sisaUtang,
-                        "jenis" to "pelunasan_tabungan",
-                        "tanggal" to today,
-                        "timestamp" to ServerValue.TIMESTAMP
+                    // 1. Catat ke pembayaranList via OfflineRepository (offline-first).
+                    //    Cloud Function onPembayaranAdded akan auto-write ke
+                    //    pembayaran_harian + summary + jurnalTransaksi standard.
+                    val pelunasanIndex = pelanggan.pembayaranList.size
+                    offlineRepo.addPembayaran(
+                        adminUid = adminUid,
+                        pelangganId = pelangganId,
+                        pembayaranIndex = pelunasanIndex,
+                        pembayaran = mapOf(
+                            "jumlah" to sisaUtang.toInt(),
+                            "tanggal" to today,
+                            "keterangan" to "Pelunasan Tabungan",
+                            "subPembayaran" to emptyList<Map<String, Any?>>()
+                        )
                     )
-                    database.child("pembayaran_harian").child(cabangId).child(today)
-                        .push().setValue(pembayaranHarianData).await()
 
-                    // 2. Catat ke jurnal_transaksi
+                    // 2. Catat ke jurnal_transaksi (jurnal custom cairkan_simpanan,
+                    //    node berbeda dari jurnalTransaksi yang ditulis CF).
                     val jurnalData = mapOf(
                         "tipe" to "pelunasan_tabungan",
                         "pelangganId" to pelangganId,
@@ -13878,7 +13910,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     database.child("jurnal_transaksi").child(cabangId).child(yearMonth)
                         .push().setValue(jurnalData).await()
 
-                    Log.d("Pencairan", "✅ Sisa utang Rp $sisaUtang tercatat ke pembayaran_harian & jurnal_transaksi")
+                    Log.d("Pencairan", "✅ Sisa utang Rp $sisaUtang tercatat via addPembayaran & jurnal_transaksi")
                 }
 
                 // =========================================================
@@ -15617,6 +15649,74 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     }
             } catch (e: Exception) {
                 Log.e("KasirUangKas", "❌ Error: ${e.message}")
+            }
+        }
+    }
+
+    /**
+     * Load pelunasan eksternal hari ini dari pembayaran_harian.
+     *
+     * Konteks: saat `cairkanSimpanan` dipanggil, nasabah dihapus dari
+     * node pelanggan/. Akibatnya iterasi daftarPelanggan di Dashboard /
+     * Laporan Harian tidak bisa lagi melihat transaksi pelunasan tersebut.
+     *
+     * Fungsi ini membaca pembayaran_harian/{cabangId}/{today} dan mem-filter
+     * hanya entry yang pelangganId-nya TIDAK ADA di daftarPelanggan — agar
+     * tidak double-count dengan entry yang sudah dihitung dari iterasi lokal.
+     *
+     * Satu query RTDB per panggilan. Dipanggil oleh Dashboard & Laporan Harian.
+     */
+    fun loadPelunasanEksternalHariIni() {
+        viewModelScope.launch {
+            try {
+                val cabangId = _currentUserCabang.value
+                if (cabangId.isNullOrBlank()) {
+                    _pelunasanEksternalHariIni.value = emptyList()
+                    return@launch
+                }
+
+                val tanggalKey = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
+
+                val snapshot = database.child("pembayaran_harian")
+                    .child(cabangId)
+                    .child(tanggalKey)
+                    .get()
+                    .await()
+
+                val pelangganIdsLokal = daftarPelanggan.map { it.id }.toHashSet()
+                val eksternal = mutableListOf<PembayaranHarianItem>()
+
+                snapshot.children.forEach { entry ->
+                    val pelangganId = entry.child("pelangganId").getValue(String::class.java) ?: ""
+                    if (pelangganId.isBlank() || pelangganIdsLokal.contains(pelangganId)) {
+                        return@forEach
+                    }
+                    val jumlahLong = entry.child("jumlah").getValue(Long::class.java)
+                        ?: entry.child("jumlah").getValue(Int::class.java)?.toLong()
+                        ?: 0L
+                    eksternal.add(
+                        PembayaranHarianItem(
+                            id = entry.key ?: "",
+                            pelangganId = pelangganId,
+                            namaPanggilan = entry.child("namaPanggilan").getValue(String::class.java) ?: "",
+                            namaKtp = entry.child("namaKtp").getValue(String::class.java) ?: "",
+                            adminUid = entry.child("adminUid").getValue(String::class.java) ?: "",
+                            adminName = entry.child("adminName").getValue(String::class.java) ?: "",
+                            adminEmail = entry.child("adminEmail").getValue(String::class.java) ?: "",
+                            cabangId = cabangId,
+                            jumlah = jumlahLong,
+                            jenis = entry.child("jenis").getValue(String::class.java) ?: "",
+                            tanggal = entry.child("tanggal").getValue(String::class.java) ?: "",
+                            timestamp = entry.child("timestamp").getValue(Long::class.java) ?: 0L
+                        )
+                    )
+                }
+
+                _pelunasanEksternalHariIni.value = eksternal
+                Log.d("PelunasanEksternal", "📥 Loaded ${eksternal.size} entri eksternal dari pembayaran_harian")
+            } catch (e: Exception) {
+                Log.e("PelunasanEksternal", "❌ Error: ${e.message}")
+                _pelunasanEksternalHariIni.value = emptyList()
             }
         }
     }

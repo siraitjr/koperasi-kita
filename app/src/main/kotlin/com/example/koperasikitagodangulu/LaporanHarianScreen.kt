@@ -97,10 +97,16 @@ fun LaporanHarianScreen(
     LaunchedEffect(cabangId) {
         if (cabangId != null) {
             viewModel.loadKasirUangKasHariIni()
+            // Pelunasan eksternal (nasabah sudah dihapus, mis. setelah cairkanSimpanan).
+            // Dibaca dari pembayaran_harian — satu query, hanya entry yang pelangganId
+            // tidak ada di daftarPelanggan (anti double-count).
+            viewModel.loadPelunasanEksternalHariIni()
         }
     }
 
-    LaunchedEffect(viewModel.daftarPelanggan.size, tanggalHariIni, biayaAwalHariIni, kasirUangKasHariIni) {
+    val pelunasanEksternal by viewModel.pelunasanEksternalHariIni.collectAsState()
+
+    LaunchedEffect(viewModel.daftarPelanggan.size, tanggalHariIni, biayaAwalHariIni, kasirUangKasHariIni, pelunasanEksternal) {
         pembayaranHariIni.clear()
         pinjamanBaruHariIni.clear()
 
@@ -170,6 +176,20 @@ fun LaporanHarianScreen(
                 nama = namaKasir,
                 jenisTransaksi = if (keterangan.isNotBlank()) "Uang Kas: $keterangan" else "Uang Kas dari Kasir",
                 jumlah = jumlah
+            ))
+        }
+        // Pelunasan eksternal dari pembayaran_harian (nasabah sudah tidak di daftarPelanggan,
+        // mis. setelah cairkanSimpanan). Source of Truth untuk kasus ini adalah pembayaran_harian.
+        pelunasanEksternal.forEach { item ->
+            pembayaranHariIni.add(TransaksiData(
+                nama = item.namaPanggilan.ifBlank { item.namaKtp },
+                jenisTransaksi = when (item.jenis) {
+                    "pelunasan_tabungan" -> "Pelunasan via Tabungan"
+                    "tambah_bayar" -> "Tambah Bayar"
+                    "cicilan" -> "Cicilan Pinjaman"
+                    else -> "Pelunasan"
+                },
+                jumlah = item.jumlah.toInt()
             ))
         }
     }
