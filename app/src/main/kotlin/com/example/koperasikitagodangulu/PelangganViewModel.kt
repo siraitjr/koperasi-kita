@@ -6453,17 +6453,49 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
     ) {
         try {
             val validType = if (type.isBlank()) "REJECTION" else type
+
+            // HARDENING (anti inverted-notification):
+            // Hanya 5 type notifikasi yang dikenal. Jika type di luar whitelist,
+            // JANGAN kirim notifikasi sama sekali — lebih baik admin tidak menerima
+            // notif daripada menerima "Disetujui"/"Ditolak" yang salah karena typo.
+            val knownTypes = setOf(
+                "APPROVAL",
+                "REJECTION",
+                "DUAL_APPROVAL_APPROVED",
+                "DUAL_APPROVAL_REJECTED",
+                "TOPUP_APPROVAL"
+            )
+            if (validType !in knownTypes) {
+                Log.e(
+                    "Notification",
+                    "❌ Unknown notification type='$validType' (adminUid=$adminUid, pelangganId=$pelangganId, pelangganNama=$pelangganNama). Notifikasi TIDAK dikirim untuk mencegah pesan salah."
+                )
+                return
+            }
+
+            Log.d(
+                "Notification",
+                "📤 createAdminNotification: adminUid=$adminUid, pelangganId=$pelangganId, type=$validType"
+            )
+
             // Gunakan bucket per-jam agar notifikasi yang sama (retry/double-tap dalam 1 jam)
             // menghasilkan ID yang sama (idempotent) — mencegah duplikat notifikasi
             val hourBucket = System.currentTimeMillis() / 3_600_000L
             val notificationId = "${validType.lowercase()}_${pelangganId}_${hourBucket}"
 
+            // Pemetaan EKSPLISIT per type — tidak ada fallback `else` yang default ke
+            // "Ditolak" karena itu yang dulu menyebabkan risiko inverted notification.
             val title = when (validType) {
                 "APPROVAL" -> if (isPinjamanDiubah) "Pengajuan Disetujui dengan Penyesuaian" else "Pengajuan Disetujui"
                 "DUAL_APPROVAL_APPROVED" -> "Pengajuan Disetujui"
+                "REJECTION" -> "Pengajuan Ditolak"
                 "DUAL_APPROVAL_REJECTED" -> "Pengajuan Ditolak"
                 "TOPUP_APPROVAL" -> "Pengajuan Top-Up Pinjaman"
-                else -> "Pengajuan Ditolak"
+                else -> {
+                    // Unreachable — sudah difilter whitelist di atas. Guard defensive.
+                    Log.e("Notification", "❌ Unreachable title-branch for type='$validType' — abort (adminUid=$adminUid, pelangganId=$pelangganId)")
+                    return
+                }
             }
 
             val message = when (validType) {
@@ -6481,9 +6513,13 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                         "Pengajuan $pelangganNama telah DISETUJUI oleh $pimpinanName. Silakan proses pencairan."
                     }
                 }
+                "REJECTION" -> "Pengajuan $pelangganNama ditolak oleh $pimpinanName: $alasanPenolakan"
                 "DUAL_APPROVAL_REJECTED" -> "Pengajuan $pelangganNama DITOLAK. Alasan: $alasanPenolakan"
                 "TOPUP_APPROVAL" -> "Pengajuan top-up pinjaman untuk $pelangganNama menunggu approval"
-                else -> "Pengajuan $pelangganNama ditolak oleh $pimpinanName: $alasanPenolakan"
+                else -> {
+                    Log.e("Notification", "❌ Unreachable message-branch for type='$validType' — abort (adminUid=$adminUid, pelangganId=$pelangganId)")
+                    return
+                }
             }
 
             val notification = AdminNotification(
