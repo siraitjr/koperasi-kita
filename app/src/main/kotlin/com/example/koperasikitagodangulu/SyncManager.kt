@@ -9,16 +9,23 @@ import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.Uri
 import android.util.Log
+import com.google.firebase.database.DataSnapshot
+import com.google.firebase.database.DatabaseError
 import com.google.firebase.database.FirebaseDatabase
+import com.google.firebase.database.MutableData
+import com.google.firebase.database.Transaction
 import com.google.firebase.ktx.Firebase
 import com.google.firebase.storage.StorageMetadata
 import com.google.firebase.storage.ktx.storage
 import com.google.gson.Gson
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.tasks.await
 import java.io.ByteArrayOutputStream
 import java.io.InputStream
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 
 /**
  * =========================================================================
@@ -149,14 +156,18 @@ class SyncManager private constructor(private val context: Context) {
         pembayaranIndex: Int,
         pembayaranData: Map<String, Any?>
     ): SaveResult = withContext(Dispatchers.IO) {
-        val path = "pelanggan/$adminUid/$pelangganId/pembayaranList/$pembayaranIndex"
+        // pembayaranIndex tetap disimpan di Room untuk kebutuhan audit trail,
+        // tapi tidak dipakai sebagai target path saat sync — transaction append-only
+        // pakai panjang list server agar tidak overwrite entry lain (fix collision index).
+        val auditPath = "pelanggan/$adminUid/$pelangganId/pembayaranList/$pembayaranIndex"
+        val parentPath = "pelanggan/$adminUid/$pelangganId/pembayaranList"
 
         Log.d(TAG, "🚀 savePembayaranDirect() CALLED!")
 
         try {
             val operation = PendingOperation(
                 operationType = "ADD_PEMBAYARAN",
-                firebasePath = path,
+                firebasePath = auditPath,
                 dataJson = gson.toJson(pembayaranData),
                 adminUid = adminUid,
                 pelangganId = pelangganId,
@@ -168,9 +179,9 @@ class SyncManager private constructor(private val context: Context) {
             if (isOnline()) {
                 try {
                     dao.updateStatus(operationId, "SYNCING")
-                    firebase.getReference(path).setValue(pembayaranData).await()
+                    appendToArrayTransactional(parentPath, pembayaranData)
                     dao.updateStatus(operationId, "SUCCESS")
-                    Log.d(TAG, "✅ PEMBAYARAN SYNCED TO FIREBASE!")
+                    Log.d(TAG, "✅ PEMBAYARAN SYNCED TO FIREBASE (transactional append)!")
                     SaveResult.Success
                 } catch (e: Exception) {
                     Log.e(TAG, "❌ Firebase sync failed: ${e.message}")
@@ -202,14 +213,17 @@ class SyncManager private constructor(private val context: Context) {
         subIndex: Int,
         subPembayaranData: Map<String, Any?>
     ): SaveResult = withContext(Dispatchers.IO) {
-        val path = "pelanggan/$adminUid/$pelangganId/pembayaranList/$pembayaranIndex/subPembayaran/$subIndex"
+        // subIndex disimpan di Room untuk audit, tapi sync pakai transaction append-only
+        // pada parent `subPembayaran` agar tidak overwrite sub lain (fix collision index).
+        val auditPath = "pelanggan/$adminUid/$pelangganId/pembayaranList/$pembayaranIndex/subPembayaran/$subIndex"
+        val parentPath = "pelanggan/$adminUid/$pelangganId/pembayaranList/$pembayaranIndex/subPembayaran"
 
         Log.d(TAG, "🚀 saveSubPembayaranDirect() CALLED!")
 
         try {
             val operation = PendingOperation(
                 operationType = "ADD_SUB_PEMBAYARAN",
-                firebasePath = path,
+                firebasePath = auditPath,
                 dataJson = gson.toJson(subPembayaranData),
                 adminUid = adminUid,
                 pelangganId = pelangganId,
@@ -221,9 +235,9 @@ class SyncManager private constructor(private val context: Context) {
             if (isOnline()) {
                 try {
                     dao.updateStatus(operationId, "SYNCING")
-                    firebase.getReference(path).setValue(subPembayaranData).await()
+                    appendToArrayTransactional(parentPath, subPembayaranData)
                     dao.updateStatus(operationId, "SUCCESS")
-                    Log.d(TAG, "✅ SUB-PEMBAYARAN SYNCED!")
+                    Log.d(TAG, "✅ SUB-PEMBAYARAN SYNCED (transactional append)!")
                     SaveResult.Success
                 } catch (e: Exception) {
                     Log.e(TAG, "❌ Firebase sync failed: ${e.message}")
@@ -654,8 +668,19 @@ class SyncManager private constructor(private val context: Context) {
                 }
 
                 when (operation.operationType) {
-                    "ADD_PELANGGAN", "ADD_PEMBAYARAN", "ADD_SUB_PEMBAYARAN" -> {
+                    "ADD_PELANGGAN" -> {
                         ref.setValue(data).await()
+                    }
+                    "ADD_PEMBAYARAN", "ADD_SUB_PEMBAYARAN" -> {
+                        // Replay via transaction append-only ke parent node agar tidak
+                        // overwrite entry lain jika index lokal sudah tidak sinkron dengan server.
+                        // Idempotency (jumlah+tanggal+keterangan) mencegah duplikat saat
+                        // replay berulang atau sync konkuren dari device lain.
+                        val parentPath = operation.firebasePath.substringBeforeLast("/")
+                        @Suppress("UNCHECKED_CAST")
+                        val payload = data as? Map<String, Any?>
+                            ?: throw IllegalStateException("Payload bukan Map untuk ${operation.operationType}")
+                        appendToArrayTransactional(parentPath, payload)
                     }
                     "UPDATE_PELANGGAN" -> {
                         ref.updateChildren(data as Map<String, Any?>).await()
@@ -684,6 +709,79 @@ class SyncManager private constructor(private val context: Context) {
                 false
             }
         }
+    }
+
+    /**
+     * Append `data` ke array node di `parentPath` secara transactional & idempotent.
+     *
+     * Kenapa transaction: menulis langsung ke `parentPath/$index` dengan `setValue` akan
+     * menimpa entry yang sudah ada di index itu jika list lokal stale (mis. Cloud Function
+     * onPembayaranAdded/koreksiStorting menambah entry, device lain input duluan, atau
+     * memory cache belum invalidate). Transaction membaca panjang server terkini dan
+     * selalu append di belakang — tidak pernah menimpa entry lain.
+     *
+     * Idempotency (`jumlah`+`tanggal`+`keterangan`): kalau sync di-retry atau dua sumber
+     * meng-queue operasi identik, entry duplikat di-skip. Menerima trade-off kecil: dua
+     * pembayaran legit back-to-back dengan nominal+tanggal+keterangan persis sama akan
+     * dianggap duplikat (rare).
+     *
+     * Return: true kalau committed (atau skip karena sudah ada = idempotent success).
+     * Throw: DatabaseError exception kalau transaction gagal total (network/rule) —
+     * caller tangkap & re-queue.
+     */
+    private suspend fun appendToArrayTransactional(
+        parentPath: String,
+        data: Map<String, Any?>
+    ): Boolean = suspendCancellableCoroutine { cont ->
+        val ref = firebase.getReference(parentPath)
+        ref.runTransaction(object : Transaction.Handler {
+            override fun doTransaction(currentData: MutableData): Transaction.Result {
+                val raw = currentData.value
+                val existing: MutableList<Any?> = when (raw) {
+                    is List<*> -> raw.toMutableList()
+                    is Map<*, *> -> {
+                        // RTDB bisa return sparse map kalau list pernah punya hole di tengah
+                        raw.entries
+                            .mapNotNull { (k, v) ->
+                                val idx = k?.toString()?.toIntOrNull() ?: return@mapNotNull null
+                                idx to v
+                            }
+                            .sortedBy { it.first }
+                            .map { it.second }
+                            .toMutableList()
+                    }
+                    null -> mutableListOf()
+                    else -> return Transaction.abort()
+                }
+
+                // Idempotency: skip kalau entry dengan jumlah+tanggal+keterangan identik sudah ada
+                val isDuplicate = existing.any { item ->
+                    val map = item as? Map<*, *> ?: return@any false
+                    val sameJumlah = (map["jumlah"]?.toString() ?: "") == (data["jumlah"]?.toString() ?: "")
+                    val sameTanggal = (map["tanggal"]?.toString() ?: "") == (data["tanggal"]?.toString() ?: "")
+                    val sameKeterangan = (map["keterangan"]?.toString() ?: "") == (data["keterangan"]?.toString() ?: "")
+                    sameJumlah && sameTanggal && sameKeterangan
+                }
+
+                if (!isDuplicate) {
+                    existing.add(data)
+                    currentData.value = existing
+                }
+                return Transaction.success(currentData)
+            }
+
+            override fun onComplete(
+                error: DatabaseError?,
+                committed: Boolean,
+                snapshot: DataSnapshot?
+            ) {
+                if (error != null) {
+                    cont.resumeWithException(error.toException())
+                } else {
+                    cont.resume(committed)
+                }
+            }
+        })
     }
 
     suspend fun syncAllPending(): SyncResult {
