@@ -525,6 +525,8 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
     val isLoading = MutableStateFlow(false)
     private val _adminSummary = MutableStateFlow<List<AdminSummary>>(emptyList())
     val adminSummary: StateFlow<List<AdminSummary>> = _adminSummary
+    private val _adminListForAbsensi = MutableStateFlow<List<AdminSummary>>(emptyList())
+    val adminListForAbsensi: StateFlow<List<AdminSummary>> = _adminListForAbsensi
     private val _currentUserRole = MutableStateFlow(UserRole.UNKNOWN)
     val currentUserRole: StateFlow<UserRole> = _currentUserRole
     private val _currentUserCabang = MutableStateFlow<String?>(null)
@@ -2594,6 +2596,64 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
         viewModelScope.launch {
             _adminSummary.value = calculateAdminSummary(daftarPelanggan)
             Log.d("PelangganVM", "🔄 Manual refresh admin summary: ${_adminSummary.value.size} items")
+        }
+    }
+
+    /**
+     * Load daftar admin lapangan dari master list metadata/cabang/{cabangId}/adminList,
+     * khusus untuk AbsensiScreen (Pimpinan & Koordinator memilih admin yang didampingi).
+     *
+     * Kenapa tidak pakai adminSummary: adminSummary dihitung dari daftarPelanggan
+     * (grouping by adminUid), sehingga admin tanpa pelanggan/admin baru tidak muncul.
+     * Untuk absensi dibutuhkan daftar lengkap semua admin di cabang terlepas dari
+     * apakah mereka sudah punya nasabah.
+     *
+     * Merge: admin yang sudah punya nasabah tetap menampilkan count dari adminSummary;
+     * admin baru / tanpa nasabah muncul dengan nasabahAktif = 0.
+     *
+     * Beban RTDB: 1 read metadata/cabang/{cabangId}/adminList + N read metadata/admins/{uid}
+     * per buka screen (sekali, bukan listener realtime).
+     */
+    fun loadAdminListForAbsensi(cabangId: String) {
+        if (cabangId.isBlank()) return
+        viewModelScope.launch {
+            try {
+                val adminListSnap = database.child("metadata").child("cabang")
+                    .child(cabangId).child("adminList").get().await()
+                val adminUids = adminListSnap.children.mapNotNull {
+                    it.getValue(String::class.java)
+                }
+                if (adminUids.isEmpty()) {
+                    Log.w("AdminAbsensi", "⚠️ adminList kosong untuk cabangId=$cabangId")
+                    _adminListForAbsensi.value = emptyList()
+                    return@launch
+                }
+                val existingSummary = _adminSummary.value.associateBy { it.adminId }
+                val result = adminUids.mapNotNull { adminUid ->
+                    existingSummary[adminUid] ?: run {
+                        // Admin belum punya pelanggan → ambil nama dari metadata/admins
+                        val adminMeta = database.child("metadata").child("admins")
+                            .child(adminUid).get().await()
+                        val name = adminMeta.child("name").getValue(String::class.java) ?: ""
+                        val email = adminMeta.child("email").getValue(String::class.java) ?: ""
+                        if (name.isBlank() && email.isBlank()) {
+                            Log.w("AdminAbsensi", "⚠️ Skip adminUid=$adminUid: name & email kosong")
+                            null
+                        } else {
+                            AdminSummary(
+                                adminId = adminUid,
+                                adminName = name,
+                                adminEmail = email,
+                                cabang = cabangId
+                            )
+                        }
+                    }
+                }.sortedBy { it.adminName.ifBlank { it.adminEmail } }
+                _adminListForAbsensi.value = result
+                Log.d("AdminAbsensi", "✅ Loaded ${result.size} admin untuk absensi (cabang=$cabangId)")
+            } catch (e: Exception) {
+                Log.e("AdminAbsensi", "❌ Error loading admin list: ${e.message}")
+            }
         }
     }
 

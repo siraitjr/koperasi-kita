@@ -55,6 +55,7 @@ fun AbsensiScreen(
     // Data admin lapangan
     val adminSummary by viewModel.adminSummary.collectAsState()
     val allAdminSummaries by viewModel.allAdminSummaries.collectAsState()
+    val adminListForAbsensi by viewModel.adminListForAbsensi.collectAsState()
 
     // Cabang yang dipilih untuk absensi hari ini
     var selectedCabang by remember { mutableStateOf<CabangInfo?>(null) }
@@ -69,12 +70,14 @@ fun AbsensiScreen(
     var errorMsg by remember { mutableStateOf("") }
     var successMsg by remember { mutableStateOf("") }
 
-    // Daftar admin berdasarkan role
-    val availableAdmins = remember(currentRole, adminSummary, allAdminSummaries, selectedCabang) {
+    // Daftar admin berdasarkan role.
+    // Pakai adminListForAbsensi (dari metadata/cabang/{cabangId}/adminList) agar admin
+    // tanpa nasabah / admin baru tetap muncul — bukan adminSummary yang turunan dari
+    // daftarPelanggan (hanya muncul admin yang sudah punya pelanggan di memori).
+    val availableAdmins = remember(currentRole, adminListForAbsensi, selectedCabang) {
         when {
-            isPimpinan -> adminSummary
-            isKoordinator && selectedCabang != null ->
-                allAdminSummaries.values.filter { it.cabang == selectedCabang?.id }.toList()
+            isPimpinan -> adminListForAbsensi
+            isKoordinator && selectedCabang != null -> adminListForAbsensi
             else -> emptyList()
         }
     }
@@ -107,6 +110,24 @@ fun AbsensiScreen(
         }
         if (isPimpinan) {
             viewModel.refreshAdminSummary()
+            // Load daftar admin dari master list metadata — agar admin tanpa nasabah
+            // tetap muncul (refreshAdminSummary hanya include admin yang punya pelanggan).
+            currentCabang?.let { viewModel.loadAdminListForAbsensi(it) }
+        }
+    }
+
+    // Koordinator: saat cabang dipilih, load daftar admin untuk cabang tersebut
+    LaunchedEffect(selectedCabang) {
+        if (isKoordinator && selectedCabang != null) {
+            viewModel.loadAdminListForAbsensi(selectedCabang!!.id)
+        }
+    }
+
+    // Pimpinan: currentCabang mungkin null saat mount pertama (loading async).
+    // LaunchedEffect(currentCabang) memastikan load ulang begitu cabang tersedia.
+    LaunchedEffect(currentCabang) {
+        if (isPimpinan && !currentCabang.isNullOrBlank()) {
+            viewModel.loadAdminListForAbsensi(currentCabang!!)
         }
     }
 
