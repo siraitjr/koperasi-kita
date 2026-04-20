@@ -77,7 +77,9 @@ interface PendingOperationDao {
     @Query("SELECT COUNT(*) FROM pending_operations WHERE status = 'PENDING' OR status = 'FAILED' OR status = 'SYNCING'")
     fun getPendingCountFlow(): Flow<Int>
 
-    @Query("UPDATE pending_operations SET status = :status, errorMessage = :errorMessage, retryCount = retryCount + 1 WHERE id = :id")
+    // retryCount hanya di-increment untuk status re-schedule (PENDING) atau gagal permanen (FAILED).
+    // Transisi SYNCING / SUCCESS tidak boleh mengonsumsi retry budget.
+    @Query("UPDATE pending_operations SET status = :status, errorMessage = :errorMessage, retryCount = retryCount + CASE WHEN :status IN ('PENDING','FAILED') THEN 1 ELSE 0 END WHERE id = :id")
     suspend fun updateStatus(id: Long, status: String, errorMessage: String? = null)
 
     // Recovery: row yang stuck di SYNCING karena proses sebelumnya crash/dibunuh OS

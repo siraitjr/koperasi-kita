@@ -2530,28 +2530,37 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     pembayaran = pembayaranMap
                 )
 
-                // ✅ FIX: Tandai isSynced = true HANYA setelah sync BENAR-BENAR selesai di server
-                // Gunakan CompletionListener untuk memastikan data sudah sampai di server,
-                // bukan hanya di-queue di Firebase SDK lokal.
+                // ✅ FIX Bug 2 (Ghost Data): isSynced=true dipercayakan ke SaveResult.Success.
+                // SaveResult.Success diterbitkan hanya setelah appendToArrayTransactional selesai
+                // (await transaction commit) — artinya server sudah menerima & commit data.
+                // Verify read-back index sebelumnya (a) redundan karena transaction sudah
+                // konfirmasi write, dan (b) rentan false-negative setelah Fix A karena index
+                // server bisa berbeda dari pembayaranIndex lokal (transaction append ke akhir).
+                // Timeout 3 detik dipakai sebagai sanity log saja, hasilnya TIDAK memblokir
+                // pemasangan isSynced=true. Tujuan utama: cegah isSynced stuck=false permanen
+                // saat verify macet (yang sebelumnya menjadikan pelanggan jadi "ghost" di UI
+                // setelah dihapus di server).
                 if (result is SaveResult.Success) {
-                    try {
-                        // Verifikasi data sudah ada di server dengan membaca kembali
-                        val verifySnap = database.child("pelanggan").child(adminUid)
-                            .child(pelanggan.id).child("pembayaranList")
-                            .child(pembayaranIndex.toString()).get().await()
-
-                        if (verifySnap.exists()) {
-                            val idx = daftarPelanggan.indexOfFirst { it.id == id }
-                            if (idx != -1) {
-                                daftarPelanggan[idx] = daftarPelanggan[idx].copy(isSynced = true)
-                                simpanKeLokal()
-                                Log.d("Pembayaran", "✅ Sync VERIFIED di server, isSynced = true")
-                            }
-                        } else {
-                            Log.d("Pembayaran", "⏳ Data queued tapi belum di server, isSynced tetap false")
+                    val verifyOk = withTimeoutOrNull(3000L) {
+                        try {
+                            val parentSnap = database.child("pelanggan").child(adminUid)
+                                .child(pelanggan.id).child("pembayaranList").get().await()
+                            parentSnap.exists()
+                        } catch (e: Exception) {
+                            Log.d("Pembayaran", "⚠️ Verify exception: ${e.message}")
+                            null
                         }
-                    } catch (e: Exception) {
-                        Log.d("Pembayaran", "⏳ Verifikasi gagal (mungkin offline), isSynced tetap false")
+                    }
+
+                    val idx = daftarPelanggan.indexOfFirst { it.id == id }
+                    if (idx != -1) {
+                        daftarPelanggan[idx] = daftarPelanggan[idx].copy(isSynced = true)
+                        simpanKeLokal()
+                    }
+                    when (verifyOk) {
+                        null -> Log.d("Pembayaran", "⏱️ Verify timeout — trust Success, isSynced=true")
+                        true -> Log.d("Pembayaran", "✅ Verify ok + Success, isSynced=true")
+                        false -> Log.d("Pembayaran", "⚠️ Verify negatif tapi Success — tetap isSynced=true")
                     }
                 }
 
@@ -3922,25 +3931,31 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                 subPembayaran = subMap
             )
 
-            if (result is SaveResult.Success) {
-                try {
-                    // Verifikasi data sudah di server
-                    val verifySnap = database.child("pelanggan").child(adminUid)
-                        .child(pelangganId).child("pembayaranList")
-                        .child(pembayaranIndex.toString()).child("subPembayaran")
-                        .child(subIndex.toString()).get().await()
-
-                    if (verifySnap.exists()) {
-                        val idx = daftarPelanggan.indexOfFirst { it.id == pelangganId }
-                        if (idx != -1) {
-                            daftarPelanggan[idx] = daftarPelanggan[idx].copy(isSynced = true)
-                            simpanKeLokal()
+            // ✅ FIX Bug 2: trust SaveResult.Success (transaction append sudah konfirmasi commit).
+                // Verify dengan timeout 3s untuk sanity log, tidak memblokir isSynced=true.
+                if (result is SaveResult.Success) {
+                    val verifyOk = withTimeoutOrNull(3000L) {
+                        try {
+                            val parentSnap = database.child("pelanggan").child(adminUid)
+                                .child(pelangganId).child("pembayaranList").get().await()
+                            parentSnap.exists()
+                        } catch (e: Exception) {
+                            Log.d("SubPembayaran", "⚠️ Verify exception: ${e.message}")
+                            null
                         }
                     }
-                } catch (e: Exception) {
-                    Log.d("SubPembayaran", "⏳ Sync gagal/offline, isSynced tetap false: ${e.message}")
+
+                    val idx = daftarPelanggan.indexOfFirst { it.id == pelangganId }
+                    if (idx != -1) {
+                        daftarPelanggan[idx] = daftarPelanggan[idx].copy(isSynced = true)
+                        simpanKeLokal()
+                    }
+                    when (verifyOk) {
+                        null -> Log.d("SubPembayaran", "⏱️ Verify timeout — trust Success, isSynced=true")
+                        true -> Log.d("SubPembayaran", "✅ Verify ok + Success, isSynced=true")
+                        false -> Log.d("SubPembayaran", "⚠️ Verify negatif tapi Success — tetap isSynced=true")
+                    }
                 }
-            }
 
             // Update status jika berubah
             if (status != pelanggan.status) {
@@ -8220,7 +8235,6 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
 
             viewModelScope.launch {
                 var allSuccess = true
-                val lastPembayaranIndex = startIndex + jumlahCicilan - 1
 
                 for (i in 0 until jumlahCicilan) {
                     val pembayaranIndex = startIndex + i
@@ -8254,23 +8268,30 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     )
                 }
 
-                // Verifikasi data sudah di server sebelum set isSynced = true
+                // ✅ FIX Bug 2: trust allSuccess karena SaveResult.Success dari transaction
+                // append sudah konfirmasi commit di server. Verify dengan timeout 3s sebagai
+                // sanity log saja — tidak memblokir pemasangan isSynced=true.
                 if (allSuccess) {
-                    try {
-                        val verifySnap = database.child("pelanggan").child(adminUid)
-                            .child(pelanggan.id).child("pembayaranList")
-                            .child(lastPembayaranIndex.toString()).get().await()
-
-                        if (verifySnap.exists()) {
-                            val idx = daftarPelanggan.indexOfFirst { it.id == id }
-                            if (idx != -1) {
-                                daftarPelanggan[idx] = daftarPelanggan[idx].copy(isSynced = true)
-                                simpanKeLokal()
-                                Log.d("Pembayaran", "✅ Multiple sync VERIFIED di server, isSynced = true")
-                            }
+                    val verifyOk = withTimeoutOrNull(3000L) {
+                        try {
+                            val parentSnap = database.child("pelanggan").child(adminUid)
+                                .child(pelanggan.id).child("pembayaranList").get().await()
+                            parentSnap.exists()
+                        } catch (e: Exception) {
+                            Log.d("Pembayaran", "⚠️ Verify exception: ${e.message}")
+                            null
                         }
-                    } catch (e: Exception) {
-                        Log.d("Pembayaran", "⏳ Verifikasi gagal, isSynced tetap false")
+                    }
+
+                    val idx = daftarPelanggan.indexOfFirst { it.id == id }
+                    if (idx != -1) {
+                        daftarPelanggan[idx] = daftarPelanggan[idx].copy(isSynced = true)
+                        simpanKeLokal()
+                    }
+                    when (verifyOk) {
+                        null -> Log.d("Pembayaran", "⏱️ Multiple verify timeout — trust Success, isSynced=true")
+                        true -> Log.d("Pembayaran", "✅ Multiple verify ok + Success, isSynced=true")
+                        false -> Log.d("Pembayaran", "⚠️ Multiple verify negatif tapi Success — tetap isSynced=true")
                     }
                 }
             }
@@ -9436,45 +9457,14 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     }
 
                     if (newData.isNotEmpty()) {
-                        if (isInitialLoad) {
-                            // ✅ FIX v2: Cek Room DB apakah masih ada pending pembayaran
-                            val hasPendingSync = try {
-                                offlineRepo.getPendingSyncCount() > 0
-                            } catch (e: Exception) { false }
-
-                            if (hasPendingSync) {
-                                // Masih ada data yang belum sync ke Firebase
-                                // JANGAN replace data lokal — hanya tambahkan data baru dari Firebase
-                                val currentIds = daftarPelanggan.map { it.id }.toSet()
-                                val trulyNewData = newData.filter { it.id !in currentIds }
-                                if (trulyNewData.isNotEmpty()) {
-                                    daftarPelanggan.addAll(trulyNewData.sortedBy { it.namaPanggilan })
-                                }
-                                Log.d("Pagination", "⚠️ Pending sync exists (${offlineRepo.getPendingSyncCount()}), keeping local data intact")
-                            } else {
-                                // Tidak ada pending sync — aman replace dengan data Firebase
-                                // Tapi tetap pertahankan data lokal yang punya lebih banyak pembayaran
-                                val localUnsyncedData = daftarPelanggan.filter { !it.isSynced }
-                                daftarPelanggan.clear()
-                                daftarPelanggan.addAll(newData.sortedBy { it.namaPanggilan })
-
-                                localUnsyncedData.forEach { localPelanggan ->
-                                    val existingIndex = daftarPelanggan.indexOfFirst { it.id == localPelanggan.id }
-                                    if (existingIndex != -1) {
-                                        val existingPaymentCount = daftarPelanggan[existingIndex].pembayaranList.sumOf { 1 + it.subPembayaran.size }
-                                        val localPaymentCount = localPelanggan.pembayaranList.sumOf { 1 + it.subPembayaran.size }
-                                        if (localPaymentCount > existingPaymentCount) {
-                                            daftarPelanggan[existingIndex] = localPelanggan
-                                            Log.d("Pagination", "📌 Kept LOCAL unsynced: ${localPelanggan.namaPanggilan}")
-                                        }
-                                    } else {
-                                        daftarPelanggan.add(localPelanggan)
-                                    }
-                                }
-                            }
-                        } else {
-                            daftarPelanggan.addAll(newData.sortedBy { it.namaPanggilan })
-                        }
+                        // ✅ FIX: pure append-only — JANGAN clear() daftarPelanggan.
+                        // newData sudah di-filter ke item yang belum ada di list (L~9422),
+                        // jadi tidak ada risiko duplikasi. Full load tetap ditangani oleh
+                        // initAdminLapanganListeners / setupDataUpdateListener (smartLoader).
+                        // Clear+replace sebelumnya men-truncate daftar ke 50 nasabah tertua
+                        // (limitToFirst pageSize), membuat nasabah baru "hilang" dari UI
+                        // sampai user scroll.
+                        daftarPelanggan.addAll(newData.sortedBy { it.namaPanggilan })
                     }
 
                     _hasMoreData.value = hasMore
