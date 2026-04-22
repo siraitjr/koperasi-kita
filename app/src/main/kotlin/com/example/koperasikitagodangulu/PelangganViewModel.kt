@@ -290,6 +290,165 @@ data class BackupTopUpData(
 val Pelanggan.safePembayaranList: List<Pembayaran>
     get() = pembayaranList.mapNotNull { it }
 
+/**
+ * Parse DataSnapshot menjadi Pelanggan secara MANUAL per-field.
+ *
+ * Tujuan: tidak bergantung pada `child.getValue(Pelanggan::class.java)` yang
+ * bisa gagal/return null saat menjumpai pembayaranList ber-format sparse Object
+ * (mis. {0,1,21} akibat admin pernah hapus pembayaran di tengah array).
+ * Dengan parser manual ini, satu nasabah cacat tidak menggagalkan seluruh list,
+ * dan field-field problematik (terutama pembayaranList & hasilSimulasiCicilan)
+ * dibangun via DataSnapshot.children — selalu bekerja untuk format apapun.
+ */
+fun parsePelangganFromSnapshot(child: DataSnapshot): Pelanggan? {
+    val resolvedId = child.key ?: return null
+    var currentField = "id"
+    return try {
+        fun str(name: String, default: String = ""): String {
+            currentField = name
+            return child.child(name).getValue(String::class.java) ?: default
+        }
+        fun int(name: String, default: Int = 0): Int {
+            currentField = name
+            return child.child(name).getValue(Long::class.java)?.toInt() ?: default
+        }
+        fun bool(name: String, default: Boolean = false): Boolean {
+            currentField = name
+            return child.child(name).getValue(Boolean::class.java) ?: default
+        }
+
+        currentField = "pembayaranList"
+        val pembayaranSnap = child.child("pembayaranList")
+        val pembayaranList: List<Pembayaran> = when (pembayaranSnap.value) {
+            is Map<*, *>, is List<*> -> pembayaranSnap.children.mapNotNull { paySnap ->
+                try {
+                    paySnap.getValue(Pembayaran::class.java)?.let { p ->
+                        @Suppress("UNCHECKED_CAST")
+                        val rawSub = p.subPembayaran as? List<SubPembayaran?> ?: emptyList()
+                        p.copy(subPembayaran = rawSub.filterNotNull())
+                    }
+                } catch (_: Exception) { null }
+            }
+            else -> emptyList()
+        }
+
+        currentField = "hasilSimulasiCicilan"
+        val simulasiSnap = child.child("hasilSimulasiCicilan")
+        val hasilSimulasiCicilan: List<SimulasiCicilan> = when (simulasiSnap.value) {
+            is Map<*, *>, is List<*> -> simulasiSnap.children.mapNotNull { simSnap ->
+                try { simSnap.getValue(SimulasiCicilan::class.java) } catch (_: Exception) { null }
+            }
+            else -> emptyList()
+        }
+
+        currentField = "dualApprovalInfo"
+        val dualApprovalInfo = try {
+            child.child("dualApprovalInfo").getValue(DualApprovalInfo::class.java)
+        } catch (_: Exception) { null }
+
+        currentField = "backupSebelumTopUp"
+        val backupSebelumTopUp = try {
+            child.child("backupSebelumTopUp").getValue(BackupTopUpData::class.java)
+        } catch (_: Exception) { null }
+
+        val pelanggan = Pelanggan(
+            id = resolvedId,
+            namaKtp = str("namaKtp"),
+            nik = str("nik"),
+            namaPanggilan = str("namaPanggilan"),
+            nomorAnggota = str("nomorAnggota"),
+            lastUpdated = str("lastUpdated"),
+            namaKtpSuami = str("namaKtpSuami"),
+            namaKtpIstri = str("namaKtpIstri"),
+            nikSuami = str("nikSuami"),
+            nikIstri = str("nikIstri"),
+            namaPanggilanSuami = str("namaPanggilanSuami"),
+            namaPanggilanIstri = str("namaPanggilanIstri"),
+            tipePinjaman = str("tipePinjaman", "dibawah_3jt"),
+            alamatKtp = str("alamatKtp"),
+            alamatRumah = str("alamatRumah"),
+            detailRumah = str("detailRumah"),
+            wilayah = str("wilayah"),
+            wilayahNormalized = str("wilayahNormalized"),
+            noHp = str("noHp"),
+            jenisUsaha = str("jenisUsaha"),
+            pinjamanKe = int("pinjamanKe", 1),
+            besarPinjaman = int("besarPinjaman"),
+            jasaPinjaman = int("jasaPinjaman", 10),
+            admin = int("admin"),
+            simpanan = int("simpanan"),
+            totalDiterima = int("totalDiterima"),
+            totalPelunasan = int("totalPelunasan"),
+            tenor = int("tenor", 30),
+            tanggalPengajuan = str("tanggalPengajuan"),
+            tanggalDaftar = str("tanggalDaftar"),
+            tanggalPelunasan = str("tanggalPelunasan"),
+            status = str("status", "Menunggu Approval"),
+            pembayaranList = pembayaranList,
+            besarPinjamanDiajukan = int("besarPinjamanDiajukan"),
+            besarPinjamanDisetujui = int("besarPinjamanDisetujui"),
+            catatanPerubahanPinjaman = str("catatanPerubahanPinjaman"),
+            // JSON field names: "pinjamanDiubah" / "synced" (Kotlin "is" prefix
+            // di-strip oleh Firebase saat serialize property Boolean).
+            isPinjamanDiubah = bool("pinjamanDiubah"),
+            approvalPimpinan = bool("approvalPimpinan"),
+            approvalPengawas = bool("approvalPengawas"),
+            ditolakOleh = str("ditolakOleh"),
+            alasanPenolakan = str("alasanPenolakan"),
+            tanggalApprovalPimpinan = str("tanggalApprovalPimpinan"),
+            tanggalApprovalPengawas = str("tanggalApprovalPengawas"),
+            adminEmail = str("adminEmail"),
+            adminUid = str("adminUid"),
+            adminName = str("adminName"),
+            cabangId = str("cabangId"),
+            catatanApproval = str("catatanApproval"),
+            tanggalApproval = str("tanggalApproval"),
+            disetujuiOleh = str("disetujuiOleh"),
+            statusKhusus = str("statusKhusus"),
+            catatanStatusKhusus = str("catatanStatusKhusus"),
+            tanggalStatusKhusus = str("tanggalStatusKhusus"),
+            diberiTandaOleh = str("diberiTandaOleh"),
+            fotoKtpUrl = str("fotoKtpUrl"),
+            fotoKtpSuamiUrl = str("fotoKtpSuamiUrl"),
+            fotoKtpIstriUrl = str("fotoKtpIstriUrl"),
+            fotoNasabahUrl = str("fotoNasabahUrl"),
+            fotoSerahTerimaUrl = str("fotoSerahTerimaUrl"),
+            pendingFotoKtpUrl = str("pendingFotoKtpUrl"),
+            pendingFotoKtpSuamiUrl = str("pendingFotoKtpSuamiUrl"),
+            pendingFotoKtpIstriUrl = str("pendingFotoKtpIstriUrl"),
+            pendingFotoNasabahUrl = str("pendingFotoNasabahUrl"),
+            hasilSimulasiCicilan = hasilSimulasiCicilan,
+            pendingFotoKtpUri = str("pendingFotoKtpUri"),
+            pendingFotoKtpSuamiUri = str("pendingFotoKtpSuamiUri"),
+            pendingFotoKtpIstriUri = str("pendingFotoKtpIstriUri"),
+            pendingFotoNasabahUri = str("pendingFotoNasabahUri"),
+            pendingFotoSerahTerimaUri = str("pendingFotoSerahTerimaUri"),
+            statusSerahTerima = str("statusSerahTerima"),
+            tanggalSerahTerima = str("tanggalSerahTerima"),
+            sisaUtangLamaSebelumTopUp = int("sisaUtangLamaSebelumTopUp"),
+            totalPelunasanLamaSebelumTopUp = int("totalPelunasanLamaSebelumTopUp"),
+            tarikTabungan = int("tarikTabungan"),
+            statusPencairanSimpanan = str("statusPencairanSimpanan"),
+            tanggalLunasCicilan = str("tanggalLunasCicilan"),
+            tanggalPencairanSimpanan = str("tanggalPencairanSimpanan"),
+            dicairkanOleh = str("dicairkanOleh"),
+            tanggalPencairan = str("tanggalPencairan"),
+            dualApprovalInfo = dualApprovalInfo,
+            backupSebelumTopUp = backupSebelumTopUp,
+            isSynced = bool("synced", true)
+        )
+        Log.d("DEBUG_PARSE", "Berhasil muat: ${pelanggan.namaKtp}")
+        pelanggan
+    } catch (e: Exception) {
+        Log.e(
+            "DEBUG_PARSE",
+            "Gagal parse field='$currentField' key='${child.key}': ${e.message}",
+            e
+        )
+        null
+    }
+}
+
 data class PelangganDitolak(
     val pelanggan: Pelanggan = Pelanggan(),
     val alasanPenolakan: String = "",
@@ -9496,40 +9655,18 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                         var count = 0
 
                         snapshot.children.forEach { child ->
-                            val resolvedId = child.key ?: return@forEach
-                            try {
-                                // Manual parse pembayaranList: handle Map (sparse karena
-                                // admin pernah hapus pembayaran di tengah array, mis. {0,1,21})
-                                // maupun List (dense). Override hasil getValue agar tidak
-                                // bergantung pada konversi internal Firebase SDK.
-                                val pembayaranSnap = child.child("pembayaranList")
-                                val safePembayaran: List<Pembayaran> = when (pembayaranSnap.value) {
-                                    is Map<*, *>, is List<*> -> pembayaranSnap.children.mapNotNull { paySnap ->
-                                        try {
-                                            paySnap.getValue(Pembayaran::class.java)?.let { p ->
-                                                @Suppress("UNCHECKED_CAST")
-                                                val rawSub = p.subPembayaran as? List<SubPembayaran?> ?: emptyList()
-                                                p.copy(subPembayaran = rawSub.filterNotNull())
-                                            }
-                                        } catch (_: Exception) { null }
-                                    }
-                                    else -> emptyList()
-                                }
-
-                                val pelanggan = child.getValue(Pelanggan::class.java)
-                                if (pelanggan != null) {
-                                    // id = child.key agar tidak collapse di associateBy
-                                    val withId = pelanggan.copy(id = resolvedId, pembayaranList = safePembayaran)
-                                    val safe = sanitizePelanggan(withId)
-                                    if (!daftarPelanggan.any { it.id == safe.id }) {
-                                        newData.add(safe.copy())
-                                    }
-                                    lastLoadedKey = child.key
-                                    count++
-                                }
-                            } catch (e: Exception) {
-                                Log.e("Pagination", "Error parsing: ${e.message}")
+                            // Manual mapping per-field via parsePelangganFromSnapshot.
+                            // Tidak pakai child.getValue(Pelanggan::class.java) karena
+                            // pembayaranList sparse Object bisa membuat seluruh objek
+                            // gagal/return null. Helper bertanggung jawab atas
+                            // diagnostic DEBUG_PARSE per nasabah.
+                            val pelanggan = parsePelangganFromSnapshot(child) ?: return@forEach
+                            val safe = sanitizePelanggan(pelanggan)
+                            if (!daftarPelanggan.any { it.id == safe.id }) {
+                                newData.add(safe.copy())
                             }
+                            lastLoadedKey = child.key
+                            count++
                         }
 
                         if (count >= pageSize) {

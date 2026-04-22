@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import com.example.koperasikitagodangulu.LocalStorage
 import com.example.koperasikitagodangulu.Pelanggan
+import com.example.koperasikitagodangulu.parsePelangganFromSnapshot
 import com.example.koperasikitagodangulu.models.AdminSummary
 import com.google.firebase.database.DatabaseReference
 import kotlinx.coroutines.Dispatchers
@@ -141,43 +142,15 @@ class SmartFirebaseLoader(
 
             val pelangganList = mutableListOf<Pelanggan>()
             snapshot.children.forEach { child ->
-                val resolvedId = child.key ?: return@forEach
-                try {
-                    // Manual parse pembayaranList: handle baik List (dense) maupun
-                    // Map (sparse). Sparse Map terjadi saat admin pernah hapus
-                    // pembayaran di tengah array, menyisakan gap index (mis. {0,1,21}).
-                    // Firebase auto-deserialize via getValue(Pelanggan::class.java)
-                    // bisa gagal/menghasilkan tipe yang tak kompatibel pada format ini,
-                    // sehingga seluruh objek Pelanggan ikut di-skip.
-                    val pembayaranSnap = child.child("pembayaranList")
-                    val safePembayaran: List<Pembayaran> = when (pembayaranSnap.value) {
-                        is Map<*, *>, is List<*> -> pembayaranSnap.children.mapNotNull { paySnap ->
-                            try {
-                                paySnap.getValue(Pembayaran::class.java)?.let { p ->
-                                    @Suppress("UNCHECKED_CAST")
-                                    val rawSub = p.subPembayaran as? List<SubPembayaran?> ?: emptyList()
-                                    p.copy(subPembayaran = rawSub.filterNotNull())
-                                }
-                            } catch (_: Exception) { null }
-                        }
-                        else -> emptyList()
-                    }
-
-                    val pelanggan = child.getValue(Pelanggan::class.java)
-                    if (pelanggan != null) {
-                        // id = child.key (kanonik RTDB) agar nasabah lama dengan
-                        // field id kosong/salah tidak collapse di associateBy { it.id }
-                        pelangganList.add(
-                            pelanggan.copy(
-                                id = resolvedId,
-                                isSynced = true,
-                                pembayaranList = safePembayaran
-                            )
-                        )
-                    }
-                } catch (e: Exception) {
-                    Log.e(TAG, "Error parsing pelanggan ${child.key}: ${e.message}")
-                }
+                // Manual mapping per-field: tidak pakai child.getValue(Pelanggan::class.java)
+                // karena auto-deserialize Firebase bisa gagal/return null saat menjumpai
+                // pembayaranList ber-format sparse Object (mis. {0,1,21}). Helper
+                // parsePelangganFromSnapshot membangun Pelanggan satu per satu dari
+                // DataSnapshot, sehingga satu nasabah cacat tidak menggagalkan
+                // seluruh list — dan log diagnostik DEBUG_PARSE memberi tahu field
+                // mana yang gagal kalau parsing nasabah tertentu lolos catch.
+                val pelanggan = parsePelangganFromSnapshot(child) ?: return@forEach
+                pelangganList.add(pelanggan.copy(isSynced = true))
             }
 
             // PENTING: Merge dengan data lokal - SMART MERGE!
