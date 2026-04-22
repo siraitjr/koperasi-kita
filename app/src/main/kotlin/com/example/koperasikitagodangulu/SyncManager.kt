@@ -24,6 +24,7 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.tasks.await
 import java.io.ByteArrayOutputStream
 import java.io.InputStream
+import java.util.UUID
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
@@ -162,13 +163,24 @@ class SyncManager private constructor(private val context: Context) {
         val auditPath = "pelanggan/$adminUid/$pelangganId/pembayaranList/$pembayaranIndex"
         val parentPath = "pelanggan/$adminUid/$pelangganId/pembayaranList"
 
+        // clientOpId unik per operasi: dipakai sebagai kunci idempotency di
+        // appendToArrayTransactional. UUID membedakan split-entry yang secara
+        // bisnis (jumlah+tanggal+keterangan) identik tapi memang 2 transaksi
+        // yang berbeda — sekaligus tetap men-dedup retry operasi yang sama
+        // (payload tersimpan di Room, clientOpId ikut di dataJson).
+        val enrichedData = if (pembayaranData.containsKey("clientOpId")) {
+            pembayaranData
+        } else {
+            pembayaranData + ("clientOpId" to UUID.randomUUID().toString())
+        }
+
         Log.d(TAG, "🚀 savePembayaranDirect() CALLED!")
 
         try {
             val operation = PendingOperation(
                 operationType = "ADD_PEMBAYARAN",
                 firebasePath = auditPath,
-                dataJson = gson.toJson(pembayaranData),
+                dataJson = gson.toJson(enrichedData),
                 adminUid = adminUid,
                 pelangganId = pelangganId,
                 status = "PENDING"
@@ -179,7 +191,7 @@ class SyncManager private constructor(private val context: Context) {
             if (isOnline()) {
                 try {
                     dao.updateStatus(operationId, "SYNCING")
-                    appendToArrayTransactional(parentPath, pembayaranData)
+                    appendToArrayTransactional(parentPath, enrichedData)
                     dao.updateStatus(operationId, "SUCCESS")
                     Log.d(TAG, "✅ PEMBAYARAN SYNCED TO FIREBASE (transactional append)!")
                     SaveResult.Success
@@ -218,13 +230,19 @@ class SyncManager private constructor(private val context: Context) {
         val auditPath = "pelanggan/$adminUid/$pelangganId/pembayaranList/$pembayaranIndex/subPembayaran/$subIndex"
         val parentPath = "pelanggan/$adminUid/$pelangganId/pembayaranList/$pembayaranIndex/subPembayaran"
 
+        val enrichedData = if (subPembayaranData.containsKey("clientOpId")) {
+            subPembayaranData
+        } else {
+            subPembayaranData + ("clientOpId" to UUID.randomUUID().toString())
+        }
+
         Log.d(TAG, "🚀 saveSubPembayaranDirect() CALLED!")
 
         try {
             val operation = PendingOperation(
                 operationType = "ADD_SUB_PEMBAYARAN",
                 firebasePath = auditPath,
-                dataJson = gson.toJson(subPembayaranData),
+                dataJson = gson.toJson(enrichedData),
                 adminUid = adminUid,
                 pelangganId = pelangganId,
                 status = "PENDING"
@@ -235,7 +253,7 @@ class SyncManager private constructor(private val context: Context) {
             if (isOnline()) {
                 try {
                     dao.updateStatus(operationId, "SYNCING")
-                    appendToArrayTransactional(parentPath, subPembayaranData)
+                    appendToArrayTransactional(parentPath, enrichedData)
                     dao.updateStatus(operationId, "SUCCESS")
                     Log.d(TAG, "✅ SUB-PEMBAYARAN SYNCED (transactional append)!")
                     SaveResult.Success
@@ -754,13 +772,23 @@ class SyncManager private constructor(private val context: Context) {
                     else -> return Transaction.abort()
                 }
 
-                // Idempotency: skip kalau entry dengan jumlah+tanggal+keterangan identik sudah ada
-                val isDuplicate = existing.any { item ->
-                    val map = item as? Map<*, *> ?: return@any false
-                    val sameJumlah = (map["jumlah"]?.toString() ?: "") == (data["jumlah"]?.toString() ?: "")
-                    val sameTanggal = (map["tanggal"]?.toString() ?: "") == (data["tanggal"]?.toString() ?: "")
-                    val sameKeterangan = (map["keterangan"]?.toString() ?: "") == (data["keterangan"]?.toString() ?: "")
-                    sameJumlah && sameTanggal && sameKeterangan
+                // Idempotency by clientOpId: UUID unik per operasi di Room.
+                // - Split payment (2 entry {20rb,"22 Apr"} dari satu aksi user) punya
+                //   clientOpId berbeda → keduanya ter-append. Tidak lagi false-positive
+                //   dedup seperti cek jumlah+tanggal+keterangan sebelumnya.
+                // - Replay operasi yang sama (mis. retry setelah ACK hilang) pakai
+                //   clientOpId identik → tetap ter-dedup dengan benar.
+                // - Payload tanpa clientOpId (legacy/external write) → tidak di-dedup,
+                //   append langsung (aman, kompat dengan data lama).
+                val newOpId = data["clientOpId"]?.toString()
+                val isDuplicate = if (newOpId.isNullOrBlank()) {
+                    false
+                } else {
+                    existing.any { item ->
+                        val map = item as? Map<*, *> ?: return@any false
+                        val existingOpId = map["clientOpId"]?.toString()
+                        !existingOpId.isNullOrBlank() && existingOpId == newOpId
+                    }
                 }
 
                 if (!isDuplicate) {
