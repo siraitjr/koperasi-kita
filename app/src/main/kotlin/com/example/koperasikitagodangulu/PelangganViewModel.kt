@@ -9496,10 +9496,31 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                         var count = 0
 
                         snapshot.children.forEach { child ->
+                            val resolvedId = child.key ?: return@forEach
                             try {
+                                // Manual parse pembayaranList: handle Map (sparse karena
+                                // admin pernah hapus pembayaran di tengah array, mis. {0,1,21})
+                                // maupun List (dense). Override hasil getValue agar tidak
+                                // bergantung pada konversi internal Firebase SDK.
+                                val pembayaranSnap = child.child("pembayaranList")
+                                val safePembayaran: List<Pembayaran> = when (pembayaranSnap.value) {
+                                    is Map<*, *>, is List<*> -> pembayaranSnap.children.mapNotNull { paySnap ->
+                                        try {
+                                            paySnap.getValue(Pembayaran::class.java)?.let { p ->
+                                                @Suppress("UNCHECKED_CAST")
+                                                val rawSub = p.subPembayaran as? List<SubPembayaran?> ?: emptyList()
+                                                p.copy(subPembayaran = rawSub.filterNotNull())
+                                            }
+                                        } catch (_: Exception) { null }
+                                    }
+                                    else -> emptyList()
+                                }
+
                                 val pelanggan = child.getValue(Pelanggan::class.java)
                                 if (pelanggan != null) {
-                                    val safe = sanitizePelanggan(pelanggan)
+                                    // id = child.key agar tidak collapse di associateBy
+                                    val withId = pelanggan.copy(id = resolvedId, pembayaranList = safePembayaran)
+                                    val safe = sanitizePelanggan(withId)
                                     if (!daftarPelanggan.any { it.id == safe.id }) {
                                         newData.add(safe.copy())
                                     }
