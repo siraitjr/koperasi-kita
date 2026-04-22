@@ -6382,6 +6382,21 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
         onSuccess: (() -> Unit)? = null,
         onFailure: ((Exception) -> Unit)? = null
     ) {
+        // ✅ FIX: Kirim notifikasi DULU sebelum write apapun, agar Admin Lapangan
+        // pasti menerima notif reject walaupun salah satu Firebase write di bawah
+        // gagal (setValue pelanggan_ditolak / removeValue pelanggan). Sebelumnya
+        // notif di-nested 2 level di dalam kedua addOnSuccessListener → kalau ada
+        // network error di tengah, admin tidak pernah tahu pengajuannya ditolak
+        // dan status "Menunggu Approval" menggantung di dashboard.
+        createAdminNotification(
+            adminUid = pelanggan.adminUid,
+            pelangganId = pelangganId,
+            pelangganNama = pelanggan.namaPanggilan,
+            alasanPenolakan = alasan,
+            pimpinanName = pimpinanName,
+            type = "REJECTION"
+        )
+
         val rejectedData = PelangganDitolak(
             pelanggan = pelanggan.copy(status = "Ditolak"),
             alasanPenolakan = alasan,
@@ -6397,15 +6412,6 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                 database.child("pelanggan").child(pelanggan.adminUid)
                     .child(pelangganId).removeValue()
                     .addOnSuccessListener {
-                        createAdminNotification(
-                            adminUid = pelanggan.adminUid,
-                            pelangganId = pelangganId,
-                            pelangganNama = pelanggan.namaPanggilan,
-                            alasanPenolakan = alasan,
-                            pimpinanName = pimpinanName,
-                            type = "REJECTION"
-                        )
-
                         // ✅ PERBAIKAN: Gunakan removeAll dengan predicate untuk menghindari index issues
                         daftarPelanggan.removeAll { it.id == pelangganId }
                         safeRemovePelanggan(pelangganId)
