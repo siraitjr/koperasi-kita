@@ -4823,6 +4823,70 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                             ?: ref.setValue(updatedPelanggan)
                         writeTask
                             .addOnSuccessListener {
+                                // ✅ FIX: Kirim notifikasi ke Admin Lapangan SEGERA setelah
+                                // /pelanggan/{adminUid}/{pelangganId} ter-update, tanpa bergantung
+                                // pada cabangId atau query pengajuan_approval. Sebelumnya call ini
+                                // di-nested di dalam addListenerForSingleValueEvent → addOnSuccessListener
+                                // setValue(dualApprovalInfo), sehingga TIDAK terkirim kalau:
+                                //   (a) cabangId null,
+                                //   (b) query pengajuan_approval tidak menemukan child,
+                                //   (c) update dualApprovalInfo gagal/cancelled.
+                                // Akibatnya admin tidak tahu pengajuan selesai dan fitur Foto
+                                // Serah Terima tidak muncul. Pola dipindahkan ke outer agar
+                                // konsisten dengan jalur < 3jt single approval.
+                                val pengawasApprovalStatus = currentDualInfo.pengawasApproval.status
+                                val isApprovedByPengawas = pengawasApprovalStatus == ApprovalStatus.APPROVED
+                                val pengawasApproverName = currentDualInfo.pengawasApproval.by
+                                val pengawasRejectionNote = currentDualInfo.pengawasApproval.note
+
+                                val pinjamanYangDiajukan = if (existing.besarPinjamanDiajukan > 0) existing.besarPinjamanDiajukan else existing.besarPinjaman
+                                val pinjamanYangDisetujui = if (updatedPelanggan.besarPinjamanDisetujui > 0) updatedPelanggan.besarPinjamanDisetujui else updatedPelanggan.besarPinjaman
+                                val tenorYangDiajukan = existing.tenor
+                                val tenorYangDisetujui = updatedPelanggan.tenor
+
+                                val adaPenyesuaianPinjaman = pinjamanYangDiajukan != pinjamanYangDisetujui
+                                val adaPenyesuaianTenor = tenorYangDiajukan != tenorYangDisetujui
+                                val adaPenyesuaian = adaPenyesuaianPinjaman || adaPenyesuaianTenor
+
+                                val catatanPenyesuaian = if (adaPenyesuaian) {
+                                    buildString {
+                                        if (adaPenyesuaianPinjaman) {
+                                            append("Pinjaman disesuaikan dari Rp ${formatRupiah(pinjamanYangDiajukan)} menjadi Rp ${formatRupiah(pinjamanYangDisetujui)}")
+                                        }
+                                        if (adaPenyesuaianTenor) {
+                                            if (isNotEmpty()) append(". ")
+                                            append("Tenor disesuaikan dari $tenorYangDiajukan hari menjadi $tenorYangDisetujui hari")
+                                        }
+                                    }
+                                } else ""
+
+                                createAdminNotification(
+                                    adminUid = adminUid,
+                                    pelangganId = pelangganId,
+                                    pelangganNama = existing.namaPanggilan,
+                                    alasanPenolakan = if (isApprovedByPengawas) "" else pengawasRejectionNote,
+                                    pimpinanName = "Pimpinan & $pengawasApproverName",
+                                    type = if (isApprovedByPengawas) "DUAL_APPROVAL_APPROVED" else "DUAL_APPROVAL_REJECTED",
+                                    catatanPersetujuan = if (isApprovedByPengawas) catatan.ifBlank { "Disetujui oleh Pimpinan & Pengawas" } else "",
+                                    pinjamanDiajukan = pinjamanYangDiajukan,
+                                    pinjamanDisetujui = pinjamanYangDisetujui,
+                                    tenorDiajukan = tenorYangDiajukan,
+                                    tenorDisetujui = tenorYangDisetujui,
+                                    isPinjamanDiubah = adaPenyesuaian,
+                                    catatanPerubahanPinjaman = catatanPenyesuaian,
+                                    // Catatan lengkap dari setiap approver
+                                    pimpinanNote = currentDualInfo.pimpinanApproval.note,
+                                    koordinatorNote = currentDualInfo.koordinatorApproval.note,
+                                    pengawasNote = currentDualInfo.pengawasApproval.note,
+                                    pimpinanApprovalStatus = currentDualInfo.pimpinanApproval.status,
+                                    koordinatorApprovalStatus = currentDualInfo.koordinatorApproval.status,
+                                    pengawasApprovalStatus = currentDualInfo.pengawasApproval.status,
+                                    pimpinanByName = currentDualInfo.pimpinanApproval.by,
+                                    koordinatorByName = currentDualInfo.koordinatorApproval.by,
+                                    pengawasByName = currentDualInfo.pengawasApproval.by
+                                )
+                                Log.d("Approval", "✅ Notifikasi Phase 5 terkirim ke Admin: $adminUid")
+
                                 cabangId?.let { branchId ->
                                     database.child("pengajuan_approval").child(branchId)
                                         .orderByChild("pelangganId")
@@ -4833,62 +4897,6 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                                                     child.ref.child("dualApprovalInfo").setValue(updatedDualInfo)
                                                         .addOnSuccessListener {
                                                             Log.d("Approval", "✅ Phase 3 complete - COMPLETED")
-
-                                                            // ✅ PERBAIKAN: Kirim notifikasi ke Admin SEBELUM hapus data
-                                                            val pengawasApprovalStatus = currentDualInfo.pengawasApproval.status
-                                                            val isApprovedByPengawas = pengawasApprovalStatus == ApprovalStatus.APPROVED
-                                                            val pengawasApproverName = currentDualInfo.pengawasApproval.by
-                                                            val pengawasRejectionNote = currentDualInfo.pengawasApproval.note
-
-                                                            // ✅ PERBAIKAN: Hitung nilai pinjaman yang diajukan dan disetujui
-                                                            val pinjamanYangDiajukan = if (existing.besarPinjamanDiajukan > 0) existing.besarPinjamanDiajukan else existing.besarPinjaman
-                                                            val pinjamanYangDisetujui = if (updatedPelanggan.besarPinjamanDisetujui > 0) updatedPelanggan.besarPinjamanDisetujui else updatedPelanggan.besarPinjaman
-                                                            val tenorYangDiajukan = existing.tenor  // ✅ Pelanggan hanya punya 'tenor', tidak ada 'tenorDiajukan'
-                                                            val tenorYangDisetujui = updatedPelanggan.tenor
-
-                                                            val adaPenyesuaianPinjaman = pinjamanYangDiajukan != pinjamanYangDisetujui
-                                                            val adaPenyesuaianTenor = tenorYangDiajukan != tenorYangDisetujui
-                                                            val adaPenyesuaian = adaPenyesuaianPinjaman || adaPenyesuaianTenor
-
-                                                            val catatanPenyesuaian = if (adaPenyesuaian) {
-                                                                buildString {
-                                                                    if (adaPenyesuaianPinjaman) {
-                                                                        append("Pinjaman disesuaikan dari Rp ${formatRupiah(pinjamanYangDiajukan)} menjadi Rp ${formatRupiah(pinjamanYangDisetujui)}")
-                                                                    }
-                                                                    if (adaPenyesuaianTenor) {
-                                                                        if (isNotEmpty()) append(". ")
-                                                                        append("Tenor disesuaikan dari $tenorYangDiajukan hari menjadi $tenorYangDisetujui hari")
-                                                                    }
-                                                                }
-                                                            } else ""
-
-                                                            createAdminNotification(
-                                                                adminUid = adminUid,
-                                                                pelangganId = pelangganId,
-                                                                pelangganNama = existing.namaPanggilan,
-                                                                alasanPenolakan = if (isApprovedByPengawas) "" else pengawasRejectionNote,
-                                                                pimpinanName = "Pimpinan & $pengawasApproverName",
-                                                                type = if (isApprovedByPengawas) "DUAL_APPROVAL_APPROVED" else "DUAL_APPROVAL_REJECTED",
-                                                                catatanPersetujuan = if (isApprovedByPengawas) catatan.ifBlank { "Disetujui oleh Pimpinan & Pengawas" } else "",
-                                                                pinjamanDiajukan = pinjamanYangDiajukan,
-                                                                pinjamanDisetujui = pinjamanYangDisetujui,
-                                                                tenorDiajukan = tenorYangDiajukan,
-                                                                tenorDisetujui = tenorYangDisetujui,
-                                                                isPinjamanDiubah = adaPenyesuaian,
-                                                                catatanPerubahanPinjaman = catatanPenyesuaian,
-                                                                // Catatan lengkap dari setiap approver
-                                                                pimpinanNote = currentDualInfo.pimpinanApproval.note,
-                                                                koordinatorNote = currentDualInfo.koordinatorApproval.note,
-                                                                pengawasNote = currentDualInfo.pengawasApproval.note,
-                                                                pimpinanApprovalStatus = currentDualInfo.pimpinanApproval.status,
-                                                                koordinatorApprovalStatus = currentDualInfo.koordinatorApproval.status,
-                                                                pengawasApprovalStatus = currentDualInfo.pengawasApproval.status,
-                                                                pimpinanByName = currentDualInfo.pimpinanApproval.by,
-                                                                koordinatorByName = currentDualInfo.koordinatorApproval.by,
-                                                                pengawasByName = currentDualInfo.pengawasApproval.by
-                                                            )
-
-                                                            Log.d("Approval", "✅ Notifikasi terkirim ke Admin: $adminUid")
 
                                                             // Hapus setelah delay agar CF onDualApprovalComplete sempat membaca data
                                                             android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
