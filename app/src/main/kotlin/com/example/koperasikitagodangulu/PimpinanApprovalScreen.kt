@@ -1272,12 +1272,14 @@ fun DetailPengajuanSheet(
             modifier = Modifier.padding(bottom = 12.dp)
         )
 
-        // URL foto: prioritaskan URL pending (foto BARU dari top-up yang menunggu approval).
-        // Kalau blank (mis. new loan tanpa top-up) → fallback ke URL permanent.
-        val fotoKtpResolved = pelanggan.pendingFotoKtpUrl.ifBlank { pelanggan.fotoKtpUrl }
-        val fotoKtpSuamiResolved = pelanggan.pendingFotoKtpSuamiUrl.ifBlank { pelanggan.fotoKtpSuamiUrl }
-        val fotoKtpIstriResolved = pelanggan.pendingFotoKtpIstriUrl.ifBlank { pelanggan.fotoKtpIstriUrl }
-        val fotoNasabahResolved = pelanggan.pendingFotoNasabahUrl.ifBlank { pelanggan.fotoNasabahUrl }
+        // URL foto approval: top-up → strict pendingFoto*Url (tanpa fallback ke
+        // foto pinjaman lama). New loan → foto*Url permanent. Lihat
+        // PelangganViewModel.approvalPhotoUrls() untuk detail.
+        val approvalPhotos = pelanggan.approvalPhotoUrls()
+        val fotoKtpResolved = approvalPhotos.fotoKtpUrl
+        val fotoKtpSuamiResolved = approvalPhotos.fotoKtpSuamiUrl
+        val fotoKtpIstriResolved = approvalPhotos.fotoKtpIstriUrl
+        val fotoNasabahResolved = approvalPhotos.fotoNasabahUrl
 
         // Tampilkan foto KTP berdasarkan tipe pinjaman
         when {

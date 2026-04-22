@@ -1114,11 +1114,14 @@ private fun PengawasDetailPengajuanSheet(
         // ✅ PERBAIKAN: SECTION FOTO LENGKAP
         // =========================================================================
         DetailSection(title = "Dokumen Foto") {
-            // URL foto: prioritaskan pending (foto BARU top-up) di atas permanent.
-            val fotoKtpResolved = pelanggan.pendingFotoKtpUrl.ifBlank { pelanggan.fotoKtpUrl }
-            val fotoKtpSuamiResolved = pelanggan.pendingFotoKtpSuamiUrl.ifBlank { pelanggan.fotoKtpSuamiUrl }
-            val fotoKtpIstriResolved = pelanggan.pendingFotoKtpIstriUrl.ifBlank { pelanggan.fotoKtpIstriUrl }
-            val fotoNasabahResolved = pelanggan.pendingFotoNasabahUrl.ifBlank { pelanggan.fotoNasabahUrl }
+            // URL foto approval: top-up → strict pendingFoto*Url (tanpa fallback ke
+            // foto pinjaman lama). New loan → foto*Url permanent. Lihat
+            // PelangganViewModel.approvalPhotoUrls() untuk detail.
+            val approvalPhotos = pelanggan.approvalPhotoUrls()
+            val fotoKtpResolved = approvalPhotos.fotoKtpUrl
+            val fotoKtpSuamiResolved = approvalPhotos.fotoKtpSuamiUrl
+            val fotoKtpIstriResolved = approvalPhotos.fotoKtpIstriUrl
+            val fotoNasabahResolved = approvalPhotos.fotoNasabahUrl
 
             Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
 

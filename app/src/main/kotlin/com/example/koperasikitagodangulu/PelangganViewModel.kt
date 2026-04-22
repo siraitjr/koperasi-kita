@@ -290,6 +290,43 @@ data class BackupTopUpData(
 val Pelanggan.safePembayaranList: List<Pembayaran>
     get() = pembayaranList.mapNotNull { it }
 
+/** URL foto yang dipakai di layar Approval. */
+data class ApprovalPhotoUrls(
+    val fotoKtpUrl: String,
+    val fotoKtpSuamiUrl: String,
+    val fotoKtpIstriUrl: String,
+    val fotoNasabahUrl: String
+)
+
+/**
+ * Approval screen HANYA boleh menampilkan foto yang di-upload pada pengajuan
+ * yang sedang di-review:
+ *  - TOP-UP (pinjamanKe > 1) → strict pendingFoto*Url dari KelolaKreditScreen.
+ *    Kalau admin tidak re-upload satu jenis, field tersebut blank dan screen
+ *    tampilkan placeholder — TIDAK fallback ke foto pinjaman lama (mencegah
+ *    foto "bercampur" antara pinjaman lama dan pengajuan baru).
+ *  - NEW LOAN (pinjamanKe == 1) → foto*Url permanent (dari TambahPelanggan).
+ *    Tidak ada pending URL pada new loan, jadi permanent = foto pengajuan.
+ */
+fun Pelanggan.approvalPhotoUrls(): ApprovalPhotoUrls {
+    val isTopUp = pinjamanKe > 1
+    return if (isTopUp) {
+        ApprovalPhotoUrls(
+            fotoKtpUrl = pendingFotoKtpUrl,
+            fotoKtpSuamiUrl = pendingFotoKtpSuamiUrl,
+            fotoKtpIstriUrl = pendingFotoKtpIstriUrl,
+            fotoNasabahUrl = pendingFotoNasabahUrl
+        )
+    } else {
+        ApprovalPhotoUrls(
+            fotoKtpUrl = fotoKtpUrl,
+            fotoKtpSuamiUrl = fotoKtpSuamiUrl,
+            fotoKtpIstriUrl = fotoKtpIstriUrl,
+            fotoNasabahUrl = fotoNasabahUrl
+        )
+    }
+}
+
 /**
  * Parse DataSnapshot menjadi Pelanggan secara MANUAL per-field.
  *
