@@ -389,70 +389,50 @@ class SyncManager private constructor(private val context: Context) {
     ): Map<String, Any?> {
         val mutableData = data.toMutableMap()
 
+        // Top-up (pinjamanKe > 1): upload ke folder pending dan tulis URL ke
+        // pendingFoto*Url — bukan fotoKtpUrl — agar foto pinjaman aktif lama
+        // tidak tertimpa sebelum approval final.
+        // New loan (pinjamanKe == 1): perilaku lama, tulis langsung ke fotoKtpUrl.
+        val pinjamanKeRaw = data["pinjamanKe"]
+        val pinjamanKe = (pinjamanKeRaw as? Long)?.toInt()
+            ?: (pinjamanKeRaw as? Int)
+            ?: (pinjamanKeRaw as? Number)?.toInt()
+            ?: 1
+        val isTopUp = pinjamanKe > 1
+
         try {
-            // Cek dan upload foto KTP utama
-            val pendingKtpUri = data["pendingFotoKtpUri"] as? String ?: ""
-            val currentKtpUrl = data["fotoKtpUrl"] as? String ?: ""
+            uploadKtpIfPending(mutableData, adminUid, pelangganId, isTopUp,
+                uriKey = "pendingFotoKtpUri",
+                pendingUrlKey = "pendingFotoKtpUrl",
+                permanentUrlKey = "fotoKtpUrl",
+                jenisKtp = "utama")
 
-            if (pendingKtpUri.isNotBlank() && currentKtpUrl.isBlank()) {
-                Log.d(TAG, "📷 Uploading pending foto KTP...")
-                val uploadedUrl = uploadFotoKtp(Uri.parse(pendingKtpUri), adminUid, pelangganId, "utama")
-                if (uploadedUrl != null) {
-                    mutableData["fotoKtpUrl"] = uploadedUrl
-                    mutableData["pendingFotoKtpUri"] = ""
-                    Log.d(TAG, "✅ Foto KTP uploaded: $uploadedUrl")
-                }
-            }
+            uploadKtpIfPending(mutableData, adminUid, pelangganId, isTopUp,
+                uriKey = "pendingFotoKtpSuamiUri",
+                pendingUrlKey = "pendingFotoKtpSuamiUrl",
+                permanentUrlKey = "fotoKtpSuamiUrl",
+                jenisKtp = "suami")
 
-            // Cek dan upload foto KTP Suami
-            val pendingKtpSuamiUri = data["pendingFotoKtpSuamiUri"] as? String ?: ""
-            val currentKtpSuamiUrl = data["fotoKtpSuamiUrl"] as? String ?: ""
+            uploadKtpIfPending(mutableData, adminUid, pelangganId, isTopUp,
+                uriKey = "pendingFotoKtpIstriUri",
+                pendingUrlKey = "pendingFotoKtpIstriUrl",
+                permanentUrlKey = "fotoKtpIstriUrl",
+                jenisKtp = "istri")
 
-            if (pendingKtpSuamiUri.isNotBlank() && currentKtpSuamiUrl.isBlank()) {
-                Log.d(TAG, "📷 Uploading pending foto KTP Suami...")
-                val uploadedUrl = uploadFotoKtp(Uri.parse(pendingKtpSuamiUri), adminUid, pelangganId, "suami")
-                if (uploadedUrl != null) {
-                    mutableData["fotoKtpSuamiUrl"] = uploadedUrl
-                    mutableData["pendingFotoKtpSuamiUri"] = ""
-                    Log.d(TAG, "✅ Foto KTP Suami uploaded: $uploadedUrl")
-                }
-            }
+            uploadKtpIfPending(mutableData, adminUid, pelangganId, isTopUp,
+                uriKey = "pendingFotoNasabahUri",
+                pendingUrlKey = "pendingFotoNasabahUrl",
+                permanentUrlKey = "fotoNasabahUrl",
+                jenisKtp = "nasabah")
 
-            // Cek dan upload foto KTP Istri
-            val pendingKtpIstriUri = data["pendingFotoKtpIstriUri"] as? String ?: ""
-            val currentKtpIstriUrl = data["fotoKtpIstriUrl"] as? String ?: ""
-
-            if (pendingKtpIstriUri.isNotBlank() && currentKtpIstriUrl.isBlank()) {
-                Log.d(TAG, "📷 Uploading pending foto KTP Istri...")
-                val uploadedUrl = uploadFotoKtp(Uri.parse(pendingKtpIstriUri), adminUid, pelangganId, "istri")
-                if (uploadedUrl != null) {
-                    mutableData["fotoKtpIstriUrl"] = uploadedUrl
-                    mutableData["pendingFotoKtpIstriUri"] = ""
-                    Log.d(TAG, "✅ Foto KTP Istri uploaded: $uploadedUrl")
-                }
-            }
-
-            // ✅ BARU: Cek dan upload foto Nasabah
-            val pendingNasabahUri = data["pendingFotoNasabahUri"] as? String ?: ""
-            val currentNasabahUrl = data["fotoNasabahUrl"] as? String ?: ""
-
-            if (pendingNasabahUri.isNotBlank() && currentNasabahUrl.isBlank()) {
-                Log.d(TAG, "📷 Uploading pending foto Nasabah...")
-                val uploadedUrl = uploadFotoKtp(Uri.parse(pendingNasabahUri), adminUid, pelangganId, "nasabah")
-                if (uploadedUrl != null) {
-                    mutableData["fotoNasabahUrl"] = uploadedUrl
-                    mutableData["pendingFotoNasabahUri"] = ""
-                    Log.d(TAG, "✅ Foto Nasabah uploaded: $uploadedUrl")
-                }
-            }
-
-            // ✅ BARU: Cek dan upload foto Serah Terima
-            val pendingSerahTerimaUri = data["pendingFotoSerahTerimaUri"] as? String ?: ""
-            val currentSerahTerimaUrl = data["fotoSerahTerimaUrl"] as? String ?: ""
-
+            // Foto serah terima tidak ikut alur top-up; selalu ke permanent.
+            val pendingSerahTerimaUri = mutableData["pendingFotoSerahTerimaUri"] as? String ?: ""
+            val currentSerahTerimaUrl = mutableData["fotoSerahTerimaUrl"] as? String ?: ""
             if (pendingSerahTerimaUri.isNotBlank() && currentSerahTerimaUrl.isBlank()) {
                 Log.d(TAG, "📷 Uploading pending foto Serah Terima...")
-                val uploadedUrl = uploadFotoKtp(Uri.parse(pendingSerahTerimaUri), adminUid, pelangganId, "serah_terima")
+                val uploadedUrl = uploadFotoKtp(
+                    Uri.parse(pendingSerahTerimaUri), adminUid, pelangganId, "serah_terima"
+                )
                 if (uploadedUrl != null) {
                     mutableData["fotoSerahTerimaUrl"] = uploadedUrl
                     mutableData["pendingFotoSerahTerimaUri"] = ""
@@ -469,20 +449,62 @@ class SyncManager private constructor(private val context: Context) {
     }
 
     /**
-     * Upload single foto KTP ke Firebase Storage
+     * Upload satu foto KTP dari URI pending → URL, idempotent-safe untuk retry.
+     * - isTopUp=true   → tulis URL ke pendingFoto*Url, folder Storage pending.
+     * - isTopUp=false  → tulis URL ke fotoKtpUrl (permanent), folder Storage permanent.
+     */
+    private suspend fun uploadKtpIfPending(
+        mutableData: MutableMap<String, Any?>,
+        adminUid: String,
+        pelangganId: String,
+        isTopUp: Boolean,
+        uriKey: String,
+        pendingUrlKey: String,
+        permanentUrlKey: String,
+        jenisKtp: String
+    ) {
+        val pendingUri = mutableData[uriKey] as? String ?: ""
+        if (pendingUri.isBlank()) return
+
+        val targetUrlKey = if (isTopUp) pendingUrlKey else permanentUrlKey
+        val currentTargetUrl = mutableData[targetUrlKey] as? String ?: ""
+        // Idempotent: URL target sudah terisi (retry dari Room queue) → skip upload.
+        if (currentTargetUrl.isNotBlank()) {
+            mutableData[uriKey] = ""
+            return
+        }
+
+        Log.d(TAG, "📷 Uploading $jenisKtp ${if (isTopUp) "[pending]" else "[permanent]"}...")
+        val uploadedUrl = uploadFotoKtp(
+            Uri.parse(pendingUri), adminUid, pelangganId, jenisKtp, isPending = isTopUp
+        )
+        if (uploadedUrl != null) {
+            mutableData[targetUrlKey] = uploadedUrl
+            mutableData[uriKey] = ""
+            Log.d(TAG, "✅ $jenisKtp uploaded → $uploadedUrl")
+        }
+    }
+
+    /**
+     * Upload single foto KTP ke Firebase Storage.
+     * isPending=true menulis ke folder `ktp_images_pending/` agar foto pinjaman
+     * aktif lama tidak tertimpa sebelum approval selesai (jalur top-up), konsisten
+     * dengan PelangganViewModel.uploadFotoKtp.
      */
     private suspend fun uploadFotoKtp(
         imageUri: Uri,
         adminUid: String,
         pelangganId: String,
-        jenisKtp: String = "utama"
+        jenisKtp: String = "utama",
+        isPending: Boolean = false
     ): String? {
         return withContext(Dispatchers.IO) {
             try {
-                Log.d(TAG, "📷 uploadFotoKtp: $jenisKtp for $pelangganId")
+                Log.d(TAG, "📷 uploadFotoKtp: $jenisKtp for $pelangganId${if (isPending) " [pending]" else ""}")
 
                 val storageRef = storage.reference
-                val ktpRef = storageRef.child("ktp_images/$adminUid/$pelangganId/ktp_$jenisKtp.jpg")
+                val folder = if (isPending) "ktp_images_pending" else "ktp_images"
+                val ktpRef = storageRef.child("$folder/$adminUid/$pelangganId/ktp_$jenisKtp.jpg")
 
                 // Kompresi gambar
                 val compressedImage = compressImageForKtp(imageUri)

@@ -2280,6 +2280,12 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
             "pendingFotoKtpUri" to pelanggan.pendingFotoKtpUri,
             "pendingFotoKtpSuamiUri" to pelanggan.pendingFotoKtpSuamiUri,
             "pendingFotoKtpIstriUri" to pelanggan.pendingFotoKtpIstriUri,
+            // Pending foto URL (top-up) wajib di-serialize agar approval screens di
+            // device lain bisa membaca foto pengajuan baru sebelum final approve.
+            "pendingFotoKtpUrl" to pelanggan.pendingFotoKtpUrl,
+            "pendingFotoKtpSuamiUrl" to pelanggan.pendingFotoKtpSuamiUrl,
+            "pendingFotoKtpIstriUrl" to pelanggan.pendingFotoKtpIstriUrl,
+            "pendingFotoNasabahUrl" to pelanggan.pendingFotoNasabahUrl,
             "fotoNasabahUrl" to pelanggan.fotoNasabahUrl,  // ✅ BARU
             "fotoSerahTerimaUrl" to pelanggan.fotoSerahTerimaUrl,
             "pendingFotoSerahTerimaUri" to pelanggan.pendingFotoSerahTerimaUri,
