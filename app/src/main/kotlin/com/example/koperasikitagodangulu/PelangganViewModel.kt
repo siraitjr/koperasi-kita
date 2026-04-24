@@ -104,9 +104,14 @@ data class Pembayaran(
     var jumlah: Int = 0,
     var tanggal: String = "",
     var keterangan: String = "",
-    var subPembayaran: List<SubPembayaran> = emptyList()
+    var subPembayaran: List<SubPembayaran> = emptyList(),
+    // UUID per-operasi sebagai idempotency key. Dijaga identik antara object
+    // in-memory, raw map yang dikirim ke addPembayaran, dan hasil serialisasi
+    // setValue(Pelanggan) — sehingga appendToArrayTransactional bisa men-dedup
+    // duplikat dari race condition dual-write path manapun.
+    var clientOpId: String = ""
 ) {
-    constructor() : this(0, "", "", emptyList())
+    constructor() : this(0, "", "", emptyList(), "")
 }
 
 data class CabangSummary(
@@ -2234,6 +2239,10 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     "jumlah" to pembayaran.jumlah,
                     "tanggal" to pembayaran.tanggal,
                     "keterangan" to pembayaran.keterangan,
+                    // Preservasi clientOpId agar setValue full pelanggan (jalur B)
+                    // menulis entry dengan tag idempotency yang sama dengan jalur
+                    // addPembayaran (jalur A).
+                    "clientOpId" to pembayaran.clientOpId,
                     "subPembayaran" to pembayaran.subPembayaran.map { sub ->
                         mapOf(
                             "jumlah" to sub.jumlah,
@@ -2694,7 +2703,12 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
         val index = daftarPelanggan.indexOfFirst { it.id == id }
         if (index != -1) {
             val pelanggan = daftarPelanggan[index]
-            val pembayaran = Pembayaran(jumlah, tanggal)
+            // clientOpId dibuat sekali di sini dan dipakai 2x: di object in-memory
+            // (ikut serialisasi setValue full pelanggan) DAN di raw map yang dikirim
+            // ke offlineRepo.addPembayaran. Dedup di appendToArrayTransactional akan
+            // selalu match — tidak peduli urutan race Path A vs Path B.
+            val opId = UUID.randomUUID().toString()
+            val pembayaran = Pembayaran(jumlah = jumlah, tanggal = tanggal, clientOpId = opId)
             val updatedPembayaranList = pelanggan.pembayaranList.toMutableList().apply {
                 add(pembayaran)
             }
@@ -2725,7 +2739,8 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                 val pembayaranMap = mapOf(
                     "jumlah" to jumlah,
                     "tanggal" to tanggal,
-                    "subPembayaran" to emptyList<Map<String, Any>>()
+                    "subPembayaran" to emptyList<Map<String, Any>>(),
+                    "clientOpId" to opId
                 )
 
                 val result = offlineRepo.addPembayaran(
@@ -8480,6 +8495,12 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
             val updatedPembayaranList = pelanggan.pembayaranList.toMutableList()
             val startIndex = updatedPembayaranList.size // Index awal untuk pembayaran baru
 
+            // Satu UUID per cicilan, dipakai identik di in-memory object & raw map
+            // bawah agar dedup di appendToArrayTransactional bekerja per-entri
+            // walau ada race Path A/B; tiap cicilan tetap UUID berbeda → split
+            // payment ke-N entries tetap ter-append semua.
+            val opIds = List(jumlahCicilan) { UUID.randomUUID().toString() }
+
             // Buat multiple pembayaran
             for (i in 0 until jumlahCicilan) {
                 val jumlahCicilanIni = if (i == jumlahCicilan - 1) {
@@ -8487,7 +8508,11 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                 } else {
                     jumlahPerCicilan
                 }
-                val pembayaran = Pembayaran(jumlahCicilanIni, tanggalAwal)
+                val pembayaran = Pembayaran(
+                    jumlah = jumlahCicilanIni,
+                    tanggal = tanggalAwal,
+                    clientOpId = opIds[i]
+                )
                 updatedPembayaranList.add(pembayaran)
             }
 
@@ -8524,7 +8549,8 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     val pembayaranMap = mapOf(
                         "jumlah" to jumlahCicilanIni,
                         "tanggal" to tanggalAwal,
-                        "subPembayaran" to emptyList<Map<String, Any>>()
+                        "subPembayaran" to emptyList<Map<String, Any>>(),
+                        "clientOpId" to opIds[i]
                     )
 
                     val result = offlineRepo.addPembayaran(
