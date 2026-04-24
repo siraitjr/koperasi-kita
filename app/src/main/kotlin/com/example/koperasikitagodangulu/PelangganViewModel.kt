@@ -36,6 +36,7 @@ import java.util.Calendar
 import com.example.koperasikitagodangulu.utils.HolidayUtils
 import java.text.NumberFormat
 import java.util.Date
+import java.util.TimeZone
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import com.google.firebase.database.PropertyName
@@ -15886,22 +15887,29 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
     fun loadKasirUangKasHariIni() {
         viewModelScope.launch {
             try {
-                val adminUid = Firebase.auth.currentUser?.uid ?: run {
+                val adminUid = Firebase.auth.currentUser?.uid?.trim().orEmpty()
+                if (adminUid.isBlank()) {
                     Log.w("KasirUangKas", "⚠️ currentUser null, skip load")
                     return@launch
                 }
 
-                // Resolve cabangId: prioritas StateFlow, fallback baca langsung
-                // metadata/admins/{uid}.cabang kalau StateFlow belum terisi
-                // (terjadi saat race condition atau profile belum lengkap).
-                var cabangId = _currentUserCabang.value
-                if (cabangId.isNullOrBlank()) {
+                // Resolve cabangId: utamakan sumber otoritatif metadata/admins/{uid}/cabang
+                // agar nilai StateFlow yang stale (mis. setelah pindah cabang atau race
+                // condition init) tidak mengarahkan query ke partisi cabang yang salah.
+                // Fallback ke StateFlow hanya kalau metadata tidak bisa dibaca (offline).
+                var cabangId: String? = null
+                try {
                     val metaCabang = withTimeoutOrNull(5_000L) {
                         database.child("metadata").child("admins").child(adminUid)
                             .child("cabang").get().await()
                     }
-                    cabangId = metaCabang?.getValue(String::class.java)
-                    Log.d("KasirUangKas", "🔄 Fallback metadata cabang: '$cabangId'")
+                    cabangId = metaCabang?.getValue(String::class.java)?.trim()
+                } catch (e: Exception) {
+                    Log.w("KasirUangKas", "⚠️ Gagal baca metadata cabang: ${e.message}")
+                }
+                if (cabangId.isNullOrBlank()) {
+                    cabangId = _currentUserCabang.value?.trim()
+                    Log.d("KasirUangKas", "🔄 Fallback StateFlow cabang: '$cabangId'")
                 }
                 if (cabangId.isNullOrBlank()) {
                     Log.w("KasirUangKas", "⚠️ cabangId tidak dapat diresolve, skip load")
@@ -15909,9 +15917,22 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     return@launch
                 }
 
-                val bulanKey = SimpleDateFormat("yyyy-MM", Locale.getDefault()).format(Date())
-                val tanggalHariIni = SimpleDateFormat("dd MMM yyyy", Locale("id")).format(Date())
-                Log.d("KasirUangKas", "🔍 Query uid=$adminUid cabang=$cabangId bulan=$bulanKey tgl=$tanggalHariIni")
+                // Hitung "hari ini" di zona waktu Asia/Jakarta (WIB) — konsisten dengan
+                // Cloud Function yang menulis `tanggal` & `createdAt`. Pakai ISO
+                // YYYY-MM-DD sebagai representasi kanonik agar kebal terhadap variasi
+                // nama bulan ICU ("Apr"/"April"/"Apr."/"Aug" vs "Agu", dst).
+                val wib = TimeZone.getTimeZone("Asia/Jakarta")
+                val startCal = Calendar.getInstance(wib).apply {
+                    set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0)
+                    set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+                }
+                val startOfDayMs = startCal.timeInMillis
+                val endOfDayMs = startOfDayMs + 24L * 60L * 60L * 1000L - 1L
+                val isoFmt = SimpleDateFormat("yyyy-MM-dd", Locale.US).apply { timeZone = wib }
+                val bulanFmt = SimpleDateFormat("yyyy-MM", Locale.US).apply { timeZone = wib }
+                val todayIso = isoFmt.format(startCal.time)
+                val bulanKey = bulanFmt.format(startCal.time)
+                Log.d("KasirUangKas", "🔍 Query uid=$adminUid cabang=$cabangId bulan=$bulanKey todayIso=$todayIso")
 
                 database.child("kasir_entries")
                     .child(cabangId)
@@ -15921,18 +15942,36 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                         Log.d("KasirUangKas", "📦 Snapshot total children: ${snapshot.childrenCount}")
                         val result = mutableListOf<Triple<String, String, Int>>()
                         snapshot.children.forEach { entrySnap ->
-                            val targetUid = entrySnap.child("targetAdminUid").getValue(String::class.java) ?: ""
-                            val jenis = entrySnap.child("jenis").getValue(String::class.java) ?: ""
-                            val tanggal = entrySnap.child("tanggal").getValue(String::class.java) ?: ""
-                            val arah = entrySnap.child("arah").getValue(String::class.java) ?: ""
+                            val targetUid = entrySnap.child("targetAdminUid").getValue(String::class.java)?.trim().orEmpty()
+                            val jenis = entrySnap.child("jenis").getValue(String::class.java)?.trim().orEmpty()
+                            val arah = entrySnap.child("arah").getValue(String::class.java)?.trim().orEmpty()
+                            val tanggal = entrySnap.child("tanggal").getValue(String::class.java)?.trim().orEmpty()
+                            val createdAt = entrySnap.child("createdAt").getValue(Long::class.java) ?: 0L
 
-                            if (targetUid == adminUid && jenis == "uang_kas" && tanggal == tanggalHariIni && arah == "keluar") {
+                            // UID Firebase Auth case-sensitive — jangan ignoreCase.
+                            val uidMatch = targetUid.isNotEmpty() && targetUid == adminUid
+                            val jenisMatch = jenis.equals("uang_kas", ignoreCase = true)
+                            val arahMatch = arah.equals("keluar", ignoreCase = true)
+
+                            // Date match utama: normalisasi string "tanggal" ke YYYY-MM-DD.
+                            // Fallback: createdAt timestamp dalam jendela [00:00–23:59:59.999 WIB].
+                            val entryIso = normalizeIndoDateToIso(tanggal)
+                            val dateMatchByString = entryIso != null && entryIso == todayIso
+                            val dateMatchByTimestamp = createdAt in startOfDayMs..endOfDayMs
+                            val dateMatch = dateMatchByString || dateMatchByTimestamp
+
+                            if (uidMatch && jenisMatch && arahMatch && dateMatch) {
                                 val jumlah = entrySnap.child("jumlah").getValue(Int::class.java) ?: 0
                                 val createdByName = entrySnap.child("createdByName").getValue(String::class.java) ?: "Kasir"
                                 val keterangan = entrySnap.child("keterangan").getValue(String::class.java) ?: ""
                                 result.add(Triple(createdByName, keterangan, jumlah))
-                            } else if (jenis == "uang_kas") {
-                                Log.d("KasirUangKas", "⏭️ Skip uang_kas id=${entrySnap.key}: targetUid='$targetUid' vs '$adminUid', arah='$arah', tgl='$tanggal' vs '$tanggalHariIni'")
+                            } else if (jenisMatch) {
+                                Log.d(
+                                    "KasirUangKas",
+                                    "⏭️ Skip id=${entrySnap.key}: uidMatch=$uidMatch ('$targetUid' vs '$adminUid'), " +
+                                        "arahMatch=$arahMatch ('$arah'), dateMatch=$dateMatch " +
+                                        "(tgl='$tanggal'→iso='$entryIso' vs '$todayIso', createdAt=$createdAt)"
+                                )
                             }
                         }
                         _kasirUangKasHariIni.value = result
@@ -15946,6 +15985,47 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                 Log.e("KasirUangKas", "❌ Error: ${e.message}")
             }
         }
+    }
+
+    // Normalisasi string tanggal ke "YYYY-MM-DD". Tahan banting terhadap variasi
+    // nama bulan ICU Android ("Apr"/"April"/"Apr."/"Aug" vs server WIB "Agu", dst)
+    // dan beberapa format numeric umum. Return null kalau tidak bisa di-parse.
+    private fun normalizeIndoDateToIso(raw: String): String? {
+        if (raw.isBlank()) return null
+        val cleaned = raw.trim().replace(".", "").replace(",", "").replace(Regex("\\s+"), " ")
+        Regex("^(\\d{4})-(\\d{1,2})-(\\d{1,2})$").matchEntire(cleaned)?.let {
+            val y = it.groupValues[1]
+            val m = it.groupValues[2].padStart(2, '0')
+            val d = it.groupValues[3].padStart(2, '0')
+            return "$y-$m-$d"
+        }
+        Regex("^(\\d{1,2})[-/](\\d{1,2})[-/](\\d{4})$").matchEntire(cleaned)?.let {
+            val d = it.groupValues[1].padStart(2, '0')
+            val m = it.groupValues[2].padStart(2, '0')
+            val y = it.groupValues[3]
+            return "$y-$m-$d"
+        }
+        val parts = cleaned.split(" ")
+        if (parts.size != 3) return null
+        val day = parts[0].toIntOrNull() ?: return null
+        val year = parts[2].toIntOrNull() ?: return null
+        val monthKey = parts[1].lowercase(Locale.US)
+        val monthMap = mapOf(
+            "jan" to 1, "januari" to 1, "january" to 1,
+            "feb" to 2, "februari" to 2, "february" to 2,
+            "mar" to 3, "maret" to 3, "march" to 3,
+            "apr" to 4, "april" to 4,
+            "mei" to 5, "may" to 5,
+            "jun" to 6, "juni" to 6, "june" to 6,
+            "jul" to 7, "juli" to 7, "july" to 7,
+            "agu" to 8, "agt" to 8, "agus" to 8, "agustus" to 8, "aug" to 8, "august" to 8,
+            "sep" to 9, "sept" to 9, "september" to 9,
+            "okt" to 10, "oktober" to 10, "oct" to 10, "october" to 10,
+            "nov" to 11, "november" to 11,
+            "des" to 12, "desember" to 12, "dec" to 12, "december" to 12
+        )
+        val month = monthMap[monthKey] ?: return null
+        return "%04d-%02d-%02d".format(year, month, day)
     }
 
     /**
