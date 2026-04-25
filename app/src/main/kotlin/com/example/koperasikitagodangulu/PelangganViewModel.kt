@@ -6552,8 +6552,8 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
         // Status awal: prefer backup struktur baru (mendukung Lunas / Menunggu Pencairan).
         // Fallback "Aktif" (perilaku lama) untuk record yang belum punya field status di backup.
         val statusAwal = backup?.status?.takeIf { it.isNotBlank() } ?: "Aktif"
-        val pembayaranListAwal = backup?.pembayaranList?.takeIf { it.isNotEmpty() }
-            ?: pelanggan.pembayaranList
+        val pembayaranListAwal = backup?.pembayaranList
+            ?: pelanggan.pembayaranList.filter { it.keterangan != "Pelunasan Top-Up" }
         val hasilSimulasiAwal = backup?.hasilSimulasiCicilan?.takeIf { it.isNotEmpty() }
             ?: if (data.tanggalPengajuan.isNotBlank() && data.totalPelunasan > 0) {
                 generateCicilanKonsisten(data.tanggalPengajuan, data.tenor, data.totalPelunasan)
