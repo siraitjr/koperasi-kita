@@ -369,6 +369,32 @@ exports.onPelangganApproved = functions.database
                 };
                 await saveToPembayaranHarian(adminUid, pelangganId, pelunasanEntry, 'pelunasan_sisa_utang');
                 console.log(`✅ Sisa utang Rp ${sisaUtangLama} dicatat ke pembayaran_harian (TIDAK ke pembayaranList)`);
+
+                // ✅ FIX: Increment summary.pembayaranHariIni juga.
+                // Sebelumnya pelunasan sisa utang hanya ter-write ke pembayaran_harian
+                // tapi summary.pembayaranHariIni (sumber data PimpinanDashboard /
+                // KoordinatorDashboard / PengawasDashboard / Web bukuPokokApi)
+                // tidak ter-update — Admin RingkasanDashboard sudah memasukkan
+                // pelunasanSisaUtangHariIni di sisi client, sehingga total Admin
+                // selalu lebih besar dari Pimpinan/Web saat ada top-up cair hari ini.
+                //
+                // HEMAT RTDB: hanya field pembayaranHariIni yang di-set di delta
+                // (incrementAdminSummary mem-skip field yang falsy), sehingga
+                // hanya 1 atomic increment + 1 timestamp set per node summary.
+                // cabangId reuse pelanggan.cabangId — fallback metadata fetch
+                // hanya kalau field di pelanggan benar-benar blank.
+                let cabangIdForSummary = pelanggan.cabangId;
+                if (!cabangIdForSummary) {
+                    const cabangSnap = await db.ref(`metadata/admins/${adminUid}/cabang`).once('value');
+                    cabangIdForSummary = cabangSnap.val() || '';
+                }
+                const pelunasanDelta = { pembayaranHariIniChange: sisaUtangLama };
+                await incrementAdminSummary(adminUid, pelunasanDelta);
+                if (cabangIdForSummary) {
+                    await incrementCabangSummary(cabangIdForSummary, pelunasanDelta);
+                }
+                await incrementGlobalSummary(pelunasanDelta);
+                console.log(`✅ Summary updated: +Rp ${sisaUtangLama} pembayaranHariIni (admin/cabang/global)`);
             }
             
             // 2. ✅ Simpan ke event_harian/nasabah_baru

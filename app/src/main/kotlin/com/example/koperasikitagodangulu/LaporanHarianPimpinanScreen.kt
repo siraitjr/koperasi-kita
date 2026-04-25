@@ -184,7 +184,13 @@ fun LaporanHarianPimpinanScreen(
         }
     }
 
-    val penerimaan = pembayaranList.filter { it.jenis == "cicilan" || it.jenis == "tambah_bayar" }
+    // ✅ FIX: Sertakan "pelunasan_sisa_utang" — komponen pelunasan sisa utang lama
+    // dari top-up yang dicairkan hari ini. CF onPelangganApproved menulis entry
+    // ini ke pembayaran_harian dengan jenis="pelunasan_sisa_utang", tapi filter
+    // sebelumnya hanya whitelist "cicilan"/"tambah_bayar" sehingga total
+    // penerimaan harian Pimpinan lebih kecil dari total Admin (RingkasanDashboard
+    // sudah memasukkan pelunasanSisaUtangHariIni di sisi admin).
+    val penerimaan = pembayaranList.filter { it.jenis == "cicilan" || it.jenis == "tambah_bayar" || it.jenis == "pelunasan_sisa_utang" }
     val pengeluaran = pembayaranList.filter { it.jenis == "pencairan" }
 
     val totalPenerimaanDariNasabah = penerimaan.sumOf { it.jumlah }
