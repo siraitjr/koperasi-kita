@@ -1114,14 +1114,21 @@ private fun PengawasDetailPengajuanSheet(
         // ✅ PERBAIKAN: SECTION FOTO LENGKAP
         // =========================================================================
         DetailSection(title = "Dokumen Foto") {
-            // URL foto approval: top-up → strict pendingFoto*Url (tanpa fallback ke
-            // foto pinjaman lama). New loan → foto*Url permanent. Lihat
-            // PelangganViewModel.approvalPhotoUrls() untuk detail.
-            val approvalPhotos = pelanggan.approvalPhotoUrls()
-            val fotoKtpResolved = approvalPhotos.fotoKtpUrl
-            val fotoKtpSuamiResolved = approvalPhotos.fotoKtpSuamiUrl
-            val fotoKtpIstriResolved = approvalPhotos.fotoKtpIstriUrl
-            val fotoNasabahResolved = approvalPhotos.fotoNasabahUrl
+            // URL foto approval. Top-up: utamakan pendingFoto*Url (foto pengajuan baru).
+            // Kalau pendingFoto*Url kosong (mis. record pre-fix atau sync gagal), fallback
+            // ke foto*Url permanent dari pinjaman lama agar approver tetap punya gambaran
+            // identitas — disertai label "Menampilkan Foto Pinjaman Sebelumnya" sehingga
+            // approver tahu foto yang ditampilkan bukan dari pengajuan ini.
+            // New loan: pakai foto*Url permanent.
+            val isTopUp = pelanggan.pinjamanKe > 1
+            val fotoKtpResolved = if (isTopUp) pelanggan.pendingFotoKtpUrl.ifBlank { pelanggan.fotoKtpUrl } else pelanggan.fotoKtpUrl
+            val fotoKtpSuamiResolved = if (isTopUp) pelanggan.pendingFotoKtpSuamiUrl.ifBlank { pelanggan.fotoKtpSuamiUrl } else pelanggan.fotoKtpSuamiUrl
+            val fotoKtpIstriResolved = if (isTopUp) pelanggan.pendingFotoKtpIstriUrl.ifBlank { pelanggan.fotoKtpIstriUrl } else pelanggan.fotoKtpIstriUrl
+            val fotoNasabahResolved = if (isTopUp) pelanggan.pendingFotoNasabahUrl.ifBlank { pelanggan.fotoNasabahUrl } else pelanggan.fotoNasabahUrl
+            val isFotoKtpFallback = isTopUp && pelanggan.pendingFotoKtpUrl.isBlank() && pelanggan.fotoKtpUrl.isNotBlank()
+            val isFotoKtpSuamiFallback = isTopUp && pelanggan.pendingFotoKtpSuamiUrl.isBlank() && pelanggan.fotoKtpSuamiUrl.isNotBlank()
+            val isFotoKtpIstriFallback = isTopUp && pelanggan.pendingFotoKtpIstriUrl.isBlank() && pelanggan.fotoKtpIstriUrl.isNotBlank()
+            val isFotoNasabahFallback = isTopUp && pelanggan.pendingFotoNasabahUrl.isBlank() && pelanggan.fotoNasabahUrl.isNotBlank()
 
             Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
 
@@ -1159,6 +1166,14 @@ private fun PengawasDetailPengajuanSheet(
                                     contentScale = ContentScale.Crop
                                 )
                             }
+                            if (isFotoKtpSuamiFallback) {
+                                Text(
+                                    "Menampilkan Foto Pinjaman Sebelumnya",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.secondary,
+                                    modifier = Modifier.padding(top = 4.dp)
+                                )
+                            }
                         } else {
                             PhotoPlaceholderPengawas("Tidak tersedia")
                         }
@@ -1191,6 +1206,14 @@ private fun PengawasDetailPengajuanSheet(
                                     contentDescription = "Foto KTP Istri",
                                     modifier = Modifier.fillMaxSize(),
                                     contentScale = ContentScale.Crop
+                                )
+                            }
+                            if (isFotoKtpIstriFallback) {
+                                Text(
+                                    "Menampilkan Foto Pinjaman Sebelumnya",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.secondary,
+                                    modifier = Modifier.padding(top = 4.dp)
                                 )
                             }
                         } else {
@@ -1227,6 +1250,14 @@ private fun PengawasDetailPengajuanSheet(
                             contentScale = ContentScale.Crop
                         )
                     }
+                    if (isFotoNasabahFallback) {
+                        Text(
+                            "Menampilkan Foto Pinjaman Sebelumnya",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.secondary,
+                            modifier = Modifier.padding(top = 4.dp)
+                        )
+                    }
                 } else {
                     PhotoPlaceholderPengawas("Foto Nasabah tidak tersedia")
                 }
@@ -1259,6 +1290,14 @@ private fun PengawasDetailPengajuanSheet(
                             contentDescription = "Foto KTP",
                             modifier = Modifier.fillMaxSize(),
                             contentScale = ContentScale.Crop
+                        )
+                    }
+                    if (isFotoKtpFallback) {
+                        Text(
+                            "Menampilkan Foto Pinjaman Sebelumnya",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.secondary,
+                            modifier = Modifier.padding(top = 4.dp)
                         )
                     }
                 }
