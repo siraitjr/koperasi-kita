@@ -1272,14 +1272,21 @@ fun DetailPengajuanSheet(
             modifier = Modifier.padding(bottom = 12.dp)
         )
 
-        // URL foto approval: top-up → strict pendingFoto*Url (tanpa fallback ke
-        // foto pinjaman lama). New loan → foto*Url permanent. Lihat
-        // PelangganViewModel.approvalPhotoUrls() untuk detail.
-        val approvalPhotos = pelanggan.approvalPhotoUrls()
-        val fotoKtpResolved = approvalPhotos.fotoKtpUrl
-        val fotoKtpSuamiResolved = approvalPhotos.fotoKtpSuamiUrl
-        val fotoKtpIstriResolved = approvalPhotos.fotoKtpIstriUrl
-        val fotoNasabahResolved = approvalPhotos.fotoNasabahUrl
+        // URL foto approval. Top-up: utamakan pendingFoto*Url (foto pengajuan baru).
+        // Kalau pendingFoto*Url kosong (mis. record pre-fix atau sync gagal), fallback
+        // ke foto*Url permanent dari pinjaman lama agar approver tetap punya gambaran
+        // identitas — disertai label "Menampilkan Foto Pinjaman Sebelumnya" sehingga
+        // approver tahu foto yang ditampilkan bukan dari pengajuan ini.
+        // New loan: pakai foto*Url permanent.
+        val isTopUp = pelanggan.pinjamanKe > 1
+        val fotoKtpResolved = if (isTopUp) pelanggan.pendingFotoKtpUrl.ifBlank { pelanggan.fotoKtpUrl } else pelanggan.fotoKtpUrl
+        val fotoKtpSuamiResolved = if (isTopUp) pelanggan.pendingFotoKtpSuamiUrl.ifBlank { pelanggan.fotoKtpSuamiUrl } else pelanggan.fotoKtpSuamiUrl
+        val fotoKtpIstriResolved = if (isTopUp) pelanggan.pendingFotoKtpIstriUrl.ifBlank { pelanggan.fotoKtpIstriUrl } else pelanggan.fotoKtpIstriUrl
+        val fotoNasabahResolved = if (isTopUp) pelanggan.pendingFotoNasabahUrl.ifBlank { pelanggan.fotoNasabahUrl } else pelanggan.fotoNasabahUrl
+        val isFotoKtpFallback = isTopUp && pelanggan.pendingFotoKtpUrl.isBlank() && pelanggan.fotoKtpUrl.isNotBlank()
+        val isFotoKtpSuamiFallback = isTopUp && pelanggan.pendingFotoKtpSuamiUrl.isBlank() && pelanggan.fotoKtpSuamiUrl.isNotBlank()
+        val isFotoKtpIstriFallback = isTopUp && pelanggan.pendingFotoKtpIstriUrl.isBlank() && pelanggan.fotoKtpIstriUrl.isNotBlank()
+        val isFotoNasabahFallback = isTopUp && pelanggan.pendingFotoNasabahUrl.isBlank() && pelanggan.fotoNasabahUrl.isNotBlank()
 
         // Tampilkan foto KTP berdasarkan tipe pinjaman
         when {
@@ -1292,7 +1299,8 @@ fun DetailPengajuanSheet(
                     if (fotoKtpResolved.isNotBlank()) {
                         KtpPhotoSection(
                             title = "Foto KTP",
-                            imageUrl = fotoKtpResolved
+                            imageUrl = fotoKtpResolved,
+                            showFallbackLabel = isFotoKtpFallback
                         )
                     } else {
                         PhotoPlaceholder("Foto KTP tidak tersedia")
@@ -1302,7 +1310,8 @@ fun DetailPengajuanSheet(
                     if (fotoNasabahResolved.isNotBlank()) {
                         KtpPhotoSection(
                             title = "Foto Nasabah",
-                            imageUrl = fotoNasabahResolved
+                            imageUrl = fotoNasabahResolved,
+                            showFallbackLabel = isFotoNasabahFallback
                         )
                     } else {
                         PhotoPlaceholder("Foto Nasabah tidak tersedia")
@@ -1324,7 +1333,8 @@ fun DetailPengajuanSheet(
                             if (fotoKtpSuamiResolved.isNotBlank()) {
                                 KtpPhotoSection(
                                     title = "Foto KTP Suami",
-                                    imageUrl = fotoKtpSuamiResolved
+                                    imageUrl = fotoKtpSuamiResolved,
+                                    showFallbackLabel = isFotoKtpSuamiFallback
                                 )
                             } else {
                                 PhotoPlaceholder("Foto KTP Suami tidak tersedia")
@@ -1336,7 +1346,8 @@ fun DetailPengajuanSheet(
                             if (fotoKtpIstriResolved.isNotBlank()) {
                                 KtpPhotoSection(
                                     title = "Foto KTP Istri",
-                                    imageUrl = fotoKtpIstriResolved
+                                    imageUrl = fotoKtpIstriResolved,
+                                    showFallbackLabel = isFotoKtpIstriFallback
                                 )
                             } else {
                                 PhotoPlaceholder("Foto KTP Istri tidak tersedia")
@@ -1348,7 +1359,8 @@ fun DetailPengajuanSheet(
                     if (fotoNasabahResolved.isNotBlank()) {
                         KtpPhotoSection(
                             title = "Foto Nasabah",
-                            imageUrl = fotoNasabahResolved
+                            imageUrl = fotoNasabahResolved,
+                            showFallbackLabel = isFotoNasabahFallback
                         )
                     } else {
                         PhotoPlaceholder("Foto Nasabah tidak tersedia")
@@ -2156,7 +2168,8 @@ fun ApprovalWithAmountDialog(
 @Composable
 fun KtpPhotoSection(
     title: String,
-    imageUrl: String
+    imageUrl: String,
+    showFallbackLabel: Boolean = false
 ) {
     var showZoomDialog by remember { mutableStateOf(false) }
     var scale by remember { mutableStateOf(1f) }
@@ -2192,6 +2205,18 @@ fun KtpPhotoSection(
                 model = imageUrl,
                 contentDescription = title,
                 modifier = Modifier.fillMaxSize()
+            )
+        }
+
+        // Label fallback: ditampilkan saat URL berasal dari foto pinjaman lama
+        // (top-up dengan pendingFoto*Url kosong) — approver paham foto bukan
+        // dari pengajuan yang sedang direview.
+        if (showFallbackLabel) {
+            Text(
+                text = "Menampilkan Foto Pinjaman Sebelumnya",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.secondary,
+                modifier = Modifier.padding(top = 4.dp)
             )
         }
 
