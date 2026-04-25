@@ -17396,10 +17396,74 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                 val dateFormat = SimpleDateFormat("dd MMM yyyy", Locale("in", "ID"))
                 val tanggalSekarang = dateFormat.format(Date())
 
-                // FIX: Catat pelunasan sisa utang via tabungan SEBELUM hapus
-                // Baca data pelanggan untuk hitung sisa utang
+                // Baca pelanggan FRESH untuk: (a) deteksi partial vs full, (b) hitung
+                // sisa utang untuk pelunasan via tabungan saat full.
                 val pelangganSnap = database.child("pelanggan").child(item.adminUid).child(item.pelangganId).get().await()
                 val pelanggan = pelangganSnap.getValue(Pelanggan::class.java)
+
+                // PARTIAL pencairan: kurangi field `simpanan` saja via atomic increment,
+                // JANGAN archive / removeValue. Pelanggan tetap hidup di DaftarPelangganLunas /
+                // DaftarMenungguPencairan dengan simpanan terbaru, sehingga admin bisa
+                // ajukan pencairan partial berikutnya kapan saja.
+                if (pelanggan != null
+                    && item.jumlahDicairkan > 0
+                    && item.jumlahDicairkan < pelanggan.simpanan
+                ) {
+                    val pelangganRef = database.child("pelanggan").child(item.adminUid).child(item.pelangganId)
+                    pelangganRef.child("simpanan")
+                        .setValue(ServerValue.increment(-item.jumlahDicairkan.toLong()))
+                        .await()
+
+                    // Audit jurnal partial cair — node sama dengan jurnal pelunasan_tabungan.
+                    if (item.cabangId.isNotBlank()) {
+                        val yearMonthPartial = SimpleDateFormat("yyyy-MM", Locale.getDefault()).format(Date())
+                        val jurnalDataPartial = mapOf(
+                            "tipe" to "pencairan_simpanan_partial",
+                            "pelangganId" to item.pelangganId,
+                            "namaPelanggan" to (pelanggan.namaPanggilan.ifBlank { pelanggan.namaKtp }),
+                            "namaKtp" to pelanggan.namaKtp,
+                            "adminUid" to item.adminUid,
+                            "adminName" to koordinatorName,
+                            "jumlah" to item.jumlahDicairkan,
+                            "tanggal" to tanggalSekarang,
+                            "pinjamanKe" to pelanggan.pinjamanKe,
+                            "simpananSebelum" to pelanggan.simpanan,
+                            "simpananSetelah" to (pelanggan.simpanan - item.jumlahDicairkan),
+                            "keterangan" to "Pencairan sebagian simpanan Rp ${item.jumlahDicairkan} (disetujui koordinator)",
+                            "timestamp" to ServerValue.TIMESTAMP,
+                            "createdAt" to SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.getDefault()).format(Date())
+                        )
+                        database.child("jurnal_transaksi").child(item.cabangId).child(yearMonthPartial)
+                            .push().setValue(jurnalDataPartial).await()
+                    }
+
+                    // Update status pengajuan → DISETUJUI.
+                    database.child("pengajuan_pencairan_simpanan")
+                        .child(item.cabangId)
+                        .child(item.pelangganId)
+                        .updateChildren(mapOf(
+                            "status" to "DISETUJUI",
+                            "tanggalKeputusan" to tanggalSekarang,
+                            "koordinatorName" to koordinatorName
+                        )).await()
+
+                    // Sync state lokal: pelanggan TETAP di daftarPelanggan dengan simpanan baru.
+                    _pendingCairanSimpananKoordinator.value = _pendingCairanSimpananKoordinator.value
+                        .filter { it.pelangganId != item.pelangganId }
+                    val partialIdx = daftarPelanggan.indexOfFirst { it.id == item.pelangganId }
+                    if (partialIdx != -1) {
+                        daftarPelanggan[partialIdx] = daftarPelanggan[partialIdx].copy(
+                            simpanan = pelanggan.simpanan - item.jumlahDicairkan
+                        )
+                    }
+
+                    Log.d("PencairanSimpanan", "✅ Partial: Rp ${item.jumlahDicairkan} dikurangi dari simpanan, sisa Rp ${pelanggan.simpanan - item.jumlahDicairkan}")
+                    onSuccess?.invoke()
+                    return@launch
+                }
+
+                // FULL pencairan (jumlahDicairkan >= simpanan, atau pelanggan null/edge):
+                // jalur existing — archive + removeValue.
                 if (pelanggan != null && item.cabangId.isNotBlank()) {
                     val totalDibayar = pelanggan.pembayaranList
                         .filter { !it.tanggal.startsWith("Bunga") }
