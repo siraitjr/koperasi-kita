@@ -283,39 +283,45 @@ exports.getBukuPokok = functions
             const statusFilter = (status || 'aktif').toLowerCase();
             console.log(`[getBukuPokok] VERSION=2026-03-30-v5-tabs, statusFilter=${statusFilter}, cabangId=${cabangId}`);
 
-            // 4. Determine which admins to fetch
+            // 4. STEP 1 — Tentukan SCOPE admin yang BOLEH user akses berdasar role.
+            //    Hindari short-circuit `if (adminUid)` yang dulu meng-bypass role check
+            //    dan jadi sumber cross-data leakage (admin/pimpinan kasih adminUid lain
+            //    → dapat data admin/cabang lain).
             let adminUids = [];
+            const isCrossCabangRole = ['pengawas', 'koordinator', 'kasir_wilayah', 'sekretaris'].includes(user.role);
 
-            if (adminUid) {
-                // Specific admin requested
-                adminUids = [adminUid];
-            } else if (user.role === 'admin') {
-                // Admin can only see their own
+            if (user.role === 'admin') {
+                // Admin LOCKED ke UID sendiri (abaikan cabangId/adminUid query)
                 adminUids = [user.uid];
-            } else if (user.role === 'pimpinan') {
-                // Pimpinan sees all admins in their cabang
+            } else if (user.role === 'pimpinan' || user.role === 'kasir_unit') {
+                // Pimpinan/Kasir Unit LOCKED ke cabang sendiri
                 const targetCabang = cabangId || user.cabang;
                 if (!targetCabang) {
                     res.status(400).json({ success: false, error: 'cabangId diperlukan' });
                     return;
                 }
-                const cabangSnap = await db.ref(`metadata/cabang/${targetCabang}/adminList`).once('value');
-                adminUids = cabangSnap.val() || [];
-                } else if (user.role === 'kasir_unit') {
-                // Kasir unit sees all admins in their cabang (seperti pimpinan)
-                const targetCabang = cabangId || user.cabang;
-                if (!targetCabang) {
-                    res.status(400).json({ success: false, error: 'cabangId diperlukan' });
+                if (targetCabang !== user.cabang) {
+                    res.status(403).json({ success: false, error: 'Akses cabang lain ditolak' });
                     return;
                 }
                 const cabangSnap = await db.ref(`metadata/cabang/${targetCabang}/adminList`).once('value');
                 adminUids = cabangSnap.val() || [];
-            } else if (user.role === 'kasir_wilayah' || user.role === 'sekretaris') {
-                // Kasir wilayah & Sekretaris sees all (seperti pengawas/koordinator)
+            } else if (isCrossCabangRole) {
+                // Pengawas/Koordinator/Kasir Wilayah/Sekretaris bebas pilih cabang.
                 if (cabangId) {
                     const cabangSnap = await db.ref(`metadata/cabang/${cabangId}/adminList`).once('value');
                     adminUids = cabangSnap.val() || [];
+                } else if (adminUid) {
+                    // adminUid tanpa cabangId — verifikasi admin valid via 1 metadata fetch.
+                    // Hemat: tidak perlu fetch cabang adminList untuk single-admin view.
+                    const adminMetaSnap = await db.ref(`metadata/admins/${adminUid}`).once('value');
+                    if (!adminMetaSnap.exists()) {
+                        res.status(403).json({ success: false, error: 'Admin tidak ditemukan' });
+                        return;
+                    }
+                    adminUids = [adminUid];
                 } else {
+                    // Tidak ada cabangId & tidak ada adminUid → return cabang selection
                     const cabangSnap = await db.ref('metadata/cabang').once('value');
                     const cabangData = cabangSnap.val() || {};
                     const cabangList = Object.entries(cabangData).map(([id, data]) => ({
@@ -330,27 +336,19 @@ exports.getBukuPokok = functions
                     });
                     return;
                 }
-            } else if (user.role === 'pengawas' || user.role === 'koordinator') {
-                // Pengawas/Koordinator/Sekretaris sees all, but must specify cabang or admin
-                if (cabangId) {
-                    const cabangSnap = await db.ref(`metadata/cabang/${cabangId}/adminList`).once('value');
-                    adminUids = cabangSnap.val() || [];
-                } else {
-                    // Return all cabang list for selection
-                    const cabangSnap = await db.ref('metadata/cabang').once('value');
-                    const cabangData = cabangSnap.val() || {};
-                    const cabangList = Object.entries(cabangData).map(([id, data]) => ({
-                        id,
-                        name: data.name || id,
-                        adminCount: (data.adminList || []).length
-                    }));
-                    res.status(200).json({
-                        success: true,
-                        type: 'cabang_selection',
-                        data: cabangList
-                    });
+            } else {
+                res.status(403).json({ success: false, error: 'Role tidak dikenal' });
+                return;
+            }
+
+            // 5. STEP 2 — Narrow ke single adminUid jika diminta, WAJIB ada di scope STEP 1.
+            //    Mencegah admin/pimpinan/role lintas-cabang pass adminUid di luar scope mereka.
+            if (adminUid) {
+                if (!adminUids.includes(adminUid)) {
+                    res.status(403).json({ success: false, error: 'Akses ke admin tersebut ditolak' });
                     return;
                 }
+                adminUids = [adminUid];
             }
 
             // 5. Cek cache dulu sebelum baca RTDB
