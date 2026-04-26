@@ -50,13 +50,20 @@ fun DaftarNasabahBaruHariIniScreen(
     val dateFormat = SimpleDateFormat("dd MMM yyyy", Locale("in", "ID"))
     val today = dateFormat.format(Calendar.getInstance().time)
 
-    // Filter nasabah baru hari ini
+    // Filter nasabah baru hari ini.
+    // Sebelumnya: branch tanggalPencairan.isNotBlank() menyebabkan top-up Lanjut Pinjaman
+    // (yang punya tanggalPencairan dari pinjaman lama) tidak masuk filter selama fase
+    // Pending — admin tidak bisa lihat pengajuan top-up sebagai "baru hari ini".
+    // Sekarang: gabungan OR — customer muncul kalau memenuhi salah satu dari:
+    //   - tanggalPencairan == today DAN status "Aktif" (drop hari ini, new maupun top-up).
+    //   - tanggalPengajuan == today (pengajuan diajukan hari ini, termasuk top-up yang
+    //     masih "Menunggu Approval" / "Disetujui").
+    //   - tanggalDaftar == today (registrasi nasabah baru).
     val nasabahBaruHariIni = daftarPelanggan.filter { pelanggan ->
-        if (pelanggan.tanggalPencairan.isNotBlank()) {
-            pelanggan.tanggalPencairan == today && pelanggan.status == "Aktif"
-        } else {
-            pelanggan.tanggalDaftar == today || pelanggan.tanggalPengajuan == today
-        }
+        val isCairanHariIni = pelanggan.tanggalPencairan == today && pelanggan.status == "Aktif"
+        val isPengajuanHariIni = pelanggan.tanggalPengajuan == today
+        val isDaftarHariIni = pelanggan.tanggalDaftar == today
+        isCairanHariIni || isPengajuanHariIni || isDaftarHariIni
     }
     // Pisahkan menjadi drop baru dan drop lama
     val dropBaru = nasabahBaruHariIni.filter { it.pinjamanKe <= 1 }
