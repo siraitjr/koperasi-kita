@@ -107,11 +107,19 @@ fun DaftarPelangganLunasScreen(
                     .sumOf { it.jumlah + it.subPembayaran.sumOf { sub -> sub.jumlah } }
                 val sudahLunasCicilan = totalBayar >= pelanggan.totalPelunasan && pelanggan.totalPelunasan > 0
 
-                // ✅ Nasabah lunas cicilan, masih punya tabungan, belum ditandai manual Sisa Tabungan
+                // ✅ Nasabah lunas cicilan, masih punya tabungan, belum ditandai manual Sisa Tabungan.
+                // Eksklusi "Menunggu Approval" / "Disetujui" / "Aktif": setelah pengajuan
+                // Lanjut Pinjaman disetujui Pimpinan, status pelanggan berubah ke "Disetujui"
+                // (lalu "Aktif" setelah Cairkan). Walau pembayaranList stale di RTDB bisa
+                // membuat sudahLunasCicilan masih TRUE, customer harus muncul di
+                // DaftarPelangganScreen — bukan stuck di sini. Filter selaras dengan
+                // getFilteredPelanggan di ViewModel yang sudah recognize 3 status itu sebagai aktif.
                 sudahLunasCicilan &&
                         pelanggan.statusPencairanSimpanan != "Dicairkan" &&
                         pelanggan.statusKhusus != "MENUNGGU_PENCAIRAN" &&
-                        pelanggan.status != "Menunggu Approval"
+                        pelanggan.status != "Menunggu Approval" &&
+                        pelanggan.status != "Disetujui" &&
+                        pelanggan.status != "Aktif"
             }
         }
     }

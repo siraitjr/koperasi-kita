@@ -4318,6 +4318,23 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     return@launch
                 }
 
+                // Hard-validate state: pelanggan HARUS "Menunggu Approval" di RTDB sebelum
+                // di-approve. Mencegah race condition saat pengajuan_approval sudah ter-sync
+                // dari device admin tetapi field pelanggan belum ter-sync (sync admin pending),
+                // yang akan menyebabkan approval beroperasi pada data stale (mis. status="Lunas"
+                // dengan totalPelunasan/pembayaranList lama) → output corrupt + customer stuck
+                // di Lunas (lihat issue Lunas->Approved transition). Selaras dengan rejection
+                // logic a8f3817 yang juga validate state via currentPhase.
+                if (existing.status != "Menunggu Approval") {
+                    val msg = "Status pelanggan ${existing.namaPanggilan} saat ini " +
+                            "'${existing.status}', bukan 'Menunggu Approval'. Kemungkinan " +
+                            "ada pengajuan offline yang belum tersinkronisasi atau race " +
+                            "condition. Refresh aplikasi dan coba lagi."
+                    Log.w("Approval", "⚠️ $msg")
+                    onFailure?.invoke(Exception(msg))
+                    return@launch
+                }
+
                 Log.d("Approval", "📊 DATA DARI FIREBASE:")
                 Log.d("Approval", "   PinjamanKe: ${existing.pinjamanKe}")
                 Log.d("Approval", "   BesarPinjaman: ${existing.besarPinjaman}")
@@ -9559,6 +9576,25 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                                     } else {
                                         Log.d("Approval", "⏭️ Skip ${pelanggan.namaPanggilan}: sudah di phase $phase")
                                     }
+                                } else if (pelanggan != null) {
+                                    // Diagnostik traceability: pengajuan_approval ada tetapi pelanggan
+                                    // di RTDB belum berstatus "Menunggu Approval" — kemungkinan
+                                    // sync admin masih PENDING di Room queue. Pimpinan akan melihat
+                                    // pengajuan setelah sync admin selesai. Tidak auto-correct di
+                                    // sini agar tidak overwrite state inflight.
+                                    Log.w(
+                                        "Approval",
+                                        "⚠️ DIAGNOSTIC inkonsistensi: pengajuan_approval ada untuk " +
+                                                "${pelanggan.namaPanggilan} (id=$id) tapi status='${pelanggan.status}' " +
+                                                "(bukan 'Menunggu Approval'). Sync admin pending? " +
+                                                "Pimpinan tunggu refresh setelah admin online."
+                                    )
+                                } else {
+                                    Log.w(
+                                        "Approval",
+                                        "⚠️ DIAGNOSTIC: pengajuan_approval ada untuk id=$id tapi node " +
+                                                "pelanggan/$adminId/$id tidak ditemukan di RTDB."
+                                    )
                                 }
                             }
                             pelangganList
