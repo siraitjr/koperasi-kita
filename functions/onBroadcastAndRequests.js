@@ -16,7 +16,9 @@ const admin = require('firebase-admin');
 // Trigger: Saat Pengawas membuat broadcast baru
 // Target: Semua karyawan (Admin, Pimpinan, Koordinator)
 // =========================================================================
-exports.onBroadcastCreated = functions.database
+exports.onBroadcastCreated = functions
+    .region('asia-southeast1')
+    .database
     .ref('/broadcast_messages/{messageId}')
     .onCreate(async (snapshot, context) => {
         const broadcast = snapshot.val();
@@ -101,7 +103,9 @@ exports.onBroadcastCreated = functions.database
 // Trigger: Saat Admin Lapangan membuat request perubahan tenor
 // Target: Pimpinan cabang yang bersangkutan
 // =========================================================================
-exports.onTenorChangeRequestCreated = functions.database
+exports.onTenorChangeRequestCreated = functions
+    .region('asia-southeast1')
+    .database
     .ref('/tenor_change_requests/{cabangId}/{requestId}')
     .onCreate(async (snapshot, context) => {
         const request = snapshot.val();
@@ -182,7 +186,9 @@ exports.onTenorChangeRequestCreated = functions.database
 // Trigger: Saat Admin Lapangan membuat request penghapusan nasabah
 // Target: Pimpinan cabang yang bersangkutan
 // =========================================================================
-exports.onDeletionRequestCreated = functions.database
+exports.onDeletionRequestCreated = functions
+    .region('asia-southeast1')
+    .database
     .ref('/deletion_requests/{requestId}')
     .onCreate(async (snapshot, context) => {
         const request = snapshot.val();

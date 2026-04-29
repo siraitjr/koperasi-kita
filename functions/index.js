@@ -211,7 +211,9 @@ exports.restoreDataSampah = auditDataSampah.restoreDataSampah;
 const autoLogin = require('./generateAutoLoginToken');
 exports.generateAutoLoginToken = autoLogin.generateAutoLoginToken;
 
-exports.cleanupDuplicateApprovals = functions.https.onRequest(cleanupDuplicateApprovals);
+exports.cleanupDuplicateApprovals = functions
+    .region('asia-southeast1')
+    .https.onRequest(cleanupDuplicateApprovals);
 
 // =========================================================================
 // DATA INTEGRITY FIX (ONE-TIME) - Hapus ghost data, isi cabangId kosong

@@ -21,7 +21,9 @@ const db = admin.database();
 /**
  * Trigger saat ada notifikasi baru di /admin_notifications/{adminUid}/{notificationId}
  */
-exports.onAdminNotificationCreated = functions.database
+exports.onAdminNotificationCreated = functions
+    .region('asia-southeast1')
+    .database
     .ref('/admin_notifications/{adminUid}/{notificationId}')
     .onCreate(async (snapshot, context) => {
         const adminUid = context.params.adminUid;

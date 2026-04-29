@@ -303,6 +303,7 @@ function auditSatuAdmin(adminUid, adminName, cabang, nasabahMap) {
 // MAIN ENDPOINT
 // =============================================
 exports.auditDataSampah = functions
+    .region('asia-southeast1')
     .runWith({ timeoutSeconds: 540, memory: '1GB' })
     .https.onRequest(async (req, res) => {
 
@@ -413,6 +414,7 @@ exports.auditDataSampah = functions
 // =========================================================================
 
 exports.hapusDataSampah = functions
+    .region('asia-southeast1')
     .runWith({ timeoutSeconds: 120, memory: '256MB' })
     .https.onRequest(async (req, res) => {
 
@@ -551,6 +553,7 @@ exports.hapusDataSampah = functions
 // =========================================================================
 
 exports.restoreDataSampah = functions
+    .region('asia-southeast1')
     .runWith({ timeoutSeconds: 60, memory: '256MB' })
     .https.onRequest(async (req, res) => {
 

@@ -33,7 +33,9 @@ function getTodayIndonesia() {
 // =========================================================================
 // HTTP FUNCTION: Backfill Pembayaran Harian
 // =========================================================================
-exports.backfillPembayaranHarian = functions.https.onRequest(async (req, res) => {
+exports.backfillPembayaranHarian = functions
+    .region('asia-southeast1')
+    .https.onRequest(async (req, res) => {
     console.log('ðŸ”„ Starting backfill pembayaran_harian...');
     
     const today = getTodayIndonesia();
@@ -211,7 +213,7 @@ exports.backfillPembayaranHarian = functions.https.onRequest(async (req, res) =>
 // =========================================================================
 const { onCall } = require("firebase-functions/v2/https");
 
-exports.triggerBackfillPembayaran = onCall(async (request) => {
+exports.triggerBackfillPembayaran = onCall({ region: 'asia-southeast1' }, async (request) => {
     const uid = request.auth?.uid;
     
     if (!uid) {

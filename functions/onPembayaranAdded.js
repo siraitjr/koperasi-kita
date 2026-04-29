@@ -190,7 +190,9 @@ function isNasabahLunas(pelanggan) {
 // =========================================================================
 // TRIGGER: Pembayaran Cicilan Baru
 // =========================================================================
-exports.onPembayaranAdded = functions.database
+exports.onPembayaranAdded = functions
+    .region('asia-southeast1')
+    .database
     .ref('/pelanggan/{adminUid}/{pelangganId}/pembayaranList/{pembayaranIndex}')
     .onCreate(async (snapshot, context) => {
         const { adminUid, pelangganId } = context.params;
@@ -253,7 +255,9 @@ exports.onPembayaranAdded = functions.database
 // =========================================================================
 // TRIGGER: Sub-Pembayaran (Tambah Bayar)
 // =========================================================================
-exports.onSubPembayaranAdded = functions.database
+exports.onSubPembayaranAdded = functions
+    .region('asia-southeast1')
+    .database
     .ref('/pelanggan/{adminUid}/{pelangganId}/pembayaranList/{pembayaranIndex}/subPembayaran/{subIndex}')
     .onCreate(async (snapshot, context) => {
         const { adminUid, pelangganId } = context.params;
@@ -311,7 +315,9 @@ exports.onSubPembayaranAdded = functions.database
 // =========================================================================
 // âœ… TRIGGER untuk Pencairan Pinjaman Baru (Status berubah ke Aktif)
 // =========================================================================
-exports.onPelangganApproved = functions.database
+exports.onPelangganApproved = functions
+    .region('asia-southeast1')
+    .database
     .ref('/pelanggan/{adminUid}/{pelangganId}/status')
     .onUpdate(async (change, context) => {
         const { adminUid, pelangganId } = context.params;

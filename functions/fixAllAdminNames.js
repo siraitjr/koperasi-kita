@@ -60,6 +60,7 @@ async function batchUpdate(updates, label) {
  * MAIN FUNCTION
  */
 exports.fixAllAdminNames = functions
+    .region('asia-southeast1')
     .runWith({
         timeoutSeconds: 540,
         memory: '1GB'

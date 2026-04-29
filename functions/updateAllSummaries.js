@@ -19,7 +19,7 @@ const db = admin.database();
 // =========================================================================
 // FUNGSI 1: UPDATE ALL SUMMARIES (Full Recalculation)
 // =========================================================================
-exports.updateAllSummaries = onCall(async (request) => {
+exports.updateAllSummaries = onCall({ region: 'asia-southeast1' }, async (request) => {
     const uid = request.auth?.uid;
     
     if (!uid) {
@@ -181,7 +181,7 @@ exports.updateAllSummaries = onCall(async (request) => {
 // Fungsi ini bisa dipanggil oleh Pimpinan untuk trigger recalculation target
 // Berguna setelah deploy functions baru
 // =========================================================================
-exports.triggerTargetRecalc = onCall(async (request) => {
+exports.triggerTargetRecalc = onCall({ region: 'asia-southeast1' }, async (request) => {
     const uid = request.auth?.uid;
     
     if (!uid) {

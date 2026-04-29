@@ -11,7 +11,9 @@ const admin = require('firebase-admin');
  * (jika app target sedang ter-kill).
  * =========================================================================
  */
-exports.onTrackingActivated = functions.database
+exports.onTrackingActivated = functions
+    .region('asia-southeast1')
+    .database
     .ref('/location_tracking/{targetUid}/active')
     .onWrite(async (change, context) => {
         const targetUid = context.params.targetUid;

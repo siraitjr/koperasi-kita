@@ -19,7 +19,9 @@ const db = admin.database();
  * 
  * Hanya Pengawas yang bisa mengakses fungsi ini
  */
-exports.resetUserPassword = functions.https.onCall(async (data, context) => {
+exports.resetUserPassword = functions
+    .region('asia-southeast1')
+    .https.onCall(async (data, context) => {
     // 1. Validasi autentikasi
     if (!context.auth) {
         throw new functions.https.HttpsError(
@@ -169,7 +171,9 @@ exports.resetUserPassword = functions.https.onCall(async (data, context) => {
  * 
  * Hanya Pengawas yang bisa mengakses fungsi ini
  */
-exports.getAllUsers = functions.https.onCall(async (data, context) => {
+exports.getAllUsers = functions
+    .region('asia-southeast1')
+    .https.onCall(async (data, context) => {
     // 1. Validasi autentikasi
     if (!context.auth) {
         throw new functions.https.HttpsError(
@@ -336,7 +340,9 @@ async function getCabangName(cabangId) {
  *   role: 'admin' | 'pimpinan' | 'koordinator'
  *   cabangId: required for admin & pimpinan, optional for koordinator
  */
-exports.createNewUser = functions.https.onCall(async (data, context) => {
+exports.createNewUser = functions
+    .region('asia-southeast1')
+    .https.onCall(async (data, context) => {
     // 1. Validasi autentikasi
     if (!context.auth) {
         throw new functions.https.HttpsError(
@@ -511,7 +517,9 @@ exports.createNewUser = functions.https.onCall(async (data, context) => {
  *
  * @param {Object} data - { targetUid: string }
  */
-exports.deleteExistingUser = functions.https.onCall(async (data, context) => {
+exports.deleteExistingUser = functions
+    .region('asia-southeast1')
+    .https.onCall(async (data, context) => {
     // 1. Validasi autentikasi
     if (!context.auth) {
         throw new functions.https.HttpsError(
@@ -657,7 +665,9 @@ exports.deleteExistingUser = functions.https.onCall(async (data, context) => {
  * getAllCabang - Callable Function untuk mendapatkan daftar cabang
  * Hanya Pengawas yang bisa mengakses
  */
-exports.getAllCabang = functions.https.onCall(async (data, context) => {
+exports.getAllCabang = functions
+    .region('asia-southeast1')
+    .https.onCall(async (data, context) => {
     if (!context.auth) {
         throw new functions.https.HttpsError('unauthenticated', 'Anda harus login.');
     }

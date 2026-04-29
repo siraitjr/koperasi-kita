@@ -34,7 +34,9 @@ function shouldProcess(key) {
     return true;
 }
 
-exports.onPelangganWrite = functions.database
+exports.onPelangganWrite = functions
+    .region('asia-southeast1')
+    .database
     .ref('/pelanggan/{adminUid}/{pelangganId}')
     .onWrite(async (change, context) => {
         const adminUid = context.params.adminUid;

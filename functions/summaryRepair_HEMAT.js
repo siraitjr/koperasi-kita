@@ -18,7 +18,9 @@ const { fullRecalculateAdminSummary } = require('./summaryHelpers');
 // =========================================================================
 // FUNGSI 1: SMART HEALTH CHECK (HEMAT - SHALLOW READ)
 // =========================================================================
-exports.smartHealthCheck = functions.pubsub
+exports.smartHealthCheck = functions
+    .region('asia-southeast1')
+    .pubsub
     .schedule('0 3 * * 0')  // Hanya Minggu jam 3 pagi (1x seminggu)
     .timeZone('Asia/Jakarta')
     .onRun(async (context) => {
@@ -86,7 +88,9 @@ exports.smartHealthCheck = functions.pubsub
 // Tambahkan ?force=true untuk memaksa recalc semua admin (termasuk yang sudah akurat)
 // Contoh: https://...cloudfunctions.net/repairAllSummaries?force=true
 // =========================================================================
-exports.repairAllSummaries = functions.https.onRequest(async (req, res) => {
+exports.repairAllSummaries = functions
+    .region('asia-southeast1')
+    .https.onRequest(async (req, res) => {
     // v5: Support force parameter
     const forceRecalc = req.query.force === 'true';
     
@@ -189,7 +193,9 @@ exports.repairAllSummaries = functions.https.onRequest(async (req, res) => {
 // =========================================================================
 // FUNGSI 3: REPAIR SINGLE ADMIN (HTTP)
 // =========================================================================
-exports.repairAdminSummary = functions.https.onRequest(async (req, res) => {
+exports.repairAdminSummary = functions
+    .region('asia-southeast1')
+    .https.onRequest(async (req, res) => {
     const adminUid = req.query.adminUid;
     
     if (!adminUid) {

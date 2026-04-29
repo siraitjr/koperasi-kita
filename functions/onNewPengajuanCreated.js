@@ -49,7 +49,9 @@ function formatRupiah(angka) {
 // =========================================================================
 // TIDAK BERUBAH: Hanya kirim notifikasi ke PIMPINAN
 // =========================================================================
-exports.onNewPengajuanCreated = functions.database
+exports.onNewPengajuanCreated = functions
+    .region('asia-southeast1')
+    .database
     .ref('/pengajuan_approval/{cabangId}/{pengajuanId}')
     .onCreate(async (snapshot, context) => {
         const cabangId = context.params.cabangId;
@@ -177,7 +179,9 @@ exports.onNewPengajuanCreated = functions.database
 // =========================================================================
 // UPDATED: Sekarang kirim ke KOORDINATOR, bukan Pengawas
 // =========================================================================
-exports.onPimpinanReviewed = functions.database
+exports.onPimpinanReviewed = functions
+    .region('asia-southeast1')
+    .database
     .ref('/pengajuan_approval/{cabangId}/{pengajuanId}/dualApprovalInfo/approvalPhase')
     .onUpdate(async (change, context) => {
         const newPhase = change.after.val();
@@ -267,7 +271,9 @@ exports.onPimpinanReviewed = functions.database
 // =========================================================================
 // BARU: TRIGGER KOORDINATOR SELESAI REVIEW (Phase 2 → Phase 3: PENGAWAS)
 // =========================================================================
-exports.onKoordinatorReviewed = functions.database
+exports.onKoordinatorReviewed = functions
+    .region('asia-southeast1')
+    .database
     .ref('/pengajuan_approval/{cabangId}/{pengajuanId}/dualApprovalInfo/approvalPhase')
     .onUpdate(async (change, context) => {
         const newPhase = change.after.val();
@@ -363,7 +369,9 @@ exports.onKoordinatorReviewed = functions.database
 // =========================================================================
 // PERUBAHAN: Sekarang kirim ke KOORDINATOR untuk finalisasi, bukan Pimpinan
 // =========================================================================
-exports.onPengawasReviewed = functions.database
+exports.onPengawasReviewed = functions
+    .region('asia-southeast1')
+    .database
     .ref('/pengajuan_approval/{cabangId}/{pengajuanId}/dualApprovalInfo/approvalPhase')
     .onUpdate(async (change, context) => {
         const newPhase = change.after.val();
@@ -460,7 +468,9 @@ exports.onPengawasReviewed = functions.database
 // =========================================================================
 // BARU: TRIGGER KOORDINATOR FINAL CONFIRMED (Phase 4 → Phase 5: PIMPINAN FINAL)
 // =========================================================================
-exports.onKoordinatorFinalReviewed = functions.database
+exports.onKoordinatorFinalReviewed = functions
+    .region('asia-southeast1')
+    .database
     .ref('/pengajuan_approval/{cabangId}/{pengajuanId}/dualApprovalInfo/approvalPhase')
     .onUpdate(async (change, context) => {
         const newPhase = change.after.val();
@@ -566,7 +576,9 @@ exports.onKoordinatorFinalReviewed = functions.database
 // =========================================================================
 // TIDAK BERUBAH: Hanya kirim ke admin setelah pimpinanFinalConfirmed = true
 // =========================================================================
-exports.onDualApprovalComplete = functions.database
+exports.onDualApprovalComplete = functions
+    .region('asia-southeast1')
+    .database
     .ref('/pengajuan_approval/{cabangId}/{pengajuanId}/dualApprovalInfo/approvalPhase')
     .onUpdate(async (change, context) => {
         const newPhase = change.after.val();

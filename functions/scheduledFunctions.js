@@ -20,7 +20,9 @@ const { fullRecalculateAdminSummary, isHoliday, getTodayIndonesia, isOverThreeMo
 // =========================================================================
 // DAILY RESET (00:00 WIB) - OTOMATIS SETIAP HARI
 // =========================================================================
-exports.dailySummaryReset = functions.pubsub
+exports.dailySummaryReset = functions
+    .region('asia-southeast1')
+    .pubsub
     .schedule('0 0 * * *')
     .timeZone('Asia/Jakarta')
     .onRun(async (context) => {
@@ -74,7 +76,9 @@ exports.dailySummaryReset = functions.pubsub
 // PENTING: Tidak menghitung target dari nasabah yang sudah lunas!
 // Logika SAMA dengan RingkasanDashboardScreen.kt baris 115-119
 // =========================================================================
-exports.dailyTargetRecalc = functions.pubsub
+exports.dailyTargetRecalc = functions
+    .region('asia-southeast1')
+    .pubsub
     .schedule('0 5 * * *')
     .timeZone('Asia/Jakarta')
     .onRun(async (context) => {
@@ -167,8 +171,10 @@ exports.dailyTargetRecalc = functions.pubsub
 // =========================================================================
 // WEEKLY RECALCULATION (MINGGU 02:00 WIB) - OTOMATIS SETIAP MINGGU
 // =========================================================================
-exports.weeklyFullRecalc = functions.pubsub
-    .schedule('0 2 * * *')
+exports.weeklyFullRecalc = functions
+    .region('asia-southeast1')
+    .pubsub
+    .schedule('0 2 * * 0')
     .timeZone('Asia/Jakarta')
     .onRun(async (context) => {
         console.log(`🔄 [AUTO] Daily recalculation started`);
@@ -288,7 +294,9 @@ exports.weeklyFullRecalc = functions.pubsub
 // =========================================================================
 // CLEANUP APPROVALS (01:00 WIB) - OTOMATIS SETIAP HARI
 // =========================================================================
-exports.cleanupProcessedApprovals = functions.pubsub
+exports.cleanupProcessedApprovals = functions
+    .region('asia-southeast1')
+    .pubsub
     .schedule('0 1 * * *')
     .timeZone('Asia/Jakarta')
     .onRun(async (context) => {
@@ -332,7 +340,9 @@ exports.cleanupProcessedApprovals = functions.pubsub
 // =========================================================================
 // CLEANUP OLD NOTIFICATIONS (01:30 WIB)
 // =========================================================================
-exports.cleanupOldNotifications = functions.pubsub
+exports.cleanupOldNotifications = functions
+    .region('asia-southeast1')
+    .pubsub
     .schedule('30 1 * * *')
     .timeZone('Asia/Jakarta')
     .onRun(async (context) => {
@@ -369,7 +379,9 @@ exports.cleanupOldNotifications = functions.pubsub
 // =========================================================================
 // HEALTH CHECK (SETIAP 6 JAM) - OTOMATIS
 // =========================================================================
-exports.summaryHealthCheck = functions.pubsub
+exports.summaryHealthCheck = functions
+    .region('asia-southeast1')
+    .pubsub
     .schedule('0 */6 * * *')
     .timeZone('Asia/Jakarta')
     .onRun(async (context) => {
@@ -410,7 +422,9 @@ exports.summaryHealthCheck = functions.pubsub
 // =========================================================================
 // CLEANUP OLD EVENT HARIAN (02:00 WIB)
 // =========================================================================
-exports.cleanupOldEventHarian = functions.pubsub
+exports.cleanupOldEventHarian = functions
+    .region('asia-southeast1')
+    .pubsub
     .schedule('0 2 * * *')
     .timeZone('Asia/Jakarta')
     .onRun(async (context) => {
@@ -487,7 +501,9 @@ exports.cleanupOldEventHarian = functions.pubsub
 // =========================================================================
 // Skip nasabah yang sudah lunas berdasarkan pembayaran
 // =========================================================================
-exports.dailyUpdatePelangganBermasalah = functions.pubsub
+exports.dailyUpdatePelangganBermasalah = functions
+    .region('asia-southeast1')
+    .pubsub
     .schedule('0 6 * * *')
     .timeZone('Asia/Jakarta')
     .onRun(async (context) => {
@@ -684,7 +700,9 @@ function getTodayIndonesiaLocal() {
 // =========================================================================
 // HTTP FUNCTION: Backfill Pembayaran Harian
 // =========================================================================
-exports.backfillPembayaranHarian = functions.https.onRequest(async (req, res) => {
+exports.backfillPembayaranHarian = functions
+    .region('asia-southeast1')
+    .https.onRequest(async (req, res) => {
     console.log('🔄 Starting backfill pembayaran_harian...');
     
     const today = getTodayIndonesiaLocal();
@@ -848,7 +866,9 @@ exports.backfillPembayaranHarian = functions.https.onRequest(async (req, res) =>
 // =========================================================================
 // HTTP FUNCTION: Backfill Event Harian
 // =========================================================================
-exports.backfillEventHarian = functions.https.onRequest(async (req, res) => {
+exports.backfillEventHarian = functions
+    .region('asia-southeast1')
+    .https.onRequest(async (req, res) => {
     console.log('🔄 Starting backfill event_harian...');
     
     const today = getTodayIndonesiaLocal();
@@ -986,7 +1006,9 @@ exports.backfillEventHarian = functions.https.onRequest(async (req, res) => {
 // =========================================================================
 // HTTP FUNCTION: Update Pelanggan Bermasalah Manual
 // =========================================================================
-exports.updatePelangganBermasalah = functions.https.onRequest(async (req, res) => {
+exports.updatePelangganBermasalah = functions
+    .region('asia-southeast1')
+    .https.onRequest(async (req, res) => {
     console.log('🔄 Starting update pelanggan_bermasalah...');
     
     const today = getTodayIndonesiaLocal();
@@ -1096,7 +1118,9 @@ exports.updatePelangganBermasalah = functions.https.onRequest(async (req, res) =
 // =========================================================================
 // CLEANUP EXPIRED BROADCASTS (Setiap jam)
 // =========================================================================
-exports.cleanupExpiredBroadcasts = functions.pubsub
+exports.cleanupExpiredBroadcasts = functions
+    .region('asia-southeast1')
+    .pubsub
     .schedule('0 * * * *')  // Setiap jam di menit ke-0
     .timeZone('Asia/Jakarta')
     .onRun(async (context) => {

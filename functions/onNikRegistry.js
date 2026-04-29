@@ -124,7 +124,9 @@ async function removeNikFromRegistry(nik) {
 // =========================================================================
 // TRIGGER 1: Saat Pelanggan BARU Ditambahkan
 // =========================================================================
-exports.onPelangganCreatedRegisterNik = functions.database
+exports.onPelangganCreatedRegisterNik = functions
+    .region('asia-southeast1')
+    .database
     .ref('/pelanggan/{adminUid}/{pelangganId}')
     .onCreate(async (snapshot, context) => {
         const adminUid = context.params.adminUid;
@@ -178,7 +180,9 @@ exports.onPelangganCreatedRegisterNik = functions.database
 // =========================================================================
 // TRIGGER 2: Saat Pembayaran Ditambahkan (Cek Lunas → Update NIK Status)
 // =========================================================================
-exports.onPembayaranUpdateNikStatus = functions.database
+exports.onPembayaranUpdateNikStatus = functions
+    .region('asia-southeast1')
+    .database
     .ref('/pelanggan/{adminUid}/{pelangganId}/pembayaranList/{index}')
     .onCreate(async (snapshot, context) => {
         const adminUid = context.params.adminUid;
@@ -211,7 +215,9 @@ exports.onPembayaranUpdateNikStatus = functions.database
 // =========================================================================
 // TRIGGER 3: Saat Sub-Pembayaran Ditambahkan (Cek Lunas)
 // =========================================================================
-exports.onSubPembayaranUpdateNikStatus = functions.database
+exports.onSubPembayaranUpdateNikStatus = functions
+    .region('asia-southeast1')
+    .database
     .ref('/pelanggan/{adminUid}/{pelangganId}/pembayaranList/{index}/subPembayaran/{subIndex}')
     .onCreate(async (snapshot, context) => {
         const adminUid = context.params.adminUid;
@@ -242,7 +248,9 @@ exports.onSubPembayaranUpdateNikStatus = functions.database
 // =========================================================================
 // TRIGGER 4: Saat Status Pelanggan Berubah ke AKTIF (Pinjaman Baru)
 // =========================================================================
-exports.onStatusChangeUpdateNik = functions.database
+exports.onStatusChangeUpdateNik = functions
+    .region('asia-southeast1')
+    .database
     .ref('/pelanggan/{adminUid}/{pelangganId}/status')
     .onUpdate(async (change, context) => {
         const adminUid = context.params.adminUid;
@@ -286,7 +294,9 @@ exports.onStatusChangeUpdateNik = functions.database
 // =========================================================================
 // TRIGGER 5: Saat Pelanggan DIHAPUS
 // =========================================================================
-exports.onPelangganDeletedRemoveNik = functions.database
+exports.onPelangganDeletedRemoveNik = functions
+    .region('asia-southeast1')
+    .database
     .ref('/pelanggan/{adminUid}/{pelangganId}')
     .onDelete(async (snapshot, context) => {
         const pelangganId = context.params.pelangganId;
@@ -314,7 +324,9 @@ exports.onPelangganDeletedRemoveNik = functions.database
 // =========================================================================
 // URL: https://us-central1-koperasikitagodangulu.cloudfunctions.net/migrateNikToRegistry
 // =========================================================================
-exports.migrateNikToRegistry = functions.https.onRequest(async (req, res) => {
+exports.migrateNikToRegistry = functions
+    .region('asia-southeast1')
+    .https.onRequest(async (req, res) => {
     console.log('🚀 =====================================');
     console.log('🚀 MIGRASI NIK KE NIK_REGISTRY');
     console.log('🚀 =====================================');
@@ -471,7 +483,7 @@ exports.migrateNikToRegistry = functions.https.onRequest(async (req, res) => {
 // =========================================================================
 const { onCall } = require("firebase-functions/v2/https");
 
-exports.searchNikGlobal = onCall(async (request) => {
+exports.searchNikGlobal = onCall({ region: 'asia-southeast1' }, async (request) => {
     const uid = request.auth?.uid;
     
     if (!uid) {

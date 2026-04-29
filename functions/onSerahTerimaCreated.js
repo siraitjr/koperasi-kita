@@ -30,7 +30,9 @@ function formatRupiah(angka) {
 /**
  * Trigger saat ada serah terima baru di /serah_terima_notifications/{pimpinanUid}/{notificationId}
  */
-exports.onSerahTerimaCreated = functions.database
+exports.onSerahTerimaCreated = functions
+    .region('asia-southeast1')
+    .database
     .ref('/serah_terima_notifications/{pimpinanUid}/{notificationId}')
     .onCreate(async (snapshot, context) => {
         const pimpinanUid = context.params.pimpinanUid;
