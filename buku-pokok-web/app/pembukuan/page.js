@@ -896,6 +896,11 @@ function BukuPokokScreen({ user, cabang, selectedAdmin, onSelectAdmin, onBack, o
   const [koreksiError, setKoreksiError] = useState('');
   const tableRef = useRef(null);
   const [stickyOffsets, setStickyOffsets] = useState({ nama: 55, panggilan: 210 });
+  // Incremental rendering: batasi DOM tbody mode regular agar ringan saat ribuan baris.
+  // tfoot tetap pakai full `filtered` → total akurat. Tidak menyentuh storting global.
+  const VIRT_PAGE = 50;
+  const [visibleRowCount, setVisibleRowCount] = useState(VIRT_PAGE);
+  const sentinelRef = useRef(null);
 
   useEffect(() => {
     const table = tableRef.current;
@@ -1063,6 +1068,27 @@ function getKategoriNasabah(nasabah) {
   // ==================== TABEL MODE (PB/L1/CM/MB/ML) ====================
   const isTabelMode = tabelFilter !== 'semua' && tabelFilter !== 'stortingGlobal';
   const isStortingGlobalMode = tabelFilter === 'stortingGlobal';
+
+  // Reset jendela tampilan saat dataset / filter berubah
+  useEffect(() => {
+    setVisibleRowCount(VIRT_PAGE);
+  }, [search, tabelFilter, statusFilter, selectedAdmin?.uid, cabang.id, data]);
+
+  // Auto-load batch berikutnya saat sentinel mendekati viewport
+  const filteredLen = filtered.length;
+  useEffect(() => {
+    if (isStortingGlobalMode) return;
+    if (visibleRowCount >= filteredLen) return;
+    const sentinel = sentinelRef.current;
+    if (!sentinel) return;
+    const observer = new IntersectionObserver((entries) => {
+      if (entries[0].isIntersecting) {
+        setVisibleRowCount((c) => Math.min(c + VIRT_PAGE, filteredLen));
+      }
+    }, { rootMargin: '200px' });
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [visibleRowCount, filteredLen, isStortingGlobalMode]);
 
   // ==================== STORTING GLOBAL COMPUTATION ====================
   const stortingGlobalData = (() => {
@@ -1741,7 +1767,7 @@ function getKategoriNasabah(nasabah) {
                       </td>
                     </tr>
                   ) : (
-                    filtered.map((n, idx) => {
+                    filtered.slice(0, visibleRowCount).map((n, idx) => {
                       const rowTotal = isTabelMode
                         ? displayDates.reduce((s, d) => s + (n.pembayaran?.[d]?.total || 0), 0)
                         : 0;
@@ -1820,6 +1846,13 @@ function getKategoriNasabah(nasabah) {
                         </tr>
                       );
                     })
+                  )}
+                  {visibleRowCount < filtered.length && (
+                    <tr ref={sentinelRef} aria-hidden="true">
+                      <td colSpan={9 + displayDates.length + (isTabelMode ? 3 : 0)} style={{ padding: 8, textAlign: 'center', color: '#8a9ba8', fontSize: 12 }}>
+                        Memuat baris berikutnya… ({visibleRowCount} / {filtered.length})
+                      </td>
+                    </tr>
                   )}
                 </tbody>
                 {filtered.length > 0 && (
