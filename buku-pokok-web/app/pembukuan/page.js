@@ -1325,6 +1325,143 @@ function getKategoriNasabah(nasabah) {
     return Math.round((dropBerjalan * 120) / 100);
   })();
 
+  // ==================== SALDO AWAL (Label 1 di header bulan) ====================
+  // Mei 2026+ pakai formula:
+  //   SaldoAwal_t = LastRow.DropBerjalan_t × 1.2 + SaldoAwal_{t-1} − LastRow.StortingBerjalan_t
+  // April 2026 (baseline) & sebelumnya tetap: Sum(L1+CM+MB+ML) bulan_{t-1} (= legacy).
+  // Cutoff berbasis BULAN DATA yang dipilih (bukan system date) — historis tetap stabil.
+  // Reconciliation: kedua metode dihitung. Mismatch → console.warn + tooltip pasif (UI tidak diubah).
+  // 0 RTDB read tambahan: semua dari data.nasabah + koreksiSGMap yang sudah loaded.
+  // Koreksi pengawas hanya tersedia untuk prevOf(stortingMonth) — di-apply hanya pada bulan tsb.
+  const saldoAwalLabel1 = (() => {
+    if (!isStortingGlobalMode || !stortingMonth || !data?.nasabah) return { value: 0, mismatch: null };
+
+    const SALDO_AWAL_FORMULA_FROM = '2026-05'; // formula aktif mulai bulan ini
+    const SALDO_AWAL_BASELINE = '2026-04';     // baseline = April 2026
+
+    const ymPrev = (ym) => {
+      const [y, m] = ym.split('-').map(Number);
+      const d = new Date(y, m - 2, 1);
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    };
+
+    const BULAN_INDO_ARR_SA = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+    const LIBUR_SA = [[1,1],[16,1],[17,2],[19,3],[21,3],[3,4],[1,5],[14,5],[16,6],[17,8],[25,8],[25,12]];
+    const isHKSA = (d) => {
+      if (d.getDay() === 0) return false;
+      const dd = d.getDate(), mm = d.getMonth() + 1;
+      return !LIBUR_SA.some(([ld, lm]) => ld === dd && lm === mm);
+    };
+    const workingDatesOf = (ym) => {
+      const [y, m] = ym.split('-').map(Number);
+      const monthIdx = m - 1;
+      const now = new Date();
+      const wib = new Date(now.getTime() + (now.getTimezoneOffset() * 60000) + 7 * 60 * 60 * 1000);
+      const isCurrent = (y === wib.getFullYear() && monthIdx === wib.getMonth());
+      const todayDate = new Date(wib.getFullYear(), wib.getMonth(), wib.getDate());
+      const endDate = isCurrent ? todayDate : new Date(y, monthIdx + 1, 0);
+      const out = new Set();
+      const cur = new Date(y, monthIdx, 1);
+      while (cur <= endDate) {
+        if (isHKSA(cur)) {
+          const dd = String(cur.getDate()).padStart(2, '0');
+          out.add(`${dd} ${BULAN_INDO_ARR_SA[cur.getMonth()]} ${cur.getFullYear()}`);
+        }
+        cur.setDate(cur.getDate() + 1);
+      }
+      return out;
+    };
+
+    const list = data.nasabah;
+    const sgPrevBulanLoaded = ymPrev(stortingMonth);
+
+    // LastRow.DropBerjalan & LastRow.StortingBerjalan (total bulan ym dari data digital)
+    const lastRowOf = (ym) => {
+      const dates = workingDatesOf(ym);
+      if (dates.size === 0) return { drop: 0, storting: 0 };
+      let drop = 0, storting = 0;
+      list.forEach(n => {
+        if (n.tanggalPencairan && dates.has(n.tanggalPencairan)) {
+          drop += n.besarPinjaman || 0;
+        }
+        if (n.pembayaran) {
+          for (const [d, p] of Object.entries(n.pembayaran)) {
+            if (dates.has(d)) storting += (p && p.total) || 0;
+          }
+        }
+      });
+      return { drop, storting };
+    };
+
+    // Sum(L1+CM+MB+ML) bulan ym — apply koreksi hanya kalau ym = prevBulan yang loaded.
+    // PB dikecualikan (sama seperti legacy: PB = pinjaman bulan berjalan, bukan saldo awal).
+    const sumLabel2Of = (ym) => {
+      const dates = workingDatesOf(ym);
+      if (dates.size === 0) return 0;
+      const adminComputed = {};
+      list.forEach(n => {
+        if (!n.pembayaran) return;
+        const kat = getKategoriNasabah(n);
+        if (kat === 'PB') return;
+        const auid = n.adminUid || '_';
+        for (const [d, p] of Object.entries(n.pembayaran)) {
+          if (!dates.has(d)) continue;
+          if (!adminComputed[auid]) adminComputed[auid] = { l1:0, cm:0, mb:0, ml:0 };
+          const total = (p && p.total) || 0;
+          if (kat === 'L1') adminComputed[auid].l1 += total;
+          else if (kat === 'CM') adminComputed[auid].cm += total;
+          else if (kat === 'MB') adminComputed[auid].mb += total;
+          else adminComputed[auid].ml += total;
+        }
+      });
+      const useKoreksi = ym === sgPrevBulanLoaded;
+      const targetUids = selectedAdmin
+        ? [selectedAdmin.uid]
+        : useKoreksi
+          ? [...new Set([...Object.keys(adminComputed), ...Object.keys(koreksiSGMap)])]
+          : Object.keys(adminComputed);
+      let sum = 0;
+      targetUids.forEach(auid => {
+        const computed = adminComputed[auid] || { l1:0, cm:0, mb:0, ml:0 };
+        const koreksi = useKoreksi ? koreksiSGMap[auid] : null;
+        const v = koreksi || computed;
+        sum += (v.l1 || 0) + (v.cm || 0) + (v.mb || 0) + (v.ml || 0);
+      });
+      return sum;
+    };
+
+    // Recursion memoized — stop di baseline April 2026.
+    const memo = new Map();
+    const saldoAwalOf = (ym) => {
+      if (memo.has(ym)) return memo.get(ym);
+      let result;
+      if (ym.localeCompare(SALDO_AWAL_BASELINE) <= 0) {
+        result = sumLabel2Of(ymPrev(ym));
+      } else {
+        const last = lastRowOf(ym);
+        const prevSaldo = saldoAwalOf(ymPrev(ym));
+        result = Math.round(last.drop * 1.2) + prevSaldo - last.storting;
+      }
+      memo.set(ym, result);
+      return result;
+    };
+
+    const ym = stortingMonth;
+    const useFormula = ym.localeCompare(SALDO_AWAL_FORMULA_FROM) >= 0;
+    const sumL2Prev = sumLabel2Of(ymPrev(ym));
+    if (!useFormula) {
+      return { value: sumL2Prev, mismatch: null };
+    }
+    const fromFormula = saldoAwalOf(ym);
+    const mismatch = fromFormula !== sumL2Prev
+      ? { delta: fromFormula - sumL2Prev, fromFormula, sumL2Prev }
+      : null;
+    if (mismatch) {
+      console.warn('[StortingGlobal] Saldo Awal reconciliation mismatch', { ym, ...mismatch });
+    }
+    return { value: fromFormula, mismatch };
+  })();
+
   const tabelDates = (() => {
     if (!isTabelMode || filtered.length === 0) return [];
     const BULAN_INDO_ARR = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
@@ -1564,15 +1701,22 @@ function getKategoriNasabah(nasabah) {
                     })()}
                   </span>
                   {prevMonthSGTotals && (() => {
-                    // Total saldo awal koperasi: HANYA L1 + CM + MB + ML (kolom kotak 2).
-                    // PB dikeluarkan dari total karena PB adalah pinjaman bulan berjalan
-                    // (saldo awal-nya berasal dari drop, bukan saldo akhir bulan lalu).
-                    const total = prevMonthSGTotals.l1 + prevMonthSGTotals.cm + prevMonthSGTotals.mb + prevMonthSGTotals.ml;
-                    return total > 0 ? (
-                      <span style={{ fontSize: 14, color: '#7c3aed', fontWeight: 700, fontFamily: "'DM Mono', monospace" }}>
+                    // Saldo Awal koperasi (Label 1):
+                    // - April 2026 & sebelumnya = Sum(L1+CM+MB+ML) bulan_{t-1} (legacy).
+                    // - Mei 2026+ = formula LastRow.Drop_t × 1.2 + SaldoAwal_{t-1} − LastRow.Storting_t.
+                    // PB dikecualikan (PB = pinjaman bulan berjalan; saldo awalnya dari drop).
+                    // Lihat saldoAwalLabel1 — sudah memo + recon dengan Sum(L2 bulan_{t-1}).
+                    const total = saldoAwalLabel1.value;
+                    if (total <= 0) return null;
+                    const mm = saldoAwalLabel1.mismatch;
+                    const title = mm
+                      ? `Reconciliation mismatch: formula = ${formatRp(mm.fromFormula)}, Sum(L1+CM+MB+ML bulan lalu) = ${formatRp(mm.sumL2Prev)} (selisih ${formatRp(mm.delta)})`
+                      : undefined;
+                    return (
+                      <span title={title} style={{ fontSize: 14, color: '#7c3aed', fontWeight: 700, fontFamily: "'DM Mono', monospace" }}>
                         {formatRp(total)}
                       </span>
-                    ) : null;
+                    );
                   })()}
                 </span>
                 <button
