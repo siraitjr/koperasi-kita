@@ -3,8 +3,12 @@ package com.example.koperasikitagodangulu.utils
 import java.util.Calendar
 import java.text.SimpleDateFormat
 import java.util.Locale
+import java.util.TimeZone
 
 object HolidayUtils {
+
+    // Lock semua perhitungan tanggal ke WIB agar tidak ikut TZ device.
+    private val WIB: TimeZone = TimeZone.getTimeZone("Asia/Jakarta")
 
     // Fungsi untuk mengecek apakah suatu tanggal adalah hari Minggu
     fun isMinggu(calendar: Calendar): Boolean {
@@ -51,9 +55,9 @@ object HolidayUtils {
 
     // Helper untuk parsing tanggal
     fun parseTanggal(tanggalString: String): Calendar {
-        val dateFormat = SimpleDateFormat("dd MMM yyyy", Locale("in", "ID"))
+        val dateFormat = SimpleDateFormat("dd MMM yyyy", Locale("in", "ID")).apply { timeZone = WIB }
         val date = dateFormat.parse(tanggalString)
-        val calendar = Calendar.getInstance()
+        val calendar = Calendar.getInstance(WIB)
         date?.let { calendar.time = it }
         return calendar
     }
