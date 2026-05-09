@@ -117,18 +117,30 @@ exports.dailyTargetRecalc = functions
             let globalTarget = 0;
 
             // ================================================================
-            // OPTIMASI BANDWIDTH: Baca targetHariIni dari summary yang sudah
-            // dihitung oleh weeklyFullRecalc (02:00 WIB) via fullRecalculateAdminSummary
+            // FULL RECALC PER ADMIN (sebelum agregasi cabang).
             //
-            // SEBELUMNYA: Membaca SELURUH pelanggan tree per admin (~ratusan MB/hari)
-            // SEKARANG: Membaca summary/perAdmin saja (~beberapa KB)
+            // Sebelumnya, `summary/perAdmin/{uid}/targetHariIni` di-rebuild
+            // setiap pagi 02:00 WIB oleh `weeklyFullRecalc` (yang lama-nya
+            // ber-cron daily). Sejak weeklyFullRecalc dikoreksi jadi mingguan,
+            // tidak ada lagi yang full-recompute targetHariIni harian, sehingga
+            // setelah `dailyReset` 00:00 set semua = 0, per-admin tetap 0
+            // sepanjang hari kerja → dashboard menampilkan "LIBUR" terus.
             //
-            // AKURASI: 100% — fullRecalculateAdminSummary di summaryHelpers.js
-            // menggunakan logika IDENTIK (cek status aktif, lunas, > 3 bulan,
-            // cair hari ini, menunggu pencairan, lunas hari ini, dll)
+            // Solusi: panggil fullRecalculateAdminSummary per admin di sini,
+            // sebelum agregasi cabang. weeklyFullRecalc tetap mingguan untuk
+            // repair tambahan.
             // ================================================================
             const adminEntries = Object.entries(adminsSnap.val() || {})
                 .filter(([_, d]) => d.role === 'admin');
+
+            await Promise.all(
+                adminEntries.map(([adminUid]) =>
+                    fullRecalculateAdminSummary(adminUid).catch(e => {
+                        console.error(`❌ Full recalc failed for ${adminUid}: ${e.message}`);
+                    })
+                )
+            );
+            console.log(`✅ Full-recalculated ${adminEntries.length} admin summaries`);
 
             // Baca semua admin summary targetHariIni secara PARALEL
             const summaryResults = await Promise.all(
