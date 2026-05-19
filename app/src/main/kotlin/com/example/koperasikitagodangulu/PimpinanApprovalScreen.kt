@@ -87,6 +87,8 @@ import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import coil.compose.AsyncImage
+import coil.compose.SubcomposeAsyncImage
+import coil.request.ImageRequest
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.transformable
@@ -1300,7 +1302,11 @@ fun DetailPengajuanSheet(
                         KtpPhotoSection(
                             title = "Foto KTP",
                             imageUrl = fotoKtpResolved,
-                            showFallbackLabel = isFotoKtpFallback
+                            showFallbackLabel = isFotoKtpFallback,
+                            // Saat top-up dan primary URL masih = pendingFotoKtpUrl,
+                            // sediakan foto pinjaman lama sebagai fallback runtime
+                            // jika URL pending gagal load (CDN delay/404).
+                            fallbackUrl = if (isTopUp && !isFotoKtpFallback) pelanggan.fotoKtpUrl else ""
                         )
                     } else {
                         PhotoPlaceholder("Foto KTP tidak tersedia")
@@ -1311,7 +1317,8 @@ fun DetailPengajuanSheet(
                         KtpPhotoSection(
                             title = "Foto Nasabah",
                             imageUrl = fotoNasabahResolved,
-                            showFallbackLabel = isFotoNasabahFallback
+                            showFallbackLabel = isFotoNasabahFallback,
+                            fallbackUrl = if (isTopUp && !isFotoNasabahFallback) pelanggan.fotoNasabahUrl else ""
                         )
                     } else {
                         PhotoPlaceholder("Foto Nasabah tidak tersedia")
@@ -1334,7 +1341,8 @@ fun DetailPengajuanSheet(
                                 KtpPhotoSection(
                                     title = "Foto KTP Suami",
                                     imageUrl = fotoKtpSuamiResolved,
-                                    showFallbackLabel = isFotoKtpSuamiFallback
+                                    showFallbackLabel = isFotoKtpSuamiFallback,
+                                    fallbackUrl = if (isTopUp && !isFotoKtpSuamiFallback) pelanggan.fotoKtpSuamiUrl else ""
                                 )
                             } else {
                                 PhotoPlaceholder("Foto KTP Suami tidak tersedia")
@@ -1347,7 +1355,8 @@ fun DetailPengajuanSheet(
                                 KtpPhotoSection(
                                     title = "Foto KTP Istri",
                                     imageUrl = fotoKtpIstriResolved,
-                                    showFallbackLabel = isFotoKtpIstriFallback
+                                    showFallbackLabel = isFotoKtpIstriFallback,
+                                    fallbackUrl = if (isTopUp && !isFotoKtpIstriFallback) pelanggan.fotoKtpIstriUrl else ""
                                 )
                             } else {
                                 PhotoPlaceholder("Foto KTP Istri tidak tersedia")
@@ -1360,7 +1369,8 @@ fun DetailPengajuanSheet(
                         KtpPhotoSection(
                             title = "Foto Nasabah",
                             imageUrl = fotoNasabahResolved,
-                            showFallbackLabel = isFotoNasabahFallback
+                            showFallbackLabel = isFotoNasabahFallback,
+                            fallbackUrl = if (isTopUp && !isFotoNasabahFallback) pelanggan.fotoNasabahUrl else ""
                         )
                     } else {
                         PhotoPlaceholder("Foto Nasabah tidak tersedia")
@@ -2169,7 +2179,11 @@ fun ApprovalWithAmountDialog(
 fun KtpPhotoSection(
     title: String,
     imageUrl: String,
-    showFallbackLabel: Boolean = false
+    showFallbackLabel: Boolean = false,
+    // Foto cadangan dari pinjaman lama. Dipakai HANYA kalau imageUrl gagal di-load
+    // runtime (URL stale / Storage CDN belum konsisten / 404). Default "" agar
+    // call-site lama (non-top-up) tetap kompatibel dan tidak berubah perilaku.
+    fallbackUrl: String = ""
 ) {
     var showZoomDialog by remember { mutableStateOf(false) }
     var scale by remember { mutableStateOf(1f) }
@@ -2178,6 +2192,13 @@ fun KtpPhotoSection(
         scale = (scale * zoomChange).coerceIn(1f, 5f) // Batas zoom 1x - 5x
         offset += panChange
     }
+    // State runtime: kalau imageUrl error saat load, swap ke fallbackUrl.
+    // Key remember ke imageUrl supaya reset ketika imageUrl berubah (misal RTDB push URL baru
+    // setelah SyncManager menyelesaikan upload yang sebelumnya tertunda).
+    var primaryLoadFailed by remember(imageUrl) { mutableStateOf(false) }
+    val effectiveUrl = if (primaryLoadFailed && fallbackUrl.isNotBlank()) fallbackUrl else imageUrl
+    val showingRuntimeFallback = primaryLoadFailed && fallbackUrl.isNotBlank()
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -2201,17 +2222,49 @@ fun KtpPhotoSection(
             elevation = CardDefaults.cardElevation(4.dp),
             shape = RoundedCornerShape(8.dp)
         ) {
-            AsyncImage(
-                model = imageUrl,
+            SubcomposeAsyncImage(
+                model = ImageRequest.Builder(LocalContext.current)
+                    .data(effectiveUrl)
+                    .crossfade(true)
+                    .build(),
                 contentDescription = title,
-                modifier = Modifier.fillMaxSize()
+                modifier = Modifier.fillMaxSize(),
+                loading = {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator(strokeWidth = 2.dp)
+                    }
+                },
+                error = {
+                    // Trigger swap ke fallback hanya satu kali (saat error pertama kali
+                    // dan URL yang sedang gagal masih = primary imageUrl).
+                    if (!primaryLoadFailed && fallbackUrl.isNotBlank()) {
+                        LaunchedEffect(imageUrl) { primaryLoadFailed = true }
+                    }
+                    if (fallbackUrl.isBlank() || primaryLoadFailed) {
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "Foto belum tersedia,\nmenunggu sinkronisasi",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color.Gray,
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                    }
+                }
             )
         }
 
         // Label fallback: ditampilkan saat URL berasal dari foto pinjaman lama
         // (top-up dengan pendingFoto*Url kosong) — approver paham foto bukan
-        // dari pengajuan yang sedang direview.
-        if (showFallbackLabel) {
+        // dari pengajuan yang sedang direview. Tambahan: juga ditampilkan saat
+        // primary URL gagal load di runtime dan fallbackUrl dipakai.
+        if (showFallbackLabel || showingRuntimeFallback) {
             Text(
                 text = "Menampilkan Foto Pinjaman Sebelumnya",
                 style = MaterialTheme.typography.labelSmall,

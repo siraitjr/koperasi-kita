@@ -3892,42 +3892,51 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                 if (isOnline()) {
                     Log.d("KelolaKredit", "📤 ONLINE - Uploading foto (PENDING path)...")
 
-                    try {
-                        when (tipePinjamanBaru) {
-                            "dibawah_3jt" -> {
-                                // Upload foto KTP single → folder pending
-                                fotoKtpUri?.let {
-                                    newFotoKtpUrl = uploadFotoKtp(it, currentUid, pelangganId, "ktp", isPending = true) ?: ""
-                                    Log.d("KelolaKredit", "✅ Foto KTP uploaded (pending): $newFotoKtpUrl")
-                                }
-                            }
-                            "diatas_3jt" -> {
-                                // Upload foto KTP suami → folder pending
-                                fotoKtpSuamiUri?.let {
-                                    newFotoKtpSuamiUrl = uploadFotoKtp(it, currentUid, pelangganId, "ktp_suami", isPending = true) ?: ""
-                                    Log.d("KelolaKredit", "✅ Foto KTP Suami uploaded (pending): $newFotoKtpSuamiUrl")
-                                }
-                                // Upload foto KTP istri → folder pending
-                                fotoKtpIstriUri?.let {
-                                    newFotoKtpIstriUrl = uploadFotoKtp(it, currentUid, pelangganId, "ktp_istri", isPending = true) ?: ""
-                                    Log.d("KelolaKredit", "✅ Foto KTP Istri uploaded (pending): $newFotoKtpIstriUrl")
-                                }
-                            }
+                    // uploadFotoKtp() bisa return null TANPA throw (timeout, kompresi gagal,
+                    // size > 700KB, downloadUrl gagal). Sebelumnya null disamakan dengan
+                    // "" lalu RTDB tetap ditulis dengan pendingFotoUrl="" DAN pendingFotoUri="",
+                    // sehingga SyncManager tidak punya bahan untuk retry → foto hilang permanen
+                    // sampai Pimpinan buka layar → "Foto KTP tidak tersedia".
+                    // Helper di bawah: kalau upload sukses → return URL & kosongkan URI,
+                    // kalau gagal/null/exception → return "" & simpan URI agar SyncManager
+                    // retry upload belakangan (logic existing SyncManager line 430-486).
+                    suspend fun tryUploadFoto(uri: Uri?, jenis: String): Pair<String, String> {
+                        if (uri == null) return "" to ""
+                        val url = try {
+                            uploadFotoKtp(uri, currentUid, pelangganId, jenis, isPending = true)
+                        } catch (e: Exception) {
+                            Log.w("KelolaKredit", "⚠️ Exception upload foto $jenis: ${e.message}")
+                            null
                         }
-
-                        // Upload foto nasabah (untuk semua tipe) → folder pending
-                        fotoNasabahUri?.let {
-                            newFotoNasabahUrl = uploadFotoKtp(it, currentUid, pelangganId, "nasabah", isPending = true) ?: ""
-                            Log.d("KelolaKredit", "✅ Foto Nasabah uploaded (pending): $newFotoNasabahUrl")
+                        return if (!url.isNullOrBlank()) {
+                            Log.d("KelolaKredit", "✅ Foto $jenis uploaded (pending): $url")
+                            url to ""
+                        } else {
+                            Log.w("KelolaKredit", "⚠️ Upload foto $jenis null/blank → queue URI untuk retry SyncManager")
+                            "" to uri.toString()
                         }
-                    } catch (e: Exception) {
-                        Log.w("KelolaKredit", "⚠️ Gagal upload foto, simpan untuk nanti: ${e.message}")
-                        // Simpan URI untuk upload nanti
-                        pendingFotoKtpUri = fotoKtpUri?.toString() ?: ""
-                        pendingFotoKtpSuamiUri = fotoKtpSuamiUri?.toString() ?: ""
-                        pendingFotoKtpIstriUri = fotoKtpIstriUri?.toString() ?: ""
-                        pendingFotoNasabahUri = fotoNasabahUri?.toString() ?: ""
                     }
+
+                    when (tipePinjamanBaru) {
+                        "dibawah_3jt" -> {
+                            val (url, queued) = tryUploadFoto(fotoKtpUri, "ktp")
+                            newFotoKtpUrl = url
+                            pendingFotoKtpUri = queued
+                        }
+                        "diatas_3jt" -> {
+                            val (urlSuami, queuedSuami) = tryUploadFoto(fotoKtpSuamiUri, "ktp_suami")
+                            newFotoKtpSuamiUrl = urlSuami
+                            pendingFotoKtpSuamiUri = queuedSuami
+
+                            val (urlIstri, queuedIstri) = tryUploadFoto(fotoKtpIstriUri, "ktp_istri")
+                            newFotoKtpIstriUrl = urlIstri
+                            pendingFotoKtpIstriUri = queuedIstri
+                        }
+                    }
+
+                    val (urlNasabah, queuedNasabah) = tryUploadFoto(fotoNasabahUri, "nasabah")
+                    newFotoNasabahUrl = urlNasabah
+                    pendingFotoNasabahUri = queuedNasabah
                 } else {
                     Log.d("KelolaKredit", "📱 OFFLINE - Simpan foto URI untuk nanti")
                     pendingFotoKtpUri = fotoKtpUri?.toString() ?: ""
