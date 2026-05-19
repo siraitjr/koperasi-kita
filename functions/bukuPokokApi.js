@@ -372,7 +372,10 @@ exports.getBukuPokok = functions
             // Tab lain tidak membutuhkan data riwayat dari RTDB
             // SEBELUMNYA: SELALU baca riwayat_pinjaman (boros bandwidth)
             // SEKARANG: hanya baca jika statusFilter membutuhkan
-            const needsRiwayat = (statusFilter === 'nasabah_lunas' || statusFilter === 'semua');
+            // Selalu load riwayat_pinjaman: dibutuhkan agar pelunasan utang lama (top-up)
+            // bisa direlokasi ke baris historis L1/CM/MB/ML, bukan ke tabel PB pinjaman baru.
+            // Cost: +1 RTDB read per admin per request, dimitigasi cache 10 menit (lihat L42-43).
+            const needsRiwayat = true;
 
             const readPromises = [
                 Promise.all(adminUids.map(aUid => db.ref(`metadata/admins/${aUid}`).once('value'))),
@@ -468,23 +471,67 @@ exports.getBukuPokok = functions
                     // Legacy filters (backward compatibility)
                     if (statusFilter === 'lunas' && pStatus !== 'lunas') return;
                     if (statusFilter === 'semua') { /* show all except menunggu approval/ditolak */ }
-                    const pembayaranPerTanggal = extractPembayaranPerTanggal(p.pembayaranList);
+                    // Entry "Pelunasan Top-Up" yang ditulis Android (PelangganViewModel.kt:4025-4036)
+                    // ke pembayaranList pinjaman BARU mewakili pelunasan utang LAMA, bukan cicilan
+                    // pinjaman baru. Filter dari tampilan PB; akan direlokasi ke baris historis di blok
+                    // di bawah. totalDibayar (L455) tetap dihitung dari pembayaranList asli agar
+                    // sisaUtang pinjaman baru akurat — Android sengaja memasukkannya ke totalDibayar
+                    // new loan untuk mengoffset principal absorbed dari old loan.
+                    const pembayaranListForDisplay = (() => {
+                        const raw = p.pembayaranList;
+                        if (!raw) return raw;
+                        const list = Array.isArray(raw) ? raw : Object.values(raw || {});
+                        return list.filter(x => !(x && x.keterangan === 'Pelunasan Top-Up'));
+                    })();
+                    const pembayaranPerTanggal = extractPembayaranPerTanggal(pembayaranListForDisplay);
 
-                    // ✅ Inject pelunasan sisa utang ke pembayaranPerTanggal (untuk storting global)
-                    // SETELAH totalDibayar/sisaUtang agar tidak mempengaruhi sisa utang pinjaman baru
+                    // Relokasi pelunasan utang lama → ke entry riwayat (pinjaman lama yang baru
+                    // diarsipkan). Match paritas buku fisik: pelunasan tercatat di halaman pinjaman
+                    // LAMA, bukan di halaman pinjaman baru.
+                    // Fallback (riwayat tidak ada / arsip gagal): inject ke pembayaran pinjaman baru
+                    // seperti perilaku lama, agar pelunasan tidak hilang dari view.
                     const sisaUtangLamaTopUp = p.sisaUtangLamaSebelumTopUp || 0;
                     const pinjamanKeN = p.pinjamanKe || 1;
-                    const tglPencairan = (p.tanggalPencairan || '').trim();
-                    if (sisaUtangLamaTopUp > 0 && pinjamanKeN > 1 && tglPencairan) {
-                        if (!pembayaranPerTanggal[tglPencairan]) {
-                            pembayaranPerTanggal[tglPencairan] = { total: 0, entries: [] };
+                    if (sisaUtangLamaTopUp > 0 && pinjamanKeN > 1) {
+                        const riwayatForPid = riwayatLookup[pId] || [];
+                        const lastRiwayat = riwayatForPid.length > 0
+                            ? riwayatForPid[riwayatForPid.length - 1] // sudah sort ASC di L438
+                            : null;
+                        if (lastRiwayat) {
+                            // Tanggal pelunasan: tanggalLunasCicilan pinjaman lama (kalau ada),
+                            // fallback ke tanggalPencairan pinjaman baru (= tanggal settle di RTDB).
+                            const tglPelunasan = (lastRiwayat.tanggalLunasCicilan || p.tanggalPencairan || '').trim();
+                            if (tglPelunasan) {
+                                if (!lastRiwayat.pembayaran[tglPelunasan]) {
+                                    lastRiwayat.pembayaran[tglPelunasan] = { total: 0, entries: [] };
+                                }
+                                lastRiwayat.pembayaran[tglPelunasan].total += sisaUtangLamaTopUp;
+                                lastRiwayat.pembayaran[tglPelunasan].entries.push({
+                                    jumlah: sisaUtangLamaTopUp,
+                                    keterangan: 'Pelunasan sisa utang (top-up)',
+                                    type: 'pelunasan_sisa_utang'
+                                });
+                                // Sinkronkan totalDibayar / sisaUtang riwayat → baris historis di web
+                                // menunjukkan pinjaman lama lunas via pelunasan ini.
+                                lastRiwayat.totalDibayar = (lastRiwayat.totalDibayar || 0) + sisaUtangLamaTopUp;
+                                lastRiwayat.sisaUtang = Math.max(0, (lastRiwayat.totalPelunasan || 0) - lastRiwayat.totalDibayar);
+                            }
+                        } else {
+                            // Fallback: arsip riwayat tidak ada → tampilkan di pembayaran pinjaman
+                            // baru (perilaku lama) agar pelunasan tetap kelihatan di buku pokok.
+                            const tglPencairan = (p.tanggalPencairan || '').trim();
+                            if (tglPencairan) {
+                                if (!pembayaranPerTanggal[tglPencairan]) {
+                                    pembayaranPerTanggal[tglPencairan] = { total: 0, entries: [] };
+                                }
+                                pembayaranPerTanggal[tglPencairan].total += sisaUtangLamaTopUp;
+                                pembayaranPerTanggal[tglPencairan].entries.push({
+                                    jumlah: sisaUtangLamaTopUp,
+                                    keterangan: 'Pelunasan sisa utang (top-up)',
+                                    type: 'pelunasan_sisa_utang'
+                                });
+                            }
                         }
-                        pembayaranPerTanggal[tglPencairan].total += sisaUtangLamaTopUp;
-                        pembayaranPerTanggal[tglPencairan].entries.push({
-                            jumlah: sisaUtangLamaTopUp,
-                            keterangan: 'Pelunasan sisa utang',
-                            type: 'pelunasan_sisa_utang'
-                        });
                     }
 
                     // Riwayat pinjaman lama (jika ada)
