@@ -1181,6 +1181,25 @@ function getKategoriNasabah(nasabah) {
           else mlKini += total;
         }
 
+        // Pembayaran historis dari riwayat_pinjaman (pelunasan utang lama top-up, dll).
+        // Setelah fix bukuPokokApi commit e5abea6, pelunasan utang lama tinggal di
+        // r.pembayaran (bukan n.pembayaran). Tanpa iterasi ini, Storting Kini under-count
+        // dan breakdown kategori (L1/CM/MB/ML) tidak match dengan footer tabel masing-masing.
+        // Kategori dihitung dari r.tanggalPencairan (konsisten dengan nasabahExpanded L994-1028).
+        (n.riwayatPinjaman || []).forEach(r => {
+          const rPay = r.pembayaran?.[dateStr];
+          if (!rPay) return;
+          const rTotal = rPay.total || 0;
+          stortingKini += rTotal;
+          const histN = { ...n, tanggalPencairan: r.tanggalPencairan || '', tanggalPengajuan: r.tanggalPengajuan || '' };
+          const rKat = getKategoriNasabah(histN);
+          if (rKat === 'PB') pbKini += rTotal;
+          else if (rKat === 'L1') l1Kini += rTotal;
+          else if (rKat === 'CM') cmKini += rTotal;
+          else if (rKat === 'MB') mbKini += rTotal;
+          else mlKini += rTotal;
+        });
+
         // Target Kini: besarPinjaman × 3% untuk nasabah yang eligible pada tanggal ini
         // ✅ FIX H+1: Konsisten dengan Android RingkasanDashboardScreen.kt & fullRecalculateAdminSummary:
         // - Nasabah yang lunas TEPAT pada dateStr tetap masuk target hari itu (H+1 rule)
@@ -1286,6 +1305,22 @@ function getKategoriNasabah(nasabah) {
             else if (kat === 'MB') adminComputed[auid].mb += total;
             else adminComputed[auid].ml += total;
           }
+          // Pembayaran historis dari riwayat_pinjaman (pelunasan top-up).
+          // adminUid tetap pakai n.adminUid (pemilik nasabah saat ini, konsisten dgn nasabahExpanded).
+          (n.riwayatPinjaman || []).forEach(r => {
+            const rPay = r.pembayaran?.[dateStr];
+            if (!rPay) return;
+            const auid = n.adminUid || '_';
+            if (!adminComputed[auid]) adminComputed[auid] = { pb:0, l1:0, cm:0, mb:0, ml:0 };
+            const total = rPay.total || 0;
+            const histN = { ...n, tanggalPencairan: r.tanggalPencairan || '', tanggalPengajuan: r.tanggalPengajuan || '' };
+            const rKat = getKategoriNasabah(histN);
+            if (rKat === 'PB') adminComputed[auid].pb += total;
+            else if (rKat === 'L1') adminComputed[auid].l1 += total;
+            else if (rKat === 'CM') adminComputed[auid].cm += total;
+            else if (rKat === 'MB') adminComputed[auid].mb += total;
+            else adminComputed[auid].ml += total;
+          });
         });
       }
       cur.setDate(cur.getDate() + 1);
@@ -1376,6 +1411,9 @@ function getKategoriNasabah(nasabah) {
     const sgPrevBulanLoaded = ymPrev(stortingMonth);
 
     // LastRow.DropBerjalan & LastRow.StortingBerjalan (total bulan ym dari data digital)
+    // Storting menjumlahkan n.pembayaran PLUS n.riwayatPinjaman[].pembayaran (agar pelunasan
+    // utang lama top-up — yang sudah direlokasi server ke riwayat — ikut terhitung).
+    // Drop sengaja tidak iterate riwayat (out-of-scope per keputusan user).
     const lastRowOf = (ym) => {
       const dates = workingDatesOf(ym);
       if (dates.size === 0) return { drop: 0, storting: 0 };
@@ -1389,30 +1427,55 @@ function getKategoriNasabah(nasabah) {
             if (dates.has(d)) storting += (p && p.total) || 0;
           }
         }
+        (n.riwayatPinjaman || []).forEach(r => {
+          if (!r.pembayaran) return;
+          for (const [d, p] of Object.entries(r.pembayaran)) {
+            if (dates.has(d)) storting += (p && p.total) || 0;
+          }
+        });
       });
       return { drop, storting };
     };
 
     // Sum(L1+CM+MB+ML) bulan ym — apply koreksi hanya kalau ym = prevBulan yang loaded.
     // PB dikecualikan (sama seperti legacy: PB = pinjaman bulan berjalan, bukan saldo awal).
+    // Termasuk pembayaran historis di n.riwayatPinjaman[].pembayaran (pelunasan top-up).
     const sumLabel2Of = (ym) => {
       const dates = workingDatesOf(ym);
       if (dates.size === 0) return 0;
       const adminComputed = {};
       list.forEach(n => {
-        if (!n.pembayaran) return;
-        const kat = getKategoriNasabah(n);
-        if (kat === 'PB') return;
         const auid = n.adminUid || '_';
-        for (const [d, p] of Object.entries(n.pembayaran)) {
-          if (!dates.has(d)) continue;
-          if (!adminComputed[auid]) adminComputed[auid] = { l1:0, cm:0, mb:0, ml:0 };
-          const total = (p && p.total) || 0;
-          if (kat === 'L1') adminComputed[auid].l1 += total;
-          else if (kat === 'CM') adminComputed[auid].cm += total;
-          else if (kat === 'MB') adminComputed[auid].mb += total;
-          else adminComputed[auid].ml += total;
+        if (n.pembayaran) {
+          const kat = getKategoriNasabah(n);
+          if (kat !== 'PB') {
+            for (const [d, p] of Object.entries(n.pembayaran)) {
+              if (!dates.has(d)) continue;
+              if (!adminComputed[auid]) adminComputed[auid] = { l1:0, cm:0, mb:0, ml:0 };
+              const total = (p && p.total) || 0;
+              if (kat === 'L1') adminComputed[auid].l1 += total;
+              else if (kat === 'CM') adminComputed[auid].cm += total;
+              else if (kat === 'MB') adminComputed[auid].mb += total;
+              else adminComputed[auid].ml += total;
+            }
+          }
         }
+        // Pembayaran historis dari riwayat_pinjaman — kategori per r.tanggalPencairan.
+        (n.riwayatPinjaman || []).forEach(r => {
+          if (!r.pembayaran) return;
+          const histN = { ...n, tanggalPencairan: r.tanggalPencairan || '', tanggalPengajuan: r.tanggalPengajuan || '' };
+          const rKat = getKategoriNasabah(histN);
+          if (rKat === 'PB') return;
+          for (const [d, p] of Object.entries(r.pembayaran)) {
+            if (!dates.has(d)) continue;
+            if (!adminComputed[auid]) adminComputed[auid] = { l1:0, cm:0, mb:0, ml:0 };
+            const total = (p && p.total) || 0;
+            if (rKat === 'L1') adminComputed[auid].l1 += total;
+            else if (rKat === 'CM') adminComputed[auid].cm += total;
+            else if (rKat === 'MB') adminComputed[auid].mb += total;
+            else adminComputed[auid].ml += total;
+          }
+        });
       });
       const useKoreksi = ym === sgPrevBulanLoaded;
       const targetUids = selectedAdmin
