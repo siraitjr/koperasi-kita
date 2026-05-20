@@ -1205,12 +1205,16 @@ function getKategoriNasabah(nasabah) {
         // - Nasabah yang lunas TEPAT pada dateStr tetap masuk target hari itu (H+1 rule)
         //   → gunakan pembayaran SEBELUM dateStr (pd < currentDate, bukan <=)
         // - Nasabah yang baru MENUNGGU_PENCAIRAN pada dateStr tetap masuk target hari itu
-        //   → cek tanggalStatusKhusus: hanya exclude jika berlaku sebelum dateStr
-        // - Tidak filter berdasarkan status saat ini (n.status) karena status nasabah
-        //   bisa berubah setelah dateStr (mis. sekarang Lunas tapi dulu Aktif)
+        //   → cek tanggalStatusKhusus: hanya count kalau ditandai tepat pada dateStr
+        // - Filter status: hanya 'aktif' / 'active' / 'lunas' (match Android & CF
+        //   summaryHelpers.js:879-958). Status 'disetujui', 'tidak aktif', dll dikecualikan.
+        //   'lunas' di-allow karena (a) bisa lunas-tepat-hari-ini, dan (b) historis lunas
+        //   yang dulu masih owing ditangkap proxy totalBayarSebelumTanggal < totalPelunasan.
         if (currentDate && threeMonthsAgo) {
           const totalPelunasan = n.totalPelunasan || 0;
-          if (totalPelunasan > 0) {
+          const statusLower = (n.status || '').toLowerCase();
+          const isStatusEligible = statusLower === 'aktif' || statusLower === 'active' || statusLower === 'lunas';
+          if (isStatusEligible && totalPelunasan > 0) {
             const tglAcuan = tglCair || n.tanggalPengajuan || n.tanggalDaftar || '';
             if (tglAcuan) {
               const acuanDate = parseDateStr(tglAcuan);
@@ -1226,11 +1230,14 @@ function getKategoriNasabah(nasabah) {
                   }
                 }
                 if (totalBayarSebelumTanggal < totalPelunasan) {
-                  // H+1: MENUNGGU_PENCAIRAN hanya dikecualikan jika sudah berlaku sebelum dateStr
-                  const tglStatusKhusus = n.tanggalStatusKhusus ? parseDateStr(n.tanggalStatusKhusus) : null;
-                  const isMenungguSebelumTanggal = n.statusKhusus === 'MENUNGGU_PENCAIRAN'
-                    && tglStatusKhusus && tglStatusKhusus < currentDate;
-                  if (!isMenungguSebelumTanggal) {
+                  // Match Android (PelangganYangHarusDikunjungiScreen.kt:218-223) & CF
+                  // (summaryHelpers.js:897-901): kalau statusKhusus = MENUNGGU_PENCAIRAN,
+                  // hanya count target kalau tanggalStatusKhusus tepat = dateStr.
+                  // Termasuk kasus tanggalStatusKhusus blank → exclude (lebih ketat dari
+                  // logic lama yang malah include kalau blank).
+                  const isMenungguPencairan = n.statusKhusus === 'MENUNGGU_PENCAIRAN';
+                  const isMenungguPadaTanggal = isMenungguPencairan && n.tanggalStatusKhusus === dateStr;
+                  if (!isMenungguPencairan || isMenungguPadaTanggal) {
                     targetKini += Math.floor((n.besarPinjaman || 0) * 3 / 100);
                   }
                 }
