@@ -12,6 +12,7 @@ import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage
 import { ref as dbRef, update } from 'firebase/database';
 import { getKasirSummary, getKasirEntries, addKasirEntry, deleteKasirEntry, getBukuPokok, syncOperasionalTransport } from '../../lib/api';
 import { formatRp, formatRpFull } from '../../lib/format';
+import { isEligibleForTarget } from '../../lib/target';
 
 // =========================================================================
 // HELPER: Compress image for upload (max 1024px, JPEG quality 0.6)
@@ -1386,10 +1387,13 @@ function BukuRekapScreen({ user, cabang, cabangList, onBack, onLogout, onNavigat
     setLoading(true);
     setError('');
     setSelectedDate(null);
+    // ✅ status 'semua' (bukan 'aktif'): perlu nasabah MENUNGGU_PENCAIRAN & lunas-hari-ini
+    // agar Target Harian match Buku Pokok / CF / Android (aturan H+1). Filter 'aktif'
+    // men-drop record tsb di server sehingga Target undercount. Tanpa tambahan read RTDB.
     getBukuPokok({
       cabangId: activeCabang.id,
       adminUid: '',
-      status: 'aktif',
+      status: 'semua',
     }).then(result => {
       if (result.success && result.type === 'buku_pokok') {
         setData(result.data);
@@ -1423,26 +1427,8 @@ function BukuRekapScreen({ user, cabang, cabangList, onBack, onLogout, onNavigat
     const admins = activeCabang?.admins || [];
     const todayStr = dateStr || data.today || getTodayIndo();
 
-    // Helper: parse "07 Feb 2026" ke Date object
-    const BULAN_MAP_REV = {};
-    BULAN_INDO.forEach((b, i) => { BULAN_MAP_REV[b] = i; });
-    const parseDateStr = (s) => {
-      if (!s) return null;
-      const parts = s.split(' ');
-      if (parts.length !== 3) return null;
-      const m = BULAN_MAP_REV[parts[1]];
-      if (m === undefined) return null;
-      return new Date(parseInt(parts[2]), m, parseInt(parts[0]));
-    };
-
     // Helper: is nasabah "baru" (pinjaman ke-1) or "lama" (lanjut)
     const isDropBaru = (n) => (n.pinjamanKe || 1) <= 1;
-
-    // Filter active nasabah (same as storting global)
-    const now = new Date();
-    const wibOffset = 7 * 60 * 60 * 1000;
-    const wib = new Date(now.getTime() + (now.getTimezoneOffset() * 60000) + wibOffset);
-    const threeMonthsAgo = new Date(wib.getFullYear(), wib.getMonth() - 3, 1);
 
     // Group per admin (resort)
     const rows = [];
@@ -1468,45 +1454,12 @@ function BukuRekapScreen({ user, cabang, cabangList, onBack, onLogout, onNavigat
       const nominalDropLama = dropLamaList.reduce((s, n) => s + (n.besarPinjaman || 0), 0);
       const totalDrop = nominalDropBaru + nominalDropLama;
 
-      // Target = sum of besarPinjaman * 3% for eligible nasabah
-      // ✅ FIX H+1: Konsisten dengan pembukuan/page.js, fullRecalculateAdminSummary,
-      // dan Android RingkasanDashboardScreen.kt:
-      // - Nasabah yang lunas TEPAT pada todayStr tetap masuk target (H+1)
-      //   → gunakan pembayaran SEBELUM todayStr (pd < currentDateParsed, bukan <=)
-      // - Nasabah yang baru MENUNGGU_PENCAIRAN pada todayStr tetap masuk target
-      //   → exclude hanya jika tanggalStatusKhusus < todayStr (berlaku sebelum)
+      // Target = besarPinjaman × 3% untuk nasabah eligible pada todayStr.
+      // Dihitung lewat shared helper (lib/target.js) — single source of truth yang
+      // identik dengan Buku Pokok, CF summaryHelpers.js, & Android (termasuk H+1).
       let target = 0;
-      const currentDateParsed = parseDateStr(todayStr);
-      const threeMonthsAgoTarget = currentDateParsed
-        ? new Date(currentDateParsed.getFullYear(), currentDateParsed.getMonth() - 3, 1)
-        : threeMonthsAgo;
       resortNasabah.forEach(n => {
-        // Tanggal acuan: pencairan → pengajuan → daftar
-        const tglAcuan = (n.tanggalPencairan || '').trim() || (n.tanggalPengajuan || '').trim() || (n.tanggalDaftar || '').trim();
-        const acuanDate = parseDateStr(tglAcuan);
-        if (!acuanDate || !currentDateParsed) return;
-        // Harus sudah cair SEBELUM tanggal ini (exclude cair hari ini)
-        if (acuanDate >= currentDateParsed) return;
-        // Exclude > 3 bulan
-        if (acuanDate < threeMonthsAgoTarget) return;
-        const totalPelunasan = n.totalPelunasan || 0;
-        if (totalPelunasan <= 0) return;
-        // H+1: hitung pembayaran SEBELUM todayStr (strictly before)
-        let totalBayarSebelumTanggal = 0;
-        if (n.pembayaran) {
-          for (const [payDate, payData] of Object.entries(n.pembayaran)) {
-            const pd = parseDateStr(payDate);
-            if (pd && pd < currentDateParsed) {
-              totalBayarSebelumTanggal += payData.total || 0;
-            }
-          }
-        }
-        if (totalBayarSebelumTanggal >= totalPelunasan) return; // sudah lunas sebelum hari ini
-        // H+1: MENUNGGU_PENCAIRAN hanya dikecualikan jika sudah berlaku sebelum todayStr
-        const tglStatusKhusus = n.tanggalStatusKhusus ? parseDateStr(n.tanggalStatusKhusus) : null;
-        if (n.statusKhusus === 'MENUNGGU_PENCAIRAN' && (!tglStatusKhusus || tglStatusKhusus < currentDateParsed)) return;
-
-        target += Math.floor((n.besarPinjaman || 0) * 3 / 100);
+        target += isEligibleForTarget(n, todayStr);
       });
 
       // Storting = total pembayaran hari ini

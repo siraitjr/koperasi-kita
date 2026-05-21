@@ -10,6 +10,7 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signOut, signInWithCust
 import { auth } from '../../lib/firebase';
 import { getSummary, getBukuPokok, getKasirSummary, getJurnalTransaksi, getKoreksiStorting, setKoreksiStorting } from '../../lib/api';
 import { formatRp, formatRpFull, formatRpShort } from '../../lib/format';
+import { isEligibleForTarget } from '../../lib/target';
 
 const KASIR_VIEW_ROLES = ['pimpinan', 'koordinator', 'pengawas', 'kasir_wilayah', 'sekretaris'];
 const GLOBAL_VIEW_ROLES = ['koordinator', 'pengawas', 'kasir_wilayah', 'sekretaris'];
@@ -1132,18 +1133,6 @@ function getKategoriNasabah(nasabah) {
       cur.setDate(cur.getDate() + 1);
     }
 
-    // Helper: parse "07 Feb 2026" ke Date object
-    const BULAN_MAP_REV = {};
-    BULAN_INDO_ARR.forEach((b, i) => { BULAN_MAP_REV[b] = i; });
-    const parseDateStr = (s) => {
-      if (!s) return null;
-      const parts = s.split(' ');
-      if (parts.length !== 3) return null;
-      const m = BULAN_MAP_REV[parts[1]];
-      if (m === undefined) return null;
-      return new Date(parseInt(parts[2]), m, parseInt(parts[0]));
-    };
-
     // Hitung per tanggal
     let dropBerjalan = 0;
     let targetBerjalan = 0;
@@ -1155,10 +1144,6 @@ function getKategoriNasabah(nasabah) {
       let stortingKini = 0;
       let targetKini = 0;
       let pbKini = 0, l1Kini = 0, cmKini = 0, mbKini = 0, mlKini = 0;
-
-      const currentDate = parseDateStr(dateStr);
-      // Batas 3 bulan: tanggal 1, 3 bulan sebelum tanggal ini
-      const threeMonthsAgo = currentDate ? new Date(currentDate.getFullYear(), currentDate.getMonth() - 3, 1) : null;
 
       allNasabah.forEach(n => {
         // Drop Kini: total uang yang dicairkan pada tanggal ini
@@ -1200,51 +1185,10 @@ function getKategoriNasabah(nasabah) {
           else mlKini += rTotal;
         });
 
-        // Target Kini: besarPinjaman × 3% untuk nasabah yang eligible pada tanggal ini
-        // ✅ FIX H+1: Konsisten dengan Android RingkasanDashboardScreen.kt & fullRecalculateAdminSummary:
-        // - Nasabah yang lunas TEPAT pada dateStr tetap masuk target hari itu (H+1 rule)
-        //   → gunakan pembayaran SEBELUM dateStr (pd < currentDate, bukan <=)
-        // - Nasabah yang baru MENUNGGU_PENCAIRAN pada dateStr tetap masuk target hari itu
-        //   → cek tanggalStatusKhusus: hanya count kalau ditandai tepat pada dateStr
-        // - Filter status: hanya 'aktif' / 'active' / 'lunas' (match Android & CF
-        //   summaryHelpers.js:879-958). Status 'disetujui', 'tidak aktif', dll dikecualikan.
-        //   'lunas' di-allow karena (a) bisa lunas-tepat-hari-ini, dan (b) historis lunas
-        //   yang dulu masih owing ditangkap proxy totalBayarSebelumTanggal < totalPelunasan.
-        if (currentDate && threeMonthsAgo) {
-          const totalPelunasan = n.totalPelunasan || 0;
-          const statusLower = (n.status || '').toLowerCase();
-          const isStatusEligible = statusLower === 'aktif' || statusLower === 'active' || statusLower === 'lunas';
-          if (isStatusEligible && totalPelunasan > 0) {
-            const tglAcuan = tglCair || n.tanggalPengajuan || n.tanggalDaftar || '';
-            if (tglAcuan) {
-              const acuanDate = parseDateStr(tglAcuan);
-              if (acuanDate && acuanDate < currentDate && acuanDate >= threeMonthsAgo) {
-                // H+1: hitung pembayaran SEBELUM dateStr (strictly before)
-                let totalBayarSebelumTanggal = 0;
-                if (n.pembayaran) {
-                  for (const [payDate, payData] of Object.entries(n.pembayaran)) {
-                    const pd = parseDateStr(payDate);
-                    if (pd && pd < currentDate) {
-                      totalBayarSebelumTanggal += payData.total || 0;
-                    }
-                  }
-                }
-                if (totalBayarSebelumTanggal < totalPelunasan) {
-                  // Match Android (PelangganYangHarusDikunjungiScreen.kt:218-223) & CF
-                  // (summaryHelpers.js:897-901): kalau statusKhusus = MENUNGGU_PENCAIRAN,
-                  // hanya count target kalau tanggalStatusKhusus tepat = dateStr.
-                  // Termasuk kasus tanggalStatusKhusus blank → exclude (lebih ketat dari
-                  // logic lama yang malah include kalau blank).
-                  const isMenungguPencairan = n.statusKhusus === 'MENUNGGU_PENCAIRAN';
-                  const isMenungguPadaTanggal = isMenungguPencairan && n.tanggalStatusKhusus === dateStr;
-                  if (!isMenungguPencairan || isMenungguPadaTanggal) {
-                    targetKini += Math.floor((n.besarPinjaman || 0) * 3 / 100);
-                  }
-                }
-              }
-            }
-          }
-        }
+        // Target Kini: besarPinjaman × 3% untuk nasabah eligible pada tanggal ini.
+        // Dihitung lewat shared helper (lib/target.js) — single source of truth yang
+        // identik dengan Buku Rekap, CF summaryHelpers.js, & Android (termasuk H+1).
+        targetKini += isEligibleForTarget(n, dateStr);
       });
 
       dropBerjalan += dropKini;
