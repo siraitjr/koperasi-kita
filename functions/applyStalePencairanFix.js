@@ -32,6 +32,15 @@
  *         SERVICE_ACCOUNT=./serviceAccountKey.json node applyStalePencairanFix.js
  *    2) Tinjau apply_log_dryrun_*.json. Bila sudah yakin, EKSEKUSI:
  *         SERVICE_ACCOUNT=./serviceAccountKey.json node applyStalePencairanFix.js --commit
+ *       → menghasilkan apply_log_commit_*.json (menyimpan nilai LAMA tiap write).
+ *
+ *  ROLLBACK (undo) — balikkan semua write ke nilai lama dari log commit:
+ *    a) DRY RUN rollback (lihat apa yang akan dibalikkan):
+ *         SERVICE_ACCOUNT=./serviceAccountKey.json \
+ *           node applyStalePencairanFix.js --rollback apply_log_commit_XXXX.json
+ *    b) EKSEKUSI rollback:
+ *         SERVICE_ACCOUNT=./serviceAccountKey.json \
+ *           node applyStalePencairanFix.js --rollback apply_log_commit_XXXX.json --commit
  *
  *  Opsi env:
  *    SERVICE_ACCOUNT  path service account (default ./serviceAccountKey.json)
@@ -50,6 +59,9 @@ const DATABASE_URL = process.env.DATABASE_URL ||
 const IN = process.env.IN || './proposals_report.json';
 const COMMIT = process.argv.includes('--commit');
 const APPLY_STATUSES = (process.env.APPLY_STATUSES || 'Fix Proposed').split('|');
+// --rollback <apply_log_commit_*.json>  → balikkan field ke nilai LAMA dari log.
+const ROLLBACK_IDX = process.argv.indexOf('--rollback');
+const ROLLBACK_FILE = ROLLBACK_IDX >= 0 ? process.argv[ROLLBACK_IDX + 1] : null;
 
 admin.initializeApp({
   credential: admin.credential.cert(require(path.resolve(SERVICE_ACCOUNT))),
@@ -72,7 +84,7 @@ function parseTgl(s) {
 const VALID_FIELDS = new Set(['tanggalPencairan', 'tanggalPengajuan']);
 const isAktif = (s) => { const x = (s || '').toLowerCase(); return x === 'aktif' || x === 'active'; };
 
-(async function main() {
+async function runApply() {
   const report = JSON.parse(fs.readFileSync(path.resolve(IN), 'utf8'));
   const rows = [];
   (report.admins || []).forEach((a) => (a.nasabah || []).forEach((n) => {
@@ -135,7 +147,84 @@ const isAktif = (s) => { const x = (s || '').toLowerCase(); return x === 'aktif'
   console.log(`\n${COMMIT ? 'WRITTEN' : 'WOULD-WRITE'}: ${written} | SKIPPED: ${skipped} | ERRORS: ${errors}`);
   console.log(`Audit log (menyimpan nilai lama, reversibel): ${logName}`);
   if (!COMMIT) console.log('\n🟢 DRY RUN — tidak ada perubahan DB. Jalankan ulang dengan --commit untuk eksekusi.');
+  return errors ? 1 : 0;
+}
 
+// ---------------------------------------------------------------------------
+// ROLLBACK: balikkan setiap field yang sebelumnya WRITTEN ke nilai LAMA-nya.
+// Membaca apply_log_commit_*.json. Guard: hanya revert kalau nilai live SAAT INI
+// masih == nilai yang dulu kita tulis (newProposed) — kalau sudah berubah, SKIP.
+// DRY RUN default; menulis hanya dengan --commit.
+// ---------------------------------------------------------------------------
+async function runRollback() {
+  const log = JSON.parse(fs.readFileSync(path.resolve(ROLLBACK_FILE), 'utf8'));
+  const written = (log.audit || []).filter((a) => a.action === 'WRITTEN');
+
+  console.log('============================================================');
+  console.log(`  MODE     : ${COMMIT ? '🔴 ROLLBACK COMMIT (MENULIS)' : '🟢 ROLLBACK DRY RUN (tidak menulis)'}`);
+  console.log(`  LOG      : ${path.resolve(ROLLBACK_FILE)}`);
+  console.log(`  TO REVERT: ${written.length} record ber-aksi WRITTEN`);
+  console.log('============================================================\n');
+
+  const audit = [];
+  let reverted = 0, skipped = 0, errors = 0;
+
+  for (const a of written) {
+    const field = a.field;
+    const restoreTo = a.oldFromReport;            // nilai sebelum write
+    const wroteValue = a.newProposed;             // nilai yang dulu kita set
+    const base = { path: a.path, nama: a.nama, field, revertFrom: wroteValue, revertTo: restoreTo };
+    try {
+      if (!VALID_FIELDS.has(field)) { skipped++; audit.push({ ...base, action: 'SKIP', reason: 'field tidak valid' }); continue; }
+      if (restoreTo === undefined || restoreTo === null) { skipped++; audit.push({ ...base, action: 'SKIP', reason: 'nilai lama tak tersedia di log' }); continue; }
+      const m = /^pelanggan\/([^/]+)\/([^/]+)$/.exec(a.path || '');
+      if (!m) { skipped++; audit.push({ ...base, action: 'SKIP', reason: 'path tidak valid' }); continue; }
+      const [, adminUid, pid] = m;
+      const ref = db.ref(`pelanggan/${adminUid}/${pid}`);
+      const live = (await ref.once('value')).val();
+      if (!live) { skipped++; audit.push({ ...base, action: 'SKIP', reason: 'record tidak ditemukan' }); continue; }
+
+      const liveVal = live[field] || '';
+      if (liveVal === restoreTo) { skipped++; audit.push({ ...base, liveValue: liveVal, action: 'SKIP', reason: 'sudah di nilai lama (idempoten)' }); continue; }
+      if (liveVal !== wroteValue) { skipped++; audit.push({ ...base, liveValue: liveVal, action: 'SKIP', reason: 'nilai live ≠ yang kita tulis (berubah sejak apply) — cek manual' }); continue; }
+
+      if (COMMIT) {
+        await ref.update({ [field]: restoreTo });   // HANYA satu field
+        reverted++; audit.push({ ...base, liveValue: liveVal, action: 'REVERTED', ts: new Date().toISOString() });
+        console.log(`  ↩ ${a.nama}: ${field} "${liveVal}" → "${restoreTo}"`);
+      } else {
+        reverted++; audit.push({ ...base, liveValue: liveVal, action: 'WOULD-REVERT' });
+        console.log(`  [dry] ${a.nama}: ${field} "${liveVal}" → "${restoreTo}"`);
+      }
+    } catch (e) {
+      errors++; audit.push({ ...base, action: 'ERROR', reason: String((e && e.message) || e) });
+      console.error(`  ✖ ${a.nama}: ${(e && e.message) || e}`);
+    }
+  }
+
+  const logName = `rollback_log_${COMMIT ? 'commit' : 'dryrun'}_${Date.now()}.json`;
+  fs.writeFileSync(path.resolve(logName), JSON.stringify({
+    mode: COMMIT ? 'commit' : 'dryrun',
+    generatedAt: new Date().toISOString(),
+    sourceLog: path.resolve(ROLLBACK_FILE),
+    counts: { candidates: written.length, [COMMIT ? 'reverted' : 'wouldRevert']: reverted, skipped, errors },
+    audit,
+  }, null, 2));
+
+  console.log(`\n${COMMIT ? 'REVERTED' : 'WOULD-REVERT'}: ${reverted} | SKIPPED: ${skipped} | ERRORS: ${errors}`);
+  console.log(`Rollback log: ${logName}`);
+  if (!COMMIT) console.log('\n🟢 ROLLBACK DRY RUN — tidak ada perubahan DB. Tambahkan --commit untuk eksekusi.');
+  return errors ? 1 : 0;
+}
+
+(async function main() {
+  let code = 0;
+  try {
+    code = ROLLBACK_FILE ? await runRollback() : await runApply();
+  } catch (err) {
+    console.error('[FATAL]', err);
+    code = 1;
+  }
   await admin.app().delete();
-  process.exit(errors ? 1 : 0);
-})().catch((err) => { console.error('[APPLY] Fatal:', err); process.exit(1); });
+  process.exit(code);
+})();
