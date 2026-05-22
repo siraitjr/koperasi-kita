@@ -57,11 +57,19 @@ export function isEligibleForTarget(n, dateStr) {
   const cur = parseTanggalIndo(dateStr);
   if (!cur) return 0;
 
-  // CF hanya memproses status aktif/active untuk target (switch case 'aktif'/'active').
-  // status 'lunas' (string) TIDAK menambah target di CF (case 'lunas' tanpa target);
-  // lunas-tepat-hari-ini ditangkap di cabang LUNAS di bawah (saat status masih 'aktif').
+  // Android RingkasanDashboardScreen.kt:151-154 — nasabah masuk target bila
+  // (isStatusAktif || lunas cicilan HARI INI || ditandai MENUNGGU_PENCAIRAN hari ini).
+  // Pada hari pelunasan, field `status` bisa sudah jadi "Lunas" tapi nasabah TETAP
+  // dihitung sampai besok (H+1) — CF mempertahankannya via delta incremental
+  // (summaryHelpers.js:560-569). Karena itu guard status tak boleh menolak status
+  // non-aktif yang lunas/menunggu-pencairan tepat pada tanggal kolom ini.
   const statusLower = (n.status || '').toLowerCase();
-  if (statusLower !== 'aktif' && statusLower !== 'active') return 0;
+  const isStatusAktif = statusLower === 'aktif' || statusLower === 'active';
+  const lunasHariIni = (n.tanggalLunasCicilan || '').trim() === dateStr;
+  const isMenungguPencairan = n.statusKhusus === 'MENUNGGU_PENCAIRAN'
+    && (n.statusPencairanSimpanan || '') !== 'Dicairkan';
+  const menungguHariIni = isMenungguPencairan && (n.tanggalStatusKhusus || '').trim() === dateStr;
+  if (!isStatusAktif && !lunasHariIni && !menungguHariIni) return 0;
 
   const target = Math.floor((n.besarPinjaman || 0) * 3 / 100);
   const totalPelunasan = n.totalPelunasan || 0;
