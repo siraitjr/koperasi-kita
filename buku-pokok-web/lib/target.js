@@ -14,8 +14,9 @@
 //     target hari itu; di hari lain MENUNGGU_PENCAIRAN dikecualikan.
 //
 // Date-aware: benar untuk kolom hari ini MAUPUN kolom historis (Storting
-// Global) — "sudah lunas?" dihitung dari pembayaran SEBELUM dateStr, bukan
-// total all-time, sehingga baris tanggal lampau tetap akurat.
+// Global). Status lunas memakai field tanggalLunasCicilan + totalDibayar
+// all-time (identik CF/Android), BUKAN map n.pembayaran (yang sudah memfilter
+// "Pelunasan Top-Up"); baris tanggal lampau tetap akurat via tanggalLunasCicilan.
 //
 // Catatan: `n` adalah objek nasabah hasil getBukuPokok (bukuPokokApi.js),
 // dengan `pembayaran` berupa map { "dd MMM yyyy": { total } }.
@@ -57,24 +58,33 @@ export function isEligibleForTarget(n, dateStr) {
   if (!cur) return 0;
 
   // CF hanya memproses status aktif/active untuk target (switch case 'aktif'/'active').
-  // status 'lunas' (string) TIDAK menambah target di CF — lunas-tepat-hari-ini
-  // ditangkap lewat cabang lunas di bawah (saat status masih 'aktif').
+  // status 'lunas' (string) TIDAK menambah target di CF (case 'lunas' tanpa target);
+  // lunas-tepat-hari-ini ditangkap di cabang LUNAS di bawah (saat status masih 'aktif').
   const statusLower = (n.status || '').toLowerCase();
   if (statusLower !== 'aktif' && statusLower !== 'active') return 0;
 
+  const target = Math.floor((n.besarPinjaman || 0) * 3 / 100);
   const totalPelunasan = n.totalPelunasan || 0;
-  if (totalPelunasan <= 0) return 0;
-
-  // Status owing as-of awal hari (date-aware pengganti totalDibayar all-time CF).
-  const paidBefore = sumPembayaranSebelum(n.pembayaran, cur);
-  const paidHariIni = (n.pembayaran && n.pembayaran[dateStr] && n.pembayaran[dateStr].total) || 0;
-  const sudahLunasSebelum = paidBefore >= totalPelunasan;
-  const lunasTepatHariIni = !sudahLunasSebelum && (paidBefore + paidHariIni) >= totalPelunasan;
 
   // --- Cabang LUNAS (match CF summaryHelpers.js:886-895) ---
-  // Hanya dihitung kalau lunas TEPAT hari ini (H+1). Tanpa gate 3-bulan / cair-hari-ini.
-  if (sudahLunasSebelum || lunasTepatHariIni) {
-    return lunasTepatHariIni ? Math.floor((n.besarPinjaman || 0) * 3 / 100) : 0;
+  // CF pakai totalDibayar all-time (calculateTotalDibayar: termasuk "Pelunasan Top-Up",
+  // exclude "Bunga") + field tanggalLunasCicilan — keduanya sudah disediakan bukuPokokApi.
+  // Sengaja pakai field yang sama, BUKAN map n.pembayaran (yang sudah memfilter Top-Up),
+  // agar identik dengan CF/Android. Date-aware: kolom historis tetap akurat lewat
+  // perbandingan tanggalLunasCicilan vs dateStr.
+  const isSudahLunas = totalPelunasan > 0 && (n.totalDibayar || 0) >= totalPelunasan;
+  if (isSudahLunas) {
+    const tglLunas = (n.tanggalLunasCicilan || '').trim();
+    const lunasDate = parseTanggalIndo(tglLunas);
+    if (lunasDate) {
+      if (tglLunas === dateStr) return target; // lunas TEPAT hari itu (H+1) → tetap kena target
+      if (lunasDate < cur) return 0;           // sudah lunas sebelum tanggal ini
+      // lunasDate > cur → pada tanggal (historis) ini nasabah masih belum lunas → lanjut.
+    } else {
+      // tanggalLunasCicilan kosong/invalid: utk hari ini CF tak menambah (field ≠ today) &
+      // isSudahLunas ⇒ skip belum-lunas. Fallback date-aware via map utk kolom historis.
+      if (sumPembayaranSebelum(n.pembayaran, cur) >= totalPelunasan) return 0;
+    }
   }
 
   // --- Cabang BELUM LUNAS (match CF summaryHelpers.js:896-935) ---
@@ -85,18 +95,22 @@ export function isEligibleForTarget(n, dateStr) {
   // MENUNGGU hanya dihitung pada hari ditandai; selain itu dikecualikan.
   if (isMenunggu && !isMenungguHariIni) return 0;
 
+  // Cair TEPAT pada tanggal ini → mulai dihitung besok (CF: pencairan === today).
+  const tglPencairan = (n.tanggalPencairan || '').trim();
+  if (tglPencairan && tglPencairan === dateStr) return 0;
+
   // Tanggal acuan: pencairan → pengajuan → daftar.
-  const tglAcuan = (n.tanggalPencairan || '').trim()
+  const tglAcuan = tglPencairan
     || (n.tanggalPengajuan || '').trim()
     || (n.tanggalDaftar || '').trim();
   const acuan = parseTanggalIndo(tglAcuan);
   if (acuan) {
-    // Belum cair / cair hari ini → mulai dihitung besok (exclude acuan >= dateStr).
-    if (acuan >= cur) return 0;
+    // Belum aktif (acuan setelah tanggal ini) → date-aware exclude utk kolom historis.
+    if (acuan > cur) return 0;
     // Exclude > 3 bulan (batas: tanggal 1, tiga bulan sebelum bulan dateStr).
     const tigaBulanLalu = new Date(cur.getFullYear(), cur.getMonth() - 3, 1);
     if (acuan < tigaBulanLalu) return 0;
   }
 
-  return Math.floor((n.besarPinjaman || 0) * 3 / 100);
+  return target;
 }
