@@ -9,32 +9,30 @@
  *
  *  TUJUAN
  *  ------
- *  Menjelaskan KENAPA "Target" di Web (Buku Rekap / Buku Pokok) lebih rendah
- *  daripada Android, padahal rumus macet 3-bulan di kedua sisi IDENTIK.
+ *  Menemukan SECARA PASTI kenapa Target Harian Web < Android dgn menjalankan
+ *  KEDUA aturan eligibility (replika 1:1) atas DATA RTDB YANG SAMA, lalu
+ *  membandingkan verdict per nasabah:
  *
- *  Temuan kode: rumus & batas macet identik (web lib/target.js,
- *  Android RingkasanDashboardScreen.kt, CF summaryHelpers.isOverThreeMonths).
- *  Maka selisih HANYA bisa berasal dari DATA acuan (tanggalPencairan dll).
+ *    - webEval()     : replika persis buku-pokok-web/lib/target.js
+ *                      (isEligibleForTarget).
+ *    - androidEval() : replika persis RingkasanDashboardScreen.kt:115-189
+ *                      (filter nasabahAktif → target = besarPinjaman×3%).
  *
- *  Skrip ini mengevaluasi tiap nasabah dengan rumus Target Web (replika 1:1
- *  isEligibleForTarget) atas DATA RTDB LIVE, lalu mengklasifikasikan setiap
- *  nasabah yang DI-DROP oleh aturan macet berdasarkan AKTIVITAS PEMBAYARAN
- *  NYATA-nya:
+ *  Kedua fungsi memakai data MENTAH RTDB yang identik. Kalau hasil keduanya
+ *  BERBEDA untuk seorang nasabah, perbedaannya 100% berasal dari ATURAN
+ *  (gate) yang berbeda — bukan asumsi. Skrip mencatat tiap ketidaksepakatan
+ *  beserta gate mana yang membalik (reason).
  *
- *    - COUNTED               : web menghitungnya (target > 0). (Android pun sama.)
- *    - DIVERGEN (macet+bayar) : web DROP karena acuan > 3 bulan, TAPI nasabah
- *                               punya pembayaran terbaru (≥ batas 3 bulan).
- *                               → inilah yang ANDROID tetap hitung & web tidak.
- *                               Inilah sumber selisihnya.
- *    - MACET ASLI (no bayar)  : web DROP karena macet DAN tidak ada pembayaran
- *                               terbaru → Vivi-class. Android pun men-drop.
- *    - DROP lain              : lunas / menunggu pencairan / cair hari ini / status.
+ *  Interpretasi hasil:
+ *    - Jika targetAndroid (atas RTDB) == angka di app (mis. 1.527.000) →
+ *      selisih BERSIFAT ATURAN; lihat daftar ANDROID_ONLY + reason-nya.
+ *    - Jika targetAndroid (atas RTDB) == targetWeb (mis. 1.425.000) tapi app
+ *      menampilkan angka lain → selisih BERSIFAT DATA/SYNC (data in-memory /
+ *      antrian offline app beda dgn RTDB), bukan aturan.
  *
- *  Lalu direkonsiliasi per resort (adminUid):
- *      targetWeb            = Σ target COUNTED
- *      selisihDivergen      = Σ target DIVERGEN
- *      targetAndroid_implied= targetWeb + selisihDivergen
- *      macetAsli (konteks)  = Σ target MACET ASLI
+ *  Bucket ketidaksepakatan:
+ *    - ANDROID_ONLY : androidEval hitung, webEval drop. (Web meng-undercount.)
+ *    - WEB_ONLY     : webEval hitung, androidEval drop.
  *
  *  CARA PAKAI
  *  ----------
@@ -43,11 +41,11 @@
  *    SERVICE_ACCOUNT  path service account JSON (default ./serviceAccountKey.json)
  *    DATABASE_URL     URL RTDB (default project asia-southeast1)
  *    TODAY            tanggal acuan "dd MMM yyyy" (default "23 Mei 2026")
- *    CABANG           filter cabangId (opsional, mis. "Panti")
- *    RESORT           filter substring nama admin/resort (opsional, mis. "Mekar")
+ *    CABANG           filter cabang: key/nama tampilan (opsional, mis. "Panti")
+ *    RESORT           filter substring nama resort/admin (opsional, mis. "Mekar")
  *    ADMIN            filter adminUid persis (opsional)
  *    OUT              path output JSON (default ./divergence_report.json)
- *    OUT_CSV          path output CSV daftar DIVERGEN (default ./divergence_list.csv)
+ *    OUT_CSV          path output CSV ketidaksepakatan (default ./divergence_list.csv)
  * ===========================================================================*/
 
 const path = require('path');
@@ -71,63 +69,83 @@ admin.initializeApp({
 const db = admin.database();
 
 // ---------------------------------------------------------------------------
-// Helper tanggal (format lokal "dd MMM yyyy") — konsisten summaryHelpers/web
+// Helper tanggal (format lokal "dd MMM yyyy") — konsisten target.js/Android
 // ---------------------------------------------------------------------------
-const BULAN = { Jan: 0, Feb: 1, Mar: 2, Apr: 3, Mei: 4, Jun: 5,
-                Jul: 6, Agu: 7, Sep: 8, Okt: 9, Nov: 10, Des: 11 };
+const BULAN_INDO = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun',
+                    'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+const BULAN = {};
+BULAN_INDO.forEach((b, i) => { BULAN[b] = i; });
 function parseTgl(s) {
   if (!s || typeof s !== 'string') return null;
   const p = s.trim().split(' ');
   if (p.length !== 3) return null;
   const m = BULAN[p[1]];
+  if (m === undefined) return null;
   const d = parseInt(p[0], 10);
   const y = parseInt(p[2], 10);
-  if (isNaN(d) || m === undefined || isNaN(y)) return null;
+  if (isNaN(d) || isNaN(y)) return null;
   return new Date(y, m, d);
 }
 const listOf = (x) => (!x ? [] : (Array.isArray(x) ? x : Object.values(x)));
 
 const todayDate = parseTgl(TODAY);
 if (!todayDate) { console.error(`TODAY tidak valid: "${TODAY}"`); process.exit(1); }
-// Batas macet = tanggal 1, tiga bulan sebelum bulan TODAY (identik web/Android/CF)
+// Batas macet = tanggal 1, tiga bulan sebelum bulan TODAY (identik web & Android)
 const threeMonthsAgo = new Date(todayDate.getFullYear(), todayDate.getMonth() - 3, 1);
 
-// totalDibayar ala bukuPokokApi: semua pembayaran kecuali entry "Bunga..."
-function calcTotalDibayar(p) {
+// totalDibayar ala bukuPokokApi.calculateTotalDibayar: exclude entry "Bunga...",
+// INCLUDE "Pelunasan Top-Up". (Dipakai sisi WEB.)
+function totalDibayarWeb(p) {
   let t = 0;
   listOf(p.pembayaranList).forEach((x) => {
     if (!x) return;
     if (x.tanggal && String(x.tanggal).startsWith('Bunga')) return;
     t += x.jumlah || 0;
-    listOf(x.subPembayaran).forEach((s) => { t += s.jumlah || 0; });
+    listOf(x.subPembayaran).forEach((s) => { t += (s && s.jumlah) || 0; });
   });
   return t;
 }
 
-// Tanggal pembayaran terbaru dari siklus berjalan (pembayaranList), exclude "Bunga".
-function lastPaymentDate(p) {
-  let max = null, maxRaw = null;
-  const consider = (raw) => {
-    if (raw && String(raw).startsWith('Bunga')) return;
-    const d = parseTgl(raw);
-    if (d && (!max || d > max)) { max = d; maxRaw = raw; }
+// totalBayar ala RingkasanDashboardScreen.kt:119-121: SUM SEMUA pembayaranList
+// (TERMASUK "Bunga", termasuk subPembayaran). (Dipakai sisi ANDROID.)
+function totalBayarAndroid(p) {
+  let t = 0;
+  listOf(p.pembayaranList).forEach((x) => {
+    if (!x) return;
+    t += x.jumlah || 0;
+    listOf(x.subPembayaran).forEach((s) => { t += (s && s.jumlah) || 0; });
+  });
+  return t;
+}
+
+// Apakah ada entry "Bunga..." di pembayaranList? (utk diagnosis selisih lunas.)
+function hasBunga(p) {
+  return listOf(p.pembayaranList).some((x) => x && x.tanggal && String(x.tanggal).startsWith('Bunga'));
+}
+
+// Tanggal pembayaran terbaru (exclude "Bunga") — konteks saja.
+function lastPaymentRaw(p) {
+  let max = null, raw = null;
+  const consider = (r) => {
+    if (r && String(r).startsWith('Bunga')) return;
+    const d = parseTgl(r);
+    if (d && (!max || d > max)) { max = d; raw = r; }
   };
   listOf(p.pembayaranList).forEach((x) => {
     if (!x) return;
     consider(x.tanggal);
     listOf(x.subPembayaran).forEach((s) => consider(s && s.tanggal));
   });
-  return { date: max, raw: maxRaw };
+  return raw;
 }
 
 // ---------------------------------------------------------------------------
-// Replika 1:1 isEligibleForTarget (buku-pokok-web/lib/target.js) untuk TODAY.
-// Mengembalikan { target, reason } dengan reason menjelaskan kenapa di-drop.
-//   reason ∈ COUNTED | status | lunas | menunggu | cair_today | not_yet | macet
+// webEval — replika 1:1 buku-pokok-web/lib/target.js isEligibleForTarget(today)
+//   return { included, target, reason }
 // ---------------------------------------------------------------------------
 function webEval(p, dateStr) {
   const cur = parseTgl(dateStr);
-  if (!cur) return { target: 0, reason: 'bad_date' };
+  if (!cur) return { included: false, target: 0, reason: 'bad_date' };
 
   const statusLower = (p.status || '').toLowerCase();
   const isStatusAktif = statusLower === 'aktif' || statusLower === 'active';
@@ -135,39 +153,79 @@ function webEval(p, dateStr) {
   const isMenungguPencairan = p.statusKhusus === 'MENUNGGU_PENCAIRAN'
     && (p.statusPencairanSimpanan || '') !== 'Dicairkan';
   const menungguHariIni = isMenungguPencairan && (p.tanggalStatusKhusus || '').trim() === dateStr;
-  if (!isStatusAktif && !lunasHariIni && !menungguHariIni) return { target: 0, reason: 'status' };
+  if (!isStatusAktif && !lunasHariIni && !menungguHariIni) return { included: false, target: 0, reason: 'status' };
 
   const target = Math.floor((p.besarPinjaman || 0) * 3 / 100);
   const totalPelunasan = p.totalPelunasan || 0;
-  const totalDibayar = calcTotalDibayar(p);
+  const totDibayar = totalDibayarWeb(p);
 
-  const isSudahLunas = totalPelunasan > 0 && totalDibayar >= totalPelunasan;
+  const isSudahLunas = totalPelunasan > 0 && totDibayar >= totalPelunasan;
   if (isSudahLunas) {
     const tglLunas = (p.tanggalLunasCicilan || '').trim();
     const lunasDate = parseTgl(tglLunas);
     if (lunasDate) {
-      if (tglLunas === dateStr) return { target, reason: 'COUNTED' }; // lunas hari ini (H+1)
-      if (lunasDate < cur) return { target: 0, reason: 'lunas' };
-      // lunasDate > cur (historis) → masih belum lunas pd tanggal ini → lanjut
+      if (tglLunas === dateStr) return { included: true, target, reason: 'COUNTED' };
+      if (lunasDate < cur) return { included: false, target: 0, reason: 'lunas' };
+      // lunasDate > cur → pd tanggal ini belum lunas → lanjut
     } else {
-      return { target: 0, reason: 'lunas' };
+      // tanpa tanggalLunasCicilan valid → untuk "hari ini" anggap lunas
+      return { included: false, target: 0, reason: 'lunas' };
     }
   }
 
-  if (isMenungguPencairan && !menungguHariIni) return { target: 0, reason: 'menunggu' };
+  if (isMenungguPencairan && !menungguHariIni) return { included: false, target: 0, reason: 'menunggu' };
 
   const tglPencairan = (p.tanggalPencairan || '').trim();
-  if (tglPencairan && tglPencairan === dateStr) return { target: 0, reason: 'cair_today' };
+  if (tglPencairan && tglPencairan === dateStr) return { included: false, target: 0, reason: 'cair_today' };
 
   const tglAcuan = tglPencairan
     || (p.tanggalPengajuan || '').trim()
     || (p.tanggalDaftar || '').trim();
   const acuan = parseTgl(tglAcuan);
   if (acuan) {
-    if (acuan > cur) return { target: 0, reason: 'not_yet' };
-    if (acuan < threeMonthsAgo) return { target: 0, reason: 'macet' };
+    if (acuan > cur) return { included: false, target: 0, reason: 'not_yet_future_acuan' };
+    if (acuan < threeMonthsAgo) return { included: false, target: 0, reason: 'macet' };
   }
-  return { target, reason: 'COUNTED' };
+  return { included: true, target, reason: 'COUNTED' };
+}
+
+// ---------------------------------------------------------------------------
+// androidEval — replika 1:1 RingkasanDashboardScreen.kt:115-189
+//   return { included, target, reason }
+// ---------------------------------------------------------------------------
+function androidEval(p, dateStr) {
+  const status = p.status || '';
+  if (status === 'Disetujui' || status === 'Tidak Aktif') {
+    return { included: false, target: 0, reason: 'status_disetujui/tidakaktif' };
+  }
+
+  const totalPelunasan = p.totalPelunasan || 0;
+  const totBayar = totalBayarAndroid(p);            // INCLUDING Bunga
+  const isBelumLunas = totBayar < totalPelunasan;
+
+  const isMenungguPencairan = p.statusKhusus === 'MENUNGGU_PENCAIRAN'; // TANPA cek Dicairkan
+  const tglAcuan = (p.tanggalPencairan || '').trim()
+    || (p.tanggalPengajuan || '').trim()
+    || (p.tanggalDaftar || '').trim();
+  const acuan = parseTgl(tglAcuan);
+  const isOverThreeMonths = !!(acuan && acuan < threeMonthsAgo); // parse gagal → false
+
+  const tglPencairan = (p.tanggalPencairan || '').trim();
+  const isCairHariIni = tglPencairan !== '' && tglPencairan === dateStr;
+  const isLunasHariIni = !isBelumLunas && (p.tanggalLunasCicilan || '').trim() === dateStr;
+  const isMenungguPencairanHariIni = isMenungguPencairan && (p.tanggalStatusKhusus || '').trim() === dateStr;
+  const sl = status.toLowerCase();
+  const isStatusAktif = status === 'Aktif' || sl === 'aktif' || status === 'Active';
+
+  const target = Math.floor((p.besarPinjaman || 0) * 3 / 100);
+
+  // Gate berurutan (utk reason yg presisi)
+  if (!(isBelumLunas || isLunasHariIni)) return { included: false, target: 0, reason: 'lunas' };
+  if (!(!isMenungguPencairan || isMenungguPencairanHariIni)) return { included: false, target: 0, reason: 'menunggu' };
+  if (isOverThreeMonths) return { included: false, target: 0, reason: 'macet' };
+  if (isCairHariIni) return { included: false, target: 0, reason: 'cair_today' };
+  if (!(isStatusAktif || isLunasHariIni || isMenungguPencairanHariIni)) return { included: false, target: 0, reason: 'status' };
+  return { included: true, target, reason: 'COUNTED' };
 }
 
 // ---------------------------------------------------------------------------
@@ -179,152 +237,165 @@ function webEval(p, dateStr) {
   const filt = [CABANG && `cabang=${CABANG}`, RESORT && `resort~${RESORT}`, ADMIN && `admin=${ADMIN}`]
     .filter(Boolean).join(' | ');
   console.log(`[DIAG] Filter: ${filt || '(semua)'}`);
-  console.log('[DIAG] Membaca node pelanggan (.once value)…\n');
+  console.log('[DIAG] Membaca pelanggan + metadata (.once value)…\n');
 
-  // Baca pelanggan + metadata (resort & cabang) sekali — semua READ-ONLY.
   const [snap, adminsSnap, cabangSnap] = await Promise.all([
     db.ref('pelanggan').once('value'),
     db.ref('metadata/admins').once('value'),
     db.ref('metadata/cabang').once('value'),
   ]);
   const allAdmins = snap.val() || {};
-  const adminMeta = adminsSnap.val() || {};   // {uid: {name, email, cabang, role}}
-  const cabangMeta = cabangSnap.val() || {};  // {key: {name, adminList, pimpinanUid}}
+  const adminMeta = adminsSnap.val() || {};
+  const cabangMeta = cabangSnap.val() || {};
   const cabangDisplayOf = (key) => (key && cabangMeta[key] && cabangMeta[key].name) || key || '';
 
   const CABANG_L = CABANG.toLowerCase();
 
-  const resorts = {};      // adminUid → ringkasan resort
-  const divergenList = []; // flat, untuk CSV + verifikasi manual di app
+  const resorts = {};
+  const disagree = []; // flat list ANDROID_ONLY / WEB_ONLY
   let scanned = 0;
 
   for (const [adminUid, bucket] of Object.entries(allAdmins)) {
     if (!bucket || typeof bucket !== 'object') continue;
     if (ADMIN && adminUid !== ADMIN) continue;
 
-    // Label resort & cabang dari metadata/admins (BUKAN dari record nasabah).
     const meta = adminMeta[adminUid] || {};
-    const adminName = meta.name || meta.email || adminUid;
-    const cabangKey = (meta.cabang || '').trim();          // mis. "panti"
-    const cabangDisplay = cabangDisplayOf(cabangKey);      // mis. "Panti"
+    const resort = meta.name || meta.email || adminUid;
+    const cabangKey = (meta.cabang || '').trim();
+    const cabangDisplay = cabangDisplayOf(cabangKey);
 
-    // Filter cabang: cocokkan input ke key ATAU nama tampilan (case-insensitive).
     if (CABANG_L && !(cabangKey.toLowerCase().includes(CABANG_L)
         || cabangDisplay.toLowerCase().includes(CABANG_L))) continue;
-    if (RESORT && !adminName.toLowerCase().includes(RESORT)) continue;
+    if (RESORT && !resort.toLowerCase().includes(RESORT)) continue;
 
-    let targetWeb = 0, selisihDivergen = 0, macetAsli = 0;
-    let nCounted = 0, nDivergen = 0, nMacetAsli = 0;
+    let targetWeb = 0, targetAndroid = 0;
+    let nWeb = 0, nAndroid = 0, nAndroidOnly = 0, nWebOnly = 0;
 
     for (const [pid, p] of Object.entries(bucket)) {
       if (!p || typeof p !== 'object') continue;
       scanned++;
-      const { target, reason } = webEval(p, TODAY);
+      const w = webEval(p, TODAY);
+      const a = androidEval(p, TODAY);
+      if (w.included) { targetWeb += w.target; nWeb++; }
+      if (a.included) { targetAndroid += a.target; nAndroid++; }
 
-      if (reason === 'COUNTED') { targetWeb += target; nCounted++; continue; }
-      if (reason !== 'macet') continue; // drop non-macet (lunas/menunggu/dll) → bukan sumber selisih ini
+      if (w.included === a.included) continue; // sepakat
 
-      // Di-drop karena MACET menurut data RTDB. Cek aktivitas pembayaran nyata.
-      const lp = lastPaymentDate(p);
-      const recent = !!(lp.date && lp.date >= threeMonthsAgo);
-      const tgt = Math.floor((p.besarPinjaman || 0) * 3 / 100);
-
-      if (recent) {
-        selisihDivergen += tgt; nDivergen++;
-        divergenList.push({
-          path: `pelanggan/${adminUid}/${pid}`,
-          resort: adminName, cabang: cabangDisplay,
-          nama: p.namaPanggilan || p.namaKtp || '',
-          pinjamanKe: p.pinjamanKe || 1,
-          besarPinjaman: p.besarPinjaman || 0,
-          targetPerDay: tgt,
-          tanggalPencairan: (p.tanggalPencairan || '').trim() || null,
-          tanggalPengajuan: (p.tanggalPengajuan || '').trim() || null,
-          tanggalDaftar: (p.tanggalDaftar || '').trim() || null,
-          acuanDipakaiWeb: (p.tanggalPencairan || '').trim()
-            || (p.tanggalPengajuan || '').trim() || (p.tanggalDaftar || '').trim() || null,
-          lastPayment: lp.raw,
-        });
-      } else {
-        macetAsli += tgt; nMacetAsli++;
-      }
+      const bucketName = a.included ? 'ANDROID_ONLY' : 'WEB_ONLY';
+      if (a.included) nAndroidOnly++; else nWebOnly++;
+      disagree.push({
+        bucket: bucketName,
+        path: `pelanggan/${adminUid}/${pid}`,
+        resort, cabang: cabangDisplay,
+        nama: p.namaPanggilan || p.namaKtp || '',
+        pinjamanKe: p.pinjamanKe || 1,
+        besarPinjaman: p.besarPinjaman || 0,
+        target: Math.floor((p.besarPinjaman || 0) * 3 / 100),
+        webIncluded: w.included, webReason: w.reason,
+        androidIncluded: a.included, androidReason: a.reason,
+        status: p.status || '',
+        statusKhusus: p.statusKhusus || '',
+        statusPencairanSimpanan: p.statusPencairanSimpanan || '',
+        totalPelunasan: p.totalPelunasan || 0,
+        totalDibayarWeb: totalDibayarWeb(p),
+        totalBayarAndroid: totalBayarAndroid(p),
+        hasBunga: hasBunga(p),
+        tanggalPencairan: (p.tanggalPencairan || '').trim() || null,
+        tanggalPengajuan: (p.tanggalPengajuan || '').trim() || null,
+        tanggalDaftar: (p.tanggalDaftar || '').trim() || null,
+        tanggalLunasCicilan: (p.tanggalLunasCicilan || '').trim() || null,
+        tanggalStatusKhusus: (p.tanggalStatusKhusus || '').trim() || null,
+        lastPayment: lastPaymentRaw(p),
+      });
     }
 
-    // hanya catat resort yg relevan (punya sesuatu)
-    if (nCounted + nDivergen + nMacetAsli === 0) continue;
+    if (nWeb + nAndroid + nAndroidOnly + nWebOnly === 0) continue;
     resorts[adminUid] = {
-      adminUid, resort: adminName, cabang: cabangDisplay,
-      targetWeb,
-      selisihDivergen,
-      targetAndroidImplied: targetWeb + selisihDivergen,
-      macetAsliContext: macetAsli,
-      counts: { counted: nCounted, divergen: nDivergen, macetAsli: nMacetAsli },
+      adminUid, resort, cabang: cabangDisplay,
+      targetWeb, targetAndroid,
+      diff: targetAndroid - targetWeb,
+      counts: { web: nWeb, android: nAndroid, androidOnly: nAndroidOnly, webOnly: nWebOnly },
     };
   }
 
-  divergenList.sort((a, b) => b.targetPerDay - a.targetPerDay);
+  // Urutkan disagree: ANDROID_ONLY dulu, target terbesar
+  disagree.sort((x, y) => (x.bucket === y.bucket ? y.target - x.target : (x.bucket === 'ANDROID_ONLY' ? -1 : 1)));
 
-  const resortArr = Object.values(resorts)
-    .sort((a, b) => b.selisihDivergen - a.selisihDivergen);
+  // Tally reason untuk ANDROID_ONLY (kenapa web men-drop) & WEB_ONLY
+  const reasonTally = { ANDROID_ONLY: {}, WEB_ONLY: {} };
+  const reasonAmt = { ANDROID_ONLY: {}, WEB_ONLY: {} };
+  for (const d of disagree) {
+    const key = d.bucket === 'ANDROID_ONLY' ? d.webReason : d.androidReason;
+    reasonTally[d.bucket][key] = (reasonTally[d.bucket][key] || 0) + 1;
+    reasonAmt[d.bucket][key] = (reasonAmt[d.bucket][key] || 0) + d.target;
+  }
+
+  const resortArr = Object.values(resorts).sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff));
   const totals = resortArr.reduce((s, r) => {
-    s.targetWeb += r.targetWeb;
-    s.selisihDivergen += r.selisihDivergen;
-    s.macetAsli += r.macetAsliContext;
-    return s;
-  }, { targetWeb: 0, selisihDivergen: 0, macetAsli: 0 });
+    s.targetWeb += r.targetWeb; s.targetAndroid += r.targetAndroid; return s;
+  }, { targetWeb: 0, targetAndroid: 0 });
 
   const report = {
     generatedAt: new Date().toISOString(),
     today: TODAY,
-    macetBoundary: `< ${threeMonthsAgo.getDate()} ${Object.keys(BULAN)[threeMonthsAgo.getMonth()]} ${threeMonthsAgo.getFullYear()}`,
+    macetBoundary: `< ${threeMonthsAgo.getDate()} ${BULAN_INDO[threeMonthsAgo.getMonth()]} ${threeMonthsAgo.getFullYear()}`,
     readOnly: true,
     filter: { cabang: CABANG || null, resort: RESORT || null, admin: ADMIN || null },
-    explanation:
-      'targetWeb = angka yang dihitung Web. selisihDivergen = nasabah yang Web DROP ' +
-      'sebagai macet tapi PUNYA pembayaran terbaru (Android tetap hitung). ' +
-      'targetAndroidImplied = targetWeb + selisihDivergen — harus mendekati angka Android. ' +
-      'macetAsliContext = nasabah macet TANPA pembayaran terbaru (Vivi-class; Android pun drop).',
+    method: 'webEval(target.js) vs androidEval(RingkasanDashboardScreen) atas data RTDB yg sama',
     totals: {
       targetWeb: totals.targetWeb,
-      selisihDivergen: totals.selisihDivergen,
-      targetAndroidImplied: totals.targetWeb + totals.selisihDivergen,
-      macetAsliContext: totals.macetAsli,
+      targetAndroid: totals.targetAndroid,
+      diff: totals.targetAndroid - totals.targetWeb,
     },
+    reasonTally, reasonAmt,
     resorts: resortArr,
-    divergenNasabah: divergenList,
+    disagreements: disagree,
   };
   fs.writeFileSync(path.resolve(OUT), JSON.stringify(report, null, 2));
 
-  // CSV daftar DIVERGEN (mudah dicocokkan dengan tampilan app)
-  const csvHead = 'cabang,resort,nama,pinjamanKe,besarPinjaman,targetPerDay,tanggalPencairan,tanggalPengajuan,tanggalDaftar,acuanDipakaiWeb,lastPayment,path';
+  // CSV ketidaksepakatan
+  const cols = ['bucket','cabang','resort','nama','pinjamanKe','besarPinjaman','target',
+    'webIncluded','webReason','androidIncluded','androidReason','status','statusKhusus',
+    'statusPencairanSimpanan','totalPelunasan','totalDibayarWeb','totalBayarAndroid','hasBunga',
+    'tanggalPencairan','tanggalPengajuan','tanggalDaftar','tanggalLunasCicilan','tanggalStatusKhusus','lastPayment','path'];
   const esc = (v) => { const s = (v == null ? '' : String(v)); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
-  const csvRows = divergenList.map((d) => [
-    d.cabang, d.resort, d.nama, d.pinjamanKe, d.besarPinjaman, d.targetPerDay,
-    d.tanggalPencairan, d.tanggalPengajuan, d.tanggalDaftar, d.acuanDipakaiWeb, d.lastPayment, d.path,
-  ].map(esc).join(','));
-  fs.writeFileSync(path.resolve(OUT_CSV), [csvHead, ...csvRows].join('\n') + '\n');
+  const csv = [cols.join(',')].concat(disagree.map((d) => cols.map((c) => esc(d[c])).join(','))).join('\n') + '\n';
+  fs.writeFileSync(path.resolve(OUT_CSV), csv);
 
   // Ringkasan konsol
   const fmt = (n) => n.toLocaleString('id-ID');
   console.log(`[DIAG] Dipindai ${scanned} nasabah.\n`);
-  console.log('Per resort (urut selisih terbesar):');
-  console.log('  ' + 'RESORT'.padEnd(26) + 'targetWeb'.padStart(13) + 'selisih'.padStart(12) + 'androidImpl'.padStart(14) + '  (cnt/div/macet)');
+  console.log('Per resort (urut |diff| terbesar):');
+  console.log('  ' + 'RESORT'.padEnd(26) + 'targetWeb'.padStart(13) + 'targetAndroid'.padStart(15) + 'diff'.padStart(11) + '  (web/and/+A/+W)');
   for (const r of resortArr) {
     console.log('  ' + r.resort.slice(0, 25).padEnd(26)
       + fmt(r.targetWeb).padStart(13)
-      + fmt(r.selisihDivergen).padStart(12)
-      + fmt(r.targetAndroidImplied).padStart(14)
-      + `   ${r.counts.counted}/${r.counts.divergen}/${r.counts.macetAsli}`);
+      + fmt(r.targetAndroid).padStart(15)
+      + fmt(r.diff).padStart(11)
+      + `   ${r.counts.web}/${r.counts.android}/${r.counts.androidOnly}/${r.counts.webOnly}`);
   }
   console.log('\nTOTAL:');
-  console.log(`  targetWeb            : Rp ${fmt(totals.targetWeb)}`);
-  console.log(`  + selisihDivergen    : Rp ${fmt(totals.selisihDivergen)}  (Web drop, Android hitung)`);
-  console.log(`  = targetAndroidImpl  : Rp ${fmt(totals.targetWeb + totals.selisihDivergen)}`);
-  console.log(`  (konteks) macetAsli  : Rp ${fmt(totals.macetAsli)}  (Vivi-class; kedua sisi drop)`);
-  console.log(`\nDaftar DIVERGEN: ${divergenList.length} nasabah → ${path.resolve(OUT_CSV)}`);
-  console.log(`Laporan lengkap     → ${path.resolve(OUT)}`);
-  console.log('\n→ Verifikasi: nasabah di CSV ini seharusnya MUNCUL sebagai aktif di Android,');
-  console.log('  TAPI hilang di Target Web. Cocokkan beberapa nama dengan tampilan app.');
+  console.log(`  targetWeb     : Rp ${fmt(totals.targetWeb)}`);
+  console.log(`  targetAndroid : Rp ${fmt(totals.targetAndroid)}   (replika aturan Android atas RTDB)`);
+  console.log(`  diff          : Rp ${fmt(totals.targetAndroid - totals.targetWeb)}`);
+
+  const printReasons = (bucket, label) => {
+    const t = reasonTally[bucket], amt = reasonAmt[bucket];
+    const keys = Object.keys(t);
+    if (!keys.length) return;
+    console.log(`\n${label}:`);
+    keys.sort((a, b) => amt[b] - amt[a]).forEach((k) => {
+      console.log(`  ${k.padEnd(28)} ${String(t[k]).padStart(3)} nasabah  Rp ${fmt(amt[k])}`);
+    });
+  };
+  printReasons('ANDROID_ONLY', 'ANDROID_ONLY (Android hitung, Web DROP) — alasan Web men-drop');
+  printReasons('WEB_ONLY', 'WEB_ONLY (Web hitung, Android DROP) — alasan Android men-drop');
+
+  console.log(`\nDetail ketidaksepakatan: ${disagree.length} nasabah → ${path.resolve(OUT_CSV)}`);
+  console.log(`Laporan lengkap → ${path.resolve(OUT)}`);
+  console.log('\n→ Bandingkan targetAndroid di atas dgn angka di app.');
+  console.log('  Sama  → selisih bersifat ATURAN (lihat ANDROID_ONLY reason).');
+  console.log('  Beda  → selisih bersifat DATA/SYNC (in-memory app ≠ RTDB).');
 
   await admin.app().delete();
   process.exit(0);
