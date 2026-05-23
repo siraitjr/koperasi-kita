@@ -181,8 +181,18 @@ function webEval(p, dateStr) {
   console.log(`[DIAG] Filter: ${filt || '(semua)'}`);
   console.log('[DIAG] Membaca node pelanggan (.once value)…\n');
 
-  const snap = await db.ref('pelanggan').once('value');
+  // Baca pelanggan + metadata (resort & cabang) sekali — semua READ-ONLY.
+  const [snap, adminsSnap, cabangSnap] = await Promise.all([
+    db.ref('pelanggan').once('value'),
+    db.ref('metadata/admins').once('value'),
+    db.ref('metadata/cabang').once('value'),
+  ]);
   const allAdmins = snap.val() || {};
+  const adminMeta = adminsSnap.val() || {};   // {uid: {name, email, cabang, role}}
+  const cabangMeta = cabangSnap.val() || {};  // {key: {name, adminList, pimpinanUid}}
+  const cabangDisplayOf = (key) => (key && cabangMeta[key] && cabangMeta[key].name) || key || '';
+
+  const CABANG_L = CABANG.toLowerCase();
 
   const resorts = {};      // adminUid → ringkasan resort
   const divergenList = []; // flat, untuk CSV + verifikasi manual di app
@@ -192,17 +202,15 @@ function webEval(p, dateStr) {
     if (!bucket || typeof bucket !== 'object') continue;
     if (ADMIN && adminUid !== ADMIN) continue;
 
-    // label resort (modal value)
-    const names = {}, cabangs = {};
-    for (const p of Object.values(bucket)) {
-      if (!p || typeof p !== 'object') continue;
-      if (p.adminName) names[p.adminName] = (names[p.adminName] || 0) + 1;
-      if (p.cabangId) cabangs[p.cabangId] = (cabangs[p.cabangId] || 0) + 1;
-    }
-    const modal = (o) => { const e = Object.entries(o).sort((a, b) => b[1] - a[1]); return e.length ? e[0][0] : ''; };
-    const adminName = modal(names) || '(no name)';
-    const cabangId = modal(cabangs) || '';
-    if (CABANG && cabangId !== CABANG) continue;
+    // Label resort & cabang dari metadata/admins (BUKAN dari record nasabah).
+    const meta = adminMeta[adminUid] || {};
+    const adminName = meta.name || meta.email || adminUid;
+    const cabangKey = (meta.cabang || '').trim();          // mis. "panti"
+    const cabangDisplay = cabangDisplayOf(cabangKey);      // mis. "Panti"
+
+    // Filter cabang: cocokkan input ke key ATAU nama tampilan (case-insensitive).
+    if (CABANG_L && !(cabangKey.toLowerCase().includes(CABANG_L)
+        || cabangDisplay.toLowerCase().includes(CABANG_L))) continue;
     if (RESORT && !adminName.toLowerCase().includes(RESORT)) continue;
 
     let targetWeb = 0, selisihDivergen = 0, macetAsli = 0;
@@ -225,7 +233,7 @@ function webEval(p, dateStr) {
         selisihDivergen += tgt; nDivergen++;
         divergenList.push({
           path: `pelanggan/${adminUid}/${pid}`,
-          resort: adminName, cabangId,
+          resort: adminName, cabang: cabangDisplay,
           nama: p.namaPanggilan || p.namaKtp || '',
           pinjamanKe: p.pinjamanKe || 1,
           besarPinjaman: p.besarPinjaman || 0,
@@ -245,7 +253,7 @@ function webEval(p, dateStr) {
     // hanya catat resort yg relevan (punya sesuatu)
     if (nCounted + nDivergen + nMacetAsli === 0) continue;
     resorts[adminUid] = {
-      adminUid, resort: adminName, cabangId,
+      adminUid, resort: adminName, cabang: cabangDisplay,
       targetWeb,
       selisihDivergen,
       targetAndroidImplied: targetWeb + selisihDivergen,
@@ -288,10 +296,10 @@ function webEval(p, dateStr) {
   fs.writeFileSync(path.resolve(OUT), JSON.stringify(report, null, 2));
 
   // CSV daftar DIVERGEN (mudah dicocokkan dengan tampilan app)
-  const csvHead = 'resort,nama,pinjamanKe,besarPinjaman,targetPerDay,tanggalPencairan,tanggalPengajuan,tanggalDaftar,acuanDipakaiWeb,lastPayment,path';
+  const csvHead = 'cabang,resort,nama,pinjamanKe,besarPinjaman,targetPerDay,tanggalPencairan,tanggalPengajuan,tanggalDaftar,acuanDipakaiWeb,lastPayment,path';
   const esc = (v) => { const s = (v == null ? '' : String(v)); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
   const csvRows = divergenList.map((d) => [
-    d.resort, d.nama, d.pinjamanKe, d.besarPinjaman, d.targetPerDay,
+    d.cabang, d.resort, d.nama, d.pinjamanKe, d.besarPinjaman, d.targetPerDay,
     d.tanggalPencairan, d.tanggalPengajuan, d.tanggalDaftar, d.acuanDipakaiWeb, d.lastPayment, d.path,
   ].map(esc).join(','));
   fs.writeFileSync(path.resolve(OUT_CSV), [csvHead, ...csvRows].join('\n') + '\n');
