@@ -53,6 +53,33 @@ class SmartFirebaseLoader(
         private const val TAG = "SmartFirebaseLoader"
     }
 
+    // PERF: jaga node milik admin aktif tetap ter-sinkron via DELTA (persistence sudah ON di MyApp).
+    // Tujuan: .get() berulang atas pelanggan/{adminUid} tidak lagi men-download node penuh tiap kali —
+    // cukup sekali, lalu hanya perubahan (delta) yang ditransfer. SCOPED per-admin (BUKAN root).
+    private var keptSyncedAdminUid: String? = null
+
+    private fun ensureScopedSync(adminUid: String) {
+        if (adminUid.isBlank() || keptSyncedAdminUid == adminUid) return
+        keptSyncedAdminUid?.let { old ->
+            try { database.child("pelanggan").child(old).keepSynced(false) } catch (_: Exception) {}
+        }
+        try {
+            database.child("pelanggan").child(adminUid).keepSynced(true)
+            keptSyncedAdminUid = adminUid
+            Log.d(TAG, "📌 keepSynced(true) pelanggan/$adminUid (delta-sync aktif, hemat bandwidth)")
+        } catch (e: Exception) {
+            Log.w(TAG, "keepSynced gagal: ${e.message}")
+        }
+    }
+
+    /** Matikan delta-sync scoped (panggil saat ViewModel di-clear / logout). */
+    fun disableScopedSync() {
+        keptSyncedAdminUid?.let { uid ->
+            try { database.child("pelanggan").child(uid).keepSynced(false) } catch (_: Exception) {}
+        }
+        keptSyncedAdminUid = null
+    }
+
     // =========================================================================
     // KONEKSI CHECK
     // =========================================================================
@@ -97,6 +124,11 @@ class SmartFirebaseLoader(
             val online = isOnline()
             Log.d(TAG, "📥 Loading data for admin: $adminUid")
             Log.d(TAG, "   📶 Online: $online | ForceRefresh: $forceRefresh")
+
+            // PERF: aktifkan delta-sync scoped untuk node milik admin ini (idempotent).
+            // Membuat .get()/forceRefresh berikutnya dilayani dari salinan ter-sinkron lokal
+            // + hanya delta — bukan download node penuh berulang.
+            ensureScopedSync(adminUid)
 
             // STEP 1: Cek memory cache (kecuali force refresh)
             if (!forceRefresh) {

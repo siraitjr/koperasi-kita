@@ -654,13 +654,10 @@ class MainActivity : ComponentActivity() {
                     return
                 }
 
-                CoroutineScope(Dispatchers.IO).launch {
-                    delay(3000)
-                    if (viewModel.currentUserRole.value != UserRole.UNKNOWN) {
-                        Log.d("Network", "🔄 Starting offline sync...")
-                        viewModel.syncOfflineData()
-                    }
-                }
+                // PERF: sinkronisasi + refresh saat online kembali ditangani SATU jalur saja di
+                // PelangganViewModel.startNetworkMonitoring() (networkCallbackVM): sync → upload foto
+                // → refresh (debounced) → sync deleted. Pemanggilan ganda di sini sebelumnya memicu
+                // sync & download node penuh BERULANG tiap reconnect → dihapus untuk hemat bandwidth.
             }
 
             override fun onLost(network: Network) {

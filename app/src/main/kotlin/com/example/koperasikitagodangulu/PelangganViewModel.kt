@@ -3353,6 +3353,9 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
     private val syncMutex = Mutex()
 
     private var networkCallbackVM: ConnectivityManager.NetworkCallback? = null
+    // PERF: debounce refresh penuh saat reconnect agar koneksi yang "flapping" tidak
+    // memicu download node berulang. Pull-to-refresh manual TIDAK terpengaruh.
+    private var lastReconnectRefreshAt: Long = 0L
 
     fun startNetworkMonitoring() {
         val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
@@ -3384,11 +3387,19 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                         uploadPendingPhotos()
                         Log.d("Network", "✅ Step 2 complete")
 
-                        // Step 3: BARU setelah sync selesai, refresh dari Firebase
+                        // Step 3: BARU setelah sync selesai, refresh dari Firebase.
+                        // PERF: debounce — lewati jika sudah refresh <30 dtk lalu (anti flapping).
+                        // Data tetap segar karena node admin sudah delta-sync (keepSynced).
                         if (wasOffline) {
-                            Log.d("Network", "📥 Step 3: Refreshing data from Firebase...")
-                            refreshDataFromFirebase()
-                            Log.d("Network", "✅ Step 3 complete")
+                            val nowMs = System.currentTimeMillis()
+                            if (nowMs - lastReconnectRefreshAt >= 30_000L) {
+                                lastReconnectRefreshAt = nowMs
+                                Log.d("Network", "📥 Step 3: Refreshing data from Firebase...")
+                                refreshDataFromFirebase()
+                                Log.d("Network", "✅ Step 3 complete")
+                            } else {
+                                Log.d("Network", "⏳ Step 3 dilewati (refresh <30 dtk lalu) — hemat bandwidth")
+                            }
                         }
 
                         // Step 4: Sync deleted items TERAKHIR
@@ -8244,6 +8255,8 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
 
     override fun onCleared() {
         super.onCleared()
+        // PERF: matikan delta-sync scoped pelanggan/{adminUid} saat VM dibuang.
+        smartLoader.disableScopedSync()
         currentUserCabang.value?.let { cabangId ->
             pengajuanApprovalListener?.let { listener ->
                 database.child("pengajuan_approval").child(cabangId).removeEventListener(listener)
