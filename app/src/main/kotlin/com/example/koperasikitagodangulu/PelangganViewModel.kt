@@ -8668,6 +8668,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
             // Jika timeout, return ADMIN_LAPANGAN sebagai default
             if (rolesSnap == null) {
                 Log.w("RoleDetect", "⚠️ Timeout detecting role, using default ADMIN_LAPANGAN")
+                restoreCabangFromCacheIfBlank()
                 return UserRole.ADMIN_LAPANGAN
             }
 
@@ -8713,6 +8714,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
             }
             if (adminMeta == null) {
                 Log.w("RoleDetect", "⚠️ Timeout getting admin metadata")
+                restoreCabangFromCacheIfBlank()
                 return UserRole.ADMIN_LAPANGAN
             }
             if (adminMeta.exists()) {
@@ -8731,10 +8733,27 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
             }
 
             // Default: admin lapangan
+            restoreCabangFromCacheIfBlank()
             UserRole.ADMIN_LAPANGAN
         } catch (e: Exception) {
             Log.e("RoleDetect", "Error detect role: ${e.message}")
             UserRole.UNKNOWN
+        }
+    }
+
+    /**
+     * Pulihkan cabang dari cache lokal bila _currentUserCabang masih kosong.
+     * Dipakai pada fallback ADMIN_LAPANGAN (mis. metadata gagal/timeout karena
+     * koneksi degraded) supaya admin tetap punya cabangId dan bisa absen — tanpa
+     * read RTDB tambahan. Konsisten dengan pola cache "Prioritas 2.5" yang sudah ada.
+     */
+    private fun restoreCabangFromCacheIfBlank() {
+        if (_currentUserCabang.value.isNullOrBlank()) {
+            val cached = sharedPrefs.getString("cached_cabang_id", "") ?: ""
+            if (cached.isNotBlank()) {
+                _currentUserCabang.value = cached
+                Log.d("RoleDetect", "📌 Cabang dipulihkan dari cache: $cached")
+            }
         }
     }
 
