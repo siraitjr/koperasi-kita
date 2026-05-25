@@ -122,8 +122,12 @@
 		},  
     
     "summary": {
-      ".read": "auth != null",
       ".write": false,
+      "nasabahIndex": {
+        "$cabangId": {
+          ".read": "auth != null && (root.child('metadata/cabang').child($cabangId).child('pimpinanUid').val() === auth.uid || root.child('metadata/roles/pengawas').child(auth.uid).val() === true || root.child('metadata/roles/koordinator').child(auth.uid).val() === true)"
+        }
+      },
       "global": {
         ".read": "auth != null && (root.child('metadata/roles/pengawas').child(auth.uid).val() === true || root.child('metadata/roles/koordinator').child(auth.uid).val() === true)",
         ".indexOn": ["lastUpdated"]
