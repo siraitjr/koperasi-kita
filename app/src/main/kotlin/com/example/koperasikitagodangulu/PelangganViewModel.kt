@@ -804,6 +804,9 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
     // =========================================================================
     val absensiSendiri = MutableStateFlow<AbsensiRecord?>(null)
     val isLoadingAbsensi = MutableStateFlow(false)
+    // Pesan error saat status absensi gagal dimuat (mis. get() menggantung karena
+    // persistence/koneksi). null = tidak ada error.
+    val absensiLoadError = MutableStateFlow<String?>(null)
     val daftarCabangUntukAbsensi = MutableStateFlow<List<CabangInfo>>(emptyList())
 
     // Counter untuk badge notifikasi serah terima
@@ -17647,15 +17650,28 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
         val wibZone = java.util.TimeZone.getTimeZone("Asia/Jakarta")
         val todayKey = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale("id", "ID")).apply { timeZone = wibZone }.format(java.util.Date())
         isLoadingAbsensi.value = true
+        absensiLoadError.value = null
         viewModelScope.launch {
             try {
-                val snap = database.child("user_absensi_today").child(uid).get().await()
+                // withTimeout: dengan persistence aktif (MyApp.setPersistenceEnabled),
+                // get() bisa menggantung selamanya saat koneksi degraded / ada cache
+                // belum tersinkron → tanpa batas waktu, finally tak pernah jalan dan
+                // UI stuck di "Memeriksa status absensi...".
+                val snap = kotlinx.coroutines.withTimeout(15_000L) {
+                    database.child("user_absensi_today").child(uid).get().await()
+                }
                 val record = snap.getValue(AbsensiRecord::class.java)
                 absensiSendiri.value = if (record != null && record.tanggal == todayKey) record else null
+                absensiLoadError.value = null
                 Log.d("Absensi", "✅ Status absensi loaded: ${absensiSendiri.value?.jam ?: "belum absen"}")
+            } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
+                Log.e("Absensi", "⏱️ Timeout load absensi (koneksi/cache)")
+                absensiSendiri.value = null
+                absensiLoadError.value = "Gagal memuat status absensi (koneksi lambat). Tekan Coba Lagi."
             } catch (e: Exception) {
                 Log.e("Absensi", "❌ Gagal load absensi: ${e.message}")
                 absensiSendiri.value = null
+                absensiLoadError.value = "Gagal memuat status absensi. Periksa koneksi lalu coba lagi."
             } finally {
                 isLoadingAbsensi.value = false
             }

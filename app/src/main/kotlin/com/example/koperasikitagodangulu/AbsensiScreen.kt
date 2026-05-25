@@ -46,6 +46,7 @@ fun AbsensiScreen(
     val currentCabang by viewModel.currentUserCabang.collectAsState()
     val absensiSendiri by viewModel.absensiSendiri.collectAsState()
     val isLoadingAbsensi by viewModel.isLoadingAbsensi.collectAsState()
+    val absensiLoadError by viewModel.absensiLoadError.collectAsState()
     val daftarCabang by viewModel.daftarCabangUntukAbsensi.collectAsState()
 
     val isKoordinator = currentRole == UserRole.KOORDINATOR
@@ -420,6 +421,39 @@ fun AbsensiScreen(
                             ) {
                                 CircularProgressIndicator(modifier = Modifier.size(20.dp), color = primaryColor)
                                 Text("Memeriksa status absensi...", fontSize = 14.sp, color = textMuted)
+                            }
+                        } else if (absensiLoadError != null) {
+                            // Gagal memuat status absensi → tampilkan pesan + tombol coba lagi
+                            // (sebelumnya tidak ada cabang ini → UI bisa stuck di spinner).
+                            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Error,
+                                        contentDescription = null,
+                                        tint = Color(0xFFEF4444),
+                                        modifier = Modifier.size(22.dp)
+                                    )
+                                    Text(
+                                        absensiLoadError ?: "",
+                                        fontSize = 13.sp,
+                                        color = Color(0xFFEF4444)
+                                    )
+                                }
+                                OutlinedButton(
+                                    onClick = { viewModel.loadAbsensiSendiri() },
+                                    shape = RoundedCornerShape(12.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Refresh,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(Modifier.width(8.dp))
+                                    Text("Coba Lagi")
+                                }
                             }
                         } else if (sudahAbsen) {
                             // Sudah absen
