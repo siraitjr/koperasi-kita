@@ -477,6 +477,21 @@ fun GoogleMapView(
     val mapView = remember { MapView(context) }
     var googleMap by remember { mutableStateOf<GoogleMap?>(null) }
 
+    // ✅ Lepas MapView saat keluar layar. Sebelumnya hanya onCreate/onResume yang
+    // dipanggil (tanpa onPause/onStop/onDestroy) → MapView terus hidup di background
+    // dan menguras baterai device Pengawas.
+    DisposableEffect(Unit) {
+        onDispose {
+            try {
+                mapView.onPause()
+                mapView.onStop()
+                mapView.onDestroy()
+            } catch (e: Exception) {
+                // abaikan: best-effort cleanup
+            }
+        }
+    }
+
     // Update marker saat lokasi berubah
     LaunchedEffect(latitude, longitude) {
         googleMap?.let { map ->

