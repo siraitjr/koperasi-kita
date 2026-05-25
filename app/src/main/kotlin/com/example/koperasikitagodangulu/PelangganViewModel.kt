@@ -1162,11 +1162,12 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
         Log.d("TargetHarian", "🔍 Menghitung target harian (konsisten RingkasanDashboard)")
 
         return try {
-            val dateFormat = SimpleDateFormat("dd MMM yyyy", Locale("in", "ID"))
+            val wib = TimeZone.getTimeZone("Asia/Jakarta")
+            val dateFormat = SimpleDateFormat("dd MMM yyyy", Locale("in", "ID")).apply { timeZone = wib }
             val today = dateFormat.format(Date())
 
             // Batas 3 bulan yang lalu dari tanggal 1 (SAMA dengan RingkasanDashboardScreen)
-            val threeMonthsAgo = Calendar.getInstance().apply {
+            val threeMonthsAgo = Calendar.getInstance(wib).apply {
                 add(Calendar.MONTH, -3)
                 set(Calendar.DAY_OF_MONTH, 1)
                 set(Calendar.HOUR_OF_DAY, 0)
@@ -13999,7 +14000,8 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                 return null
             }
 
-            val dateFormat = SimpleDateFormat("dd MMM yyyy", Locale("in", "ID"))
+            val wib = TimeZone.getTimeZone("Asia/Jakarta")
+            val dateFormat = SimpleDateFormat("dd MMM yyyy", Locale("in", "ID")).apply { timeZone = wib }
             val today = dateFormat.format(Date())
 
             var totalNasabah = 0
@@ -14060,8 +14062,8 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                             val tglAcuan = pelanggan.tanggalPencairan.ifBlank {
                                 pelanggan.tanggalPengajuan.ifBlank { pelanggan.tanggalDaftar }
                             }
-                            val dateFormatCheck = SimpleDateFormat("dd MMM yyyy", Locale("in", "ID"))
-                            val threeMonthsAgo = Calendar.getInstance().apply {
+                            val dateFormatCheck = SimpleDateFormat("dd MMM yyyy", Locale("in", "ID")).apply { timeZone = wib }
+                            val threeMonthsAgo = Calendar.getInstance(wib).apply {
                                 add(Calendar.MONTH, -3)
                                 set(Calendar.DAY_OF_MONTH, 1)
                                 set(Calendar.HOUR_OF_DAY, 0)

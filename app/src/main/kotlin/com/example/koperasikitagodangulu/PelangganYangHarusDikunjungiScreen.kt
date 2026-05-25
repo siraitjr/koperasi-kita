@@ -32,6 +32,7 @@ import androidx.navigation.NavHostController
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
+import java.util.TimeZone
 import com.example.koperasikitagodangulu.utils.formatRupiah
 import com.example.koperasikitagodangulu.utils.HolidayUtils
 import android.util.Log
@@ -81,8 +82,10 @@ fun PelangganYangHarusDikunjungiScreen(
     var pelangganUntukDismiss by remember { mutableStateOf<Pelanggan?>(null) }
 
     val daftarPelanggan = viewModel.daftarPelanggan
-    val dateFormat = SimpleDateFormat("dd MMM yyyy", Locale("id"))
-    val calendarNow = Calendar.getInstance()
+    // Lock perhitungan tanggal ke WIB agar hari kerja/holiday & "hari ini" tidak ikut TZ device.
+    val wib = TimeZone.getTimeZone("Asia/Jakarta")
+    val dateFormat = SimpleDateFormat("dd MMM yyyy", Locale("id")).apply { timeZone = wib }
+    val calendarNow = Calendar.getInstance(wib)
 
     val hariIni = calendarNow.getDisplayName(Calendar.DAY_OF_WEEK, Calendar.LONG, Locale("id")) ?: ""
     val tanggalIni = dateFormat.format(calendarNow.time)
@@ -128,14 +131,14 @@ fun PelangganYangHarusDikunjungiScreen(
 
         try {
             val tanggalDaftar = dateFormat.parse(p.tanggalDaftar) ?: return@filter true // ✅ FIX: null-safe
-            val calendarDaftar = Calendar.getInstance().apply {
+            val calendarDaftar = Calendar.getInstance(wib).apply {
                 time = tanggalDaftar
                 set(Calendar.HOUR_OF_DAY, 0)
                 set(Calendar.MINUTE, 0)
                 set(Calendar.SECOND, 0)
                 set(Calendar.MILLISECOND, 0)
             }
-            val calendarHariIni = Calendar.getInstance().apply {
+            val calendarHariIni = Calendar.getInstance(wib).apply {
                 set(Calendar.HOUR_OF_DAY, 0)
                 set(Calendar.MINUTE, 0)
                 set(Calendar.SECOND, 0)
@@ -147,7 +150,7 @@ fun PelangganYangHarusDikunjungiScreen(
             if (p.hasilSimulasiCicilan.isNotEmpty()) {
                 val cicilanPertama = p.hasilSimulasiCicilan.first()
                 val tanggalCicilanPertama = dateFormat.parse(cicilanPertama.tanggal) ?: return@filter true // ✅ FIX: null-safe
-                val calendarCicilanPertama = Calendar.getInstance().apply {
+                val calendarCicilanPertama = Calendar.getInstance(wib).apply {
                     time = tanggalCicilanPertama
                     set(Calendar.HOUR_OF_DAY, 0)
                     set(Calendar.MINUTE, 0)
@@ -181,7 +184,7 @@ fun PelangganYangHarusDikunjungiScreen(
     }
 
     // ✅ Target Harian = SAMA dengan RingkasanDashboardScreen (besarPinjaman × 3%)
-    val threeMonthsAgo = Calendar.getInstance().apply {
+    val threeMonthsAgo = Calendar.getInstance(wib).apply {
         add(Calendar.MONTH, -3)
         set(Calendar.DAY_OF_MONTH, 1)
         set(Calendar.HOUR_OF_DAY, 0)

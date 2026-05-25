@@ -45,6 +45,7 @@ import androidx.navigation.NavController
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
+import java.util.TimeZone
 import com.example.koperasikitagodangulu.utils.formatRupiah
 import com.google.accompanist.systemuicontroller.rememberSystemUiController
 
@@ -99,10 +100,12 @@ fun RingkasanDashboardScreen(
     val pelunasanEksternal by viewModel.pelunasanEksternalHariIni.collectAsState()
 
     // Calculations
-    val dateFormat = SimpleDateFormat("dd MMM yyyy", Locale("in", "ID"))
-    val today = dateFormat.format(Calendar.getInstance().time)
+    // Lock perhitungan tanggal ke WIB agar "hari ini" & filter target tidak ikut TZ device.
+    val wib = TimeZone.getTimeZone("Asia/Jakarta")
+    val dateFormat = SimpleDateFormat("dd MMM yyyy", Locale("in", "ID")).apply { timeZone = wib }
+    val today = dateFormat.format(Calendar.getInstance(wib).time)
 
-    val threeMonthsAgo = Calendar.getInstance().apply {
+    val threeMonthsAgo = Calendar.getInstance(wib).apply {
         add(Calendar.MONTH, -3)
         set(Calendar.DAY_OF_MONTH, 1)
         set(Calendar.HOUR_OF_DAY, 0)
@@ -110,7 +113,7 @@ fun RingkasanDashboardScreen(
         set(Calendar.SECOND, 0)
         set(Calendar.MILLISECOND, 0)
     }.time
-    val dateFormatParser = SimpleDateFormat("dd MMM yyyy", Locale("in", "ID"))
+    val dateFormatParser = SimpleDateFormat("dd MMM yyyy", Locale("in", "ID")).apply { timeZone = wib }
 
     val nasabahAktif = daftarPelanggan.filter { pelanggan ->
         // Exclude status non-aktif
