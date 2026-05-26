@@ -527,10 +527,21 @@ class SyncManager private constructor(private val context: Context) {
                     .build()
 
                 val uploadTask = ktpRef.putBytes(compressedImage, metadata)
-                val task = uploadTask.await()
+                // Timeout 60s agar SyncWorker tidak terkunci selamanya pada upload macet.
+                val task = withTimeoutOrNull(60_000L) { uploadTask.await() }
+                if (task == null) {
+                    Log.e(TAG, "❌ Upload KTP timeout 60s (SyncManager)")
+                    try { uploadTask.cancel() } catch (_: Exception) {}
+                    return@withContext null
+                }
 
                 if (task.task.isSuccessful) {
-                    val downloadUrl = ktpRef.downloadUrl.await()
+                    // Timeout 15s untuk ambil downloadUrl (hanya query metadata Storage).
+                    val downloadUrl = withTimeoutOrNull(15_000L) { ktpRef.downloadUrl.await() }
+                    if (downloadUrl == null) {
+                        Log.e(TAG, "❌ downloadUrl timeout 15s (SyncManager)")
+                        return@withContext null
+                    }
                     Log.d(TAG, "✅ Foto KTP uploaded: ${compressedImage.size / 1024}KB → $downloadUrl")
                     downloadUrl.toString()
                 } else {

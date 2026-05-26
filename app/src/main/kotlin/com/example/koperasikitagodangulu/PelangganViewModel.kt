@@ -2385,61 +2385,21 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                 val dateFormat = SimpleDateFormat("dd MMM yyyy", Locale("in", "ID"))
                 val tanggalDaftar = dateFormat.format(Date())
 
-                // ✅ PERBAIKAN 3: Handle foto berdasarkan status online/offline
-                var fotoKtpUrl = ""
-                var fotoKtpSuamiUrl = ""
-                var fotoKtpIstriUrl = ""
+                // ✅ OPTION B (offline-first): submit TIDAK PERNAH menunggu upload Storage.
+                // Selalu simpan URI ke pendingFoto*Uri → SyncManager.uploadPendingPhotosForData
+                // mengangkat-nya ke Storage di background (SyncWorker / NetworkChangeWorker).
+                // Mengganti pola lama `if (online) uploadKtpImages else simpanURI` yang
+                // memblokir form sampai ±60s/foto di jaringan flaky.
+                val fotoKtpUrl = ""
+                val fotoKtpSuamiUrl = ""
+                val fotoKtpIstriUrl = ""
+                val fotoNasabahUrl = ""
 
-                // Simpan URI foto untuk upload nanti (offline mode)
-                var pendingFotoKtpUri = ""
-                var pendingFotoKtpSuamiUri = ""
-                var pendingFotoKtpIstriUri = ""
-                var pendingFotoNasabahUri = ""
-
-                var fotoNasabahUrl = ""  // ✅ BARU
-
-                if (online) {
-                    // Online: Upload foto langsung
-                    try {
-                        val (ktpUrl, ktpSuamiUrl, ktpIstriUrl) = uploadKtpImages(
-                            currentUid = currentUid,
-                            fotoKtpUri = fotoKtpUri,
-                            fotoKtpSuamiUri = fotoKtpSuamiUri,
-                            fotoKtpIstriUri = fotoKtpIstriUri
-                        )
-                        fotoKtpUrl = ktpUrl
-                        fotoKtpSuamiUrl = ktpSuamiUrl
-                        fotoKtpIstriUrl = ktpIstriUrl
-
-                        // ✅ BARU: Upload foto nasabah jika ada (gunakan fungsi yang sudah ada)
-                        if (fotoNasabahUri != null) {
-                            try {
-                                val tempId = "temp_${System.currentTimeMillis()}"
-                                fotoNasabahUrl = uploadFotoKtp(fotoNasabahUri, currentUid, tempId, "nasabah") ?: ""
-                                Log.d("TambahPelanggan", "✅ Foto nasabah berhasil diupload")
-                            } catch (e: Exception) {
-                                Log.w("TambahPelanggan", "⚠️ Gagal upload foto nasabah: ${e.message}")
-                                pendingFotoNasabahUri = fotoNasabahUri.toString()
-                            }
-                        }
-
-                        Log.d("TambahPelanggan", "✅ Foto berhasil diupload")
-                    } catch (e: Exception) {
-                        Log.w("TambahPelanggan", "⚠️ Gagal upload foto: ${e.message}")
-                        // Simpan URI untuk upload nanti
-                        pendingFotoKtpUri = fotoKtpUri?.toString() ?: ""
-                        pendingFotoKtpSuamiUri = fotoKtpSuamiUri?.toString() ?: ""
-                        pendingFotoKtpIstriUri = fotoKtpIstriUri?.toString() ?: ""
-                        pendingFotoNasabahUri = fotoNasabahUri?.toString() ?: ""  // ✅ BARU
-                    }
-                } else {
-                    // Offline: Simpan URI untuk upload nanti
-                    pendingFotoKtpUri = fotoKtpUri?.toString() ?: ""
-                    pendingFotoKtpSuamiUri = fotoKtpSuamiUri?.toString() ?: ""
-                    pendingFotoKtpIstriUri = fotoKtpIstriUri?.toString() ?: ""
-                    pendingFotoNasabahUri = fotoNasabahUri?.toString() ?: ""  // ✅ BARU
-                    Log.d("TambahPelanggan", "📱 Foto URI disimpan untuk upload nanti")
-                }
+                val pendingFotoKtpUri = fotoKtpUri?.toString() ?: ""
+                val pendingFotoKtpSuamiUri = fotoKtpSuamiUri?.toString() ?: ""
+                val pendingFotoKtpIstriUri = fotoKtpIstriUri?.toString() ?: ""
+                val pendingFotoNasabahUri = fotoNasabahUri?.toString() ?: ""
+                Log.d("TambahPelanggan", "📱 Foto URI di-queue untuk upload background (Option B)")
 
                 val base = pelangganInput.copy(
                     admin = adminVal,
@@ -2464,94 +2424,44 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     ).format(Date())
                 )
 
-                if (online) {
-                    // ✅ PERBAIKAN 5: Online mode - sync dulu, lalu simpan ke Firebase
-                    syncOfflineData {
-                        simpanPelangganKeFirebase(
-                            base,
-                            onSuccess = {
-                                Log.d("TambahPelanggan", "✅ Data berhasil disimpan ke Firebase")
-                                // Panggil callback onSuccess dari parameter
-                                onSuccess?.invoke()
-                            },
-//                            onFailure = { e ->
-//                                // Jika gagal ke Firebase, simpan ke lokal sebagai fallback
-//                                Log.w("TambahPelanggan", "⚠️ Gagal simpan ke Firebase, simpan lokal: ${e.message}")
-//                                val tempId = "local-${UUID.randomUUID()}"
-//                                val localP = base.copy(id = tempId, isSynced = false)
-//                                daftarPelanggan.add(localP)
-//                                simpanKeLokal()
-//                                onSuccess?.invoke() // Tetap sukses karena tersimpan lokal
-//                            }
-                            onFailure = { e ->
-                                // Jika gagal, data sudah tersimpan di Room DB oleh SyncManager
-                                Log.w("TambahPelanggan", "⚠️ Firebase sync pending: ${e.message}")
-                                Log.d(
-                                    "TambahPelanggan",
-                                    "✅ Data sudah di Room DB, akan retry otomatis"
-                                )
-                                onSuccess?.invoke()
-                            }
-                        )
-                    }
-//                } else {
-//                    // ✅ PERBAIKAN 6: Offline mode - simpan ke lokal dan LANGSUNG panggil onSuccess
-//                    val tempId = "local-${UUID.randomUUID()}"
-//                    val localP = base.copy(
-//                        id = tempId,
-//                        isSynced = false,
-//                        adminUid = currentUid,
-//                        cabangId = cabangId ?: ""
-//                    )
-//                    daftarPelanggan.add(localP)
-//                    simpanKeLokal()
-//
-//                    Log.d("TambahPelanggan", "📱 Data disimpan lokal (offline): $tempId")
-//                    Log.d("TambahPelanggan", "📱 Akan otomatis sync saat online")
-//
-//                    // ✅ PERBAIKAN KRITIS: Panggil onSuccess agar screen navigate back!
-//                    onSuccess?.invoke()
-//                }
-                } else {
-                    // ✅ PERBAIKAN: Offline mode - TETAP gunakan simpanPelangganKeFirebase
-                    // Ini akan menyimpan ke Room DB via SyncManager dan start Foreground Service
-                    Log.d("TambahPelanggan", "📱 Mode OFFLINE - menyimpan via SyncManager")
+                // ✅ OPTION B: SELALU simpan via SyncManager (Room) — JANGAN tunggu RTDB ACK.
+                // Wrapper syncOfflineData{} di branch online dihapus agar submit instan.
+                Log.d("TambahPelanggan", "📱 Menyimpan via SyncManager (offline-first)")
 
-                    simpanPelangganKeFirebase(
-                        base,
-                        onSuccess = {
-                            Log.d(
-                                "TambahPelanggan",
-                                "✅ Data disimpan ke Room DB, akan sync saat online"
+                simpanPelangganKeFirebase(
+                    base,
+                    onSuccess = {
+                        Log.d(
+                            "TambahPelanggan",
+                            "✅ Data disimpan ke Room DB, akan sync saat online"
+                        )
+                        onSuccess?.invoke()
+                    },
+                    onFailure = { e ->
+                        // Fallback: simpan ke lokal jika SyncManager juga gagal
+                        Log.e(
+                            "TambahPelanggan",
+                            "❌ SyncManager error, fallback ke lokal: ${e.message}"
+                        )
+                        // ✅ FIX: Cek duplikat berdasarkan NIK sebelum add ke list
+                        val nik = base.nik.trim()
+                        val alreadyExists = nik.isNotBlank() && daftarPelanggan.any { it.nik.trim() == nik }
+                        if (alreadyExists) {
+                            Log.w("TambahPelanggan", "⚠️ Skip fallback add - nasabah dengan NIK $nik sudah ada di list")
+                        } else {
+                            val tempId = "local-${UUID.randomUUID()}"
+                            val localP = base.copy(
+                                id = tempId,
+                                isSynced = false,
+                                adminUid = currentUid,
+                                cabangId = cabangId ?: ""
                             )
-                            onSuccess?.invoke()
-                        },
-                        onFailure = { e ->
-                            // Fallback: simpan ke lokal jika SyncManager juga gagal
-                            Log.e(
-                                "TambahPelanggan",
-                                "❌ SyncManager error, fallback ke lokal: ${e.message}"
-                            )
-                            // ✅ FIX: Cek duplikat berdasarkan NIK sebelum add ke list
-                            val nik = base.nik.trim()
-                            val alreadyExists = nik.isNotBlank() && daftarPelanggan.any { it.nik.trim() == nik }
-                            if (alreadyExists) {
-                                Log.w("TambahPelanggan", "⚠️ Skip fallback add - nasabah dengan NIK $nik sudah ada di list")
-                            } else {
-                                val tempId = "local-${UUID.randomUUID()}"
-                                val localP = base.copy(
-                                    id = tempId,
-                                    isSynced = false,
-                                    adminUid = currentUid,
-                                    cabangId = cabangId ?: ""
-                                )
-                                daftarPelanggan.add(localP)
-                                simpanKeLokal()
-                            }
-                            onSuccess?.invoke()
+                            daftarPelanggan.add(localP)
+                            simpanKeLokal()
                         }
-                    )
-                }
+                        onSuccess?.invoke()
+                    }
+                )
 
 //            } catch (e: Exception) {
 //                Log.e("TambahPelanggan", "❌ Error: ${e.message}")
@@ -3891,64 +3801,21 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                 resolvedCabangId = finalCabangId
 
                 // ========== UPLOAD FOTO ==========
+                // ✅ OPTION B (offline-first): submit TIDAK PERNAH menunggu upload Storage.
+                // Foto top-up tetap masuk jalur PENDING (uploadPendingPhotosForData melihat
+                // pinjamanKe > 1 dan menulis ke pendingFoto*Url, bukan ke fotoKtpUrl aktif —
+                // jadi foto pinjaman lama tidak tertimpa sebelum approval final).
                 val currentUid = currentUidForCabang
-                var newFotoKtpUrl = ""
-                var newFotoKtpSuamiUrl = ""
-                var newFotoKtpIstriUrl = ""
-                var newFotoNasabahUrl = ""
+                val newFotoKtpUrl = ""
+                val newFotoKtpSuamiUrl = ""
+                val newFotoKtpIstriUrl = ""
+                val newFotoNasabahUrl = ""
 
-                // Pending URI untuk offline mode
-                var pendingFotoKtpUri = ""
-                var pendingFotoKtpSuamiUri = ""
-                var pendingFotoKtpIstriUri = ""
-                var pendingFotoNasabahUri = ""
-
-                if (isOnline()) {
-                    Log.d("KelolaKredit", "📤 ONLINE - Uploading foto (PENDING path)...")
-
-                    try {
-                        when (tipePinjamanBaru) {
-                            "dibawah_3jt" -> {
-                                // Upload foto KTP single → folder pending
-                                fotoKtpUri?.let {
-                                    newFotoKtpUrl = uploadFotoKtp(it, currentUid, pelangganId, "ktp", isPending = true) ?: ""
-                                    Log.d("KelolaKredit", "✅ Foto KTP uploaded (pending): $newFotoKtpUrl")
-                                }
-                            }
-                            "diatas_3jt" -> {
-                                // Upload foto KTP suami → folder pending
-                                fotoKtpSuamiUri?.let {
-                                    newFotoKtpSuamiUrl = uploadFotoKtp(it, currentUid, pelangganId, "ktp_suami", isPending = true) ?: ""
-                                    Log.d("KelolaKredit", "✅ Foto KTP Suami uploaded (pending): $newFotoKtpSuamiUrl")
-                                }
-                                // Upload foto KTP istri → folder pending
-                                fotoKtpIstriUri?.let {
-                                    newFotoKtpIstriUrl = uploadFotoKtp(it, currentUid, pelangganId, "ktp_istri", isPending = true) ?: ""
-                                    Log.d("KelolaKredit", "✅ Foto KTP Istri uploaded (pending): $newFotoKtpIstriUrl")
-                                }
-                            }
-                        }
-
-                        // Upload foto nasabah (untuk semua tipe) → folder pending
-                        fotoNasabahUri?.let {
-                            newFotoNasabahUrl = uploadFotoKtp(it, currentUid, pelangganId, "nasabah", isPending = true) ?: ""
-                            Log.d("KelolaKredit", "✅ Foto Nasabah uploaded (pending): $newFotoNasabahUrl")
-                        }
-                    } catch (e: Exception) {
-                        Log.w("KelolaKredit", "⚠️ Gagal upload foto, simpan untuk nanti: ${e.message}")
-                        // Simpan URI untuk upload nanti
-                        pendingFotoKtpUri = fotoKtpUri?.toString() ?: ""
-                        pendingFotoKtpSuamiUri = fotoKtpSuamiUri?.toString() ?: ""
-                        pendingFotoKtpIstriUri = fotoKtpIstriUri?.toString() ?: ""
-                        pendingFotoNasabahUri = fotoNasabahUri?.toString() ?: ""
-                    }
-                } else {
-                    Log.d("KelolaKredit", "📱 OFFLINE - Simpan foto URI untuk nanti")
-                    pendingFotoKtpUri = fotoKtpUri?.toString() ?: ""
-                    pendingFotoKtpSuamiUri = fotoKtpSuamiUri?.toString() ?: ""
-                    pendingFotoKtpIstriUri = fotoKtpIstriUri?.toString() ?: ""
-                    pendingFotoNasabahUri = fotoNasabahUri?.toString() ?: ""
-                }
+                val pendingFotoKtpUri = fotoKtpUri?.toString() ?: ""
+                val pendingFotoKtpSuamiUri = fotoKtpSuamiUri?.toString() ?: ""
+                val pendingFotoKtpIstriUri = fotoKtpIstriUri?.toString() ?: ""
+                val pendingFotoNasabahUri = fotoNasabahUri?.toString() ?: ""
+                Log.d("KelolaKredit", "📱 Foto URI di-queue untuk upload background (Option B)")
 
                 // ========== HITUNG NILAI PINJAMAN BARU ==========
                 val calculation = calculatePinjamanValues(pinjamanBaru)
