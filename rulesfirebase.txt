@@ -140,7 +140,7 @@
       },
       "perAdmin": {
         "$adminUid": {
-          ".read": "auth != null && auth.uid === $adminUid",
+          ".read": "auth != null && (auth.uid === $adminUid || (root.child('metadata/admins').child($adminUid).child('cabang').exists() && root.child('metadata/cabang').child(root.child('metadata/admins').child($adminUid).child('cabang').val()).child('pimpinanUid').val() === auth.uid) || root.child('metadata/roles/pengawas').child(auth.uid).val() === true || root.child('metadata/roles/koordinator').child(auth.uid).val() === true)",
           ".indexOn": ["lastUpdated"]
         }
       }
