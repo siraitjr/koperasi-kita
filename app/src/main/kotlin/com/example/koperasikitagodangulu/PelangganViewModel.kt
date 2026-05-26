@@ -2356,23 +2356,34 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                 val online = isOnline()
                 Log.d("TambahPelanggan", "📱 Mode: ${if (online) "ONLINE" else "OFFLINE"}")
 
-                // ✅ PERBAIKAN 2: Dapatkan cabangId dari cache jika offline
-                val cabangId: String? = if (online) {
-                    try {
-                        val adminMeta = database.child("metadata").child("admins")
-                            .child(currentUid).get().await()
-                        adminMeta.child("cabang").getValue(String::class.java)
-                    } catch (e: Exception) {
-                        Log.w(
-                            "TambahPelanggan",
-                            "⚠️ Gagal ambil metadata, gunakan cache: ${e.message}"
-                        )
-                        _currentUserCabang.value // Fallback ke cache
-                    }
-                } else {
-                    // Offline: gunakan cached cabangId
-                    _currentUserCabang.value
+                // ✅ Option A: cache-first + bounded network read.
+                // Selaras dengan CairkanBatalNotif (PVM:5200+): hindari .get().await()
+                // tanpa batas waktu yang membekukan form di jaringan flaky.
+                // _currentUserCabang & SharedPrefs sudah dipopulate saat login oleh
+                // restoreCabangFromCacheIfBlank — network read praktis tak tersentuh
+                // kecuali kasus tepi (fresh install + login pertama bermasalah).
+                var resolvedCabangId = _currentUserCabang.value ?: ""
+                if (resolvedCabangId.isBlank()) {
+                    resolvedCabangId = sharedPrefs.getString("cached_cabang_id", "") ?: ""
                 }
+                if (resolvedCabangId.isBlank() && online) {
+                    val networkCabangId = withTimeoutOrNull(5_000L) {
+                        try {
+                            val adminMeta = database.child("metadata").child("admins")
+                                .child(currentUid).get().await()
+                            adminMeta.child("cabang").getValue(String::class.java)
+                        } catch (e: Exception) {
+                            Log.w("TambahPelanggan", "⚠️ Gagal ambil metadata cabang: ${e.message}")
+                            null
+                        }
+                    }
+                    if (!networkCabangId.isNullOrBlank()) {
+                        resolvedCabangId = networkCabangId
+                    } else {
+                        Log.w("TambahPelanggan", "⚠️ Metadata cabang timeout/blank — pakai cache (kosong)")
+                    }
+                }
+                val cabangId: String? = resolvedCabangId.ifBlank { null }
 
                 Log.d("TambahPelanggan", "📌 CabangId: $cabangId")
 
@@ -3777,13 +3788,24 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     resolvedCabangId = sharedPrefs.getString("cached_cabang_id", "") ?: "" // Prioritas 2.5: SharedPreferences (offline-safe)
                 }
                 if (resolvedCabangId.isBlank() && currentUidForCabang.isNotBlank()) {
-                    try {
-                        val adminMeta = database.child("metadata").child("admins")
-                            .child(currentUidForCabang).get().await()
-                        resolvedCabangId = adminMeta.child("cabang").getValue(String::class.java) ?: ""
+                    // ✅ Option A: bungkus dengan withTimeoutOrNull(5s) — konsisten dengan
+                    // CairkanBatalNotif (PVM:5200+) dan simpanPelangganLengkap, agar tidak
+                    // menggantung di jaringan flaky.
+                    val networkCabangId = withTimeoutOrNull(5_000L) {
+                        try {
+                            val adminMeta = database.child("metadata").child("admins")
+                                .child(currentUidForCabang).get().await()
+                            adminMeta.child("cabang").getValue(String::class.java)
+                        } catch (e: Exception) {
+                            Log.w("KelolaKredit", "⚠️ Gagal ambil cabangId dari metadata: ${e.message}")
+                            null
+                        }
+                    }
+                    if (!networkCabangId.isNullOrBlank()) {
+                        resolvedCabangId = networkCabangId
                         Log.d("KelolaKredit", "📌 CabangId dari metadata: '$resolvedCabangId'")
-                    } catch (e: Exception) {
-                        Log.w("KelolaKredit", "⚠️ Gagal ambil cabangId dari metadata: ${e.message}")
+                    } else {
+                        Log.w("KelolaKredit", "⚠️ Metadata cabang timeout/blank — pakai cache (kosong)")
                     }
                 }
                 Log.d("KelolaKredit", "📌 CabangId resolved: '$resolvedCabangId'")
