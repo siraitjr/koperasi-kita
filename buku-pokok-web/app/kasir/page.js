@@ -48,6 +48,7 @@ const JENIS_OPTIONS = [
   { value: 'transport', label: 'Transport' },
   { value: 'suntikan_dana', label: 'Suntikan Dana' },
   { value: 'pinjaman_kas', label: 'Pinjaman Kas' },
+  { value: 'saldo_awal_kas', label: 'Saldo Kas Bulan Lalu' },
   { value: 'sp', label: 'SP' },
   { value: 'pengembalian_kas', label: 'Pengembalian Kas' },
 ];
@@ -978,9 +979,6 @@ function JurnalScreen({ user, cabang, cabangList, onBack, onLogout, onNavigate }
 // FORM MODAL (Input transaksi kasir)
 // ============================================================
 function FormModal({ cabangAdmins, cabangId, bulan, onClose, onSuccess }) {
-  const formJenisOptions = bulan === '2026-04'
-    ? [...JENIS_OPTIONS, { value: 'saldo_awal_kas', label: 'Saldo Awal Kas' }]
-    : JENIS_OPTIONS;
   const [jenis, setJenis] = useState('uang_kas');
   const [arah, setArah] = useState('keluar');
   const [jumlah, setJumlah] = useState('');
@@ -1065,7 +1063,7 @@ function FormModal({ cabangAdmins, cabangId, bulan, onClose, onSuccess }) {
           <label style={{ fontSize: 13, fontWeight: 600, marginBottom: 6, display: 'block' }}>Jenis Transaksi</label>
             <select value={jenis} onChange={(e) => { const v = e.target.value; setJenis(v); setArah(JENIS_ARAH[v] || 'keluar'); setTargetAdmin(''); if (v === 'penggajian') setTargetBuku(['kas_penuntun', 'ekspedisi']); }}
             style={{ width: '100%', padding: '10px 14px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 14, background: 'var(--card)' }}>
-            {formJenisOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            {JENIS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
         </div>
 
