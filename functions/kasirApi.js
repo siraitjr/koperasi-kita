@@ -37,7 +37,7 @@ async function getCachedMetadata() {
 // =========================================================================
 // CONSTANTS
 // =========================================================================
-const JENIS_VALID = ['uang_kas', 'penggajian', 'transport', 'suntikan_dana', 'pinjaman_kas', 'sp', 'saldo_awal_kas'];
+const JENIS_VALID = ['uang_kas', 'penggajian', 'transport', 'suntikan_dana', 'pinjaman_kas', 'sp', 'saldo_awal_kas', 'pengembalian_kas'];
 const ARAH_VALID = ['masuk', 'keluar'];
 
 const JENIS_LABELS = {
@@ -47,7 +47,8 @@ const JENIS_LABELS = {
     suntikan_dana: 'Suntikan Dana',
     pinjaman_kas: 'Pinjaman Kas',
     sp: 'SP',
-    saldo_awal_kas: 'Saldo Awal Kas'
+    saldo_awal_kas: 'Saldo Awal Kas',
+    pengembalian_kas: 'Pengembalian Kas'
 };
 
 // =========================================================================
