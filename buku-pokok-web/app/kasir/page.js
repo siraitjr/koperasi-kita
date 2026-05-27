@@ -2342,14 +2342,17 @@ function BukuTunaiScreen({ user, cabang, cabangList, onBack, onLogout, onNavigat
       .finally(() => setLoading(false));
   }, [activeCabang?.id, selectedBulan]);
 
-  // Tanggal dalam bulan yang dipilih
+  // Tanggal dalam bulan yang dipilih (skip Minggu & tanggal merah, sama
+  // dengan Buku Pokok / Buku Rekap)
   const [selBulanYear, selBulanMonth] = selectedBulan.split('-').map(Number);
   const dates = (bukuData?.tanggalList || []).filter(d => {
     const parts = d.split(' ');
     if (parts.length < 3) return false;
     const dMonth = BULAN_INDO.indexOf(parts[1]) + 1;
     const dYear = parseInt(parts[2]);
-    return dYear === selBulanYear && dMonth === selBulanMonth;
+    if (dYear !== selBulanYear || dMonth !== selBulanMonth) return false;
+    const dateObj = parseTanggalIndo(d);
+    return dateObj && isHariKerja(dateObj);
   });
   const currentDate = selectedDate || dates[0] || null;
 
@@ -2651,7 +2654,12 @@ function BukuEkspedisiScreen({ user, cabang, cabangList, onBack, onLogout, onNav
       if (date && date >= monthStart && date <= effectiveEndEK) dateSet.add(tgl);
     });
 
-    const sortedDates = Array.from(dateSet).sort((a, b) => parseDateStr(a) - parseDateStr(b));
+    // Skip Minggu & tanggal merah agar konsisten dengan Buku Pokok / Buku Rekap
+    // / Kas Penuntun. tunaiKas per baris adalah net flow harian (bukan running
+    // balance), jadi menghapus baris non-hari-kerja aman terhadap perhitungan.
+    const sortedDates = Array.from(dateSet)
+      .filter(d => { const dt = parseDateStr(d); return dt && isHariKerja(dt); })
+      .sort((a, b) => parseDateStr(a) - parseDateStr(b));
 
     // Hitung Tunai Pasar per tanggal (agregat semua resort)
     const tunaiPasarPerDate = {};
