@@ -2383,7 +2383,12 @@ function BukuTunaiScreen({ user, cabang, cabangList, onBack, onLogout, onNavigat
     if (!activeCabang) return;
     setBukuData(null);
     setSelectedDate(null);
-    getBukuPokok({ cabangId: activeCabang.id, adminUid: '', status: 'aktif' })
+    // status 'semua' (bukan 'aktif'): nasabah lunas-hari-ini & MENUNGGU_PENCAIRAN
+    // tetap menyumbang storting/drop pada tanggalnya. Konsisten dengan
+    // BukuRekapScreen (line 1530), BukuEkspedisiScreen (line 2673), dan
+    // KasPenuntunScreen (line 1993) — wajib agar Tunai Pasar per resort di
+    // Buku Tunai cocok dengan baris per resort Buku Rekap untuk tanggal sama.
+    getBukuPokok({ cabangId: activeCabang.id, adminUid: '', status: 'semua' })
       .then(result => {
         if (result.success && result.type === 'buku_pokok') {
           setBukuData(result.data);
@@ -2438,29 +2443,22 @@ function BukuTunaiScreen({ user, cabang, cabangList, onBack, onLogout, onNavigat
 
     const isDropBaru = (n) => (n.pinjamanKe || 1) <= 1;
 
+    // Pre-build nasabahByAdmin sekali; computeTunaiKasPerDate dipanggil
+    // per resort dengan admins=[adm] agar dapat per-resort tunaiPasar/kasPakai
+    // dari helper yang sama dengan totals Buku Rekap & Buku Ekspedisi.
+    const nasabahByAdmin = {};
+    admins.forEach(adm => {
+      nasabahByAdmin[adm.uid] = allNasabah.filter(n => n.adminUid === adm.uid);
+    });
+
     const rows = [];
     for (const adm of admins) {
-      const resortNasabah = allNasabah.filter(n => n.adminUid === adm.uid);
-
       // Kasbon Pagi = total uang_kas yang dikirim kasir ke admin ini pada tanggal ini
       const kasbonPagi = kasbonMap[adm.uid] || 0;
 
-      // Hitung Tunai Pasar & Kas Pakai menggunakan rumus yang sama dengan Buku Rekap untuk tanggal ini
-      const droppedOnDate = resortNasabah.filter(n => (n.tanggalPencairan || '').trim() === dateStr);
-      const totalDrop = droppedOnDate.reduce((s, n) => s + (n.besarPinjaman || 0), 0);
-      const adminFee = Math.round(totalDrop * 0.05);
-      const tabungan = Math.round(totalDrop * 0.05);
-      let storting = 0;
-      resortNasabah.forEach(n => {
-        const pay = n.pembayaran?.[dateStr];
-        if (pay) storting += pay.total || 0;
-      });
-      const debitAsli = storting + adminFee + tabungan;
-      const kredit = totalDrop; // pencairanTabungan = 0
-      // Jika kredit > debit asli, kas pakai = selisih, tunai pasar = 0
-      // Jika debit asli >= kredit, kas pakai = 0, tunai pasar = debit - kredit
-      const kasPakai = kredit > debitAsli ? kredit - debitAsli : 0;
-      const tunaiPasar = debitAsli >= kredit ? debitAsli - kredit : 0;
+      // Tunai Pasar & Kas Pakai per resort — via helper top-level
+      // computeTunaiKasPerDate (Source of Truth: Buku Rekap baris per resort).
+      const { tunaiPasar, kasPakai } = computeTunaiKasPerDate(dateStr, nasabahByAdmin, [adm]);
 
       // Kembali Kasbon = Kasbon Pagi - Kas Pakai
       const kembaliKasbon = kasbonPagi - kasPakai;
