@@ -2586,6 +2586,13 @@ function BukuEkspedisiScreen({ user, cabang, cabangList, onBack, onLogout, onNav
 
   const bulanOptions = generateBulanOptions();
 
+  // Saldo Kas Bulan Lalu = entry kasir bulan berjalan dengan jenis 'saldo_awal_kas'.
+  // Sama pola dengan ringkasan Jurnal Kasir (kasir/page.js:872). Default 0 bila
+  // belum diinput kasir di bulan ini.
+  const saldoKasBulanLalu = kasirEntries
+    .filter(e => e.jenis === 'saldo_awal_kas')
+    .reduce((s, e) => s + (e.jumlah || 0), 0);
+
   useEffect(() => {
     if (!activeCabang) return;
     setLoading(true);
@@ -2776,7 +2783,7 @@ function BukuEkspedisiScreen({ user, cabang, cabangList, onBack, onLogout, onNav
 
       <main style={{ padding: 20 }} className="fade-in">
         {/* Filter */}
-        <div style={{ display: 'flex', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 12, marginBottom: 20, flexWrap: 'wrap', alignItems: 'center' }}>
           {!isUnit && cabangList.length > 1 && (
             <select value={activeCabang?.id || ''} onChange={(e) => setActiveCabang(cabangList.find(c => c.id === e.target.value))}
               style={{ padding: '8px 12px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 13, background: 'var(--card)' }}>
@@ -2787,6 +2794,29 @@ function BukuEkspedisiScreen({ user, cabang, cabangList, onBack, onLogout, onNav
             style={{ padding: '8px 12px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 13, background: 'var(--card)' }}>
             {bulanOptions.map(o => <option key={o.key} value={o.key}>{o.label}</option>)}
           </select>
+          {/* Saldo Kas Bulan Lalu — dorong ke kanan dengan marginLeft:auto agar
+              tidak mengganggu alignment dropdown filter di kiri */}
+          <div style={{
+            marginLeft: 'auto',
+            display: 'flex', flexDirection: 'column', alignItems: 'flex-end',
+            padding: '6px 14px', borderRadius: 10,
+            border: '1px solid var(--border)', background: 'var(--card)',
+            minWidth: 180,
+          }}>
+            <span style={{
+              fontSize: 11, fontWeight: 600, color: 'var(--text-muted)',
+              textTransform: 'uppercase', letterSpacing: 0.4,
+            }}>
+              Saldo Kas Bulan Lalu
+            </span>
+            <span style={{
+              fontSize: 16, fontWeight: 700,
+              fontFamily: "'DM Mono', monospace",
+              color: 'var(--text)',
+            }}>
+              {formatRp(saldoKasBulanLalu)}
+            </span>
+          </div>
         </div>
 
         {loading ? (
