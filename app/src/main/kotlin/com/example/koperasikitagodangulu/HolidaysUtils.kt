@@ -30,6 +30,7 @@ object HolidayUtils {
             Pair(3, 4),
             Pair(1, 5),
             Pair(14, 5),
+            Pair(27, 5),
             Pair(16, 6),
             Pair(17, 8),
             Pair(25, 8),

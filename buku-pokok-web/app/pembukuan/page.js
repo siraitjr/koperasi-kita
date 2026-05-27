@@ -1115,7 +1115,7 @@ function getKategoriNasabah(nasabah) {
       : new Date(selectedYear, selectedMonth + 1, 0); // Hari terakhir bulan itu
 
     // Generate hari kerja bulan yang dipilih (skip Minggu & tanggal merah)
-    const LIBUR_NASIONAL_SG = [[1,1],[16,1],[17,2],[19,3],[21,3],[3,4],[1,5],[14,5],[16,6],[17,8],[25,8],[25,12]];
+    const LIBUR_NASIONAL_SG = [[1,1],[16,1],[17,2],[19,3],[21,3],[3,4],[1,5],[14,5],[27,5],[16,6],[17,8],[25,8],[25,12]];
     const isHariKerjaSG = (d) => {
       if (d.getDay() === 0) return false;
       const dd = d.getDate(), mm = d.getMonth() + 1;

@@ -106,6 +106,7 @@ const LIBUR_NASIONAL = [
   [3, 4],   // Apr 3  — Hari Raya Idul Fitri (cuti bersama)
   [1, 5],   // Mei 1  — Hari Buruh
   [14, 5],  // Mei 14 — Kenaikan Isa Almasih
+  [27, 5],  // Mei 27 — Hari Raya Waisak
   [16, 6],  // Jun 16 — Hari Raya Idul Adha
   [17, 8],  // Agu 17 — HUT RI
   [25, 8],  // Agu 25 — Maulid Nabi
