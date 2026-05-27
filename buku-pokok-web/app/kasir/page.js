@@ -153,6 +153,44 @@ function generateBulanOptions() {
 }
 
 // =========================================================================
+// Tunai Pasar & Kas Pakai per tanggal — Source of Truth: Buku Rekap.
+//
+// Wajib dipakai Kas Penuntun, Buku Ekspedisi, dan helper saldoKasBulanLalu
+// agar nilai cocok rupiah-per-rupiah dengan "Total Hari Ini" Buku Rekap.
+//
+// Logika identik dengan baris per-resort di BukuRekapScreen: hitung debit
+// & kredit PER RESORT, ambil max(debit-kredit, 0) untuk tunaiPasar dan
+// max(kredit-debit, 0) untuk kasPakai per resort, lalu jumlahkan.
+//
+// JANGAN pakai agregat global (storting/drop seluruh cabang lalu hitung
+// selisih) — bila satu resort surplus dan resort lain defisit, agregat
+// global akan saling meng-offset dan hasilnya bisa beda tanda/jumlah dari
+// per-resort sum. Bug ini ada di BukuEkspedisi versi lama.
+//
+// Caller di-harapkan membangun `nasabahByAdmin` (object keyed by adminUid)
+// satu kali di luar loop tanggal — perf-friendly untuk iterasi banyak hari.
+// =========================================================================
+function computeTunaiKasPerDate(dateStr, nasabahByAdmin, admins) {
+  let totalTunaiPasar = 0, totalKasPakai = 0;
+  for (const adm of (admins || [])) {
+    const resortNasabah = (nasabahByAdmin && nasabahByAdmin[adm.uid]) || [];
+    let totalStorting = 0, totalDrop = 0;
+    resortNasabah.forEach(n => {
+      const pay = n.pembayaran?.[dateStr];
+      if (pay) totalStorting += pay.total || 0;
+      if ((n.tanggalPencairan || '').trim() === dateStr) totalDrop += n.besarPinjaman || 0;
+    });
+    const adminFee = Math.round(totalDrop * 0.05);
+    const tabungan = Math.round(totalDrop * 0.05);
+    const debitAsli = totalStorting + adminFee + tabungan;
+    const kreditVal = totalDrop;
+    totalTunaiPasar += debitAsli >= kreditVal ? debitAsli - kreditVal : 0;
+    totalKasPakai += kreditVal > debitAsli ? kreditVal - debitAsli : 0;
+  }
+  return { tunaiPasar: totalTunaiPasar, kasPakai: totalKasPakai };
+}
+
+// =========================================================================
 // Saldo Kas Bulan Lalu — helper bersama untuk Kas Penuntun & Buku Ekspedisi
 // agar nilai keduanya pasti identik. Replikasi logika asli Kas Penuntun.
 //
@@ -193,26 +231,6 @@ function computeSaldoKasBulanLalu({ bukuData, currentMonthEntries, prevMonthEntr
     nasabahByAdmin[adm.uid] = allNasabah.filter(n => n.adminUid === adm.uid);
   });
 
-  const computeTunaiKasPerDate = (dateStr) => {
-    let totalTunaiPasar = 0, totalKasPakai = 0;
-    for (const adm of admins) {
-      const resortNasabah = nasabahByAdmin[adm.uid] || [];
-      let totalStorting = 0, totalDrop = 0;
-      resortNasabah.forEach(n => {
-        const pay = n.pembayaran?.[dateStr];
-        if (pay) totalStorting += pay.total || 0;
-        if ((n.tanggalPencairan || '').trim() === dateStr) totalDrop += n.besarPinjaman || 0;
-      });
-      const adminFee = Math.round(totalDrop * 0.05);
-      const tabungan = Math.round(totalDrop * 0.05);
-      const debitAsli = totalStorting + adminFee + tabungan;
-      const kreditVal = totalDrop;
-      totalTunaiPasar += debitAsli >= kreditVal ? debitAsli - kreditVal : 0;
-      totalKasPakai += kreditVal > debitAsli ? kreditVal - debitAsli : 0;
-    }
-    return { tunaiPasar: totalTunaiPasar, kasPakai: totalKasPakai };
-  };
-
   const [yyyy, mm] = bulan.split('-');
   const prevMonthStart = new Date(parseInt(yyyy), parseInt(mm) - 2, 1);
   const prevMonthEnd = new Date(parseInt(yyyy), parseInt(mm) - 1, 0);
@@ -245,7 +263,7 @@ function computeSaldoKasBulanLalu({ bukuData, currentMonthEntries, prevMonthEntr
   let prevRunning = 0;
   let prevTunaiAccum = 0;
   prevSortedDates.forEach(dateStr => {
-    const { tunaiPasar, kasPakai } = computeTunaiKasPerDate(dateStr);
+    const { tunaiPasar, kasPakai } = computeTunaiKasPerDate(dateStr, nasabahByAdmin, admins);
 
     let suntikan = 0, pinjaman = 0, buVal = 0;
     prevEntries.forEach(e => {
@@ -2009,35 +2027,13 @@ function KasPenuntunScreen({ user, cabang, cabangList, onBack, onLogout, onNavig
       return new Date(parseInt(parts[2]), m, parseInt(parts[0]));
     };
 
-    // Helper: hitung tunaiPasar & kasPakai per tanggal, dihitung PER RESORT lalu dijumlah
-    // (sama seperti Buku Rekap agar nilainya cocok)
+    // Index nasabah per resort sekali, dipakai computeTunaiKasPerDate (helper
+    // top-level) di loop tanggal di bawah agar tidak re-filter per hari.
     const admins = activeCabang?.admins || [];
     const nasabahByAdmin = {};
     admins.forEach(adm => {
       nasabahByAdmin[adm.uid] = allNasabah.filter(n => n.adminUid === adm.uid);
     });
-
-    const computeTunaiKasPerDate = (dateStr) => {
-      let totalTunaiPasar = 0, totalKasPakai = 0;
-
-      for (const adm of admins) {
-        const resortNasabah = nasabahByAdmin[adm.uid] || [];
-        let totalStorting = 0, totalDrop = 0;
-        resortNasabah.forEach(n => {
-          const pay = n.pembayaran?.[dateStr];
-          if (pay) totalStorting += pay.total || 0;
-          if ((n.tanggalPencairan || '').trim() === dateStr) totalDrop += n.besarPinjaman || 0;
-        });
-        const adminFee = Math.round(totalDrop * 0.05);
-        const tabungan = Math.round(totalDrop * 0.05);
-        const debitAsli = totalStorting + adminFee + tabungan;
-        const kreditVal = totalDrop;
-        totalTunaiPasar += debitAsli >= kreditVal ? debitAsli - kreditVal : 0;
-        totalKasPakai += kreditVal > debitAsli ? kreditVal - debitAsli : 0;
-      }
-
-      return { tunaiPasar: totalTunaiPasar, kasPakai: totalKasPakai };
-    };
 
     // ===== Compute Saldo Kas Bulan Lalu (helper bersama dengan Buku Ekspedisi) =====
     const saldoKasBulanLalu = computeSaldoKasBulanLalu({
@@ -2086,11 +2082,12 @@ function KasPenuntunScreen({ user, cabang, cabangList, onBack, onLogout, onNavig
       .filter(d => { const dt = parseDateStr(d); return dt && isHariKerja(dt); })
       .sort((a, b) => parseDateStr(a) - parseDateStr(b));
 
-    // Hitung tunaiPasar & kasPakai per tanggal
+    // Hitung tunaiPasar & kasPakai per tanggal — via helper top-level
+    // (sumber kebenaran: Buku Rekap "Total Hari Ini").
     const tunaiPasarPerDate = {};
     const kasPakaiPerDate = {};
     sortedDates.forEach(dateStr => {
-      const { tunaiPasar, kasPakai } = computeTunaiKasPerDate(dateStr);
+      const { tunaiPasar, kasPakai } = computeTunaiKasPerDate(dateStr, nasabahByAdmin, admins);
       tunaiPasarPerDate[dateStr] = tunaiPasar;
       kasPakaiPerDate[dateStr] = kasPakai;
     });
@@ -2750,18 +2747,20 @@ function BukuEkspedisiScreen({ user, cabang, cabangList, onBack, onLogout, onNav
       .filter(d => { const dt = parseDateStr(d); return dt && isHariKerja(dt); })
       .sort((a, b) => parseDateStr(a) - parseDateStr(b));
 
-    // Hitung Tunai Pasar per tanggal (agregat semua resort)
+    // Hitung Tunai Pasar per tanggal — via helper top-level computeTunaiKasPerDate
+    // (sumber kebenaran: Buku Rekap "Total Hari Ini" baris tunaiPasar).
+    // Versi lama memakai agregat global (storting+5%+5% - drop) yang bisa
+    // berbeda tanda/jumlah dari per-resort sum bila ada resort surplus &
+    // resort lain defisit. Sekarang persis sama dengan Buku Rekap.
+    const admins = activeCabang?.admins || [];
+    const nasabahByAdmin = {};
+    admins.forEach(adm => {
+      nasabahByAdmin[adm.uid] = allNasabah.filter(n => n.adminUid === adm.uid);
+    });
     const tunaiPasarPerDate = {};
     sortedDates.forEach(dateStr => {
-      let totalStorting = 0, totalDrop = 0;
-      allNasabah.forEach(n => {
-        const pay = n.pembayaran?.[dateStr];
-        if (pay) totalStorting += pay.total || 0;
-        if ((n.tanggalPencairan || '').trim() === dateStr) totalDrop += n.besarPinjaman || 0;
-      });
-      const adminFee = Math.round(totalDrop * 0.05);
-      const tabungan = Math.round(totalDrop * 0.05);
-      tunaiPasarPerDate[dateStr] = (totalStorting + adminFee + tabungan) - totalDrop;
+      const { tunaiPasar } = computeTunaiKasPerDate(dateStr, nasabahByAdmin, admins);
+      tunaiPasarPerDate[dateStr] = tunaiPasar;
     });
 
     // Hitung nilai dari jurnal kasir per tanggal
