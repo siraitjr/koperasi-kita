@@ -152,6 +152,126 @@ function generateBulanOptions() {
   return options;
 }
 
+// =========================================================================
+// Saldo Kas Bulan Lalu — helper bersama untuk Kas Penuntun & Buku Ekspedisi
+// agar nilai keduanya pasti identik. Replikasi logika asli Kas Penuntun.
+//
+// Path A (override manual): bila ada entry kasir di bulan berjalan dengan
+//   jenis === 'saldo_awal_kas', pakai jumlah-nya langsung.
+// Path B (replay dinamis): replay ledger Kas Penuntun harian bulan
+//   sebelumnya (Senin–Sabtu non-hari-libur), akumulasi running balance,
+//   return saldo akhir.
+//
+// Wajib di-pass kasirEntries bulan berjalan & bulan sebelumnya. Bila
+// data belum siap (bukuData/nasabah kosong), return 0.
+// =========================================================================
+function computeSaldoKasBulanLalu({ bukuData, currentMonthEntries, prevMonthEntries, bulan, activeCabang }) {
+  if (!bukuData?.nasabah || !bulan) return 0;
+
+  // Path A: override manual
+  const saldoAwalEntry = (currentMonthEntries || []).find(e => e.jenis === 'saldo_awal_kas');
+  if (saldoAwalEntry) return saldoAwalEntry.jumlah || 0;
+
+  // Path B: replay bulan sebelumnya
+  const allNasabah = bukuData.nasabah;
+  const admins = activeCabang?.admins || [];
+  const prevEntries = prevMonthEntries || [];
+
+  const BULAN_MAP_REV = {};
+  BULAN_INDO.forEach((b, i) => { BULAN_MAP_REV[b] = i; });
+  const parseDateStr = (s) => {
+    if (!s) return null;
+    const parts = s.split(' ');
+    if (parts.length !== 3) return null;
+    const m = BULAN_MAP_REV[parts[1]];
+    if (m === undefined) return null;
+    return new Date(parseInt(parts[2]), m, parseInt(parts[0]));
+  };
+
+  const nasabahByAdmin = {};
+  admins.forEach(adm => {
+    nasabahByAdmin[adm.uid] = allNasabah.filter(n => n.adminUid === adm.uid);
+  });
+
+  const computeTunaiKasPerDate = (dateStr) => {
+    let totalTunaiPasar = 0, totalKasPakai = 0;
+    for (const adm of admins) {
+      const resortNasabah = nasabahByAdmin[adm.uid] || [];
+      let totalStorting = 0, totalDrop = 0;
+      resortNasabah.forEach(n => {
+        const pay = n.pembayaran?.[dateStr];
+        if (pay) totalStorting += pay.total || 0;
+        if ((n.tanggalPencairan || '').trim() === dateStr) totalDrop += n.besarPinjaman || 0;
+      });
+      const adminFee = Math.round(totalDrop * 0.05);
+      const tabungan = Math.round(totalDrop * 0.05);
+      const debitAsli = totalStorting + adminFee + tabungan;
+      const kreditVal = totalDrop;
+      totalTunaiPasar += debitAsli >= kreditVal ? debitAsli - kreditVal : 0;
+      totalKasPakai += kreditVal > debitAsli ? kreditVal - debitAsli : 0;
+    }
+    return { tunaiPasar: totalTunaiPasar, kasPakai: totalKasPakai };
+  };
+
+  const [yyyy, mm] = bulan.split('-');
+  const prevMonthStart = new Date(parseInt(yyyy), parseInt(mm) - 2, 1);
+  const prevMonthEnd = new Date(parseInt(yyyy), parseInt(mm) - 1, 0);
+
+  const prevDateSet = new Set();
+  allNasabah.forEach(n => {
+    if (n.pembayaran) {
+      Object.keys(n.pembayaran).forEach(d => {
+        const date = parseDateStr(d);
+        if (date && date >= prevMonthStart && date <= prevMonthEnd) prevDateSet.add(d);
+      });
+    }
+    const tglCair = (n.tanggalPencairan || '').trim();
+    if (tglCair) {
+      const date = parseDateStr(tglCair);
+      if (date && date >= prevMonthStart && date <= prevMonthEnd) prevDateSet.add(tglCair);
+    }
+  });
+  prevEntries.forEach(e => {
+    const tgl = e.tanggal;
+    if (!tgl) return;
+    const date = parseDateStr(tgl);
+    if (date && date >= prevMonthStart && date <= prevMonthEnd) prevDateSet.add(tgl);
+  });
+
+  const prevSortedDates = Array.from(prevDateSet)
+    .filter(d => { const dt = parseDateStr(d); return dt && isHariKerja(dt); })
+    .sort((a, b) => parseDateStr(a) - parseDateStr(b));
+
+  let prevRunning = 0;
+  let prevTunaiAccum = 0;
+  prevSortedDates.forEach(dateStr => {
+    const { tunaiPasar, kasPakai } = computeTunaiKasPerDate(dateStr);
+
+    let suntikan = 0, pinjaman = 0, buVal = 0;
+    prevEntries.forEach(e => {
+      if (e.tanggal !== dateStr) return;
+      if (e.jenis === 'suntikan_dana' && e.arah === 'masuk') suntikan += e.jumlah || 0;
+      if (e.jenis === 'pinjaman_kas' && e.arah === 'masuk') pinjaman += e.jumlah || 0;
+      if (e.jenis === 'penggajian' && e.arah === 'keluar') {
+        const buku = e.targetBuku;
+        if (!buku || (Array.isArray(buku) && buku.includes('kas_penuntun'))) buVal += e.jumlah || 0;
+      }
+    });
+
+    const dropPusat = suntikan + pinjaman;
+    const saldoKas = prevRunning + dropPusat;
+    const tunaiPasarTotal = tunaiPasar + prevTunaiAccum;
+    const debit = tunaiPasarTotal + saldoKas;
+    const kredit = kasPakai + buVal;
+    const saldoAkhir = debit - kredit;
+
+    prevRunning = saldoAkhir;
+    prevTunaiAccum = tunaiPasarTotal;
+  });
+
+  return prevRunning;
+}
+
 
 // =========================================================================
 // MAIN COMPONENT
@@ -1919,74 +2039,17 @@ function KasPenuntunScreen({ user, cabang, cabangList, onBack, onLogout, onNavig
       return { tunaiPasar: totalTunaiPasar, kasPakai: totalKasPakai };
     };
 
-    // ===== Compute Saldo Kas Bulan Lalu (dari data bulan sebelumnya) =====
-    const [yyyy, mm] = bulan.split('-');
-    const prevMonthStart = new Date(parseInt(yyyy), parseInt(mm) - 2, 1);
-    const prevMonthEnd = new Date(parseInt(yyyy), parseInt(mm) - 1, 0);
-
-    let saldoKasBulanLalu = 0;
-    const saldoAwalEntry = kasirEntries.find(e => e.jenis === 'saldo_awal_kas');
-    if (saldoAwalEntry) {
-      saldoKasBulanLalu = saldoAwalEntry.jumlah || 0;
-    } else {
-      // Kumpulkan tanggal-tanggal bulan sebelumnya
-      const prevDateSet = new Set();
-      allNasabah.forEach(n => {
-        if (n.pembayaran) {
-          Object.keys(n.pembayaran).forEach(d => {
-            const date = parseDateStr(d);
-            if (date && date >= prevMonthStart && date <= prevMonthEnd) prevDateSet.add(d);
-          });
-        }
-        const tglCair = (n.tanggalPencairan || '').trim();
-        if (tglCair) {
-          const date = parseDateStr(tglCair);
-          if (date && date >= prevMonthStart && date <= prevMonthEnd) prevDateSet.add(tglCair);
-        }
-      });
-      prevKasirEntries.forEach(e => {
-        const tgl = e.tanggal;
-        if (!tgl) return;
-        const date = parseDateStr(tgl);
-        if (date && date >= prevMonthStart && date <= prevMonthEnd) prevDateSet.add(tgl);
-      });
-
-      const prevSortedDates = Array.from(prevDateSet)
-        .filter(d => { const dt = parseDateStr(d); return dt && isHariKerja(dt); })
-        .sort((a, b) => parseDateStr(a) - parseDateStr(b));
-
-      // Hitung saldo bulan lalu menggunakan logika akumulasi yang sama
-      let prevRunning = 0;
-      let prevTunaiAccum = 0;
-      prevSortedDates.forEach(dateStr => {
-        const { tunaiPasar, kasPakai } = computeTunaiKasPerDate(dateStr);
-
-        let suntikan = 0, pinjaman = 0, buVal = 0;
-        prevKasirEntries.forEach(e => {
-          if (e.tanggal !== dateStr) return;
-          if (e.jenis === 'suntikan_dana' && e.arah === 'masuk') suntikan += e.jumlah || 0;
-          if (e.jenis === 'pinjaman_kas' && e.arah === 'masuk') pinjaman += e.jumlah || 0;
-          if (e.jenis === 'penggajian' && e.arah === 'keluar') {
-            const buku = e.targetBuku;
-            if (!buku || (Array.isArray(buku) && buku.includes('kas_penuntun'))) buVal += e.jumlah || 0;
-          }
-        });
-
-        const dropPusat = suntikan + pinjaman;
-        const saldoKas = prevRunning + dropPusat;
-        const tunaiPasarTotal = tunaiPasar + prevTunaiAccum;
-        const debit = tunaiPasarTotal + saldoKas;
-        const kredit = kasPakai + buVal;
-        const saldoAkhir = debit - kredit;
-
-        prevRunning = saldoAkhir;
-        prevTunaiAccum = tunaiPasarTotal;
-      });
-
-      saldoKasBulanLalu = prevRunning;
-    }
+    // ===== Compute Saldo Kas Bulan Lalu (helper bersama dengan Buku Ekspedisi) =====
+    const saldoKasBulanLalu = computeSaldoKasBulanLalu({
+      bukuData,
+      currentMonthEntries: kasirEntries,
+      prevMonthEntries: prevKasirEntries,
+      bulan,
+      activeCabang,
+    });
 
     // ===== Data bulan ini =====
+    const [yyyy, mm] = bulan.split('-');
     const monthStart = new Date(parseInt(yyyy), parseInt(mm) - 1, 1);
     const monthEnd = new Date(parseInt(yyyy), parseInt(mm), 0);
 
@@ -2580,18 +2643,30 @@ function BukuEkspedisiScreen({ user, cabang, cabangList, onBack, onLogout, onNav
   const [bulan, setBulan] = useState(getCurrentMonthKey());
   const [bukuData, setBukuData] = useState(null);
   const [kasirEntries, setKasirEntries] = useState([]);
+  const [prevKasirEntries, setPrevKasirEntries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [showFaktur, setShowFaktur] = useState(null);
 
   const bulanOptions = generateBulanOptions();
 
-  // Saldo Kas Bulan Lalu = entry kasir bulan berjalan dengan jenis 'saldo_awal_kas'.
-  // Sama pola dengan ringkasan Jurnal Kasir (kasir/page.js:872). Default 0 bila
-  // belum diinput kasir di bulan ini.
-  const saldoKasBulanLalu = kasirEntries
-    .filter(e => e.jenis === 'saldo_awal_kas')
-    .reduce((s, e) => s + (e.jumlah || 0), 0);
+  // prevBulan = bulan sebelumnya (YYYY-MM) — dibutuhkan helper saldoKasBulanLalu
+  // untuk Path B (replay ledger bulan sebelumnya).
+  const prevBulan = (() => {
+    const [y, m] = bulan.split('-');
+    const d = new Date(parseInt(y), parseInt(m) - 2, 1);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  })();
+
+  // Saldo Kas Bulan Lalu — pakai helper bersama agar identik dengan kolom
+  // "Saldo Kas Bulan Lalu" di Kas Penuntun (Path A override + Path B replay).
+  const saldoKasBulanLalu = computeSaldoKasBulanLalu({
+    bukuData,
+    currentMonthEntries: kasirEntries,
+    prevMonthEntries: prevKasirEntries,
+    bulan,
+    activeCabang,
+  });
 
   useEffect(() => {
     if (!activeCabang) return;
@@ -2600,12 +2675,18 @@ function BukuEkspedisiScreen({ user, cabang, cabangList, onBack, onLogout, onNav
     Promise.all([
       getBukuPokok({ cabangId: activeCabang.id, adminUid: '', status: 'semua' }),
       getKasirEntries({ cabangId: activeCabang.id, bulan }),
-    ]).then(([bukuResult, kasirResult]) => {
+      getKasirEntries({ cabangId: activeCabang.id, bulan: prevBulan }),
+    ]).then(([bukuResult, kasirResult, prevKasirResult]) => {
       if (bukuResult.success && bukuResult.type === 'buku_pokok') {
         setBukuData(bukuResult.data);
       }
       if (kasirResult.success) {
         setKasirEntries(kasirResult.data.entries || []);
+      }
+      if (prevKasirResult.success) {
+        setPrevKasirEntries(prevKasirResult.data.entries || []);
+      } else {
+        setPrevKasirEntries([]);
       }
     }).catch(err => {
       setError('Gagal memuat data: ' + err.message);
