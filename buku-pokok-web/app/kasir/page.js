@@ -1990,7 +1990,11 @@ function KasPenuntunScreen({ user, cabang, cabangList, onBack, onLogout, onNavig
     setLoading(true);
     setError('');
     Promise.all([
-      getBukuPokok({ cabangId: activeCabang.id, adminUid: '', status: 'aktif' }),
+      // status 'semua' (bukan 'aktif'): nasabah lunas-hari-ini & MENUNGGU_PENCAIRAN
+      // tetap menyumbang storting/drop pada tanggalnya. Konsisten dengan
+      // BukuRekapScreen (line 1530) & BukuEkspedisiScreen (line 2673) — wajib
+      // agar computeTunaiKasPerDate menghasilkan nilai identik di tiga layar.
+      getBukuPokok({ cabangId: activeCabang.id, adminUid: '', status: 'semua' }),
       getKasirEntries({ cabangId: activeCabang.id, bulan }),
       getKasirEntries({ cabangId: activeCabang.id, bulan: prevBulan }),
     ]).then(([bukuResult, kasirResult, prevKasirResult]) => {
