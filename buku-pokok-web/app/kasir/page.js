@@ -1143,7 +1143,7 @@ function FormModal({ cabangAdmins, cabangId, bulan, onClose, onSuccess }) {
   const handleSubmit = async () => {
     const nominal = parseInt(jumlah.replace(/\D/g, ''), 10);
     if (!nominal || nominal <= 0) { setError('Jumlah harus diisi'); return; }
-    if (jenis === 'uang_kas' && !targetAdmin) { setError('Pilih admin lapangan yang dituju'); return; }
+    if (jenis === 'uang_kas' && !targetAdmin) { setError('Pilih Admin Lapangan terlebih dahulu!'); return; }
     if (jenis === 'penggajian' && targetBuku.length === 0) { setError('Pilih minimal satu buku tujuan BU'); return; }
     setLoading(true);
     setError('');
@@ -1187,6 +1187,11 @@ function FormModal({ cabangAdmins, cabangId, bulan, onClose, onSuccess }) {
     if (raw === '') { setJumlah(''); return; }
     setJumlah(new Intl.NumberFormat('id-ID').format(parseInt(raw)));
   };
+
+  // Anti-orphan guard: uang_kas WAJIB punya Admin Lapangan tujuan.
+  // handleSubmit di atas juga punya pengecekan yang sama sebagai belt-and-suspenders.
+  const uangKasMissingAdmin = jenis === 'uang_kas' && !targetAdmin;
+  const submitDisabled = loading || uangKasMissingAdmin;
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200, padding: 20 }}
@@ -1237,7 +1242,8 @@ function FormModal({ cabangAdmins, cabangId, bulan, onClose, onSuccess }) {
         {jenis === 'uang_kas' && cabangAdmins.length > 0 && (
           <div style={{ marginBottom: 16 }}>
             <label style={{ fontSize: 13, fontWeight: 600, marginBottom: 6, display: 'block' }}>Admin Lapangan yang Dituju</label>
-            <select value={targetAdmin} onChange={(e) => setTargetAdmin(e.target.value)}
+            <select value={targetAdmin}
+              onChange={(e) => { setTargetAdmin(e.target.value); if (error) setError(''); }}
               style={{ width: '100%', padding: '10px 14px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 14, background: 'var(--card)' }}>
               <option value="">-- Pilih Admin --</option>
               {cabangAdmins.map(a => <option key={a.uid} value={a.uid}>{a.name}</option>)}
@@ -1290,8 +1296,9 @@ function FormModal({ cabangAdmins, cabangId, bulan, onClose, onSuccess }) {
         {/* Actions */}
         <div style={{ display: 'flex', gap: 10 }}>
           <button onClick={onClose} style={{ flex: 1, padding: '12px 0', borderRadius: 12, border: '1px solid var(--border)', fontSize: 14, fontWeight: 600 }}>Batal</button>
-          <button onClick={handleSubmit} disabled={loading}
-            style={{ flex: 1, padding: '12px 0', borderRadius: 12, background: 'var(--primary)', color: '#fff', fontSize: 14, fontWeight: 600, opacity: loading ? 0.6 : 1, transition: 'all 0.2s' }}>
+          <button onClick={handleSubmit} disabled={submitDisabled}
+            title={uangKasMissingAdmin ? 'Pilih Admin Lapangan terlebih dahulu' : ''}
+            style={{ flex: 1, padding: '12px 0', borderRadius: 12, background: 'var(--primary)', color: '#fff', fontSize: 14, fontWeight: 600, opacity: submitDisabled ? 0.6 : 1, cursor: submitDisabled ? 'not-allowed' : 'pointer', transition: 'all 0.2s' }}>
             {loading ? 'Menyimpan...' : 'Simpan'}
           </button>
         </div>
