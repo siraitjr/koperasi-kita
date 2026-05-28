@@ -10,7 +10,7 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signOut } from 'firebas
 import { auth, storage, database } from '../../lib/firebase';
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { ref as dbRef, update } from 'firebase/database';
-import { getKasirSummary, getKasirEntries, addKasirEntry, deleteKasirEntry, getBukuPokok, syncOperasionalTransport } from '../../lib/api';
+import { getKasirSummary, getKasirEntries, addKasirEntry, deleteKasirEntry, getBukuPokok, syncOperasionalTransport, getJurnalTransaksi } from '../../lib/api';
 import { formatRp, formatRpFull } from '../../lib/format';
 import { isEligibleForTarget } from '../../lib/target';
 
@@ -170,7 +170,12 @@ function generateBulanOptions() {
 // Caller di-harapkan membangun `nasabahByAdmin` (object keyed by adminUid)
 // satu kali di luar loop tanggal — perf-friendly untuk iterasi banyak hari.
 // =========================================================================
-function computeTunaiKasPerDate(dateStr, nasabahByAdmin, admins) {
+// pencairanByAdminDate (opsional): { [tanggal]: { [adminUid]: total } } dari
+// buildPencairanByAdminDate(). Bila diberikan, pencairan tabungan ikut sebagai
+// KREDIT (uang keluar) → mengurangi tunaiPasar, sama persis dengan rumus
+// BukuRekap (kredit = totalDrop + pencairanTabungan). Bila tidak diberikan,
+// pencairan dianggap 0 (perilaku lama).
+function computeTunaiKasPerDate(dateStr, nasabahByAdmin, admins, pencairanByAdminDate) {
   let totalTunaiPasar = 0, totalKasPakai = 0;
   for (const adm of (admins || [])) {
     const resortNasabah = (nasabahByAdmin && nasabahByAdmin[adm.uid]) || [];
@@ -183,11 +188,32 @@ function computeTunaiKasPerDate(dateStr, nasabahByAdmin, admins) {
     const adminFee = Math.round(totalDrop * 0.05);
     const tabungan = Math.round(totalDrop * 0.05);
     const debitAsli = totalStorting + adminFee + tabungan;
-    const kreditVal = totalDrop;
+    const pencairan = (pencairanByAdminDate && pencairanByAdminDate[dateStr] && pencairanByAdminDate[dateStr][adm.uid]) || 0;
+    const kreditVal = totalDrop + pencairan;
     totalTunaiPasar += debitAsli >= kreditVal ? debitAsli - kreditVal : 0;
     totalKasPakai += kreditVal > debitAsli ? kreditVal - debitAsli : 0;
   }
   return { tunaiPasar: totalTunaiPasar, kasPakai: totalKasPakai };
+}
+
+// =========================================================================
+// Pencairan tabungan per (tanggal, admin) dari jurnal_transaksi.
+// tipe yang dihitung: 'pelunasan_tabungan' (sisa utang dilunasi via tabungan)
+// & 'pencairan_simpanan_partial' (tarik sebagian simpanan). Keduanya = uang
+// kas keluar → dipakai sebagai kredit di computeTunaiKasPerDate & kolom
+// "Cair Tab." Buku Rekap. Output: { [tanggal]: { [adminUid]: total } }.
+// =========================================================================
+function buildPencairanByAdminDate(jurnalEntries) {
+  const map = {};
+  (jurnalEntries || []).forEach(e => {
+    if (e.tipe !== 'pelunasan_tabungan' && e.tipe !== 'pencairan_simpanan_partial') return;
+    const tgl = e.tanggal;
+    if (!tgl) return;
+    const uid = e.adminUid || '';
+    if (!map[tgl]) map[tgl] = {};
+    map[tgl][uid] = (map[tgl][uid] || 0) + (e.jumlah || 0);
+  });
+  return map;
 }
 
 // =========================================================================
@@ -1552,6 +1578,8 @@ function BukuRekapScreen({ user, cabang, cabangList, onBack, onLogout, onNavigat
   const [selectedDate, setSelectedDate] = useState(null);
   const bulanOptions = generateBulanOptions();
   const [selectedBulan, setSelectedBulan] = useState(bulanOptions[0]?.key || '');
+  // Pencairan tabungan (jurnal_transaksi) untuk kolom "Cair Tab." + kredit tunaiPasar.
+  const [jurnalEntries, setJurnalEntries] = useState([]);
 
   useEffect(() => {
     if (!activeCabang) return;
@@ -1576,6 +1604,17 @@ function BukuRekapScreen({ user, cabang, cabangList, onBack, onLogout, onNavigat
     });
   }, [activeCabang?.id]);
 
+  // Fetch jurnal_transaksi terpisah (cabang + bulan terpilih) — sumber "Cair Tab.".
+  // Terpisah dari getBukuPokok agar re-fetch hanya saat cabang/bulan berubah.
+  useEffect(() => {
+    if (!activeCabang || !selectedBulan) { setJurnalEntries([]); return; }
+    getJurnalTransaksi({ cabangId: activeCabang.id, bulan: selectedBulan })
+      .then(result => {
+        setJurnalEntries(result?.success && result.data?.entries ? result.data.entries : []);
+      })
+      .catch(() => setJurnalEntries([]));
+  }, [activeCabang?.id, selectedBulan]);
+
   // Tanggal hari kerja pada bulan yang dipilih
   const [selBulanYear, selBulanMonth] = selectedBulan.split('-').map(Number);
   const dates = (data?.tanggalList || [])
@@ -1589,6 +1628,9 @@ function BukuRekapScreen({ user, cabang, cabangList, onBack, onLogout, onNavigat
       return dateObj && isHariKerja(dateObj);
     });
   const currentDate = selectedDate || dates[0] || null;
+
+  // Pencairan tabungan per (tanggal, admin) dari jurnal_transaksi.
+  const pencairanByAdminDate = buildPencairanByAdminDate(jurnalEntries);
 
   // ==================== COMPUTE REKAP PER RESORT ====================
   const computeRekapRows = (dateStr) => {
@@ -1657,8 +1699,9 @@ function BukuRekapScreen({ user, cabang, cabangList, onBack, onLogout, onNavigat
       // Debit asli = Storting + Admin + Tabungan
       const debitAsli = storting + adminFee + tabungan;
 
-      // Pencairan Tabungan
-      const pencairanTabungan = 0;
+      // Pencairan Tabungan = jurnal pelunasan_tabungan + pencairan_simpanan_partial
+      // untuk admin & tanggal ini (uang kas keluar via tabungan).
+      const pencairanTabungan = (pencairanByAdminDate[todayStr] && pencairanByAdminDate[todayStr][adm.uid]) || 0;
 
       // Kredit = Total Drop + Pencairan Tabungan
       const kredit = totalDrop + pencairanTabungan;
@@ -2006,6 +2049,7 @@ function KasPenuntunScreen({ user, cabang, cabangList, onBack, onLogout, onNavig
   const [bukuData, setBukuData] = useState(null);
   const [kasirEntries, setKasirEntries] = useState([]);
   const [prevKasirEntries, setPrevKasirEntries] = useState([]);
+  const [jurnalEntries, setJurnalEntries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [showFaktur, setShowFaktur] = useState(null);
@@ -2031,7 +2075,8 @@ function KasPenuntunScreen({ user, cabang, cabangList, onBack, onLogout, onNavig
       getBukuPokok({ cabangId: activeCabang.id, adminUid: '', status: 'semua' }),
       getKasirEntries({ cabangId: activeCabang.id, bulan }),
       getKasirEntries({ cabangId: activeCabang.id, bulan: prevBulan }),
-    ]).then(([bukuResult, kasirResult, prevKasirResult]) => {
+      getJurnalTransaksi({ cabangId: activeCabang.id, bulan }),
+    ]).then(([bukuResult, kasirResult, prevKasirResult, jurnalResult]) => {
       if (bukuResult.success && bukuResult.type === 'buku_pokok') {
         setBukuData(bukuResult.data);
       }
@@ -2043,6 +2088,7 @@ function KasPenuntunScreen({ user, cabang, cabangList, onBack, onLogout, onNavig
       } else {
         setPrevKasirEntries([]);
       }
+      setJurnalEntries(jurnalResult?.success && jurnalResult.data?.entries ? jurnalResult.data.entries : []);
     }).catch(err => {
       setError('Gagal memuat data: ' + err.message);
     }).finally(() => setLoading(false));
@@ -2072,6 +2118,8 @@ function KasPenuntunScreen({ user, cabang, cabangList, onBack, onLogout, onNavig
     admins.forEach(adm => {
       nasabahByAdmin[adm.uid] = allNasabah.filter(n => n.adminUid === adm.uid);
     });
+    // Pencairan tabungan per (tanggal, admin) — kredit tambahan untuk tunaiPasar.
+    const pencairanByAdminDate = buildPencairanByAdminDate(jurnalEntries);
 
     // ===== Compute Saldo Kas Bulan Lalu (helper bersama dengan Buku Ekspedisi) =====
     const saldoKasBulanLalu = computeSaldoKasBulanLalu({
@@ -2125,7 +2173,7 @@ function KasPenuntunScreen({ user, cabang, cabangList, onBack, onLogout, onNavig
     const tunaiPasarPerDate = {};
     const kasPakaiPerDate = {};
     sortedDates.forEach(dateStr => {
-      const { tunaiPasar, kasPakai } = computeTunaiKasPerDate(dateStr, nasabahByAdmin, admins);
+      const { tunaiPasar, kasPakai } = computeTunaiKasPerDate(dateStr, nasabahByAdmin, admins, pencairanByAdminDate);
       tunaiPasarPerDate[dateStr] = tunaiPasar;
       kasPakaiPerDate[dateStr] = kasPakai;
     });
@@ -2406,6 +2454,7 @@ function BukuTunaiScreen({ user, cabang, cabangList, onBack, onLogout, onNavigat
   const [activeCabang, setActiveCabang] = useState(cabang || cabangList[0] || null);
   const [bukuData, setBukuData] = useState(null);
   const [kasirEntries, setKasirEntries] = useState([]);
+  const [jurnalEntries, setJurnalEntries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [selectedDate, setSelectedDate] = useState(null);
@@ -2431,16 +2480,21 @@ function BukuTunaiScreen({ user, cabang, cabangList, onBack, onLogout, onNavigat
       .catch(() => {});
   }, [activeCabang?.id]);
 
-  // Fetch kasir entries (saat activeCabang atau selectedBulan berubah)
+  // Fetch kasir entries + jurnal_transaksi (saat activeCabang atau selectedBulan berubah)
   useEffect(() => {
     if (!activeCabang) return;
     setLoading(true);
     setError('');
     setKasirEntries([]);
+    setJurnalEntries([]);
     setSelectedDate(null);
-    getKasirEntries({ cabangId: activeCabang.id, bulan: selectedBulan })
-      .then(result => {
-        setKasirEntries(result?.success ? result.data.entries || [] : []);
+    Promise.all([
+      getKasirEntries({ cabangId: activeCabang.id, bulan: selectedBulan }),
+      getJurnalTransaksi({ cabangId: activeCabang.id, bulan: selectedBulan }),
+    ])
+      .then(([kasirResult, jurnalResult]) => {
+        setKasirEntries(kasirResult?.success ? kasirResult.data.entries || [] : []);
+        setJurnalEntries(jurnalResult?.success && jurnalResult.data?.entries ? jurnalResult.data.entries : []);
       })
       .catch(err => setError('Gagal memuat data: ' + err.message))
       .finally(() => setLoading(false));
@@ -2484,6 +2538,9 @@ function BukuTunaiScreen({ user, cabang, cabangList, onBack, onLogout, onNavigat
     admins.forEach(adm => {
       nasabahByAdmin[adm.uid] = allNasabah.filter(n => n.adminUid === adm.uid);
     });
+    // Pencairan tabungan per (tanggal, admin) — kredit tambahan untuk tunaiPasar
+    // (parity dengan BukuRekap / KasPenuntun / BukuEkspedisi).
+    const pencairanByAdminDate = buildPencairanByAdminDate(jurnalEntries);
 
     const rows = [];
     for (const adm of admins) {
@@ -2492,7 +2549,7 @@ function BukuTunaiScreen({ user, cabang, cabangList, onBack, onLogout, onNavigat
 
       // Tunai Pasar & Kas Pakai per resort — via helper top-level
       // computeTunaiKasPerDate (Source of Truth: Buku Rekap baris per resort).
-      const { tunaiPasar, kasPakai } = computeTunaiKasPerDate(dateStr, nasabahByAdmin, [adm]);
+      const { tunaiPasar, kasPakai } = computeTunaiKasPerDate(dateStr, nasabahByAdmin, [adm], pencairanByAdminDate);
 
       // Dekomposisi kembaliKasbon & titipan via helper bersama (Source of Truth).
       const { kembaliKasbon, titipan, totalFisik } =
@@ -2676,6 +2733,7 @@ function BukuEkspedisiScreen({ user, cabang, cabangList, onBack, onLogout, onNav
   const [bukuData, setBukuData] = useState(null);
   const [kasirEntries, setKasirEntries] = useState([]);
   const [prevKasirEntries, setPrevKasirEntries] = useState([]);
+  const [jurnalEntries, setJurnalEntries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [showFaktur, setShowFaktur] = useState(null);
@@ -2708,7 +2766,8 @@ function BukuEkspedisiScreen({ user, cabang, cabangList, onBack, onLogout, onNav
       getBukuPokok({ cabangId: activeCabang.id, adminUid: '', status: 'semua' }),
       getKasirEntries({ cabangId: activeCabang.id, bulan }),
       getKasirEntries({ cabangId: activeCabang.id, bulan: prevBulan }),
-    ]).then(([bukuResult, kasirResult, prevKasirResult]) => {
+      getJurnalTransaksi({ cabangId: activeCabang.id, bulan }),
+    ]).then(([bukuResult, kasirResult, prevKasirResult, jurnalResult]) => {
       if (bukuResult.success && bukuResult.type === 'buku_pokok') {
         setBukuData(bukuResult.data);
       }
@@ -2720,6 +2779,7 @@ function BukuEkspedisiScreen({ user, cabang, cabangList, onBack, onLogout, onNav
       } else {
         setPrevKasirEntries([]);
       }
+      setJurnalEntries(jurnalResult?.success && jurnalResult.data?.entries ? jurnalResult.data.entries : []);
     }).catch(err => {
       setError('Gagal memuat data: ' + err.message);
     }).finally(() => setLoading(false));
@@ -2792,6 +2852,9 @@ function BukuEkspedisiScreen({ user, cabang, cabangList, onBack, onLogout, onNav
     admins.forEach(adm => {
       nasabahByAdmin[adm.uid] = allNasabah.filter(n => n.adminUid === adm.uid);
     });
+    // Pencairan tabungan per (tanggal, admin) — kredit tambahan untuk tunaiPasar
+    // (parity dengan BukuRekap & KasPenuntun).
+    const pencairanByAdminDate = buildPencairanByAdminDate(jurnalEntries);
     // Kasbon per (tanggal, admin) — untuk dekomposisi per-admin kembaliKasbon/titipan.
     // Filter sama persis dengan BukuTunai: uang_kas keluar yang punya targetAdminUid.
     const kasbonByAdminPerDate = {};
@@ -2817,7 +2880,7 @@ function BukuEkspedisiScreen({ user, cabang, cabangList, onBack, onLogout, onNav
       let dayTunaiPasar = 0, dayKembali = 0, dayTitipan = 0;
       for (const adm of admins) {
         const kasbonPagiAdm = kasbonByAdminPerDate[dateStr]?.[adm.uid] || 0;
-        const { tunaiPasar, kasPakai } = computeTunaiKasPerDate(dateStr, nasabahByAdmin, [adm]);
+        const { tunaiPasar, kasPakai } = computeTunaiKasPerDate(dateStr, nasabahByAdmin, [adm], pencairanByAdminDate);
         const { kembaliKasbon, titipan } = decomposeKembaliKasbonTitipan(kasbonPagiAdm, tunaiPasar, kasPakai);
         dayTunaiPasar += tunaiPasar;
         dayKembali += kembaliKasbon;
