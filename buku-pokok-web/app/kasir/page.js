@@ -2460,14 +2460,31 @@ function BukuTunaiScreen({ user, cabang, cabangList, onBack, onLogout, onNavigat
       // computeTunaiKasPerDate (Source of Truth: Buku Rekap baris per resort).
       const { tunaiPasar, kasPakai } = computeTunaiKasPerDate(dateStr, nasabahByAdmin, [adm]);
 
-      // Kembali Kasbon = Kasbon Pagi - Kas Pakai
-      const kembaliKasbon = kasbonPagi - kasPakai;
+      // Total Fisik = uang kas yang dibawa pulang admin dari pasar secara fisik.
+      // Dekomposisi ke kembaliKasbon vs titipan berdasarkan apakah kasbonPagi
+      // utuh atau terpakai sebagian (business rule):
+      //  - kasbonPagi == 0: tidak ada kasbon untuk dikembalikan; semua fisik = titipan.
+      //  - totalFisik >= kasbonPagi: kasbon utuh kembali, sisanya jadi titipan.
+      //  - totalFisik <  kasbonPagi: kasbon terpakai sebagian, tidak ada kembali;
+      //    semua fisik jadi titipan.
+      // kasbonMap[adm.uid] || 0 di atas sudah memastikan kasbonPagi safe-fallback ke 0.
+      const totalFisik = kasbonPagi + tunaiPasar - kasPakai;
+      let kembaliKasbon, titipan;
+      if (kasbonPagi === 0) {
+        kembaliKasbon = 0;
+        titipan = tunaiPasar;
+      } else if (totalFisik >= kasbonPagi) {
+        kembaliKasbon = kasbonPagi;
+        titipan = totalFisik - kasbonPagi;
+      } else {
+        kembaliKasbon = 0;
+        titipan = totalFisik;
+      }
 
-      // Titipan (belum diimplementasikan, placeholder = 0)
-      const titipan = 0;
-
-      // +/- = Kembali Kasbon + Tunai Pasar + Titipan
-      const plusMinus = kembaliKasbon + tunaiPasar + titipan;
+      // +/- = totalFisik (= kembaliKasbon + titipan secara matematis di semua cabang).
+      // Formula lama "kembaliKasbon + tunaiPasar + titipan" double-count tunaiPasar
+      // sekarang setelah titipan tidak lagi 0; jangan dipakai.
+      const plusMinus = totalFisik;
 
       rows.push({ resortName: adm.name, kasbonPagi, kasPakai, kembaliKasbon, tunaiPasar, titipan, plusMinus });
     }
