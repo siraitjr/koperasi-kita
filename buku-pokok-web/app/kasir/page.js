@@ -245,25 +245,32 @@ function decomposeKembaliKasbonTitipan(kasbonPagi, tunaiPasar, kasPakai) {
 
 // =========================================================================
 // Saldo Kas Bulan Lalu — helper bersama untuk Kas Penuntun & Buku Ekspedisi
-// agar nilai keduanya pasti identik. Replikasi logika asli Kas Penuntun.
+// agar nilai keduanya pasti identik (rupiah-for-rupiah).
 //
-// Path A (override manual): bila ada entry kasir di bulan berjalan dengan
-//   jenis === 'saldo_awal_kas', pakai jumlah-nya langsung.
-// Path B (replay dinamis): replay ledger Kas Penuntun harian bulan
-//   sebelumnya (Senin–Sabtu non-hari-libur), akumulasi running balance,
-//   return saldo akhir.
+// Priority 1 (override manual): bila ada entry kasir di bulan berjalan dengan
+//   jenis === 'saldo_awal_kas', pakai jumlah-nya langsung (input pimpinan).
+// Priority 2 (carry-forward otomatis): bila tidak ada input manual, hitung
+//   saldo akhir "Tunai Kas" pada hari kerja TERAKHIR bulan sebelumnya memakai
+//   logika running balance IDENTIK Buku Ekspedisi:
+//     Daily In  = Kembali Kasbon + Tunai Pasar + Suntikan Dana + Pinjaman Kas
+//     Daily Out = Kasbon Pagi + Transport + BU + SP + Pengembalian Kas
+//   Tunai Pasar sudah termasuk pencairan tabungan (jurnal bulan sebelumnya).
+//   Seed replay = saldo_awal_kas manual bulan sebelumnya bila ada, else 0
+//   (carry-forward dibatasi 1 bulan agar hemat RTDB; rantai lebih panjang
+//   di-seed lewat input manual saldo_awal_kas pada bulan ybs).
 //
-// Wajib di-pass kasirEntries bulan berjalan & bulan sebelumnya. Bila
-// data belum siap (bukuData/nasabah kosong), return 0.
+// Wajib di-pass kasirEntries (bulan berjalan & sebelumnya) + jurnalEntries
+// bulan sebelumnya. Bila data belum siap (bukuData/nasabah kosong), return 0.
 // =========================================================================
-function computeSaldoKasBulanLalu({ bukuData, currentMonthEntries, prevMonthEntries, bulan, activeCabang }) {
+function computeSaldoKasBulanLalu({ bukuData, currentMonthEntries, prevMonthEntries, prevMonthJurnalEntries, bulan, activeCabang }) {
   if (!bukuData?.nasabah || !bulan) return 0;
 
-  // Path A: override manual
+  // Priority 1: override manual (input pimpinan)
   const saldoAwalEntry = (currentMonthEntries || []).find(e => e.jenis === 'saldo_awal_kas');
   if (saldoAwalEntry) return saldoAwalEntry.jumlah || 0;
 
-  // Path B: replay bulan sebelumnya
+  // Priority 2: carry-forward otomatis — replay running balance bulan
+  // sebelumnya dengan logika IDENTIK Buku Ekspedisi.
   const allNasabah = bukuData.nasabah;
   const admins = activeCabang?.admins || [];
   const prevEntries = prevMonthEntries || [];
@@ -283,6 +290,8 @@ function computeSaldoKasBulanLalu({ bukuData, currentMonthEntries, prevMonthEntr
   admins.forEach(adm => {
     nasabahByAdmin[adm.uid] = allNasabah.filter(n => n.adminUid === adm.uid);
   });
+  // Pencairan tabungan bulan sebelumnya → kredit tunaiPasar (parity Buku Ekspedisi).
+  const prevPencairanByAdminDate = buildPencairanByAdminDate(prevMonthJurnalEntries);
 
   const [yyyy, mm] = bulan.split('-');
   const prevMonthStart = new Date(parseInt(yyyy), parseInt(mm) - 2, 1);
@@ -313,34 +322,77 @@ function computeSaldoKasBulanLalu({ bukuData, currentMonthEntries, prevMonthEntr
     .filter(d => { const dt = parseDateStr(d); return dt && isHariKerja(dt); })
     .sort((a, b) => parseDateStr(a) - parseDateStr(b));
 
-  let prevRunning = 0;
-  let prevTunaiAccum = 0;
-  prevSortedDates.forEach(dateStr => {
-    const { tunaiPasar, kasPakai } = computeTunaiKasPerDate(dateStr, nasabahByAdmin, admins);
-
-    let suntikan = 0, pinjaman = 0, buVal = 0;
-    prevEntries.forEach(e => {
-      if (e.tanggal !== dateStr) return;
-      if (e.jenis === 'suntikan_dana' && e.arah === 'masuk') suntikan += e.jumlah || 0;
-      if (e.jenis === 'pinjaman_kas' && e.arah === 'masuk') pinjaman += e.jumlah || 0;
-      if (e.jenis === 'penggajian' && e.arah === 'keluar') {
-        const buku = e.targetBuku;
-        if (!buku || (Array.isArray(buku) && buku.includes('kas_penuntun'))) buVal += e.jumlah || 0;
-      }
-    });
-
-    const dropPusat = suntikan + pinjaman;
-    const saldoKas = prevRunning + dropPusat;
-    const tunaiPasarTotal = tunaiPasar + prevTunaiAccum;
-    const debit = tunaiPasarTotal + saldoKas;
-    const kredit = kasPakai + buVal;
-    const saldoAkhir = debit - kredit;
-
-    prevRunning = saldoAkhir;
-    prevTunaiAccum = tunaiPasarTotal;
+  // Kasbon per (tanggal, admin) — untuk dekomposisi kembaliKasbon per-admin.
+  const kasbonByAdminPerDate = {};
+  prevEntries.forEach(e => {
+    if (e.jenis !== 'uang_kas' || e.arah !== 'keluar' || !e.targetAdminUid) return;
+    const tgl = e.tanggal;
+    if (!tgl) return;
+    const date = parseDateStr(tgl);
+    if (!date || date < prevMonthStart || date > prevMonthEnd) return;
+    if (!kasbonByAdminPerDate[tgl]) kasbonByAdminPerDate[tgl] = {};
+    kasbonByAdminPerDate[tgl][e.targetAdminUid] =
+      (kasbonByAdminPerDate[tgl][e.targetAdminUid] || 0) + (e.jumlah || 0);
   });
 
-  return prevRunning;
+  // Agregat jurnal kasir per tanggal (mirror Buku Ekspedisi).
+  const kasbonPerDate = {}, suntikanDanaPerDate = {}, pinjamanKasPerDate = {},
+        transportPerDate = {}, buPerDate = {}, pengembalianPerDate = {}, spPerDate = {};
+  prevEntries.forEach(e => {
+    const tgl = e.tanggal;
+    if (!tgl) return;
+    const date = parseDateStr(tgl);
+    if (!date || date < prevMonthStart || date > prevMonthEnd) return;
+    const jumlah = e.jumlah || 0;
+    if (e.jenis === 'uang_kas' && e.arah === 'keluar') {
+      kasbonPerDate[tgl] = (kasbonPerDate[tgl] || 0) + jumlah;
+    } else if (e.jenis === 'suntikan_dana' && e.arah === 'masuk') {
+      suntikanDanaPerDate[tgl] = (suntikanDanaPerDate[tgl] || 0) + jumlah;
+    } else if (e.jenis === 'pinjaman_kas' && e.arah === 'masuk') {
+      pinjamanKasPerDate[tgl] = (pinjamanKasPerDate[tgl] || 0) + jumlah;
+    } else if (e.jenis === 'transport' && e.arah === 'keluar') {
+      transportPerDate[tgl] = (transportPerDate[tgl] || 0) + jumlah;
+    } else if (e.jenis === 'penggajian' && e.arah === 'keluar') {
+      const buku = e.targetBuku;
+      if (!buku || (Array.isArray(buku) && buku.includes('ekspedisi'))) {
+        buPerDate[tgl] = (buPerDate[tgl] || 0) + jumlah;
+      }
+    } else if (e.jenis === 'pengembalian_kas' && e.arah === 'keluar') {
+      pengembalianPerDate[tgl] = (pengembalianPerDate[tgl] || 0) + jumlah;
+    } else if (e.jenis === 'sp' && e.arah === 'keluar') {
+      spPerDate[tgl] = (spPerDate[tgl] || 0) + jumlah;
+    }
+  });
+
+  // Seed = saldo_awal_kas manual bulan sebelumnya bila ada, else 0.
+  const prevSaldoAwalEntry = prevEntries.find(e => e.jenis === 'saldo_awal_kas');
+  let running = prevSaldoAwalEntry ? (prevSaldoAwalEntry.jumlah || 0) : 0;
+
+  prevSortedDates.forEach(dateStr => {
+    let dayTunaiPasar = 0, dayKembali = 0;
+    for (const adm of admins) {
+      const kasbonPagiAdm = kasbonByAdminPerDate[dateStr]?.[adm.uid] || 0;
+      const { tunaiPasar, kasPakai } = computeTunaiKasPerDate(dateStr, nasabahByAdmin, [adm], prevPencairanByAdminDate);
+      const { kembaliKasbon } = decomposeKembaliKasbonTitipan(kasbonPagiAdm, tunaiPasar, kasPakai);
+      dayTunaiPasar += tunaiPasar;
+      dayKembali += kembaliKasbon;
+    }
+    const kasbonPagi = kasbonPerDate[dateStr] || 0;
+    const suntikanDana = suntikanDanaPerDate[dateStr] || 0;
+    const pinjamanKas = pinjamanKasPerDate[dateStr] || 0;
+    const dropPusat = suntikanDana + pinjamanKas;
+    const transport = transportPerDate[dateStr] || 0;
+    const bu = buPerDate[dateStr] || 0;
+    const pengembalianKas = pengembalianPerDate[dateStr] || 0;
+    const sp = spPerDate[dateStr] || 0;
+    // Daily In  = Kembali Kasbon + Tunai Pasar + Suntikan Dana + Pinjaman Kas
+    // Daily Out = Kasbon Pagi + Transport + BU + SP + Pengembalian Kas
+    const dailyIn = dayKembali + dayTunaiPasar + dropPusat;
+    const dailyOut = kasbonPagi + transport + bu + sp + pengembalianKas;
+    running = running + dailyIn - dailyOut;
+  });
+
+  return running;
 }
 
 
@@ -2050,6 +2102,7 @@ function KasPenuntunScreen({ user, cabang, cabangList, onBack, onLogout, onNavig
   const [kasirEntries, setKasirEntries] = useState([]);
   const [prevKasirEntries, setPrevKasirEntries] = useState([]);
   const [jurnalEntries, setJurnalEntries] = useState([]);
+  const [prevJurnalEntries, setPrevJurnalEntries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [showFaktur, setShowFaktur] = useState(null);
@@ -2076,7 +2129,8 @@ function KasPenuntunScreen({ user, cabang, cabangList, onBack, onLogout, onNavig
       getKasirEntries({ cabangId: activeCabang.id, bulan }),
       getKasirEntries({ cabangId: activeCabang.id, bulan: prevBulan }),
       getJurnalTransaksi({ cabangId: activeCabang.id, bulan }),
-    ]).then(([bukuResult, kasirResult, prevKasirResult, jurnalResult]) => {
+      getJurnalTransaksi({ cabangId: activeCabang.id, bulan: prevBulan }),
+    ]).then(([bukuResult, kasirResult, prevKasirResult, jurnalResult, prevJurnalResult]) => {
       if (bukuResult.success && bukuResult.type === 'buku_pokok') {
         setBukuData(bukuResult.data);
       }
@@ -2089,6 +2143,7 @@ function KasPenuntunScreen({ user, cabang, cabangList, onBack, onLogout, onNavig
         setPrevKasirEntries([]);
       }
       setJurnalEntries(jurnalResult?.success && jurnalResult.data?.entries ? jurnalResult.data.entries : []);
+      setPrevJurnalEntries(prevJurnalResult?.success && prevJurnalResult.data?.entries ? prevJurnalResult.data.entries : []);
     }).catch(err => {
       setError('Gagal memuat data: ' + err.message);
     }).finally(() => setLoading(false));
@@ -2126,6 +2181,7 @@ function KasPenuntunScreen({ user, cabang, cabangList, onBack, onLogout, onNavig
       bukuData,
       currentMonthEntries: kasirEntries,
       prevMonthEntries: prevKasirEntries,
+      prevMonthJurnalEntries: prevJurnalEntries,
       bulan,
       activeCabang,
     });
@@ -2734,6 +2790,7 @@ function BukuEkspedisiScreen({ user, cabang, cabangList, onBack, onLogout, onNav
   const [kasirEntries, setKasirEntries] = useState([]);
   const [prevKasirEntries, setPrevKasirEntries] = useState([]);
   const [jurnalEntries, setJurnalEntries] = useState([]);
+  const [prevJurnalEntries, setPrevJurnalEntries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [showFaktur, setShowFaktur] = useState(null);
@@ -2754,6 +2811,7 @@ function BukuEkspedisiScreen({ user, cabang, cabangList, onBack, onLogout, onNav
     bukuData,
     currentMonthEntries: kasirEntries,
     prevMonthEntries: prevKasirEntries,
+    prevMonthJurnalEntries: prevJurnalEntries,
     bulan,
     activeCabang,
   });
@@ -2767,7 +2825,8 @@ function BukuEkspedisiScreen({ user, cabang, cabangList, onBack, onLogout, onNav
       getKasirEntries({ cabangId: activeCabang.id, bulan }),
       getKasirEntries({ cabangId: activeCabang.id, bulan: prevBulan }),
       getJurnalTransaksi({ cabangId: activeCabang.id, bulan }),
-    ]).then(([bukuResult, kasirResult, prevKasirResult, jurnalResult]) => {
+      getJurnalTransaksi({ cabangId: activeCabang.id, bulan: prevBulan }),
+    ]).then(([bukuResult, kasirResult, prevKasirResult, jurnalResult, prevJurnalResult]) => {
       if (bukuResult.success && bukuResult.type === 'buku_pokok') {
         setBukuData(bukuResult.data);
       }
@@ -2780,6 +2839,7 @@ function BukuEkspedisiScreen({ user, cabang, cabangList, onBack, onLogout, onNav
         setPrevKasirEntries([]);
       }
       setJurnalEntries(jurnalResult?.success && jurnalResult.data?.entries ? jurnalResult.data.entries : []);
+      setPrevJurnalEntries(prevJurnalResult?.success && prevJurnalResult.data?.entries ? prevJurnalResult.data.entries : []);
     }).catch(err => {
       setError('Gagal memuat data: ' + err.message);
     }).finally(() => setLoading(false));
