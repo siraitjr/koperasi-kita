@@ -2954,22 +2954,6 @@ function BukuEkspedisiScreen({ user, cabang, cabangList, onBack, onLogout, onNav
     });
   })();
 
-  // Total baris
-  const totals = ekspedisiRows.reduce((acc, r) => ({
-    kembaliKasbon: acc.kembaliKasbon + r.kembaliKasbon,
-    tunaiPasar: acc.tunaiPasar + r.tunaiPasar,
-    suntikanDana: acc.suntikanDana + r.suntikanDana,
-    pinjamanKas: acc.pinjamanKas + r.pinjamanKas,
-    kasbonPagi: acc.kasbonPagi + r.kasbonPagi,
-    transport: acc.transport + r.transport,
-    bu: acc.bu + r.bu,
-    sp: acc.sp + r.sp,
-    pengembalianKas: acc.pengembalianKas + r.pengembalianKas,
-  }), { kembaliKasbon: 0, tunaiPasar: 0, suntikanDana: 0, pinjamanKas: 0, kasbonPagi: 0, transport: 0, bu: 0, sp: 0, pengembalianKas: 0 });
-  // Tunai Kas kini saldo berjalan → footer = saldo akhir (hari kerja terakhir),
-  // bukan penjumlahan kolom (menjumlah saldo berjalan tidak bermakna).
-  totals.tunaiKas = ekspedisiRows.length ? ekspedisiRows[ekspedisiRows.length - 1].tunaiKas : saldoKasBulanLalu;
-
   const thS = {
     padding: '7px 6px', textAlign: 'center', fontWeight: 700, fontSize: 10,
     whiteSpace: 'nowrap', position: 'sticky', top: 0, background: '#f8f9fa',
@@ -3104,20 +3088,6 @@ function BukuEkspedisiScreen({ user, cabang, cabangList, onBack, onLogout, onNav
                     </td>
                   </tr>
                 ))}
-                {/* Total row */}
-                <tr style={{ borderTop: '2px solid var(--border)', background: '#f8f9fa', fontWeight: 800 }}>
-                  <td style={{ padding: '8px 10px', fontWeight: 800, fontSize: 12, borderRight: '1px solid var(--border)' }}>TOTAL</td>
-                  <td style={{ ...tdRBold, background: '#e8f8f0', color: '#166534' }}>{totals.kembaliKasbon > 0 ? formatRp(totals.kembaliKasbon) : '-'}</td>
-                  <td style={{ ...tdRBold, background: '#e8f8f0', color: totals.tunaiPasar >= 0 ? '#166534' : 'var(--danger)' }}>{totals.tunaiPasar !== 0 ? formatRp(totals.tunaiPasar) : '-'}</td>
-                  <td style={{ ...tdRBold, background: '#dbeafe' }}>{totals.suntikanDana > 0 ? formatRp(totals.suntikanDana) : '-'}</td>
-                  <td style={{ ...tdRBold, background: '#dbeafe' }}>{totals.pinjamanKas > 0 ? formatRp(totals.pinjamanKas) : '-'}</td>
-                  <td style={{ ...tdRBold, background: '#fef9c3' }}>{totals.kasbonPagi > 0 ? formatRp(totals.kasbonPagi) : '-'}</td>
-                  <td style={{ ...tdRBold, background: '#fef9c3' }}>{totals.transport > 0 ? formatRp(totals.transport) : '-'}</td>
-                  <td style={{ ...tdRBold, background: '#ffe4e6' }}>{totals.bu > 0 ? formatRp(totals.bu) : '-'}</td>
-                  <td style={{ ...tdRBold, background: '#ffe4e6' }}>{totals.sp > 0 ? formatRp(totals.sp) : '-'}</td>
-                  <td style={{ ...tdRBold, background: '#ffe4e6' }}>{totals.pengembalianKas > 0 ? formatRp(totals.pengembalianKas) : '-'}</td>
-                  <td style={{ ...tdRBold, background: '#f3e8ff', color: totals.tunaiKas >= 0 ? '#7e22ce' : 'var(--danger)' }}>{formatRp(totals.tunaiKas)}</td>
-                </tr>
               </tbody>
             </table>
           </div>
