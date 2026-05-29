@@ -2836,8 +2836,8 @@ function BukuEkspedisiScreen({ user, cabang, cabangList, onBack, onLogout, onNav
     });
 
     // Skip Minggu & tanggal merah agar konsisten dengan Buku Pokok / Buku Rekap
-    // / Kas Penuntun. tunaiKas per baris adalah net flow harian (bukan running
-    // balance), jadi menghapus baris non-hari-kerja aman terhadap perhitungan.
+    // / Kas Penuntun. Saldo berjalan Tunai Kas hanya mengalir antar hari kerja
+    // (baris non-hari-kerja memang tidak dibuat), sesuai aturan menu ini.
     const sortedDates = Array.from(dateSet)
       .filter(d => { const dt = parseDateStr(d); return dt && isHariKerja(dt); })
       .sort((a, b) => parseDateStr(a) - parseDateStr(b));
@@ -2855,7 +2855,7 @@ function BukuEkspedisiScreen({ user, cabang, cabangList, onBack, onLogout, onNav
     // Pencairan tabungan per (tanggal, admin) — kredit tambahan untuk tunaiPasar
     // (parity dengan BukuRekap & KasPenuntun).
     const pencairanByAdminDate = buildPencairanByAdminDate(jurnalEntries);
-    // Kasbon per (tanggal, admin) — untuk dekomposisi per-admin kembaliKasbon/titipan.
+    // Kasbon per (tanggal, admin) — untuk dekomposisi per-admin kembaliKasbon.
     // Filter sama persis dengan BukuTunai: uang_kas keluar yang punya targetAdminUid.
     const kasbonByAdminPerDate = {};
     kasirEntries.forEach(e => {
@@ -2869,26 +2869,23 @@ function BukuEkspedisiScreen({ user, cabang, cabangList, onBack, onLogout, onNav
         (kasbonByAdminPerDate[tgl][e.targetAdminUid] || 0) + (e.jumlah || 0);
     });
 
-    // Per tanggal: hitung tunaiPasar + kembaliKasbon + titipan PER ADMIN lalu dijumlah.
+    // Per tanggal: hitung tunaiPasar + kembaliKasbon PER ADMIN lalu dijumlah.
     // WAJIB per-admin (bukan dari grand total harian): dekomposisi memakai threshold
     // (totalFisik >= kasbonPagi) yang TIDAK distributif terhadap penjumlahan —
     // sum-of-decompose != decompose-of-sum bila ada admin surplus & admin defisit.
     const tunaiPasarPerDate = {};
     const kembaliKasbonPerDate = {};
-    const titipanPerDate = {};
     sortedDates.forEach(dateStr => {
-      let dayTunaiPasar = 0, dayKembali = 0, dayTitipan = 0;
+      let dayTunaiPasar = 0, dayKembali = 0;
       for (const adm of admins) {
         const kasbonPagiAdm = kasbonByAdminPerDate[dateStr]?.[adm.uid] || 0;
         const { tunaiPasar, kasPakai } = computeTunaiKasPerDate(dateStr, nasabahByAdmin, [adm], pencairanByAdminDate);
-        const { kembaliKasbon, titipan } = decomposeKembaliKasbonTitipan(kasbonPagiAdm, tunaiPasar, kasPakai);
+        const { kembaliKasbon } = decomposeKembaliKasbonTitipan(kasbonPagiAdm, tunaiPasar, kasPakai);
         dayTunaiPasar += tunaiPasar;
         dayKembali += kembaliKasbon;
-        dayTitipan += titipan;
       }
       tunaiPasarPerDate[dateStr] = dayTunaiPasar;
       kembaliKasbonPerDate[dateStr] = dayKembali;
-      titipanPerDate[dateStr] = dayTitipan;
     });
 
     // Hitung nilai dari jurnal kasir per tanggal
@@ -2930,11 +2927,15 @@ function BukuEkspedisiScreen({ user, cabang, cabangList, onBack, onLogout, onNav
       }
     });
 
+    // Tunai Kas = saldo kas berjalan (running balance) hari-per-hari. Di-seed
+    // dari Saldo Kas Bulan Lalu pada hari kerja PERTAMA, lalu mengalir ke hari
+    // kerja berikutnya (akumulatif). sortedDates sudah difilter hari kerja
+    // (skip Minggu & tanggal merah) dan terurut menaik, sehingga cascade benar.
+    let runningTunaiKas = saldoKasBulanLalu;
     return sortedDates.map(dateStr => {
       const tunaiPasar = tunaiPasarPerDate[dateStr] || 0;
       const kasbonPagi = kasbonPerDate[dateStr] || 0;
       const kembaliKasbon = kembaliKasbonPerDate[dateStr] || 0;
-      const titipan = titipanPerDate[dateStr] || 0;
       const suntikanDana = suntikanDanaPerDate[dateStr] || 0;
       const pinjamanKas = pinjamanKasPerDate[dateStr] || 0;
       const dropPusat = suntikanDana + pinjamanKas;
@@ -2943,20 +2944,19 @@ function BukuEkspedisiScreen({ user, cabang, cabangList, onBack, onLogout, onNav
       const buFaktur = buFakturPerDate[dateStr] || [];
       const pengembalianKas = pengembalianPerDate[dateStr] || 0;
       const sp = spPerDate[dateStr] || 0;
-      // Tunai Kas = arus kas bersih kas pusat cabang. Pakai (kembaliKasbon + titipan)
-      // = total fisik harian yang benar-benar dikembalikan admin, BUKAN tunaiPasar.
-      // Formula lama "kembaliKasbon + tunaiPasar - kasbonPagi" mengasumsikan kasbon
-      // selalu kembali utuh (kasPakai=0), sehingga kasPakai admin (branch
-      // totalFisik < kasbonPagi) tidak ikut mengurangi kas — sekarang sudah benar.
-      const tunaiKas = (kembaliKasbon + titipan + dropPusat) - (kasbonPagi + transport + bu + pengembalianKas + sp);
-      return { tanggal: dateStr, kembaliKasbon, titipan, tunaiPasar, suntikanDana, pinjamanKas, dropPusat, kasbonPagi, transport, bu, buFaktur, pengembalianKas, sp, tunaiKas };
+      // Daily In  = Kembali Kasbon + Tunai Pasar + Suntikan Dana + Pinjaman Kas
+      // Daily Out = Kasbon Pagi + Transport + BU + SP + Pengembalian Kas
+      const dailyIn = kembaliKasbon + tunaiPasar + dropPusat;
+      const dailyOut = kasbonPagi + transport + bu + sp + pengembalianKas;
+      runningTunaiKas = runningTunaiKas + dailyIn - dailyOut;
+      const tunaiKas = runningTunaiKas;
+      return { tanggal: dateStr, kembaliKasbon, tunaiPasar, suntikanDana, pinjamanKas, dropPusat, kasbonPagi, transport, bu, buFaktur, pengembalianKas, sp, tunaiKas };
     });
   })();
 
   // Total baris
   const totals = ekspedisiRows.reduce((acc, r) => ({
     kembaliKasbon: acc.kembaliKasbon + r.kembaliKasbon,
-    titipan: acc.titipan + r.titipan,
     tunaiPasar: acc.tunaiPasar + r.tunaiPasar,
     suntikanDana: acc.suntikanDana + r.suntikanDana,
     pinjamanKas: acc.pinjamanKas + r.pinjamanKas,
@@ -2965,8 +2965,10 @@ function BukuEkspedisiScreen({ user, cabang, cabangList, onBack, onLogout, onNav
     bu: acc.bu + r.bu,
     sp: acc.sp + r.sp,
     pengembalianKas: acc.pengembalianKas + r.pengembalianKas,
-    tunaiKas: acc.tunaiKas + r.tunaiKas,
-  }), { kembaliKasbon: 0, titipan: 0, tunaiPasar: 0, suntikanDana: 0, pinjamanKas: 0, kasbonPagi: 0, transport: 0, bu: 0, sp: 0, pengembalianKas: 0, tunaiKas: 0 });
+  }), { kembaliKasbon: 0, tunaiPasar: 0, suntikanDana: 0, pinjamanKas: 0, kasbonPagi: 0, transport: 0, bu: 0, sp: 0, pengembalianKas: 0 });
+  // Tunai Kas kini saldo berjalan → footer = saldo akhir (hari kerja terakhir),
+  // bukan penjumlahan kolom (menjumlah saldo berjalan tidak bermakna).
+  totals.tunaiKas = ekspedisiRows.length ? ekspedisiRows[ekspedisiRows.length - 1].tunaiKas : saldoKasBulanLalu;
 
   const thS = {
     padding: '7px 6px', textAlign: 'center', fontWeight: 700, fontSize: 10,
@@ -3053,7 +3055,6 @@ function BukuEkspedisiScreen({ user, cabang, cabangList, onBack, onLogout, onNav
                   <th style={{ ...thS, textAlign: 'left', paddingLeft: 10 }}>Tanggal</th>
                   <th style={{ ...thS, background: '#e8f8f0' }}>Kembali Kasbon</th>
                   <th style={{ ...thS, background: '#e8f8f0' }}>Tunai Pasar</th>
-                  <th style={{ ...thS, background: '#e8f8f0' }}>Titipan</th>
                   <th style={{ ...thS, background: '#e0f0ff' }}>Suntikan Dana</th>
                   <th style={{ ...thS, background: '#e0f0ff' }}>Pinjaman Kas</th>
                   <th style={{ ...thS, background: '#fef9c3' }}>Kasbon Pagi</th>
@@ -3075,9 +3076,6 @@ function BukuEkspedisiScreen({ user, cabang, cabangList, onBack, onLogout, onNav
                     </td>
                     <td style={{ ...tdR, background: '#f0fdf4', color: row.tunaiPasar >= 0 ? '#166534' : 'var(--danger)', fontWeight: 600 }}>
                       {row.tunaiPasar !== 0 ? formatRp(row.tunaiPasar) : '-'}
-                    </td>
-                    <td style={{ ...tdR, background: '#f0fdf4', color: '#166534' }}>
-                      {row.titipan > 0 ? formatRp(row.titipan) : '-'}
                     </td>
                     <td style={{ ...tdR, background: '#eff6ff' }}>
                       {row.suntikanDana > 0 ? formatRp(row.suntikanDana) : '-'}
@@ -3111,7 +3109,6 @@ function BukuEkspedisiScreen({ user, cabang, cabangList, onBack, onLogout, onNav
                   <td style={{ padding: '8px 10px', fontWeight: 800, fontSize: 12, borderRight: '1px solid var(--border)' }}>TOTAL</td>
                   <td style={{ ...tdRBold, background: '#e8f8f0', color: '#166534' }}>{totals.kembaliKasbon > 0 ? formatRp(totals.kembaliKasbon) : '-'}</td>
                   <td style={{ ...tdRBold, background: '#e8f8f0', color: totals.tunaiPasar >= 0 ? '#166534' : 'var(--danger)' }}>{totals.tunaiPasar !== 0 ? formatRp(totals.tunaiPasar) : '-'}</td>
-                  <td style={{ ...tdRBold, background: '#e8f8f0', color: '#166534' }}>{totals.titipan > 0 ? formatRp(totals.titipan) : '-'}</td>
                   <td style={{ ...tdRBold, background: '#dbeafe' }}>{totals.suntikanDana > 0 ? formatRp(totals.suntikanDana) : '-'}</td>
                   <td style={{ ...tdRBold, background: '#dbeafe' }}>{totals.pinjamanKas > 0 ? formatRp(totals.pinjamanKas) : '-'}</td>
                   <td style={{ ...tdRBold, background: '#fef9c3' }}>{totals.kasbonPagi > 0 ? formatRp(totals.kasbonPagi) : '-'}</td>
