@@ -1758,11 +1758,12 @@ function BukuRekapScreen({ user, cabang, cabangList, onBack, onLogout, onNavigat
       // Kredit = Total Drop + Pencairan Tabungan
       const kredit = totalDrop + pencairanTabungan;
 
-      // Kas Pakai & Tunai Pasar:
-      // Jika kredit > debit asli, kas pakai = selisih, debit disamakan dengan kredit, tunai pasar = 0
-      // Jika debit asli >= kredit, kas pakai = 0, debit tetap, tunai pasar = debit - kredit
+      // Kas Pakai & Tunai Pasar (memakai debitAsli — Source of Truth lintas layar):
+      // Jika kredit > debitAsli, kas pakai = selisih, tunai pasar = 0.
+      // Jika debitAsli >= kredit, kas pakai = 0, tunai pasar = debitAsli - kredit.
       const kasPakai = kredit > debitAsli ? kredit - debitAsli : 0;
-      const debit = kredit > debitAsli ? kredit : debitAsli;
+      // Debit (kolom tampilan Buku Rekap) = Storting + Admin + Tabungan + Tarik Tabungan.
+      const debit = storting + adminFee + tabungan + tarikTabunganTotal;
       const tunaiPasar = debitAsli >= kredit ? debitAsli - kredit : 0;
 
       rows.push({
