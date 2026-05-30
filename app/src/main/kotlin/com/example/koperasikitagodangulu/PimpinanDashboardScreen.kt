@@ -26,6 +26,7 @@ import androidx.compose.ui.unit.sp
 import androidx.navigation.NavHostController
 import com.example.koperasikitagodangulu.utils.formatRupiah
 import com.example.koperasikitagodangulu.models.AdminSummary
+import com.example.koperasikitagodangulu.offline.SyncStatusBlock
 import kotlinx.coroutines.launch
 import android.util.Log
 import com.google.firebase.auth.ktx.auth
@@ -319,33 +320,48 @@ fun PimpinanDashboardScreen(
             PimpinanBottomNavigation(navController, "pimpinan_dashboard", viewModel) // ✅ UBAH: Tambah viewModel
         }
     ) { innerPadding ->
-        if ((isLoading && adminSummary.isEmpty() && cabangSummary == null) || isLoadingRefresh.value) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(48.dp),
-                        color = PimpinanColors.primary
-                    )
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text(
-                        if (isLoadingRefresh.value) "Memperbarui data..." else "Memuat dashboard...",
-                        color = PimpinanColors.getTextSecondary(isDark) // ✅ UBAH: Dinamis
-                    )
+        // Wrapper Column dipasang HANYA agar SyncStatusBlock (indikator
+        // sinkronisasi offline) berada di atas konten dashboard tanpa
+        // mengganggu LazyColumn (yang tidak boleh menerima item kosong dari
+        // SyncStatusBar saat tidak ada pending/failed — spacedBy 16dp akan
+        // menyisakan gap kosong). innerPadding dipindah ke Column ini agar
+        // tidak ditambahkan dua kali ke konten anak.
+        Column(
+            modifier = Modifier
+                .padding(innerPadding)
+                .fillMaxSize()
+        ) {
+            // Indikator sinkronisasi offline — auto-hide bila tidak ada pending/failed.
+            // Klik → AlertDialog daftar FAILED + errorMessage + tombol "Coba Lagi".
+            SyncStatusBlock()
+
+            if ((isLoading && adminSummary.isEmpty() && cabangSummary == null) || isLoadingRefresh.value) {
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(48.dp),
+                            color = PimpinanColors.primary
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(
+                            if (isLoadingRefresh.value) "Memperbarui data..." else "Memuat dashboard...",
+                            color = PimpinanColors.getTextSecondary(isDark) // ✅ UBAH: Dinamis
+                        )
+                    }
                 }
-            }
-        } else {
-            LazyColumn(
-                modifier = Modifier
-                    .padding(innerPadding)
-                    .fillMaxSize()
-                    .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
+            } else {
+                LazyColumn(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
                 val shouldShowEmptyState = adminSummary.isEmpty() && cabangSummary == null
 
                 if (shouldShowEmptyState) {
@@ -505,6 +521,7 @@ fun PimpinanDashboardScreen(
                     }
                 }
             }
+        }
         }
     }
 }

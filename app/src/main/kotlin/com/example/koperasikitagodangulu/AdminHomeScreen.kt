@@ -60,6 +60,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.ui.layout.ContentScale
 import com.example.koperasikitagodangulu.services.LocationTrackingMonitor
 import com.example.koperasikitagodangulu.services.LocationCheckWorker
+import com.example.koperasikitagodangulu.offline.SyncStatusBlock
 import androidx.compose.material.icons.rounded.SwapHoriz
 import com.example.koperasikitagodangulu.TakeoverStatus
 
@@ -241,6 +242,10 @@ fun AdminHomeScreen(navController: NavController, viewModel: PelangganViewModel)
                     }
                 )
             }
+
+            // Indikator sinkronisasi offline — auto-hide bila tidak ada pending/failed.
+            // Klik → AlertDialog berisi daftar FAILED + errorMessage + tombol "Coba Lagi".
+            SyncStatusBlock()
 
             Spacer(modifier = Modifier.height(16.dp))
 

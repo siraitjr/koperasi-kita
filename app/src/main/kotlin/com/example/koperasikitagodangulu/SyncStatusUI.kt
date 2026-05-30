@@ -19,10 +19,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.LiveData
+import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -522,4 +524,93 @@ fun SyncInfoCard(
 @Composable
 fun <T> LiveData<T>.observeAsStateWithDefault(default: T): State<T> {
     return this.observeAsState(initial = default)
+}
+
+// -------------------------------------------------------------------------
+// SYNC STATUS BLOCK — wiring siap-pakai untuk diletakkan di Dashboard.
+// -------------------------------------------------------------------------
+//
+// Komposisi tinggi-level yang:
+//  - Observe pendingOnlyCount + failedCount dari OfflineRepository (Flow).
+//  - Render SyncStatusBar (bar tipis di atas; auto-hide bila tidak ada apa-apa).
+//  - Tap bar / tombol → buka AlertDialog berisi SyncInfoCard dengan daftar
+//    item FAILED (operationType + firebasePath + errorMessage + retryCount)
+//    plus tombol "Coba Lagi" untuk reset retry budget.
+//
+// Cukup panggil `SyncStatusBlock()` di body screen — semua state, dialog, dan
+// integrasi OfflineRepository terbungkus di sini agar wiring di setiap layar
+// minimal (1 baris).
+//
+// Penting:
+//  - Bar HANYA tampak bila ada pending/failed/syncing → tidak mengganggu
+//    layout saat semua sync selesai.
+//  - Tidak men-trigger "manual sync" baru untuk tugas latar — auto-sync
+//    eksisting tetap jadi jalur utama (WorkManager + NetworkChangeWorker +
+//    SyncForegroundService). Aksi user di sini hanya "Coba Lagi" untuk
+//    FAILED — sesuai aturan offline-first project.
+// -------------------------------------------------------------------------
+@Composable
+fun SyncStatusBlock(modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    val offlineRepo = remember { OfflineRepository.getInstance(context) }
+    val scope = rememberCoroutineScope()
+
+    val pendingCount by offlineRepo.observePendingOnlyCount().collectAsState(initial = 0)
+    val failedCount by offlineRepo.observeFailedCount().collectAsState(initial = 0)
+
+    var showDialog by remember { mutableStateOf(false) }
+    var failedOps by remember { mutableStateOf<List<PendingOperation>>(emptyList()) }
+
+    // Status sederhana: IDLE default → SyncStatusBar override warna ke merah
+    // saat failedCount > 0; oranye saat pendingCount > 0; hilang saat semua nol.
+    val syncStatus = SyncStatus.IDLE
+
+    val openDialog: () -> Unit = {
+        scope.launch {
+            failedOps = offlineRepo.getFailedOperations()
+            showDialog = true
+        }
+    }
+
+    SyncStatusBar(
+        pendingCount = pendingCount,
+        failedCount = failedCount,
+        syncStatus = syncStatus,
+        // Klik bar (di luar tombol) → buka dialog detail.
+        modifier = modifier.clickable { openDialog() },
+        onSyncClick = openDialog,
+        onRetryFailedClick = openDialog
+    )
+
+    if (showDialog) {
+        AlertDialog(
+            onDismissRequest = { showDialog = false },
+            confirmButton = {
+                TextButton(onClick = { showDialog = false }) { Text("Tutup") }
+            },
+            title = null,
+            text = {
+                SyncInfoCard(
+                    pendingCount = pendingCount,
+                    failedCount = failedCount,
+                    failedOperations = failedOps,
+                    syncStatus = syncStatus,
+                    onSyncClick = {
+                        // Tombol "Sync Now" di SyncInfoCard tetap memanggil
+                        // syncNow() (jalur eksisting komponen). Pemicu utama
+                        // sync tetap WorkManager — ini hanya optional manual.
+                        scope.launch { offlineRepo.syncNow() }
+                    },
+                    onRetryClick = {
+                        scope.launch {
+                            offlineRepo.retryFailed()
+                            // Refresh daftar setelah reset retry → entri yang
+                            // sukses langsung sync akan hilang dari list FAILED.
+                            failedOps = offlineRepo.getFailedOperations()
+                        }
+                    }
+                )
+            }
+        )
+    }
 }
