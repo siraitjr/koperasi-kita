@@ -77,6 +77,31 @@ interface PendingOperationDao {
     @Query("SELECT COUNT(*) FROM pending_operations WHERE status = 'PENDING' OR status = 'FAILED' OR status = 'SYNCING'")
     fun getPendingCountFlow(): Flow<Int>
 
+    // Hitungan terpisah untuk pemisahan UI: yang masih dalam budget retry
+    // (PENDING/SYNCING) vs yang sudah habis budget retry (FAILED). Dipakai
+    // SyncStatusUI agar admin lapangan bisa membedakan "menunggu sinkronisasi"
+    // dan "gagal dan butuh perhatian".
+    @Query("SELECT COUNT(*) FROM pending_operations WHERE status = 'PENDING' OR status = 'SYNCING'")
+    suspend fun getPendingOnlyCount(): Int
+
+    @Query("SELECT COUNT(*) FROM pending_operations WHERE status = 'PENDING' OR status = 'SYNCING'")
+    fun getPendingOnlyCountFlow(): Flow<Int>
+
+    @Query("SELECT COUNT(*) FROM pending_operations WHERE status = 'FAILED'")
+    suspend fun getFailedCount(): Int
+
+    @Query("SELECT COUNT(*) FROM pending_operations WHERE status = 'FAILED'")
+    fun getFailedCountFlow(): Flow<Int>
+
+    @Query("SELECT * FROM pending_operations WHERE status = 'FAILED' ORDER BY createdAt ASC")
+    suspend fun getFailedOperations(): List<PendingOperation>
+
+    // Reset semua entry FAILED ke PENDING + retryCount=0 + errorMessage=null,
+    // memberi budget retry segar saat user menekan "Coba Lagi". Berbeda dari
+    // updateStatus() yang masih meng-increment retryCount via SQL CASE-WHEN.
+    @Query("UPDATE pending_operations SET status = 'PENDING', retryCount = 0, errorMessage = NULL WHERE status = 'FAILED'")
+    suspend fun resetFailedToRetry(): Int
+
     // retryCount hanya di-increment untuk status re-schedule (PENDING) atau gagal permanen (FAILED).
     // Transisi SYNCING / SUCCESS tidak boleh mengonsumsi retry budget.
     @Query("UPDATE pending_operations SET status = :status, errorMessage = :errorMessage, retryCount = retryCount + CASE WHEN :status IN ('PENDING','FAILED') THEN 1 ELSE 0 END WHERE id = :id")

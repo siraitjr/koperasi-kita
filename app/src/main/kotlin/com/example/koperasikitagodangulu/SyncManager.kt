@@ -736,10 +736,22 @@ class SyncManager private constructor(private val context: Context) {
                     "UPDATE_PELANGGAN" -> {
                         ref.updateChildren(data as Map<String, Any?>).await()
                     }
-                    "REMOVE_STATUS_KHUSUS" -> {
+                    "REMOVE_STATUS_KHUSUS",
+                    "REMOVE_PELANGGAN",
+                    "REMOVE_PELANGGAN_STATUS_KHUSUS" -> {
+                        // removeValue() bersifat idempoten — replay berulang aman.
+                        // REMOVE_PELANGGAN & REMOVE_PELANGGAN_STATUS_KHUSUS dipakai
+                        // alur cairkanSimpanan agar pelanggan + status_khusus hilang
+                        // saat sync (sebelumnya direct write yang gagal offline).
                         ref.removeValue().await()
                     }
                     else -> {
+                        // Default setValue — dipakai oleh:
+                        // - ADD_JURNAL_TRANSAKSI (firebasePath sudah berisi push key
+                        //   yang di-generate client-side → idempoten saat retry)
+                        // - ADD_RIWAYAT_PINJAMAN (path: riwayat_pinjaman/{adminUid}/
+                        //   {pelangganId}/{pinjamanKe} → idempoten karena overwrite
+                        //   ke key yang sama)
                         ref.setValue(data).await()
                     }
                 }
@@ -895,22 +907,70 @@ class SyncManager private constructor(private val context: Context) {
 
     fun observePendingCount(): Flow<Int> = dao.getPendingCountFlow()
 
+    // Hitungan terpisah PENDING/SYNCING vs FAILED — dipakai SyncStatusUI untuk
+    // memisahkan badge "menunggu sinkronisasi" dari "gagal & butuh perhatian".
+    suspend fun getPendingOnlyCount(): Int = dao.getPendingOnlyCount()
+    fun observePendingOnlyCount(): Flow<Int> = dao.getPendingOnlyCountFlow()
+    suspend fun getFailedCount(): Int = dao.getFailedCount()
+    fun observeFailedCount(): Flow<Int> = dao.getFailedCountFlow()
+    suspend fun getFailedOperations(): List<PendingOperation> = dao.getFailedOperations()
+
     suspend fun getAllOperations(): List<PendingOperation> = dao.getAllOperations()
 
     suspend fun cleanupSuccessful() {
         dao.deleteSuccessful()
     }
 
-    suspend fun retryAllFailed() {
-        val failed = dao.getPendingOperations().filter { it.status == "FAILED" }
-        Log.d(TAG, "🔄 Retrying ${failed.size} failed operations")
-        for (op in failed) {
-            dao.updateStatus(op.id, "PENDING", null)
-        }
-
-        if (failed.isNotEmpty()) {
+    // Retry manual untuk FAILED: reset retryCount ke 0 + clear errorMessage
+    // (lewat resetFailedToRetry()) sebelum trigger sync. Versi lama hanya
+    // updateStatus(..., "PENDING", null) yang LALU MENINGKATKAN retryCount
+    // via SQL CASE-WHEN, sehingga entry dengan retryCount=5 langsung jatuh ke
+    // FAILED lagi pada attempt berikutnya.
+    suspend fun retryAllFailed(): Int {
+        val resetCount = dao.resetFailedToRetry()
+        Log.d(TAG, "🔄 Reset $resetCount FAILED → PENDING (retryCount=0)")
+        if (resetCount > 0) {
             SyncForegroundService.startSync(context)
         }
+        return resetCount
+    }
+
+    /**
+     * Antri operasi generik ke Room. Dipakai alur cairkanSimpanan (jurnal,
+     * arsip riwayat_pinjaman, removeValue pelanggan + status_khusus) agar
+     * semua langkah offline-first. `firebasePath` & `dataJson` harus sudah
+     * siap dipakai langsung oleh trySyncOperation().
+     */
+    suspend fun queueOperation(
+        operationType: String,
+        firebasePath: String,
+        dataJson: String,
+        adminUid: String,
+        pelangganId: String? = null
+    ): Long = withContext(Dispatchers.IO) {
+        val operation = PendingOperation(
+            operationType = operationType,
+            firebasePath = firebasePath,
+            dataJson = dataJson,
+            adminUid = adminUid,
+            pelangganId = pelangganId,
+            status = "PENDING"
+        )
+        val id = dao.insert(operation)
+        Log.d(TAG, "📥 queueOperation: $operationType → $firebasePath (opId=$id)")
+        SyncWorker.triggerImmediateSync(context)
+        id
+    }
+
+    /**
+     * Generate push key client-side (sama formula dengan DatabaseReference.push()).
+     * Disimpan ke firebasePath sebelum di-queue → retry replay menggunakan key
+     * yang sama (idempoten); tanpa ini, retry .push().setValue() akan
+     * menghasilkan key baru = duplikasi entry.
+     */
+    fun generatePushKey(parentPath: String): String {
+        return firebase.getReference(parentPath).push().key
+            ?: error("Firebase gagal generate push key untuk $parentPath")
     }
 
     fun isOnline(): Boolean {

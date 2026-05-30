@@ -14145,18 +14145,28 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                 val sisaUtang = (pelanggan.totalPelunasan - totalDibayar).coerceAtLeast(0)
 
                 // =========================================================
-                // FIX: Jika masih ada sisa utang, catat pelunasan via tabungan
-                // ke pembayaranList (trigger onPembayaranAdded → pembayaran_harian)
-                // & jurnal_transaksi SEBELUM hapus data.
-                // Agar buku pokok web tetap mencatat pelunasan ini secara permanen.
+                // OFFLINE-FIRST REWRITE: SEMUA langkah di-queue ke Room via
+                // OfflineRepository → SyncWorker memutar berurutan saat online.
+                // Sebelumnya: addPembayaran di-queue, tetapi jurnal_transaksi,
+                // riwayat_pinjaman, dan removeValue(pelanggan/status_khusus)
+                // ditulis DIRECT — gagal offline & meninggalkan state
+                // setengah-jalan (phantom pembayaran tanpa arsip/penghapusan).
+                //
+                // Urutan queue = urutan eksekusi sync (FIFO by createdAt):
+                //   1. addPembayaran (jika ada sisa utang)
+                //   2. addJurnalTransaksi (jika ada sisa utang)
+                //   3. addRiwayatPinjaman (arsip — selalu)
+                //   4. removePelanggan
+                //   5. removePelangganStatusKhusus
                 // =========================================================
+
                 if (sisaUtang > 0 && cabangId.isNotBlank()) {
                     val dateFormat = SimpleDateFormat("dd MMM yyyy", Locale("in", "ID"))
                     val today = dateFormat.format(Date())
                     val yearMonthFormat = SimpleDateFormat("yyyy-MM", Locale.getDefault())
                     val yearMonth = yearMonthFormat.format(Date())
 
-                    // Baca nama admin (1 RTDB read)
+                    // Baca nama admin (try-catch → fallback ke email bila offline).
                     val adminName = try {
                         database.child("metadata/admins/$adminUid/name").get().await()
                             .getValue(String::class.java) ?: currentEmail
@@ -14178,8 +14188,9 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                         )
                     )
 
-                    // 2. Catat ke jurnal_transaksi (jurnal custom cairkan_simpanan,
-                    //    node berbeda dari jurnalTransaksi yang ditulis CF).
+                    // 2. Antri jurnal_transaksi (node berbeda dari jurnalTransaksi yg ditulis CF).
+                    //    Pakai System.currentTimeMillis() — ServerValue.TIMESTAMP tidak
+                    //    bertahan via gson serialisasi di Room queue.
                     val jurnalData = mapOf(
                         "tipe" to "pelunasan_tabungan",
                         "pelangganId" to pelangganId,
@@ -14194,13 +14205,17 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                         "totalPelunasan" to pelanggan.totalPelunasan,
                         "totalDibayar" to (totalDibayar + sisaUtang),
                         "keterangan" to "Pelunasan sisa utang Rp $sisaUtang via tabungan (cairkan simpanan)",
-                        "timestamp" to ServerValue.TIMESTAMP,
+                        "timestamp" to System.currentTimeMillis(),
                         "createdAt" to SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.getDefault()).format(Date())
                     )
-                    database.child("jurnal_transaksi").child(cabangId).child(yearMonth)
-                        .push().setValue(jurnalData).await()
+                    offlineRepo.addJurnalTransaksi(
+                        cabangId = cabangId,
+                        yearMonth = yearMonth,
+                        adminUid = adminUid,
+                        jurnalData = jurnalData
+                    )
 
-                    Log.d("Pencairan", "✅ Sisa utang Rp $sisaUtang tercatat via addPembayaran & jurnal_transaksi")
+                    Log.d("Pencairan", "📥 Antri pelunasan Rp $sisaUtang: pembayaran + jurnal_transaksi")
                 }
 
                 // =========================================================
@@ -14267,53 +14282,45 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     "statusKhusus" to pelanggan.statusKhusus,
                     // Riwayat pembayaran lengkap
                     "pembayaranList" to pembayaranListForArchive,
-                    // Metadata arsip
-                    "archivedAt" to ServerValue.TIMESTAMP,
+                    // Metadata arsip — pakai client-side timestamp (ServerValue.TIMESTAMP
+                    // tidak survive gson serialisasi via Room queue).
+                    "archivedAt" to System.currentTimeMillis(),
                     "adminUid" to adminUid
                 )
 
-                database.child("riwayat_pinjaman").child(adminUid)
-                    .child(pelangganId).child(pinjamanKe.toString())
-                    .setValue(arsipData).await()
+                // 3. Antri arsip riwayat_pinjaman (idempoten: path mengandung pinjamanKe).
+                offlineRepo.addRiwayatPinjaman(
+                    adminUid = adminUid,
+                    pelangganId = pelangganId,
+                    pinjamanKe = pinjamanKe,
+                    arsipData = arsipData
+                )
 
-                Log.d("Pencairan", "✅ Arsip riwayat_pinjaman berhasil: ${pelanggan.namaPanggilan} pinjaman ke-$pinjamanKe")
+                // 4. Antri removeValue pelanggan (idempoten — replay aman).
+                offlineRepo.removePelanggan(adminUid = adminUid, pelangganId = pelangganId)
 
-                // Nasabah lunas + tabungan dicairkan → hapus dari database
-                database.child("pelanggan").child(adminUid).child(pelangganId)
-                    .removeValue()
-                    .addOnSuccessListener {
-                        // Hapus dari local list
-                        val index = daftarPelanggan.indexOfFirst { it.id == pelangganId }
-                        if (index != -1) {
-                            daftarPelanggan.removeAt(index)
-                        }
-                        Log.d("Pencairan", "✅ Nasabah dihapus dari database (lunas total): ${pelanggan.namaPanggilan}")
-                        viewModelScope.launch {
-                            try {
-                                if (cabangId.isNotBlank()) {
-                                    // Hapus dari node pelanggan_status_khusus
-                                    database.child("pelanggan_status_khusus")
-                                        .child(cabangId)
-                                        .child(pelangganId)
-                                        .removeValue()
-                                        .await()
+                // 5. Antri removeValue pelanggan_status_khusus bila ada cabangId.
+                //    updateStatusKhususCounter di-skip (summary/* dilarang ditulis
+                //    client per CLAUDE.md; CF akan merekonsiliasi summary nanti).
+                if (cabangId.isNotBlank()) {
+                    offlineRepo.removePelangganStatusKhusus(
+                        cabangId = cabangId,
+                        pelangganId = pelangganId,
+                        adminUid = adminUid
+                    )
+                }
 
-                                    updateStatusKhususCounter(adminUid, cabangId)
-                                    Log.d("Pencairan", "✅ Removed from pelanggan_status_khusus")
-                                }
-                            } catch (e: Exception) {
-                                Log.e("Pencairan", "Error removing from status_khusus: ${e.message}")
-                            }
-                        }
-                        onSuccess?.invoke()
-                    }
-                    .addOnFailureListener { e ->
-                        Log.e("Pencairan", "❌ Gagal menghapus nasabah: ${e.message}")
-                        onFailure?.invoke(e)
-                    }
+                // Optimistic local-state update — konsisten dengan input pembayaran
+                // (yang sudah optimistic). Sync sebenarnya jalan di SyncWorker.
+                val index = daftarPelanggan.indexOfFirst { it.id == pelangganId }
+                if (index != -1) {
+                    daftarPelanggan.removeAt(index)
+                }
+                Log.d("Pencairan", "✅ Antrian cairkanSimpanan lengkap: ${pelanggan.namaPanggilan} (pinjaman ke-$pinjamanKe)")
+                onSuccess?.invoke()
 
             } catch (e: Exception) {
-                Log.e("Pencairan", "❌ Error: ${e.message}")
+                Log.e("Pencairan", "❌ Error queue cairkanSimpanan: ${e.message}")
                 onFailure?.invoke(e)
             }
         }

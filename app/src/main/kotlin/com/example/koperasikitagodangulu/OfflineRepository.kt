@@ -181,6 +181,94 @@ class OfflineRepository private constructor(context: Context) {
     }
 
     // =========================================================================
+    // OPERASI ANTRIAN KHUSUS UNTUK cairkanSimpanan (offline-first end-to-end)
+    // =========================================================================
+    // Sebelumnya cairkanSimpanan menulis jurnal_transaksi, riwayat_pinjaman,
+    // dan removeValue pelanggan + status_khusus secara DIRECT — gagal offline.
+    // Sekarang semua di-queue ke Room → SyncWorker memutar saat online.
+    // =========================================================================
+
+    /**
+     * Antri entry jurnal_transaksi. Push key di-generate client-side agar
+     * retry replay idempoten (kalau pakai .push() di sync time, retry akan
+     * menulis key baru = duplikasi).
+     *
+     * Return: pushKey yang dipakai (untuk caller yang butuh referensi).
+     */
+    suspend fun addJurnalTransaksi(
+        cabangId: String,
+        yearMonth: String,
+        adminUid: String,
+        jurnalData: Map<String, Any?>
+    ): String {
+        val parentPath = "jurnal_transaksi/$cabangId/$yearMonth"
+        val pushKey = syncManager.generatePushKey(parentPath)
+        val firebasePath = "$parentPath/$pushKey"
+        Log.d(TAG, "🚀 addJurnalTransaksi() → $firebasePath")
+        syncManager.queueOperation(
+            operationType = "ADD_JURNAL_TRANSAKSI",
+            firebasePath = firebasePath,
+            dataJson = com.google.gson.Gson().toJson(jurnalData),
+            adminUid = adminUid
+        )
+        return pushKey
+    }
+
+    /**
+     * Antri arsip riwayat_pinjaman. Path mengandung pinjamanKe → idempoten
+     * (replay menulis ke key yang sama).
+     */
+    suspend fun addRiwayatPinjaman(
+        adminUid: String,
+        pelangganId: String,
+        pinjamanKe: Int,
+        arsipData: Map<String, Any?>
+    ) {
+        val firebasePath = "riwayat_pinjaman/$adminUid/$pelangganId/$pinjamanKe"
+        Log.d(TAG, "🚀 addRiwayatPinjaman() → $firebasePath")
+        syncManager.queueOperation(
+            operationType = "ADD_RIWAYAT_PINJAMAN",
+            firebasePath = firebasePath,
+            dataJson = com.google.gson.Gson().toJson(arsipData),
+            adminUid = adminUid,
+            pelangganId = pelangganId
+        )
+    }
+
+    /**
+     * Antri penghapusan node pelanggan (cairkanSimpanan: nasabah lunas total).
+     * removeValue() idempoten — retry aman.
+     */
+    suspend fun removePelanggan(adminUid: String, pelangganId: String) {
+        val firebasePath = "pelanggan/$adminUid/$pelangganId"
+        Log.d(TAG, "🚀 removePelanggan() → $firebasePath")
+        syncManager.queueOperation(
+            operationType = "REMOVE_PELANGGAN",
+            firebasePath = firebasePath,
+            dataJson = "{}",
+            adminUid = adminUid,
+            pelangganId = pelangganId
+        )
+    }
+
+    /**
+     * Antri penghapusan entry pelanggan_status_khusus untuk cairkanSimpanan
+     * (versi removeStatusKhusus di atas pakai jalur lama; ini adalah versi
+     * queue-only yang tidak mencoba tulis langsung).
+     */
+    suspend fun removePelangganStatusKhusus(cabangId: String, pelangganId: String, adminUid: String) {
+        val firebasePath = "pelanggan_status_khusus/$cabangId/$pelangganId"
+        Log.d(TAG, "🚀 removePelangganStatusKhusus() → $firebasePath")
+        syncManager.queueOperation(
+            operationType = "REMOVE_PELANGGAN_STATUS_KHUSUS",
+            firebasePath = firebasePath,
+            dataJson = "{}",
+            adminUid = adminUid,
+            pelangganId = pelangganId
+        )
+    }
+
+    // =========================================================================
     // STATUS & SYNC
     // =========================================================================
 
@@ -194,14 +282,23 @@ class OfflineRepository private constructor(context: Context) {
         return syncManager.observePendingCount()
     }
 
+    // Hitungan PENDING/SYNCING saja (tanpa FAILED) untuk badge "menunggu sinkronisasi".
+    suspend fun getPendingOnlyCount(): Int = syncManager.getPendingOnlyCount()
+    fun observePendingOnlyCount(): Flow<Int> = syncManager.observePendingOnlyCount()
+
+    // Hitungan FAILED saja untuk badge "gagal & butuh perhatian".
+    suspend fun getFailedCount(): Int = syncManager.getFailedCount()
+    fun observeFailedCount(): Flow<Int> = syncManager.observeFailedCount()
+    suspend fun getFailedOperations(): List<PendingOperation> = syncManager.getFailedOperations()
+
     suspend fun syncNow(): SyncResult {
         Log.d(TAG, "🔄 syncNow() called")
         return syncManager.syncAllPending()
     }
 
-    suspend fun retryFailed() {
+    suspend fun retryFailed(): Int {
         Log.d(TAG, "🔄 retryFailed() called")
-        syncManager.retryAllFailed()
+        return syncManager.retryAllFailed()
     }
 
     fun triggerSync() {
