@@ -29,6 +29,7 @@ import androidx.compose.ui.unit.sp
 import androidx.navigation.NavHostController
 import com.example.koperasikitagodangulu.utils.formatRupiah
 import com.example.koperasikitagodangulu.models.AdminSummary
+import com.example.koperasikitagodangulu.offline.SyncStatusBlock
 import com.example.koperasikitagodangulu.models.PengawasCabangSummary
 import com.example.koperasikitagodangulu.models.PembayaranHarianItem
 import kotlinx.coroutines.launch
@@ -161,14 +162,26 @@ fun PengawasDashboardScreen(
             }
         }
     ) { innerPadding ->
+        // Wrapper Column agar SyncStatusBlock (indikator sinkronisasi offline)
+        // duduk bersih di atas konten when {} tanpa men-introduksi gap dari
+        // spacedBy LazyColumn. innerPadding dipindah ke Column ini agar tidak
+        // ditambahkan dua kali ke setiap branch.
+        Column(
+            modifier = Modifier
+                .padding(innerPadding)
+                .fillMaxSize()
+        ) {
+            // Indikator sinkronisasi offline — auto-hide bila tidak ada pending/failed.
+            // Klik → AlertDialog daftar FAILED + errorMessage + tombol "Coba Lagi".
+            SyncStatusBlock()
 
-        when {
+            when {
             // Loading state
             isLoading && allCabangSummaries.isEmpty() -> {
                 Box(
                     modifier = Modifier
-                        .fillMaxSize()
-                        .padding(innerPadding),
+                        .weight(1f)
+                        .fillMaxWidth(),
                     contentAlignment = Alignment.Center
                 ) {
                     Column(
@@ -191,8 +204,8 @@ fun PengawasDashboardScreen(
             pengawasDataLoaded && allCabangSummaries.isEmpty() -> {
                 Box(
                     modifier = Modifier
-                        .fillMaxSize()
-                        .padding(innerPadding),
+                        .weight(1f)
+                        .fillMaxWidth(),
                     contentAlignment = Alignment.Center
                 ) {
                     Column(
@@ -237,8 +250,8 @@ fun PengawasDashboardScreen(
             else -> {
                 LazyColumn(
                     modifier = Modifier
-                        .fillMaxSize()
-                        .padding(innerPadding)
+                        .weight(1f)
+                        .fillMaxWidth()
                         .padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
@@ -460,6 +473,7 @@ fun PengawasDashboardScreen(
                     )
                 }
             )
+        }
         }
     }
 }

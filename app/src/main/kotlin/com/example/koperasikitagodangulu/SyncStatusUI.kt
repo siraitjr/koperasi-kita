@@ -293,7 +293,6 @@ fun SyncStatusBar(
 fun SyncInfoCard(
     pendingCount: Int,
     syncStatus: SyncStatus,
-    onSyncClick: () -> Unit,
     onRetryClick: () -> Unit,
     modifier: Modifier = Modifier,
     // FAILED count + list dipisah agar admin lapangan bisa lihat ITEM apa yang
@@ -302,6 +301,9 @@ fun SyncInfoCard(
     failedCount: Int = 0,
     failedOperations: List<PendingOperation> = emptyList()
 ) {
+    // Kebijakan project: PENDING auto-sync (WorkManager + NetworkChangeWorker +
+    // SyncForegroundService), manual user hanya untuk FAILED (Coba Lagi).
+    // Tombol legacy "Sync Now" dihapus pada commit ini.
     Card(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
@@ -450,54 +452,38 @@ fun SyncInfoCard(
                 Spacer(modifier = Modifier.height(12.dp))
             }
 
-            // Action buttons — "Coba Lagi" jadi tombol utama bila ada FAILED.
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                if (failedCount > 0) {
-                    Button(
-                        onClick = onRetryClick,
-                        modifier = Modifier.weight(1f),
-                        enabled = syncStatus != SyncStatus.SYNCING,
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFC62828))
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Refresh,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Coba Lagi ($failedCount)")
-                    }
-                } else {
-                    OutlinedButton(
-                        onClick = onRetryClick,
-                        modifier = Modifier.weight(1f),
-                        enabled = syncStatus != SyncStatus.SYNCING
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Refresh,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Coba Lagi")
-                    }
-                }
-
+            // Satu-satunya aksi user: "Coba Lagi" untuk FAILED. Sync umum
+            // (PENDING) tidak punya tombol — auto-sync background yang menanganinya.
+            // Saat tidak ada FAILED, tombol tetap muncul (disabled) sebagai
+            // afirmasi visual bahwa tidak ada yang perlu di-retry.
+            if (failedCount > 0) {
                 Button(
-                    onClick = onSyncClick,
-                    modifier = Modifier.weight(1f),
-                    enabled = syncStatus != SyncStatus.SYNCING && pendingCount > 0
+                    onClick = onRetryClick,
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = syncStatus != SyncStatus.SYNCING,
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFC62828))
                 ) {
                     Icon(
-                        imageVector = Icons.Default.CloudUpload,
+                        imageVector = Icons.Default.Refresh,
                         contentDescription = null,
                         modifier = Modifier.size(18.dp)
                     )
                     Spacer(modifier = Modifier.width(4.dp))
-                    Text("Sync Now")
+                    Text("Coba Lagi ($failedCount)")
+                }
+            } else {
+                OutlinedButton(
+                    onClick = onRetryClick,
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = false
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Refresh,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Tidak ada data gagal")
                 }
             }
 
@@ -595,16 +581,10 @@ fun SyncStatusBlock(modifier: Modifier = Modifier) {
                     failedCount = failedCount,
                     failedOperations = failedOps,
                     syncStatus = syncStatus,
-                    onSyncClick = {
-                        // Tombol "Sync Now" di SyncInfoCard tetap memanggil
-                        // syncNow() (jalur eksisting komponen). Pemicu utama
-                        // sync tetap WorkManager — ini hanya optional manual.
-                        scope.launch { offlineRepo.syncNow() }
-                    },
                     onRetryClick = {
                         scope.launch {
                             offlineRepo.retryFailed()
-                            // Refresh daftar setelah reset retry → entri yang
+                            // Refresh daftar setelah reset retry — entri yang
                             // sukses langsung sync akan hilang dari list FAILED.
                             failedOps = offlineRepo.getFailedOperations()
                         }
