@@ -149,11 +149,13 @@ fun SyncBadge(
 fun SyncStatusBar(
     pendingCount: Int,
     syncStatus: SyncStatus,
-    onSyncClick: () -> Unit,
     modifier: Modifier = Modifier,
     // FAILED dipisah dari pending agar admin lapangan tahu ada entri yang habis
     // budget retry & butuh aksi manual "Coba Lagi". Default 0 untuk back-compat.
     failedCount: Int = 0,
+    // Aksi manual user di project ini HANYA "Coba Lagi" (untuk FAILED). PENDING
+    // diserahkan ke auto-sync (WorkManager + NetworkChangeWorker +
+    // SyncForegroundService) — tidak ada parameter onSyncClick di sini.
     onRetryFailedClick: (() -> Unit)? = null
 ) {
     // Tampilkan jika ada pending, failed, atau sedang sync.
@@ -260,19 +262,13 @@ fun SyncStatusBar(
                 }
             }
 
-            // Tombol: Coba Lagi (untuk FAILED) lebih prioritas dari Sync biasa.
+            // Tombol satu-satunya: "Coba Lagi" untuk FAILED. PENDING tidak punya
+            // tombol manual — auto-sync background yang menanganinya (kebijakan
+            // project: tidak ada manual sync untuk tugas latar umum).
             if (syncStatus != SyncStatus.SYNCING && failedCount > 0 && onRetryFailedClick != null) {
                 TextButton(onClick = onRetryFailedClick) {
                     Text(
                         text = "Coba Lagi",
-                        color = textColor,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-            } else if (syncStatus != SyncStatus.SYNCING && pendingCount > 0) {
-                TextButton(onClick = onSyncClick) {
-                    Text(
-                        text = "Sync",
                         color = textColor,
                         fontWeight = FontWeight.Bold
                     )
@@ -562,9 +558,8 @@ fun SyncStatusBlock(modifier: Modifier = Modifier) {
         pendingCount = pendingCount,
         failedCount = failedCount,
         syncStatus = syncStatus,
-        // Klik bar (di luar tombol) → buka dialog detail.
+        // Klik bar (di luar tombol "Coba Lagi") → buka dialog detail.
         modifier = modifier.clickable { openDialog() },
-        onSyncClick = openDialog,
         onRetryFailedClick = openDialog
     )
 
