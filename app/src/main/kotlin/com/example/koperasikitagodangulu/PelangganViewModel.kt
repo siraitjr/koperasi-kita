@@ -14144,6 +14144,15 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     }
                 val sisaUtang = (pelanggan.totalPelunasan - totalDibayar).coerceAtLeast(0)
 
+                // Kelebihan tabungan = simpanan customer dikurangi sisa utang.
+                // Inilah uang kas FISIK yang dikembalikan admin ke customer
+                // setelah pelunasan internal. Per SOP koperasi, ini harus
+                // dicatat permanen sebagai entry jurnal tipe "tarik_tabungan"
+                // agar audit trail kas lengkap (sebelumnya hilang dari semua
+                // catatan — lihat audit forensik cairkanSimpanan).
+                val totalSimpanan = pelanggan.simpanan.toLong()
+                val kelebihanSimpanan = (totalSimpanan - sisaUtang).coerceAtLeast(0)
+
                 // =========================================================
                 // OFFLINE-FIRST REWRITE: SEMUA langkah di-queue ke Room via
                 // OfflineRepository → SyncWorker memutar berurutan saat online.
@@ -14216,6 +14225,55 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     )
 
                     Log.d("Pencairan", "📥 Antri pelunasan Rp $sisaUtang: pembayaran + jurnal_transaksi")
+                }
+
+                // =========================================================
+                // BARU: jika ada KELEBIHAN tabungan (simpanan > sisa utang),
+                // catat permanen sebagai jurnal `tarik_tabungan`. Inilah
+                // physical cash yang admin kembalikan ke customer setelah
+                // pelunasan internal. Web Buku Rekap akan baca entry ini
+                // sebagai "Tarik Tab." kolom + kredit di Tunai Pasar (lihat
+                // instruksi web di commit message).
+                //
+                // Skenario kelebihanSimpanan > 0 muncul ketika:
+                //   - simpanan > sisaUtang (sisa kas dikembalikan tunai), atau
+                //   - sisaUtang == 0 & simpanan > 0 (seluruh tabungan tunai).
+                // =========================================================
+                if (kelebihanSimpanan > 0 && cabangId.isNotBlank()) {
+                    val dateFormat = SimpleDateFormat("dd MMM yyyy", Locale("in", "ID"))
+                    val today = dateFormat.format(Date())
+                    val yearMonthFormat = SimpleDateFormat("yyyy-MM", Locale.getDefault())
+                    val yearMonth = yearMonthFormat.format(Date())
+
+                    val adminName = try {
+                        database.child("metadata/admins/$adminUid/name").get().await()
+                            .getValue(String::class.java) ?: currentEmail
+                    } catch (_: Exception) { currentEmail }
+
+                    val tarikTabunganData = mapOf(
+                        "tipe" to "tarik_tabungan",
+                        "pelangganId" to pelangganId,
+                        "namaPelanggan" to pelanggan.namaPanggilan,
+                        "namaKtp" to pelanggan.namaKtp,
+                        "adminUid" to adminUid,
+                        "adminName" to adminName,
+                        "jumlah" to kelebihanSimpanan,
+                        "tanggal" to today,
+                        "pinjamanKe" to pelanggan.pinjamanKe,
+                        "totalSimpanan" to totalSimpanan,
+                        "sisaUtangSebelumPelunasan" to sisaUtang,
+                        "keterangan" to "Pencairan kelebihan tabungan Rp $kelebihanSimpanan (setelah pelunasan utang Rp $sisaUtang)",
+                        "timestamp" to System.currentTimeMillis(),
+                        "createdAt" to SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.getDefault()).format(Date())
+                    )
+                    offlineRepo.addJurnalTransaksi(
+                        cabangId = cabangId,
+                        yearMonth = yearMonth,
+                        adminUid = adminUid,
+                        jurnalData = tarikTabunganData
+                    )
+
+                    Log.d("Pencairan", "📥 Antri tarik tabungan Rp $kelebihanSimpanan (kelebihan setelah pelunasan)")
                 }
 
                 // =========================================================
