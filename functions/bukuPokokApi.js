@@ -42,8 +42,11 @@ const bukuPokokCache = new Map();
 // Cache untuk metadata (dipakai oleh getBukuPokokSummary dan getKasirSummary)
 let metadataCache = { data: null, timestamp: 0 };
 
-function getCacheKey(cabangId, statusFilter, adminUid) {
-    return `${cabangId || 'all'}:${statusFilter}:${adminUid || 'all'}`;
+function getCacheKey(cabangId, statusFilter, adminUid, bulan) {
+    // bulan ikut ke cache key — agar respons orphanPaymentsByDate yang
+    // berbeda per bulan tidak saling override. Bila bulan tidak dikirim,
+    // fallback 'noBulan' menjaga back-compat untuk caller lama.
+    return `${cabangId || 'all'}:${statusFilter}:${adminUid || 'all'}:${bulan || 'noBulan'}`;
 }
 
 function getFromCache(key) {
@@ -279,7 +282,7 @@ exports.getBukuPokok = functions
             }
 
             // 3. Parse parameters
-            const { cabangId, adminUid, status } = req.query;
+            const { cabangId, adminUid, status, bulan } = req.query;
             const statusFilter = (status || 'aktif').toLowerCase();
             console.log(`[getBukuPokok] VERSION=2026-03-30-v5-tabs, statusFilter=${statusFilter}, cabangId=${cabangId}`);
 
@@ -352,7 +355,7 @@ exports.getBukuPokok = functions
             }
 
             // 5. Cek cache dulu sebelum baca RTDB
-            const cacheKey = getCacheKey(cabangId, statusFilter, adminUid);
+            const cacheKey = getCacheKey(cabangId, statusFilter, adminUid, bulan);
             const cachedResponse = getFromCache(cacheKey);
             if (cachedResponse) {
                 console.log(`[getBukuPokok] ✅ CACHE HIT: ${cacheKey}`);
@@ -660,6 +663,62 @@ exports.getBukuPokok = functions
                 return (a.nomorAnggota || '').localeCompare(b.nomorAnggota || '');
             });
 
+            // =================================================================
+            // 8. ORPHAN PAYMENTS — pembayaran_harian entries milik pelanggan
+            //    yang sudah tidak ada lagi di pelanggan/ (mis. setelah
+            //    cairkanSimpanan menghapus nasabah). Per SOP koperasi,
+            //    payment-nya tetap masuk Storting walaupun nasabah-nya tidak
+            //    ada lagi → Web Buku Rekap match dengan Android Laporan
+            //    Harian (yang sudah include via loadPelunasanEksternalHariIni).
+            //    Hanya aktif bila param `bulan` (YYYY-MM) dikirim caller.
+            //    Path key pembayaran_harian = "dd MMM yyyy" (Indonesian),
+            //    lihat getTodayIndonesia() di summaryHelpers.js.
+            // =================================================================
+            let orphanPaymentsByDate = {}; // { "dd MMM yyyy": { adminUid: jumlah } }
+            if (bulan && cabangId) {
+                try {
+                    const currentPelangganIds = new Set();
+                    nasabahList.forEach(n => { if (n.id) currentPelangganIds.add(n.id); });
+
+                    const [bYyyy, bMm] = bulan.split('-').map(Number);
+                    if (bYyyy && bMm) {
+                        const daysInMonth = new Date(bYyyy, bMm, 0).getDate();
+                        const monthAbbr = BULAN_INDO[bMm - 1];
+
+                        const dateKeys = [];
+                        for (let d = 1; d <= daysInMonth; d++) {
+                            dateKeys.push(`${String(d).padStart(2, '0')} ${monthAbbr} ${bYyyy}`);
+                        }
+
+                        // Parallel read tiap tanggal — path key pembayaran_harian
+                        // = "dd MMM yyyy" (lihat getTodayIndonesia).
+                        const phSnaps = await Promise.all(dateKeys.map(dateKey =>
+                            db.ref(`pembayaran_harian/${cabangId}/${dateKey}`).once('value')
+                        ));
+
+                        phSnaps.forEach((snap, idx) => {
+                            if (!snap.exists()) return;
+                            const dateKey = dateKeys[idx];
+                            snap.forEach(entrySnap => {
+                                const e = entrySnap.val();
+                                if (!e || !e.pelangganId) return;
+                                // Skip bila pelanggan masih ada — sudah dihitung
+                                // via n.pembayaran[dateKey] di client.
+                                if (currentPelangganIds.has(e.pelangganId)) return;
+                                const adminUidE = e.adminUid || '';
+                                const jumlah = e.jumlah || 0;
+                                if (!orphanPaymentsByDate[dateKey]) orphanPaymentsByDate[dateKey] = {};
+                                orphanPaymentsByDate[dateKey][adminUidE] =
+                                    (orphanPaymentsByDate[dateKey][adminUidE] || 0) + jumlah;
+                            });
+                        });
+                    }
+                } catch (e) {
+                    console.error('⚠ Orphan payments aggregation failed:', e.message);
+                    orphanPaymentsByDate = {};
+                }
+            }
+
             const responseBody = {
                 success: true,
                 type: 'buku_pokok',
@@ -672,7 +731,8 @@ exports.getBukuPokok = functions
                     totalSisaUtang: nasabahList.reduce((sum, n) => sum + n.sisaUtang, 0),
                     totalPinjaman: nasabahList.reduce((sum, n) => sum + (n.besarPinjaman || 0), 0),
                     pembayaranHariIni: totalPembayaranHariIni,
-                    targetHarianHariIni: totalTargetHarian
+                    targetHarianHariIni: totalTargetHarian,
+                    orphanPaymentsByDate: orphanPaymentsByDate
                 }
             };
 

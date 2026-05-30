@@ -85,8 +85,11 @@ export async function getSummary() {
 /**
  * Get buku pokok data per cabang/admin
  */
-export async function getBukuPokok({ cabangId, adminUid, status }) {
-  return apiCall('getBukuPokok', { cabangId, adminUid, status });
+export async function getBukuPokok({ cabangId, adminUid, status, bulan }) {
+  // `bulan` (YYYY-MM, opsional) → CF ikut sertakan orphan payments (pembayaran
+  // dari pelanggan yang sudah dihapus, mis. setelah cairkanSimpanan). Hanya
+  // BukuRekap yang pass param ini; layar lain biarkan undefined → back-compat.
+  return apiCall('getBukuPokok', { cabangId, adminUid, status, bulan });
 }
 
 /**

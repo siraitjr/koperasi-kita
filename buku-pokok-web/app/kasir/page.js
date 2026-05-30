@@ -198,15 +198,40 @@ function computeTunaiKasPerDate(dateStr, nasabahByAdmin, admins, pencairanByAdmi
 
 // =========================================================================
 // Pencairan tabungan per (tanggal, admin) dari jurnal_transaksi.
-// tipe yang dihitung: 'pelunasan_tabungan' (sisa utang dilunasi via tabungan)
-// & 'pencairan_simpanan_partial' (tarik sebagian simpanan). Keduanya = uang
-// kas keluar → dipakai sebagai kredit di computeTunaiKasPerDate & kolom
-// "Cair Tab." Buku Rekap. Output: { [tanggal]: { [adminUid]: total } }.
+// tipe yang dihitung (semua adalah uang kas keluar → kredit di Tunai Pasar):
+//   - 'pelunasan_tabungan'        → sisa utang dilunasi via tabungan
+//   - 'pencairan_simpanan_partial' → tarik sebagian simpanan
+//   - 'tarik_tabungan'            → kelebihan kas fisik dikembalikan ke
+//                                     customer setelah cairkanSimpanan
+// Dipakai sebagai kredit di computeTunaiKasPerDate & kolom "Cair Tab." Buku
+// Rekap. Output: { [tanggal]: { [adminUid]: total } }.
 // =========================================================================
 function buildPencairanByAdminDate(jurnalEntries) {
   const map = {};
   (jurnalEntries || []).forEach(e => {
-    if (e.tipe !== 'pelunasan_tabungan' && e.tipe !== 'pencairan_simpanan_partial') return;
+    if (e.tipe !== 'pelunasan_tabungan'
+        && e.tipe !== 'pencairan_simpanan_partial'
+        && e.tipe !== 'tarik_tabungan') return;
+    const tgl = e.tanggal;
+    if (!tgl) return;
+    const uid = e.adminUid || '';
+    if (!map[tgl]) map[tgl] = {};
+    map[tgl][uid] = (map[tgl][uid] || 0) + (e.jumlah || 0);
+  });
+  return map;
+}
+
+// =========================================================================
+// Tarik tabungan per (tanggal, admin) dari jurnal_transaksi.
+// Hanya tipe 'tarik_tabungan' (kas fisik dikembalikan ke customer pada
+// cairkanSimpanan, ketika simpanan > sisaUtang). Dipakai khusus untuk
+// MENAMBAH kolom "Tarik Tab." Buku Rekap (yang sebelumnya hanya berisi
+// n.tarikTabungan dari pinjaman baru). Output: { [tanggal]: { [adminUid]: total } }.
+// =========================================================================
+function buildTarikTabunganByAdminDate(jurnalEntries) {
+  const map = {};
+  (jurnalEntries || []).forEach(e => {
+    if (e.tipe !== 'tarik_tabungan') return;
     const tgl = e.tanggal;
     if (!tgl) return;
     const uid = e.adminUid || '';
@@ -1641,10 +1666,15 @@ function BukuRekapScreen({ user, cabang, cabangList, onBack, onLogout, onNavigat
     // ✅ status 'semua' (bukan 'aktif'): perlu nasabah MENUNGGU_PENCAIRAN & lunas-hari-ini
     // agar Target Harian match Buku Pokok / CF / Android (aturan H+1). Filter 'aktif'
     // men-drop record tsb di server sehingga Target undercount. Tanpa tambahan read RTDB.
+    // `bulan` di-pass agar CF ikut sertakan orphanPaymentsByDate (pembayaran
+    // dari nasabah yang sudah dihapus, mis. setelah cairkanSimpanan). Tanpa
+    // ini, Storting BukuRekap akan miss pembayaran tsb sementara Android
+    // (LaporanHarian / RingkasanDashboard) sudah menyertakannya — parity break.
     getBukuPokok({
       cabangId: activeCabang.id,
       adminUid: '',
       status: 'semua',
+      bulan: selectedBulan,
     }).then(result => {
       if (result.success && result.type === 'buku_pokok') {
         setData(result.data);
@@ -1654,7 +1684,7 @@ function BukuRekapScreen({ user, cabang, cabangList, onBack, onLogout, onNavigat
     }).finally(() => {
       setLoading(false);
     });
-  }, [activeCabang?.id]);
+  }, [activeCabang?.id, selectedBulan]);
 
   // Fetch jurnal_transaksi terpisah (cabang + bulan terpilih) — sumber "Cair Tab.".
   // Terpisah dari getBukuPokok agar re-fetch hanya saat cabang/bulan berubah.
@@ -1682,7 +1712,19 @@ function BukuRekapScreen({ user, cabang, cabangList, onBack, onLogout, onNavigat
   const currentDate = selectedDate || dates[0] || null;
 
   // Pencairan tabungan per (tanggal, admin) dari jurnal_transaksi.
+  // Mencakup pelunasan_tabungan + pencairan_simpanan_partial + tarik_tabungan
+  // → semua dipakai sebagai kredit di Tunai Pasar (lihat helper definition).
   const pencairanByAdminDate = buildPencairanByAdminDate(jurnalEntries);
+
+  // Tarik tabungan (display kolom "Tarik Tab.") per (tanggal, admin) — hanya
+  // tipe 'tarik_tabungan' (kas fisik dikembalikan via cairkanSimpanan), terpisah
+  // dari pelunasan_tabungan (yang merepresentasikan debt-clearance, bukan tarikan).
+  const tarikTabunganByAdminDate = buildTarikTabunganByAdminDate(jurnalEntries);
+
+  // Orphan payments dari CF (pembayaran_harian entry yang pelangganId-nya tidak
+  // ada lagi di pelanggan/, mis. setelah cairkanSimpanan). Per SOP, ini tetap
+  // masuk Storting agar Web match Android (LaporanHarian/RingkasanDashboard).
+  const orphanPaymentsByDate = data?.orphanPaymentsByDate || {};
 
   // ==================== COMPUTE REKAP PER RESORT ====================
   const computeRekapRows = (dateStr) => {
@@ -1735,6 +1777,10 @@ function BukuRekapScreen({ user, cabang, cabangList, onBack, onLogout, onNavigat
           storting += pay.total || 0;
         }
       });
+      // Tambahkan orphan storting (pembayaran dari nasabah yang sudah dihapus
+      // — mis. setelah cairkanSimpanan). Sumber: pembayaran_harian via CF.
+      // Tanpa ini, Storting Web miss payment yang Android sudah include.
+      storting += orphanPaymentsByDate[todayStr]?.[adm.uid] || 0;
 
       // Persen = storting / target * 100
       const persen = target > 0 ? Math.round(storting / target * 100) : 0;
@@ -1745,8 +1791,12 @@ function BukuRekapScreen({ user, cabang, cabangList, onBack, onLogout, onNavigat
       // Tabungan = 5% dari total besar pinjaman hari ini
       const tabungan = Math.round(totalDrop * 0.05);
 
-      // Tarik Tabungan = jumlah tarik tabungan dari nasabah yang dicairkan hari ini
-      const tarikTabunganTotal = droppedToday.reduce((s, n) => s + (n.tarikTabungan || 0), 0);
+      // Tarik Tabungan = (a) pinjaman baru hari ini (n.tarikTabungan dari pimpinan/
+      // koordinator approval) + (b) jurnal tipe 'tarik_tabungan' (kelebihan kas
+      // fisik dikembalikan via cairkanSimpanan ketika simpanan > sisaUtang).
+      const tarikDariPinjamanBaru = droppedToday.reduce((s, n) => s + (n.tarikTabungan || 0), 0);
+      const tarikDariCairkan = tarikTabunganByAdminDate[todayStr]?.[adm.uid] || 0;
+      const tarikTabunganTotal = tarikDariPinjamanBaru + tarikDariCairkan;
 
       // Debit asli = Storting + Admin + Tabungan
       const debitAsli = storting + adminFee + tabungan;
