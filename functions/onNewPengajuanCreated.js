@@ -412,7 +412,12 @@ exports.onPengawasReviewed = functions
 
             const koordinatorUids = Object.keys(koordinatorSnap.val());
 
-            const statusText = pengawasStatus === 'approved' ? 'DISETUJUI' : 'DITOLAK';
+            // FIX: jangan default ke 'DITOLAK' bila pengawasStatus === 'pending'.
+            // Sebelumnya ternary `=== 'approved' ? 'DISETUJUI' : 'DITOLAK'` menulis
+            // "DITOLAK" untuk 'pending' juga → notifikasi palsu. Sekarang strict.
+            const statusText = pengawasStatus === 'approved'
+                ? 'DISETUJUI'
+                : (pengawasStatus === 'rejected' ? 'DITOLAK' : 'STATUS BELUM JELAS');
             const amountText = adjustedAmount > 0 && adjustedAmount !== pengajuanData.besarPinjaman
                 ? ` (Penyesuaian: Rp ${formatRupiah(adjustedAmount)})`
                 : '';
@@ -515,7 +520,12 @@ exports.onKoordinatorFinalReviewed = functions
                 return null;
             }
 
-            const statusText = pengawasStatus === 'approved' ? 'DISETUJUI' : 'DITOLAK';
+            // FIX: jangan default ke 'DITOLAK' bila pengawasStatus === 'pending'.
+            // Sebelumnya ternary `=== 'approved' ? 'DISETUJUI' : 'DITOLAK'` menulis
+            // "DITOLAK" untuk 'pending' juga → notifikasi palsu. Sekarang strict.
+            const statusText = pengawasStatus === 'approved'
+                ? 'DISETUJUI'
+                : (pengawasStatus === 'rejected' ? 'DITOLAK' : 'STATUS BELUM JELAS');
             const amountText = adjustedAmount > 0 && adjustedAmount !== pengajuanData.besarPinjaman
                 ? ` (Penyesuaian: Rp ${formatRupiah(adjustedAmount)})`
                 : '';

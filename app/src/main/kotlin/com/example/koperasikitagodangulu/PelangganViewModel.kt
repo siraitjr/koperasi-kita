@@ -4626,6 +4626,25 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                         val isPengawasApproved = pengawasStatus == ApprovalStatus.APPROVED
                         val isPengawasRejected = pengawasStatus == ApprovalStatus.REJECTED
 
+                        // ===========================================================
+                        // DEFENSE-IN-DEPTH: status WAJIB jelas (approved/rejected)
+                        // sebelum Pimpinan boleh finalisasi & commit ke pelanggan/.
+                        // Sebelumnya pengawasStatus == 'pending' jatuh ke branch
+                        // !isPengawasApproved → rollback path dengan log palsu
+                        // "❌ Pengawas rejected" — padahal Pengawas BELUM bertindak.
+                        // Sekarang block eksekusi & paksa user verifikasi state.
+                        // ===========================================================
+                        if (!isPengawasApproved && !isPengawasRejected) {
+                            Log.e("Approval", "🚫 ABORT Pimpinan Final: Pengawas status='$pengawasStatus' " +
+                                    "(bukan approved/rejected). Tidak boleh commit ke pelanggan/ tanpa keputusan Pengawas yang jelas. " +
+                                    "pelangganId=$pelangganId")
+                            onFailure?.invoke(Exception(
+                                "Status Pengawas masih '$pengawasStatus' — finalisasi Pimpinan " +
+                                        "tidak bisa dilanjutkan. Hubungi Pengawas untuk menyelesaikan review terlebih dahulu."
+                            ))
+                            return@launch
+                        }
+
                         // ✅ FIX: Gabungkan catatan Phase 1 dengan catatan finalisasi, jangan timpa
                         val existingPimpinanNote = currentDualInfo.pimpinanApproval.note
                         val finalPimpinanNote = if (catatan.isNotBlank()) {
@@ -13125,6 +13144,29 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                 val timestamp = System.currentTimeMillis()
 
                 val currentDualInfo = pelanggan.dualApprovalInfo ?: DualApprovalInfo(requiresDualApproval = true)
+
+                // ===========================================================
+                // DEFENSE-IN-DEPTH: Pengawas WAJIB sudah bertindak (approved
+                // atau rejected) sebelum Koordinator boleh finalisasi Phase 4.
+                // Phase 4 (AWAITING_KOORDINATOR_FINAL) seharusnya HANYA bisa
+                // dicapai lewat upstream gate di reviewPengawas() — tetapi
+                // bila ada bug masa depan, manual DB edit, atau race
+                // condition yang menempatkan data di Phase 4 dengan pengawas
+                // status 'pending', fungsi ini HARUS abort, bukan diam-diam
+                // memajukan state ke AWAITING_PIMPINAN_FINAL seperti tidak
+                // ada masalah.
+                // ===========================================================
+                val pengawasStatusGuard = currentDualInfo.pengawasApproval.status
+                if (pengawasStatusGuard != ApprovalStatus.APPROVED &&
+                    pengawasStatusGuard != ApprovalStatus.REJECTED) {
+                    Log.e("KoordinatorFinal", "🚫 ABORT: Pengawas status='$pengawasStatusGuard' (bukan approved/rejected). " +
+                            "Phase 4 tidak boleh difinalisasi tanpa review Pengawas. pelangganId=$pelangganId")
+                    onFailure?.invoke(Exception(
+                        "Pengawas belum melakukan review (status: $pengawasStatusGuard). " +
+                                "Finalisasi Koordinator tidak bisa dilanjutkan."
+                    ))
+                    return@launch
+                }
 
                 // ✅ PINDAH KE PHASE 5: AWAITING_PIMPINAN_FINAL
 // ✅ FIX: Simpan catatan finalisasi Koordinator ke koordinatorApproval.note
