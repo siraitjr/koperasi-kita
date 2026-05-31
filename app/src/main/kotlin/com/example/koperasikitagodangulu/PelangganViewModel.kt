@@ -16109,7 +16109,15 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     return@launch
                 }
 
-                val tanggalKey = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
+                // FIX: path key pembayaran_harian = "dd MMM yyyy" (Indonesian)
+                // sesuai getTodayIndonesia() di functions/summaryHelpers.js.
+                // Sebelumnya pakai "yyyy-MM-dd" → tidak pernah match → snapshot
+                // selalu kosong → cairkanSimpanan / pelunasan via tabungan
+                // silently tidak masuk storting LaporanHarian & Ringkasan
+                // Dashboard. Per SOP koperasi, transaksi non-tunai ini wajib
+                // ter-agregat ke storting harian admin (fisik kas sudah
+                // diamankan di laci Kasir di kantor).
+                val tanggalKey = SimpleDateFormat("dd MMM yyyy", Locale("in", "ID")).format(Date())
 
                 val snapshot = database.child("pembayaran_harian")
                     .child(cabangId)
