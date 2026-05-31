@@ -515,11 +515,22 @@ private fun ModernSearchField(
     txtColor: Color,
     subtitleColor: Color
 ) {
-    val filteredList = pelangganList.filter { pel ->
-        val totalBayar = pel.pembayaranList.mapNotNull { it }.sumOf { it.jumlah + it.subPembayaran.mapNotNull { it }.sumOf { sub -> sub.jumlah } }
-        val sisa = (pel.totalPelunasan - totalBayar).coerceAtLeast(0)
-        sisa > 0 && pel.namaKtp.contains(value, ignoreCase = true) &&
-                (pel.status == "Aktif" || pel.status.equals("aktif", ignoreCase = true))
+    // PERF FIX: memoize hasil filter — sebelumnya O(N×P×S) per recomposition
+    // (re-iterasi seluruh daftarPelanggan + nested sumOf pembayaranList +
+    // subPembayaran). Tanpa remember, setiap mutation daftarPelanggan oleh
+    // listener Firebase di ViewModel (yang sering fire saat persistence cache
+    // hidrasi atau reconnect) men-trigger filter ulang DI TENGAH user mengetik
+    // → UI thread saturate → InputDispatcher buffer keystrokes → "20.000"
+    // jadi "200.000". remember(pelangganList, value) jamin filter hanya
+    // dievaluasi saat daftar nasabah ATAU query search benar-benar berubah.
+    val filteredList = remember(pelangganList, value) {
+        pelangganList.filter { pel ->
+            val totalBayar = pel.pembayaranList.mapNotNull { it }
+                .sumOf { it.jumlah + it.subPembayaran.mapNotNull { it }.sumOf { sub -> sub.jumlah } }
+            val sisa = (pel.totalPelunasan - totalBayar).coerceAtLeast(0)
+            sisa > 0 && pel.namaKtp.contains(value, ignoreCase = true) &&
+                    (pel.status == "Aktif" || pel.status.equals("aktif", ignoreCase = true))
+        }
     }
 
     ExposedDropdownMenuBox(

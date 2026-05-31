@@ -35,6 +35,15 @@ import java.util.*
 import com.example.koperasikitagodangulu.utils.formatRupiah
 import com.google.accompanist.systemuicontroller.rememberSystemUiController
 
+// ============================================================================
+// HOISTED FORMATTER — dialokasikan SEKALI per thread, bukan per keystroke.
+// DecimalFormat tidak thread-safe per dokumentasi; ThreadLocal jamin satu
+// instance per thread tanpa lock. Sebelumnya `DecimalFormat("#,###")` di-
+// instansiasi di setiap call formatRibuan() → per keystroke alokasi.
+// ============================================================================
+private val SUB_THOUSAND_FORMAT: ThreadLocal<DecimalFormat> =
+    ThreadLocal.withInitial { DecimalFormat("#,###") }
+
 // Modern Color Palette
 private object SubPaymentColors {
     val primaryGradient = listOf(Color(0xFF6366F1), Color(0xFF8B5CF6))
@@ -135,10 +144,13 @@ fun TambahSubPembayaranScreen(
 
     fun formatRibuan(input: String): String {
         return try {
-            val cleanString = input.replace("[^\\d]".toRegex(), "")
+            // filter { isDigit() } lebih cepat daripada Regex baru per call
+            // (regex compile + Matcher alloc). Combined dengan ThreadLocal
+            // DecimalFormat di atas: alokasi nol per keystroke.
+            val cleanString = input.filter { it.isDigit() }
             if (cleanString.isBlank()) "" else {
                 val number = cleanString.toLong()
-                DecimalFormat("#,###").format(number)
+                SUB_THOUSAND_FORMAT.get().format(number)
             }
         } catch (e: Exception) {
             input
@@ -147,7 +159,7 @@ fun TambahSubPembayaranScreen(
 
     fun parseFormattedNumber(formatted: String): Int {
         return try {
-            formatted.replace("[^\\d]".toRegex(), "").toIntOrNull() ?: 0
+            formatted.filter { it.isDigit() }.toIntOrNull() ?: 0
         } catch (e: Exception) {
             0
         }
