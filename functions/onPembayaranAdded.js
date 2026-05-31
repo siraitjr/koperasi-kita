@@ -53,9 +53,30 @@ async function saveToPembayaranHarian(adminUid, pelangganId, pembayaran, jenis) 
             jumlah: pembayaran.jumlah || 0,
             jenis: jenis, // "cicilan", "tambah_bayar", atau "pencairan"
             tanggal: pembayaran.tanggal || today,
-            timestamp: admin.database.ServerValue.TIMESTAMP
+            timestamp: admin.database.ServerValue.TIMESTAMP,
+            // ===================================================================
+            // KATEGORI-RETENTION FIELDS — agar Buku Pokok web bisa menempatkan
+            // orphan payment (dari nasabah yang sudah dihapus, mis. via
+            // cairkanSimpanan) ke kategori PB/L1/CM/MB/LM yang benar.
+            //
+            // PRIORITAS NILAI:
+            //   1. Override dari `pembayaran.*` (caller pass eksplisit, mis.
+            //      jenis='pelunasan_sisa_utang' tag dengan OLD loan identity
+            //      per SOP koperasi — receipt utang lama HARUS resmi tutup
+            //      di kategori loan lama, bukan loan baru).
+            //   2. Snapshot saat ini dari `pelangganData` (default normal).
+            //
+            // Untuk entry legacy tanpa field ini, bukuPokokApi retroactive-
+            // join ke riwayat_pinjaman/{adminUid}/{pelangganId} (latest pinjamanKe).
+            // ===================================================================
+            pinjamanKe: (typeof pembayaran.pinjamanKe === 'number')
+                ? pembayaran.pinjamanKe
+                : ((pelangganData && typeof pelangganData.pinjamanKe === 'number') ? pelangganData.pinjamanKe : null),
+            tanggalPencairan: pembayaran.tanggalPencairan || pelangganData?.tanggalPencairan || '',
+            tanggalPengajuan: pembayaran.tanggalPengajuan || pelangganData?.tanggalPengajuan || '',
+            status: pembayaran.status || pelangganData?.status || ''
         };
-        
+
         // Simpan ke pembayaran_harian/{cabangId}/{tanggal}/{autoId}
         await db.ref(`pembayaran_harian/${cabangId}/${today}`).push(pembayaranData);
         
@@ -367,14 +388,53 @@ exports.onPelangganApproved = functions
             const sisaUtangLama = pelanggan.sisaUtangLamaSebelumTopUp || 0;
             const pinjamanKe = pelanggan.pinjamanKe || 1;
             if (sisaUtangLama > 0 && pinjamanKe > 1) {
-                // Catat ke pembayaran_harian sebagai pelunasan sisa utang (bukan cicilan)
+                // =========================================================
+                // SOP KOPERASI: receipt pelunasan utang lama HARUS resmi
+                // tutup di kategori OLD loan (pinjamanKe-1), bukan loan baru.
+                // Resolve OLD loan identity dengan priority:
+                //   1. pelanggan.backupSebelumTopUp (sub-node yang ditulis
+                //      saat top-up disubmit; masih tersedia saat cair).
+                //   2. riwayat_pinjaman/{adminUid}/{pelangganId}/{pinjamanKe-1}
+                //      archive (ditulis otomatis oleh onPelangganWrite saat
+                //      pinjamanKe increment).
+                //   3. Best-effort: hanya pinjamanKe-1, tanggal kosong.
+                // =========================================================
+                const oldPinjamanKe = pinjamanKe - 1;
+                let oldTanggalPencairan = '';
+                let oldTanggalPengajuan = '';
+                try {
+                    const backup = pelanggan.backupSebelumTopUp;
+                    if (backup && backup.tanggalPencairan) {
+                        oldTanggalPencairan = backup.tanggalPencairan;
+                        oldTanggalPengajuan = backup.tanggalPengajuan || '';
+                    } else {
+                        const archiveSnap = await db.ref(
+                            `riwayat_pinjaman/${adminUid}/${pelangganId}/${oldPinjamanKe}`
+                        ).once('value');
+                        if (archiveSnap.exists()) {
+                            const arc = archiveSnap.val();
+                            oldTanggalPencairan = arc.tanggalPencairan || '';
+                            oldTanggalPengajuan = arc.tanggalPengajuan || '';
+                        }
+                    }
+                } catch (e) {
+                    console.warn(`⚠ Could not resolve OLD loan data for pelunasan tagging: ${e.message}`);
+                }
+
+                // Catat ke pembayaran_harian sebagai pelunasan sisa utang (bukan cicilan).
+                // OVERRIDE field (dibaca saveToPembayaranHarian, priority di atas
+                // pelangganData saat ini) — tag entry dengan OLD loan identity.
                 const pelunasanEntry = {
                     jumlah: sisaUtangLama,
                     tanggal: today,
-                    subPembayaran: []
+                    subPembayaran: [],
+                    pinjamanKe: oldPinjamanKe,
+                    tanggalPencairan: oldTanggalPencairan,
+                    tanggalPengajuan: oldTanggalPengajuan,
+                    status: 'lunas'
                 };
                 await saveToPembayaranHarian(adminUid, pelangganId, pelunasanEntry, 'pelunasan_sisa_utang');
-                console.log(`✅ Sisa utang Rp ${sisaUtangLama} dicatat ke pembayaran_harian (TIDAK ke pembayaranList)`);
+                console.log(`✅ Sisa utang Rp ${sisaUtangLama} dicatat ke pembayaran_harian (tag OLD pinjamanKe=${oldPinjamanKe}, tglPencairan=${oldTanggalPencairan || '-'})`);
 
                 // ✅ FIX: Increment summary.pembayaranHariIni juga.
                 // Sebelumnya pelunasan sisa utang hanya ter-write ke pembayaran_harian

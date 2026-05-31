@@ -957,10 +957,28 @@ function getKategoriNasabah(nasabah) {
       setLoading(true);
       setError('');
       try {
+        // `bulan` = comma-separated YYYY-MM untuk multi-bulan orphan window.
+        // SOP koperasi: background calculations Buku Pokok (carry-over saldo
+        // awal, prev-month stortingGlobal, kategorisasi PB/L1/CM/MB/LM
+        // berdasarkan tanggalPencairan) butuh kontinuitas data orphan
+        // lintas SEMUA bulan yang menyentuh window 60-hari (≈3-4 kalender),
+        // bukan cuma bulan berjalan. Tanpa range penuh, formula carry-over
+        // jadi tidak balance saat ada cairkanSimpanan bulan lalu.
+        //
+        // Default: 4 bulan (current + 3 prior) menutup window 60 hari kerja.
+        // CF parse comma-separated → iterate semua bulan → parallel read.
+        const _now = new Date();
+        const _months = [];
+        for (let i = 0; i < 4; i++) {
+          const d = new Date(_now.getFullYear(), _now.getMonth() - i, 1);
+          _months.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+        }
+        const _bulan = _months.join(',');
         const result = await getBukuPokok({
           cabangId: cabang.id,
           adminUid: selectedAdmin?.uid || '',
           status: effectiveStatus,
+          bulan: _bulan,
         });
         if (result.success && result.type === 'buku_pokok') {
           setData(result.data);
@@ -1025,6 +1043,79 @@ function getKategoriNasabah(nasabah) {
         });
       });
     });
+
+    // ============================================================
+    // ORPHAN ROWS — pembayaran milik nasabah yang sudah dihapus
+    // (mis. setelah cairkanSimpanan). Sumber: data.orphanPaymentsByDate
+    // dari bukuPokokApi (per-entry array, dengan tanggalPencairan +
+    // pinjamanKe lengkap; legacy entries di-resolve via retroactive
+    // join ke riwayat_pinjaman di sisi server).
+    //
+    // Grouping by (pelangganId, pinjamanKe): banyak entry dari 1
+    // customer/loan share 1 synthetic row, dengan pembayaran[date].total
+    // di-agregat per tanggal. Kategori PB/L1/CM/MB/LM ditentukan oleh
+    // getKategoriNasabah() dari tanggalPencairan synthetic row — rule
+    // yang sama persis dengan nasabah aktif & historis.
+    // ============================================================
+    const orphanByDate = data?.orphanPaymentsByDate || {};
+    const orphanGroups = {}; // "pelangganId__rPK" → synthetic nasabah-like row
+    Object.entries(orphanByDate).forEach(([dateStr, entries]) => {
+      // Back-compat guard: skip kalau CF lama masih kirim shape lama
+      // ({ adminUid: jumlah } object, bukan array).
+      if (!Array.isArray(entries)) return;
+      entries.forEach((e) => {
+        if (!e || !e.pelangganId) return;
+        const pk = e.pinjamanKe || 1;
+        const key = `${e.pelangganId}__r${pk}`;
+        if (!orphanGroups[key]) {
+          orphanGroups[key] = {
+            id: `orphan__${e.pelangganId}__r${pk}`,
+            pelangganId: e.pelangganId,
+            namaKtp: e.namaKtp || '',
+            namaPanggilan: e.namaPanggilan || '',
+            nik: '',
+            nomorAnggota: '',
+            adminUid: e.adminUid || '',
+            adminName: e.adminName || '',
+            pinjamanKe: pk,
+            besarPinjaman: 0,
+            totalPelunasan: 0,
+            totalDibayar: 0,
+            sisaUtang: 0,
+            tenor: 0,
+            tanggalDaftar: e.tanggalPengajuan || '',
+            tanggalPengajuan: e.tanggalPengajuan || '',
+            tanggalPencairan: e.tanggalPencairan || '',
+            tanggalLunasCicilan: '',
+            status: e.status || 'lunas',
+            statusKhusus: '',
+            tanggalStatusKhusus: '',
+            pembayaran: {}, // diisi di bawah
+            simpanan: 0,
+            tarikTabungan: 0,
+            totalDiterima: 0,
+            sisaUtangLama: 0,
+            sisaUtangLamaSebelumTopUp: 0,
+            riwayatPinjaman: [],
+            isOrphan: true,
+          };
+        }
+        const group = orphanGroups[key];
+        if (!group.pembayaran[dateStr]) {
+          group.pembayaran[dateStr] = { total: 0, items: [] };
+        }
+        group.pembayaran[dateStr].total += e.jumlah || 0;
+        group.pembayaran[dateStr].items.push({
+          jumlah: e.jumlah || 0,
+          tanggal: dateStr,
+          keterangan: e.jenis || 'orphan',
+          type: 'orphan',
+        });
+        group.totalDibayar += e.jumlah || 0;
+      });
+    });
+    Object.values(orphanGroups).forEach((g) => result.push(g));
+
     return result;
   })();
 
@@ -1942,10 +2033,14 @@ function getKategoriNasabah(nasabah) {
                       const isSisaTabungan = n.statusKhusus === 'MENUNGGU_PENCAIRAN';
                       const isLunasCicilan = n.sisaUtang <= 0 && n.totalPelunasan > 0;
                       const isML = getKategoriNasabah(n) === 'ML';
-                      const namaColor = (n.isHistorical || isSisaTabungan || isLunasCicilan || isML) ? '#e53e3e' : undefined;
-                      // Coretan garis horizontal merah untuk baris historis (pinjaman lama),
-                      // diaplikasikan dari kolom Nama hingga kolom Saldo Awal.
-                      const strikeStyle = n.isHistorical
+                      // Orphan rows (nasabah sudah dihapus, payment-nya orphan
+                      // di pembayaran_harian) di-warna merah seperti historis,
+                      // dan ikut di-coret horizontal agar pembeda visualnya jelas.
+                      const namaColor = (n.isHistorical || n.isOrphan || isSisaTabungan || isLunasCicilan || isML) ? '#e53e3e' : undefined;
+                      // Coretan garis horizontal merah untuk baris historis (pinjaman lama)
+                      // & orphan (nasabah dihapus), diaplikasikan dari kolom Nama
+                      // hingga kolom Saldo Awal.
+                      const strikeStyle = (n.isHistorical || n.isOrphan)
                         ? { textDecoration: 'line-through', textDecorationColor: '#e53e3e', textDecorationThickness: 2 }
                         : null;
                       return (

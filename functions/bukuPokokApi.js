@@ -668,27 +668,55 @@ exports.getBukuPokok = functions
             //    yang sudah tidak ada lagi di pelanggan/ (mis. setelah
             //    cairkanSimpanan menghapus nasabah). Per SOP koperasi,
             //    payment-nya tetap masuk Storting walaupun nasabah-nya tidak
-            //    ada lagi → Web Buku Rekap match dengan Android Laporan
-            //    Harian (yang sudah include via loadPelunasanEksternalHariIni).
+            //    ada lagi.
+            //
+            //    SHAPE BARU (commit ini): per-entry array, bukan sum agregat.
+            //      { "dd MMM yyyy": [ { pelangganId, namaPanggilan, namaKtp,
+            //          adminUid, adminName, jumlah, jenis, tanggal,
+            //          pinjamanKe, tanggalPencairan, tanggalPengajuan,
+            //          status }, ... ] }
+            //    Sebelumnya hanya { date: { adminUid: jumlah } }. Web Buku
+            //    Pokok butuh per-entry untuk slot ke kategori PB/L1/CM/MB/LM;
+            //    Web Buku Rekap tetap berjalan dengan agregasi client-side.
+            //
+            //    RETROACTIVE JOIN: untuk entry legacy (tanpa pinjamanKe /
+            //    tanggalPencairan — ditulis sebelum schema extension), batch-
+            //    lookup riwayat_pinjaman/{adminUid}/{pelangganId} → pakai
+            //    archive dengan pinjamanKe TERTINGGI sebagai sumber kategori.
+            //
             //    Hanya aktif bila param `bulan` (YYYY-MM) dikirim caller.
             //    Path key pembayaran_harian = "dd MMM yyyy" (Indonesian),
             //    lihat getTodayIndonesia() di summaryHelpers.js.
             // =================================================================
-            let orphanPaymentsByDate = {}; // { "dd MMM yyyy": { adminUid: jumlah } }
+            let orphanPaymentsByDate = {};
             if (bulan && cabangId) {
                 try {
                     const currentPelangganIds = new Set();
                     nasabahList.forEach(n => { if (n.id) currentPelangganIds.add(n.id); });
 
-                    const [bYyyy, bMm] = bulan.split('-').map(Number);
-                    if (bYyyy && bMm) {
-                        const daysInMonth = new Date(bYyyy, bMm, 0).getDate();
-                        const monthAbbr = BULAN_INDO[bMm - 1];
+                    // `bulan` boleh single ("2026-05") ATAU multi-month
+                    // comma-separated ("2026-05,2026-04,2026-03,2026-02").
+                    // Buku Pokok pass multi-month karena rolling window 60 hari
+                    // bisa menyentuh ~4 bulan & background calculations
+                    // (carry-over saldo awal, stortingGlobal prev-month) butuh
+                    // kontinuitas orphan lintas semua bulan tersebut. BukuRekap
+                    // tetap pass single bulan → di-handle sama (list of 1).
+                    const bulanList = String(bulan)
+                        .split(',')
+                        .map(s => s.trim())
+                        .filter(s => /^\d{4}-\d{2}$/.test(s));
 
+                    if (bulanList.length > 0) {
                         const dateKeys = [];
-                        for (let d = 1; d <= daysInMonth; d++) {
-                            dateKeys.push(`${String(d).padStart(2, '0')} ${monthAbbr} ${bYyyy}`);
-                        }
+                        bulanList.forEach(b => {
+                            const [bYyyy, bMm] = b.split('-').map(Number);
+                            if (!bYyyy || !bMm) return;
+                            const daysInMonth = new Date(bYyyy, bMm, 0).getDate();
+                            const monthAbbr = BULAN_INDO[bMm - 1];
+                            for (let d = 1; d <= daysInMonth; d++) {
+                                dateKeys.push(`${String(d).padStart(2, '0')} ${monthAbbr} ${bYyyy}`);
+                            }
+                        });
 
                         // Parallel read tiap tanggal — path key pembayaran_harian
                         // = "dd MMM yyyy" (lihat getTodayIndonesia).
@@ -696,6 +724,9 @@ exports.getBukuPokok = functions
                             db.ref(`pembayaran_harian/${cabangId}/${dateKey}`).once('value')
                         ));
 
+                        // Pass 1: kumpulkan semua orphan entry sebagai per-entry detail.
+                        // Tandai yang butuh retro-join (field kategori kosong/null).
+                        const needsJoin = []; // entries yang butuh riwayat lookup
                         phSnaps.forEach((snap, idx) => {
                             if (!snap.exists()) return;
                             const dateKey = dateKeys[idx];
@@ -705,13 +736,80 @@ exports.getBukuPokok = functions
                                 // Skip bila pelanggan masih ada — sudah dihitung
                                 // via n.pembayaran[dateKey] di client.
                                 if (currentPelangganIds.has(e.pelangganId)) return;
-                                const adminUidE = e.adminUid || '';
-                                const jumlah = e.jumlah || 0;
-                                if (!orphanPaymentsByDate[dateKey]) orphanPaymentsByDate[dateKey] = {};
-                                orphanPaymentsByDate[dateKey][adminUidE] =
-                                    (orphanPaymentsByDate[dateKey][adminUidE] || 0) + jumlah;
+                                const detail = {
+                                    pelangganId: e.pelangganId,
+                                    namaPanggilan: e.namaPanggilan || '',
+                                    namaKtp: e.namaKtp || '',
+                                    adminUid: e.adminUid || '',
+                                    adminName: e.adminName || '',
+                                    jumlah: e.jumlah || 0,
+                                    jenis: e.jenis || '',
+                                    tanggal: e.tanggal || dateKey,
+                                    pinjamanKe: (typeof e.pinjamanKe === 'number') ? e.pinjamanKe : null,
+                                    tanggalPencairan: e.tanggalPencairan || '',
+                                    tanggalPengajuan: e.tanggalPengajuan || '',
+                                    status: e.status || ''
+                                };
+                                if (!detail.tanggalPencairan || !detail.pinjamanKe) {
+                                    needsJoin.push(detail);
+                                }
+                                if (!orphanPaymentsByDate[dateKey]) orphanPaymentsByDate[dateKey] = [];
+                                orphanPaymentsByDate[dateKey].push(detail);
                             });
                         });
+
+                        // Pass 2: retroactive join via riwayat_pinjaman.
+                        // Dedup per (adminUid, pelangganId) — multiple orphan
+                        // payments dari customer yang sama share 1 lookup.
+                        if (needsJoin.length > 0) {
+                            const uniqueLookups = {};
+                            needsJoin.forEach(d => {
+                                const k = `${d.adminUid}:${d.pelangganId}`;
+                                if (!uniqueLookups[k]) {
+                                    uniqueLookups[k] = { adminUid: d.adminUid, pelangganId: d.pelangganId };
+                                }
+                            });
+                            const lookupResults = await Promise.all(
+                                Object.values(uniqueLookups).map(async ({ adminUid: aU, pelangganId: pId }) => {
+                                    try {
+                                        const rSnap = await db.ref(`riwayat_pinjaman/${aU}/${pId}`).once('value');
+                                        if (!rSnap.exists()) return [`${aU}:${pId}`, null];
+                                        // Pilih archive dengan pinjamanKe TERTINGGI
+                                        // (= loan paling terakhir customer ini punya).
+                                        let latest = null;
+                                        let maxPK = -1;
+                                        rSnap.forEach(child => {
+                                            const pk = parseInt(child.key, 10);
+                                            if (!isNaN(pk) && pk > maxPK) {
+                                                maxPK = pk;
+                                                latest = child.val();
+                                            }
+                                        });
+                                        if (latest && maxPK >= 0) {
+                                            latest._archivedPinjamanKe = maxPK;
+                                        }
+                                        return [`${aU}:${pId}`, latest];
+                                    } catch (_) {
+                                        return [`${aU}:${pId}`, null];
+                                    }
+                                })
+                            );
+                            const archiveCache = Object.fromEntries(lookupResults);
+                            needsJoin.forEach(d => {
+                                const archive = archiveCache[`${d.adminUid}:${d.pelangganId}`];
+                                if (!archive) return;
+                                if (!d.tanggalPencairan) d.tanggalPencairan = archive.tanggalPencairan || '';
+                                if (!d.tanggalPengajuan) d.tanggalPengajuan = archive.tanggalPengajuan || '';
+                                if (!d.pinjamanKe) {
+                                    d.pinjamanKe = archive._archivedPinjamanKe || archive.pinjamanKe || null;
+                                }
+                                if (!d.status) d.status = archive.status || 'lunas';
+                                // Fallback nama bila entry pembayaran_harian
+                                // legacy tidak punya namaPanggilan/namaKtp.
+                                if (!d.namaPanggilan) d.namaPanggilan = archive.namaPanggilan || '';
+                                if (!d.namaKtp) d.namaKtp = archive.namaKtp || '';
+                            });
+                        }
                     }
                 } catch (e) {
                     console.error('⚠ Orphan payments aggregation failed:', e.message);

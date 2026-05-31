@@ -1779,8 +1779,13 @@ function BukuRekapScreen({ user, cabang, cabangList, onBack, onLogout, onNavigat
       });
       // Tambahkan orphan storting (pembayaran dari nasabah yang sudah dihapus
       // — mis. setelah cairkanSimpanan). Sumber: pembayaran_harian via CF.
-      // Tanpa ini, Storting Web miss payment yang Android sudah include.
-      storting += orphanPaymentsByDate[todayStr]?.[adm.uid] || 0;
+      // SHAPE baru: array per-entry { adminUid, jumlah, ... } → kita reduce
+      // untuk admin/tanggal ini. Sebelumnya { adminUid: jumlah } (sudah agregat).
+      const orphanArr = orphanPaymentsByDate[todayStr] || [];
+      const orphanStortingAdm = Array.isArray(orphanArr)
+        ? orphanArr.reduce((s, e) => (e && e.adminUid === adm.uid ? s + (e.jumlah || 0) : s), 0)
+        : (orphanArr?.[adm.uid] || 0); // back-compat shape lama bila CF belum di-deploy
+      storting += orphanStortingAdm;
 
       // Persen = storting / target * 100
       const persen = target > 0 ? Math.round(storting / target * 100) : 0;
