@@ -10098,15 +10098,37 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
             set(Calendar.MILLISECOND, 0)
         }.time
 
+        val isMacetLama = filterType == "MACET_LAMA"
+
         val filtered = daftarPelanggan.filter { pel ->
-            // Filter dasar: nama harus ada, belum lunas
-            val dasarOk = pel.namaKtp.isNotBlank() &&
-                    !isPelangganBenarBenarLunas(pel) &&
-                    (pel.statusKhusus != "MENUNGGU_PENCAIRAN" || pel.status == "Menunggu Approval" || pel.status == "Disetujui" || pel.status == "Tidak Aktif") &&
-                    ((pel.status == "Aktif") ||
-                            (pel.status == "Disetujui") ||
-                            (pel.status == "Tidak Aktif") ||
-                            (pel.status == "Menunggu Approval" && pel.pinjamanKe > 1))
+            // =================================================================
+            // STAGE A — gate dasar
+            //
+            // Untuk MACET_LAMA (Option B per SOP koperasi — "collection
+            // availability"): bypass SEMUA gate kecuali !isPelangganBenarBenar-
+            // Lunas. Admin lapangan wajib bisa lihat & input pembayaran untuk
+            // SEMUA record bermasalah (runaway, status-drift, data tidak
+            // lengkap, namaKtp kosong, statusKhusus apa pun) supaya bisa di-
+            // collect bila tertangkap di lapangan. Selama record-nya belum
+            // benar-benar lunas, dia harus muncul di tab Macet Lama agar
+            // populasi-nya match dengan Buku Pokok web (yang juga tidak
+            // memfilter berdasar status).
+            //
+            // Untuk filter lain (default "AKTIF"): tetap pakai gate lama —
+            // proteksi UI dari record dengan status non-standar atau data
+            // hilang yang seharusnya tidak muncul di list "aktif sehat".
+            // =================================================================
+            val dasarOk = if (isMacetLama) {
+                !isPelangganBenarBenarLunas(pel)
+            } else {
+                pel.namaKtp.isNotBlank() &&
+                        !isPelangganBenarBenarLunas(pel) &&
+                        (pel.statusKhusus != "MENUNGGU_PENCAIRAN" || pel.status == "Menunggu Approval" || pel.status == "Disetujui" || pel.status == "Tidak Aktif") &&
+                        ((pel.status == "Aktif") ||
+                                (pel.status == "Disetujui") ||
+                                (pel.status == "Tidak Aktif") ||
+                                (pel.status == "Menunggu Approval" && pel.pinjamanKe > 1))
+            }
 
             if (!dasarOk) return@filter false
 
@@ -10118,7 +10140,42 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
 
             if (!namaOk) return@filter false
 
-            // Filter berdasarkan tanggal acuan (hanya untuk status Aktif)
+            // =================================================================
+            // STAGE C — routing tab (date-based)
+            //
+            // MACET_LAMA: evaluasi tanggal acuan tanpa peduli status. Tanggal
+            // BLANK / null-parse / exception → DEFAULT KE ML (mirror Web's
+            // `if (!parsed) return 'ML'` di pembukuan/page.js:935). Math
+            // `before(threeMonthsAgo)` = "tanggal < first-day-of-(today − 3 mo)"
+            // → ekivalen dengan "month delta ≥ 4" rule Web. Verified
+            // konvergensi untuk semua edge case bulan-ke-bulan & tahun-ke-tahun
+            // (cek diff = (nowYear-pYear)*12 + (nowMonth-pMonth) di Web vs
+            // `before(firstDayOfMonth-3)` di Android — identik untuk semua
+            // diff non-negatif).
+            //
+            // Non-MACET_LAMA (default "AKTIF"):
+            //   status==Aktif → tampilkan kalau tanggal BELUM 3+ bulan.
+            //   status non-Aktif (Disetujui/Tidak Aktif/Menunggu Approval+
+            //   top-up) → selalu tampil di tab AKTIF (perilaku lama).
+            // =================================================================
+            if (isMacetLama) {
+                val tglAcuanStr = pel.tanggalPencairan.ifBlank {
+                    pel.tanggalPengajuan.ifBlank { pel.tanggalDaftar }
+                }
+                return@filter if (tglAcuanStr.isBlank()) {
+                    true  // blank date → default ke ML (mirror Web)
+                } else {
+                    try {
+                        val acuanDate = dateFormat.parse(tglAcuanStr)
+                        if (acuanDate == null) true  // null parse → default ke ML
+                        else acuanDate.before(threeMonthsAgo)
+                    } catch (_: Exception) {
+                        true  // unparseable / legacy format → default ke ML (mirror Web)
+                    }
+                }
+            }
+
+            // Non-MACET_LAMA branch (perilaku lama, tidak diubah)
             if (pel.status == "Aktif") {
                 val tglAcuanStr = pel.tanggalPencairan.ifBlank {
                     pel.tanggalPengajuan.ifBlank { pel.tanggalDaftar }
@@ -10127,14 +10184,12 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     val acuanDate = dateFormat.parse(tglAcuanStr)
                     acuanDate != null && acuanDate.before(threeMonthsAgo)
                 } catch (_: Exception) { false }
-
-                when (filterType) {
-                    "MACET_LAMA" -> isOverThreeMonths  // Hanya tampilkan yang > 3 bulan
-                    else -> !isOverThreeMonths          // Default: hanya yang <= 3 bulan
-                }
+                !isOverThreeMonths  // tab AKTIF: hanya yang <= 3 bulan
             } else {
-                // Status selain Aktif (Disetujui, Tidak Aktif, Menunggu Approval) selalu tampil di AKTIF
-                filterType != "MACET_LAMA"
+                // Status selain Aktif (Disetujui, Tidak Aktif, Menunggu Approval)
+                // selalu tampil di tab AKTIF (tidak pernah masuk MACET_LAMA via
+                // branch ini — branch MACET_LAMA sudah selesai di atas).
+                true
             }
         }
 
