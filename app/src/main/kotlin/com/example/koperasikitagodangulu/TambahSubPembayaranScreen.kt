@@ -32,6 +32,12 @@ import androidx.navigation.NavController
 import java.text.DecimalFormat
 import java.text.SimpleDateFormat
 import java.util.*
+// EXPLICIT: import androidx.compose.runtime.* di atas (line 18) memunculkan
+// androidx.compose.runtime.ThreadLocal (internal multiplatform type) yang
+// menutupi java.lang.ThreadLocal hasil auto-import dari java.lang.*. Explicit
+// import di bawah ini menang dari wildcard → ThreadLocal di file ini me-resolve
+// ke java.lang.ThreadLocal yang punya method `withInitial { ... }`.
+import java.lang.ThreadLocal
 import com.example.koperasikitagodangulu.utils.formatRupiah
 import com.google.accompanist.systemuicontroller.rememberSystemUiController
 

@@ -3,6 +3,13 @@ package com.example.koperasikitagodangulu.utils
 import java.text.NumberFormat
 import java.text.DecimalFormat
 import java.util.Locale
+// EXPLICIT: file ini saat ini tidak import androidx.compose.runtime.*, jadi
+// ThreadLocal resolve ke java.lang.ThreadLocal lewat auto-import. Tetap
+// di-import eksplisit sebagai jaring pengaman: jika di masa depan ada yang
+// menambahkan `import androidx.compose.runtime.*`, Compose's multiplatform
+// ThreadLocal (internal, beda API — tidak punya withInitial) tidak akan
+// menutupi yang dari java.lang. (Sama dengan pola di TambahSubPembayaranScreen.kt.)
+import java.lang.ThreadLocal
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.input.OffsetMapping
 import androidx.compose.ui.text.input.TransformedText
