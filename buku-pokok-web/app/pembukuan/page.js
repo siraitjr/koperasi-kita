@@ -2037,10 +2037,15 @@ function getKategoriNasabah(nasabah) {
                       // di pembayaran_harian) di-warna merah seperti historis,
                       // dan ikut di-coret horizontal agar pembeda visualnya jelas.
                       const namaColor = (n.isHistorical || n.isOrphan || isSisaTabungan || isLunasCicilan || isML) ? '#e53e3e' : undefined;
-                      // Coretan garis horizontal merah untuk baris historis (pinjaman lama)
-                      // & orphan (nasabah dihapus), diaplikasikan dari kolom Nama
-                      // hingga kolom Saldo Awal.
-                      const strikeStyle = (n.isHistorical || n.isOrphan)
+                      // Coretan garis horizontal merah untuk baris historis (pinjaman lama),
+                      // orphan (nasabah dihapus), DAN nasabah lunas (sisa utang Rp 0).
+                      // SOP Option 2: unifikasi visual semua record lunas — leadership
+                      // (pimpinan) tidak lagi bingung melihat dua nasabah "Lunas" di
+                      // kategori sama dengan styling berbeda. isLunasCicilan =
+                      // (sisaUtang <= 0 && totalPelunasan > 0), jadi orphan row
+                      // (totalPelunasan == 0) tetap di-coret via isOrphan, bukan
+                      // isLunasCicilan. Diaplikasikan dari kolom Nama hingga Saldo Awal.
+                      const strikeStyle = (n.isHistorical || n.isOrphan || isLunasCicilan)
                         ? { textDecoration: 'line-through', textDecorationColor: '#e53e3e', textDecorationThickness: 2 }
                         : null;
                       return (
