@@ -1764,9 +1764,17 @@ function BukuRekapScreen({ user, cabang, cabangList, onBack, onLogout, onNavigat
       // Target = besarPinjaman × 3% untuk nasabah eligible pada todayStr.
       // Dihitung lewat shared helper (lib/target.js) — single source of truth yang
       // identik dengan Buku Pokok, CF summaryHelpers.js, & Android (termasuk H+1).
+      //
+      // ✅ FIX drift target: SKIP entry arsip (dariArsip=true) — nasabah yang
+      // sudah DIHAPUS (cairkan simpanan) di-inject ke nasabahList oleh
+      // bukuPokokApi.js:609 agar Storting tetap tercatat, tapi tidak punya
+      // target (tidak ada yang ditagih). Identik dengan fix di Buku Pokok
+      // (pembukuan/page.js). isHistorical/isOrphan = guard defensif client-only.
       let target = 0;
       resortNasabah.forEach(n => {
-        target += isEligibleForTarget(n, todayStr);
+        if (!n.dariArsip && !n.isHistorical && !n.isOrphan) {
+          target += isEligibleForTarget(n, todayStr);
+        }
       });
 
       // Storting = total pembayaran hari ini

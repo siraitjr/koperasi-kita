@@ -1279,7 +1279,22 @@ function getKategoriNasabah(nasabah) {
         // Target Kini: besarPinjaman × 3% untuk nasabah eligible pada tanggal ini.
         // Dihitung lewat shared helper (lib/target.js) — single source of truth yang
         // identik dengan Buku Rekap, CF summaryHelpers.js, & Android (termasuk H+1).
-        targetKini += isEligibleForTarget(n, dateStr);
+        //
+        // ✅ FIX drift target: SKIP entry arsip (dariArsip=true). bukuPokokApi.js:609
+        // mendorong nasabah dari riwayat_pinjaman arsip (nasabah yang sudah DIHAPUS
+        // setelah cairkan simpanan) ke nasabahList agar Storting pelunasan-via-
+        // tabungan tetap tercatat. TAPI nasabah terhapus tidak boleh menyumbang
+        // TARGET — tidak ada lagi yang bisa ditagih. Sebelum fix ini, entry arsip
+        // yang loan-nya masih "Aktif" + pencairan < 3 bulan + tanggalLunasCicilan
+        // kosong (pelunasan via tabungan terjadi hari penghapusan) lolos
+        // isEligibleForTarget → over-count target (drift +Rp15rb/45rb/18rb di
+        // audit 02 Jun 2026). dariArsip = field sebenarnya yang dipakai CF;
+        // isHistorical/isOrphan adalah flag client-only (nasabahExpanded) yang
+        // tidak pernah ada di data.nasabah — disertakan sebagai guard defensif
+        // bila suatu saat loop ini iterate list yang sudah di-expand.
+        if (!n.dariArsip && !n.isHistorical && !n.isOrphan) {
+          targetKini += isEligibleForTarget(n, dateStr);
+        }
       });
 
       dropBerjalan += dropKini;
