@@ -736,6 +736,16 @@ exports.getBukuPokok = functions
                                 // Skip bila pelanggan masih ada — sudah dihitung
                                 // via n.pembayaran[dateKey] di client.
                                 if (currentPelangganIds.has(e.pelangganId)) return;
+                                // ✅ FIX cross-admin leak server-side: bila caller request
+                                // admin spesifik, orphan dari admin lain HARUS di-skip.
+                                // pembayaran_harian/{cabangId}/{date} di-baca cabang-wide,
+                                // jadi tanpa guard ini orphan customer Admin B/C (yang
+                                // dihapus via cairkanSimpanan) tetap masuk response saat
+                                // pimpinan view Admin A — bocor lewat orphanPaymentsByDate
+                                // ke nasabahExpanded client (commit 4d6e304 menutupnya di
+                                // sisi tampilan; ini menutupnya di kabel + cache CF).
+                                // Saat adminUid kosong ("Semua Admin"), guard pass-through.
+                                if (adminUid && e.adminUid !== adminUid) return;
                                 const detail = {
                                     pelangganId: e.pelangganId,
                                     namaPanggilan: e.namaPanggilan || '',
@@ -764,6 +774,15 @@ exports.getBukuPokok = functions
                         if (needsJoin.length > 0) {
                             const uniqueLookups = {};
                             needsJoin.forEach(d => {
+                                // ✅ FIX defensive: guard ulang scope admin di sini.
+                                // needsJoin sudah dipopulate via Pass 1 yang punya filter
+                                // sama, jadi cek ini secara teknis no-op untuk request
+                                // admin-spesifik (tidak akan ada entry foreign-admin yang
+                                // sampai ke Pass 2). TAPI Pass 2 membaca riwayat_pinjaman/
+                                // {d.adminUid}/{d.pelangganId} — bila suatu saat Pass 1
+                                // filter berubah / dipindah, guard di sini mencegah read
+                                // node admin lain (information disclosure + read waste).
+                                if (adminUid && d.adminUid !== adminUid) return;
                                 const k = `${d.adminUid}:${d.pelangganId}`;
                                 if (!uniqueLookups[k]) {
                                     uniqueLookups[k] = { adminUid: d.adminUid, pelangganId: d.pelangganId };
