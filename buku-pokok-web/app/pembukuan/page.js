@@ -1121,6 +1121,19 @@ function getKategoriNasabah(nasabah) {
 
   // ==================== FILTER ====================
   const filtered = (nasabahExpanded.filter((n) => {
+    // ✅ FIX cross-admin leak: bila pimpinan sudah pilih admin spesifik,
+    // SEMUA tab kategori (Semua/PB/L1/CM/MB/ML) HARUS strict-scoped ke admin
+    // tersebut. Sebelumnya tab kategori mengandalkan CF filter via param
+    // adminUid — yang BENAR untuk pelanggan/ live + riwayat_pinjaman/ archive,
+    // TAPI BLOK ORPHAN AGGREGATION di bukuPokokApi.js (~line 723) membaca
+    // pembayaran_harian/{cabangId}/{date} cabang-wide dan TIDAK memfilter
+    // entry orphan by adminUid. Akibatnya orphan customer dari Admin B/C
+    // (yang dihapus via cairkanSimpanan) ikut bocor ke nasabahExpanded saat
+    // pimpinan view Admin A. Guard di sini menjamin isolasi visual lintas
+    // semua tab kategori. Saat selectedAdmin == null ("Semua Admin"), guard
+    // pass-through → tidak mengubah perilaku tampilan agregat.
+    if (selectedAdmin && n.adminUid !== selectedAdmin.uid) return false;
+
     // Filter tabel (PB/L1/CM/MB/ML) — skip for stortingGlobal
     if (tabelFilter !== 'semua' && tabelFilter !== 'stortingGlobal') {
       if (getKategoriNasabah(n) !== tabelFilter) return false;
