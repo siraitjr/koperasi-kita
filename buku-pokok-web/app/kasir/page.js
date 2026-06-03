@@ -40,6 +40,49 @@ function compressImage(file, maxSize = 1024, quality = 0.6) {
 }
 
 // =========================================================================
+// HELPER: Persist cabang aktif lintas sub-screen (shared sessionStorage).
+//
+// Tiap sub-screen (Jurnal, Buku Rekap, Kas Penuntun, Buku Tunai, Buku
+// Ekspedisi, Ringkasan, Absensi) punya state lokal `activeCabang` sendiri.
+// Saat pimpinan ganti cabang di satu screen lalu pindah screen via setScreen,
+// komponen sub-screen baru remount & re-init `useState` → balik ke default
+// (cabangList[0] / Cabang A). Untuk menjaga pilihan tetap "lengket", semua
+// sub-screen membaca & menulis key bersama `ksp_active_cabang_id` (key yang
+// sama dengan persistence parent di commit c4efa1c).
+// =========================================================================
+const ACTIVE_CABANG_KEY = 'ksp_active_cabang_id';
+
+function readActiveCabangId() {
+  if (typeof window === 'undefined') return null;
+  try { return sessionStorage.getItem(ACTIVE_CABANG_KEY); } catch (e) { return null; }
+}
+
+function writeActiveCabangId(id) {
+  if (typeof window === 'undefined' || !id) return;
+  try { sessionStorage.setItem(ACTIVE_CABANG_KEY, id); } catch (e) { /* ignore */ }
+}
+
+// Resolusi cabang awal untuk sub-screen: prioritaskan pilihan tersimpan
+// (sessionStorage) supaya tetap konsisten saat pindah screen via setScreen,
+// fallback ke prop `cabang` dari parent, lalu default cabang pertama.
+function resolveInitialCabang(cabang, cabangList) {
+  const savedId = readActiveCabangId();
+  if (savedId && Array.isArray(cabangList)) {
+    const saved = cabangList.find(c => c.id === savedId);
+    if (saved) return saved;
+  }
+  return cabang || (cabangList && cabangList[0]) || null;
+}
+
+// Set activeCabang lokal + persist ke sessionStorage agar semua sub-screen
+// berbagi pilihan yang sama.
+function selectCabangById(cabangList, id, setActiveCabang) {
+  const next = (Array.isArray(cabangList) ? cabangList.find(c => c.id === id) : null) || null;
+  setActiveCabang(next);
+  if (next) writeActiveCabangId(next.id);
+}
+
+// =========================================================================
 // CONSTANTS
 // =========================================================================
 const JENIS_OPTIONS = [
@@ -1044,7 +1087,7 @@ function HomeScreen({ user, cabangList, summaryData, selectedCabang, onSelectCab
 // ============================================================
 function JurnalScreen({ user, cabang, cabangList, onBack, onLogout, onNavigate }) {
   const isUnit = user?.role === 'kasir_unit';
-  const [activeCabang, setActiveCabang] = useState(cabang || cabangList[0] || null);
+  const [activeCabang, setActiveCabang] = useState(() => resolveInitialCabang(cabang, cabangList));
   const [bulan, setBulan] = useState(getCurrentMonthKey());
   const [entries, setEntries] = useState([]);
   const [summary, setSummary] = useState({});
@@ -1142,7 +1185,7 @@ function JurnalScreen({ user, cabang, cabangList, onBack, onLogout, onNavigate }
         {/* Filters */}
         <div style={{ display: 'flex', gap: 12, marginBottom: 20, flexWrap: 'wrap', alignItems: 'center' }}>
           {!isUnit && cabangList.length > 1 && (
-            <select value={activeCabang?.id || ''} onChange={(e) => setActiveCabang(cabangList.find(c => c.id === e.target.value))}
+            <select value={activeCabang?.id || ''} onChange={(e) => selectCabangById(cabangList, e.target.value, setActiveCabang)}
               style={{ padding: '8px 12px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 13, background: 'var(--card)' }}>
               {cabangList.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
@@ -1509,7 +1552,7 @@ function FakturModal({ fakturList, onClose }) {
 // ============================================================
 function BukuPokokAccessScreen({ user, cabang, cabangList, onBack, onLogout }) {
   const isUnit = user?.role === 'kasir_unit';
-  const [activeCabang, setActiveCabang] = useState(cabang || cabangList[0] || null);
+  const [activeCabang, setActiveCabang] = useState(() => resolveInitialCabang(cabang, cabangList));
   const [selectedAdmin, setSelectedAdmin] = useState(null);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -1569,7 +1612,7 @@ function BukuPokokAccessScreen({ user, cabang, cabangList, onBack, onLogout }) {
         {/* Cabang selector for kasir_wilayah */}
         {!isUnit && cabangList.length > 1 && (
           <div style={{ marginBottom: 16 }}>
-            <select value={activeCabang?.id || ''} onChange={(e) => { setActiveCabang(cabangList.find(c => c.id === e.target.value)); setSelectedAdmin(null); }}
+            <select value={activeCabang?.id || ''} onChange={(e) => { selectCabangById(cabangList, e.target.value, setActiveCabang); setSelectedAdmin(null); }}
               style={{ padding: '8px 12px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 13, background: 'var(--card)' }}>
               {cabangList.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
@@ -1666,7 +1709,7 @@ function BukuPokokAccessScreen({ user, cabang, cabangList, onBack, onLogout }) {
 // ============================================================
 function BukuRekapScreen({ user, cabang, cabangList, onBack, onLogout, onNavigate }) {
   const isUnit = user?.role === 'kasir_unit';
-  const [activeCabang, setActiveCabang] = useState(cabang || cabangList[0] || null);
+  const [activeCabang, setActiveCabang] = useState(() => resolveInitialCabang(cabang, cabangList));
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -1981,7 +2024,7 @@ function BukuRekapScreen({ user, cabang, cabangList, onBack, onLogout, onNavigat
         {/* Cabang selector for kasir_wilayah */}
         {!isUnit && cabangList.length > 1 && (
           <div style={{ marginBottom: 16 }}>
-            <select value={activeCabang?.id || ''} onChange={(e) => setActiveCabang(cabangList.find(c => c.id === e.target.value))}
+            <select value={activeCabang?.id || ''} onChange={(e) => selectCabangById(cabangList, e.target.value, setActiveCabang)}
               style={{ padding: '8px 12px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 13, background: 'var(--card)' }}>
               {cabangList.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
@@ -2178,7 +2221,7 @@ function BukuRekapScreen({ user, cabang, cabangList, onBack, onLogout, onNavigat
 // ============================================================
 function KasPenuntunScreen({ user, cabang, cabangList, onBack, onLogout, onNavigate }) {
   const isUnit = user?.role === 'kasir_unit';
-  const [activeCabang, setActiveCabang] = useState(cabang || cabangList[0] || null);
+  const [activeCabang, setActiveCabang] = useState(() => resolveInitialCabang(cabang, cabangList));
   const [bulan, setBulan] = useState(getCurrentMonthKey());
   const [bukuData, setBukuData] = useState(null);
   const [kasirEntries, setKasirEntries] = useState([]);
@@ -2456,7 +2499,7 @@ function KasPenuntunScreen({ user, cabang, cabangList, onBack, onLogout, onNavig
       <main style={{ padding: 20 }} className="fade-in">
         <div style={{ display: 'flex', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
           {!isUnit && cabangList.length > 1 && (
-            <select value={activeCabang?.id || ''} onChange={(e) => setActiveCabang(cabangList.find(c => c.id === e.target.value))}
+            <select value={activeCabang?.id || ''} onChange={(e) => selectCabangById(cabangList, e.target.value, setActiveCabang)}
               style={{ padding: '8px 12px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 13, background: 'var(--card)' }}>
               {cabangList.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
@@ -2589,7 +2632,7 @@ function KasPenuntunScreen({ user, cabang, cabangList, onBack, onLogout, onNavig
 // ============================================================
 function BukuTunaiScreen({ user, cabang, cabangList, onBack, onLogout, onNavigate }) {
   const isUnit = user?.role === 'kasir_unit';
-  const [activeCabang, setActiveCabang] = useState(cabang || cabangList[0] || null);
+  const [activeCabang, setActiveCabang] = useState(() => resolveInitialCabang(cabang, cabangList));
   const [bukuData, setBukuData] = useState(null);
   const [kasirEntries, setKasirEntries] = useState([]);
   const [jurnalEntries, setJurnalEntries] = useState([]);
@@ -2740,7 +2783,7 @@ function BukuTunaiScreen({ user, cabang, cabangList, onBack, onLogout, onNavigat
         {/* Cabang selector untuk kasir_wilayah */}
         {!isUnit && cabangList.length > 1 && (
           <div style={{ marginBottom: 16 }}>
-            <select value={activeCabang?.id || ''} onChange={(e) => { setActiveCabang(cabangList.find(c => c.id === e.target.value)); }}
+            <select value={activeCabang?.id || ''} onChange={(e) => { selectCabangById(cabangList, e.target.value, setActiveCabang); }}
               style={{ padding: '8px 12px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 13, background: 'var(--card)' }}>
               {cabangList.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
@@ -2866,7 +2909,7 @@ function BukuTunaiScreen({ user, cabang, cabangList, onBack, onLogout, onNavigat
 // ============================================================
 function BukuEkspedisiScreen({ user, cabang, cabangList, onBack, onLogout, onNavigate }) {
   const isUnit = user?.role === 'kasir_unit';
-  const [activeCabang, setActiveCabang] = useState(cabang || cabangList[0] || null);
+  const [activeCabang, setActiveCabang] = useState(() => resolveInitialCabang(cabang, cabangList));
   const [bulan, setBulan] = useState(getCurrentMonthKey());
   const [bukuData, setBukuData] = useState(null);
   const [kasirEntries, setKasirEntries] = useState([]);
@@ -3128,7 +3171,7 @@ function BukuEkspedisiScreen({ user, cabang, cabangList, onBack, onLogout, onNav
         {/* Filter */}
         <div style={{ display: 'flex', gap: 12, marginBottom: 20, flexWrap: 'wrap', alignItems: 'center' }}>
           {!isUnit && cabangList.length > 1 && (
-            <select value={activeCabang?.id || ''} onChange={(e) => setActiveCabang(cabangList.find(c => c.id === e.target.value))}
+            <select value={activeCabang?.id || ''} onChange={(e) => selectCabangById(cabangList, e.target.value, setActiveCabang)}
               style={{ padding: '8px 12px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 13, background: 'var(--card)' }}>
               {cabangList.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
@@ -3248,7 +3291,7 @@ function BukuEkspedisiScreen({ user, cabang, cabangList, onBack, onLogout, onNav
 // ============================================================
 function RingkasanScreen({ user, cabang, cabangList, onBack, onLogout, onNavigate }) {
   const isUnit = user?.role === 'kasir_unit';
-  const [activeCabang, setActiveCabang] = useState(cabang || cabangList[0] || null);
+  const [activeCabang, setActiveCabang] = useState(() => resolveInitialCabang(cabang, cabangList));
   const [bulan, setBulan] = useState(getCurrentMonthKey());
   const [summary, setSummary] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -3300,7 +3343,7 @@ function RingkasanScreen({ user, cabang, cabangList, onBack, onLogout, onNavigat
         {/* Filters */}
         <div style={{ display: 'flex', gap: 12, marginBottom: 24, flexWrap: 'wrap' }}>
           {!isUnit && cabangList.length > 1 && (
-            <select value={activeCabang?.id || ''} onChange={(e) => setActiveCabang(cabangList.find(c => c.id === e.target.value))}
+            <select value={activeCabang?.id || ''} onChange={(e) => selectCabangById(cabangList, e.target.value, setActiveCabang)}
               style={{ padding: '8px 12px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 13, background: 'var(--card)' }}>
               {cabangList.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
@@ -3367,7 +3410,7 @@ function RingkasanScreen({ user, cabang, cabangList, onBack, onLogout, onNavigat
 // ============================================================
 function AbsensiScreen({ user, cabang, cabangList, onBack, onLogout, onNavigate }) {
   const isUnit = user?.role === 'kasir_unit';
-  const [activeCabang, setActiveCabang] = useState(cabang || cabangList[0] || null);
+  const [activeCabang, setActiveCabang] = useState(() => resolveInitialCabang(cabang, cabangList));
   const [absensiList, setAbsensiList] = useState([]);
   const [operasionalMap, setOperasionalMap] = useState({});
   const [loading, setLoading] = useState(true);
@@ -3569,7 +3612,7 @@ function AbsensiScreen({ user, cabang, cabangList, onBack, onLogout, onNavigate 
             <div className="home-section-label">Pilih Cabang</div>
             <div className="cabang-grid">
               {cabangList.map(c => (
-                <button key={c.id} onClick={() => setActiveCabang(c)}
+                <button key={c.id} onClick={() => { setActiveCabang(c); writeActiveCabangId(c.id); }}
                   className="cabang-card"
                   style={activeCabang?.id === c.id ? { borderColor: 'var(--primary)', background: 'var(--primary-light)' } : {}}>
                   <div className="cabang-card-info"><h3>{c.name}</h3></div>
