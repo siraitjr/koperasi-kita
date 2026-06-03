@@ -434,6 +434,19 @@ export default function KasirPage() {
   const [selectedCabang, setSelectedCabang] = useState(null);
   const [showLogoutModal, setShowLogoutModal] = useState(false);
 
+  // ✅ FIX persist cabang lintas-menu: simpan id cabang terpilih ke
+  // sessionStorage setiap berubah. Navigasi antar-menu (Buku Pokok ⇄ Buku
+  // Rekap/Ekspedisi/Tunai/Kas Penuntun) menyeberang route /kasir ⇄
+  // /pembukuan lewat window.location (full reload → remount → state lokal
+  // reset). Key bersama `ksp_active_cabang_id` dibaca saat mount KEDUA
+  // halaman, sehingga pilihan cabang multi-branch role (kasir_wilayah,
+  // koordinator, pengawas, sekretaris, pimpinan) tidak hilang.
+  useEffect(() => {
+    if (selectedCabang?.id) {
+      try { sessionStorage.setItem('ksp_active_cabang_id', selectedCabang.id); } catch (e) { /* ignore */ }
+    }
+  }, [selectedCabang]);
+
   // ==================== AUTH STATE ====================
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
@@ -448,10 +461,15 @@ export default function KasirPage() {
             setSummaryData(d.summary);
             setJenisLabels(d.jenisLabels || {});
 
-            // Auto-select cabang jika hanya ada 1
-            if (d.cabangList.length === 1) {
-              setSelectedCabang(d.cabangList[0]);
-            }
+            // ✅ FIX restore cabang lintas-menu: prioritaskan id tersimpan
+            // (sessionStorage), fallback auto-select bila hanya 1 cabang.
+            let initialCabang = null;
+            try {
+              const savedId = sessionStorage.getItem('ksp_active_cabang_id');
+              if (savedId) initialCabang = d.cabangList.find(c => c.id === savedId) || null;
+            } catch (e) { /* ignore */ }
+            if (!initialCabang && d.cabangList.length === 1) initialCabang = d.cabangList[0];
+            if (initialCabang) setSelectedCabang(initialCabang);
 
             // Cek parameter ?screen= dari pembukuan (untuk pimpinan/koordinator/pengawas)
             const urlParams = new URLSearchParams(window.location.search);

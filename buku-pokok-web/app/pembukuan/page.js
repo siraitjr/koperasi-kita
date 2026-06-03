@@ -70,6 +70,15 @@ export default function Home() {
     try { sessionStorage.removeItem('ksp_nav'); } catch (e) { /* ignore */ }
   };
 
+  // ✅ FIX persist cabang lintas-menu (lihat catatan di kasir/page.js): tulis
+  // id cabang terpilih ke key bersama `ksp_active_cabang_id` setiap berubah,
+  // agar /kasir mengingatnya saat navigasi window.location (full reload).
+  useEffect(() => {
+    if (selectedCabang?.id) {
+      try { sessionStorage.setItem('ksp_active_cabang_id', selectedCabang.id); } catch (e) { /* ignore */ }
+    }
+  }, [selectedCabang]);
+
   // ==================== AUTH STATE ====================
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
@@ -115,24 +124,40 @@ export default function Home() {
               }
             }
 
+            // ✅ FIX restore cabang lintas-menu: resolve id bersama dari
+            // sessionStorage terhadap cabangList yang baru di-fetch. Dipakai
+            // untuk MENG-OVERRIDE cabang hasil restoreNav (yang bisa stale bila
+            // user baru memilih cabang lain di /kasir sebelum balik ke sini).
+            // Object dari list fresh juga lebih aman daripada object lama di
+            // ksp_nav. Saat tidak ada id tersimpan → null → perilaku lama.
+            let sharedCabang = null;
+            try {
+              const sharedId = sessionStorage.getItem('ksp_active_cabang_id');
+              if (sharedId) sharedCabang = (result.data.cabangList || []).find(c => c.id === sharedId) || null;
+            } catch (e) { /* ignore */ }
+
             // Restore previous screen after refresh
             const saved = restoreNav();
             if (saved && saved.screen) {
               if (saved.screen === 'bukuPokok' && saved.cabang) {
-                setSelectedCabang(saved.cabang);
+                setSelectedCabang(sharedCabang || saved.cabang);
                 setSelectedAdmin(saved.admin || null);
                 setScreen('bukuPokok');
               } else if (saved.screen === 'jurnalTransaksi' && saved.cabang) {
-                setSelectedCabang(saved.cabang);
+                setSelectedCabang(sharedCabang || saved.cabang);
                 setScreen('jurnalTransaksi');
               } else if (saved.screen === 'jurnalDashboard') {
                 setScreen('jurnalDashboard');
               } else if (saved.screen === 'home' && saved.cabang && GLOBAL_VIEW_ROLES.includes(userRole)) {
-                setSelectedCabang(saved.cabang);
+                setSelectedCabang(sharedCabang || saved.cabang);
                 setScreen('home');
               } else if (saved.screen === 'dashboard') {
+                // Pre-load cabang bersama agar saat user buka Buku Pokok tidak
+                // perlu pilih ulang. Tidak mengubah screen landing (tetap dashboard).
+                if (sharedCabang) setSelectedCabang(sharedCabang);
                 setScreen('dashboard');
               } else {
+                if (sharedCabang) setSelectedCabang(sharedCabang);
                 if (GLOBAL_VIEW_ROLES.includes(userRole)) {
                   setScreen('dashboard');
                 } else {
@@ -140,6 +165,9 @@ export default function Home() {
                 }
               }
             } else {
+              // Tidak ada saved nav (mis. baru datang dari /kasir): pre-load
+              // cabang bersama bila ada, agar tidak perlu pilih ulang.
+              if (sharedCabang) setSelectedCabang(sharedCabang);
               if (GLOBAL_VIEW_ROLES.includes(userRole)) {
                 setScreen('dashboard');
               } else {
