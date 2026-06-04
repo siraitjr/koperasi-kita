@@ -814,8 +814,18 @@ Agar aturan di atas tidak bias, berikut panduan konkret saat bekerja:
 7. **Tulisan / dokumentasi baru.**
    - Jangan buat file `.md` baru kecuali diminta user.
    - `CLAUDE.md` dan `.claudeignore` ini adalah pengecualian yang diminta eksplisit.
+  
+### 10.2 CRITICAL ANTI-REGRESSION PROTOCOL (MANDATORY)
+You are strictly forbidden from causing regressions by relying on stale file context. To prevent overwriting recent fixes, you MUST adhere to the following workflow on every single task:
 
-### 10.2 Checklist Sebelum Menulis Kode
+1. ZERO-MEMORY ASSUMPTION: Never assume you know the current contents of a file based on previous conversation turns. Always execute a read command (e.g., `cat` or equivalent tool) to fetch the LIVE version of the file from the disk before planning any edits.
+2. GIT AWARENESS: Before modifying critical logic (calculations, filters, state management), you must run `git log -n 3 -p <target_file>` to review the most recent changes. You must ensure your proposed fix does not undo or conflict with the last 3 commits.
+3. SURGICAL EDITS ONLY: Never rewrite or output an entire file from memory. You must use targeted search-and-replace or line-specific patches. 
+4. DO NOT TOUCH UNRELATED CODE: If the user asks you to fix Issue A, you are forbidden from refactoring, reformatting, or "cleaning up" Code B in the same file unless explicitly commanded.
+
+Failure to follow this protocol will result in severe system regressions. Act as a precise, context-aware surgical tool at all times.
+
+### 10.3 Checklist Sebelum Menulis Kode
 
 - [ ] Sudah baca `CLAUDE.md` di awal sesi.
 - [ ] Sudah paham masalah yang akan diperbaiki.
