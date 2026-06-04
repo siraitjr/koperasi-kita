@@ -53,67 +53,96 @@ function sumPembayaranSebelum(pembayaran, cur) {
 
 // Apakah nasabah `n` masuk Target Harian pada `dateStr` ("dd MMM yyyy")?
 // Return kontribusi target = floor(besarPinjaman × 3%), atau 0 kalau tidak eligible.
+//
+// =========================================================================
+// ATURAN OPERASIONAL PIMPINAN (final, immutabilitas historis 04 Jun 2026):
+// -------------------------------------------------------------------------
+// Data historis WAJIB beku. Lihat kalender lampau dari hari ini = harus sama
+// dengan kalkulasi pada hari itu sendiri. Nol penyusutan. Implementasi:
+//
+// POIN 1 — Lunas Cicilan (H+1)
+//   tanggalLunasCicilan > dateStr → AKTIF (utang belum lunas pada kolom itu)
+//   tanggalLunasCicilan === dateStr → AKTIF (lunas tepat hari itu = hari terakhir)
+//   tanggalLunasCicilan < dateStr → 0 (sudah lunas sebelum kolom itu)
+//
+// POIN 2 — Menunggu Pencairan (MP)
+//   tanggalStatusKhusus > dateStr → AKTIF (belum di-MP pada kolom itu, pinjaman
+//     berjalan normal — admin men-set MP di kemudian hari)
+//   tanggalStatusKhusus === dateStr → AKTIF (MP ditandai tepat hari itu, parity
+//     dengan H+1 LUNAS)
+//   tanggalStatusKhusus < dateStr → 0 (sudah MP sebelum kolom itu)
+//
+// POIN 3 — Batas 3 bulan kalender (relatif `tanggalPencairan`)
+//   Strict integer-month math, TANPA new Date() / Date.now() / state hari ini.
+//   Eligible bila (curYear*12+curMonth) − (acuanYear*12+acuanMonth) ≤ 3.
+//   Cair Feb 2026 → Mei masih hitung; Jun (≥ Jun 1) STOP.
+//   Cair Mar 2026 → Jun masih hitung; Jul (≥ Jul 1) STOP.
+//
+// Catatan: parseTanggalIndo memakai konstruktor `new Date(y,m,d)` dengan
+// argumen eksplisit dari string — deterministik & TIDAK menyentuh state
+// hari ini. Itu sah sesuai intent direktif ("no live-state"). Hanya `new
+// Date()` no-arg & `Date.now()` yang DILARANG, dan keduanya nihil di file ini.
+// =========================================================================
 export function isEligibleForTarget(n, dateStr) {
   const cur = parseTanggalIndo(dateStr);
   if (!cur) return 0;
 
-  // Android RingkasanDashboardScreen.kt:151-154 — nasabah masuk target bila
-  // (isStatusAktif || lunas cicilan HARI INI || ditandai MENUNGGU_PENCAIRAN hari ini).
-  // Pada hari pelunasan, field `status` bisa sudah jadi "Lunas" tapi nasabah TETAP
-  // dihitung sampai besok (H+1) — CF mempertahankannya via delta incremental
-  // (summaryHelpers.js:560-569). Karena itu guard status tak boleh menolak status
-  // non-aktif yang lunas/menunggu-pencairan tepat pada tanggal kolom ini.
+  // ===== Pre-guard live-status (date-aware, semua jalur immutabilitas) =====
   const statusLower = (n.status || '').toLowerCase();
   const isStatusAktif = statusLower === 'aktif' || statusLower === 'active';
   const lunasHariIni = (n.tanggalLunasCicilan || '').trim() === dateStr;
   const isMenungguPencairan = n.statusKhusus === 'MENUNGGU_PENCAIRAN'
     && (n.statusPencairanSimpanan || '') !== 'Dicairkan';
   const menungguHariIni = isMenungguPencairan && (n.tanggalStatusKhusus || '').trim() === dateStr;
-  // ✅ IMMUTABILITAS HISTORIS: nasabah yang KINI berstatus "Lunas" tetapi tanggal
-  // lunasnya (tanggalLunasCicilan) jatuh SETELAH dateStr berarti pada dateStr ia
-  // MASIH AKTIF — utang belum lunas pada kolom historis itu. Guard live-status
-  // lama menolaknya (field status sudah "Lunas") sebelum logika date-aware di
-  // bawah sempat jalan → kolom historis menyusut saat nasabah dilunasi di hari
-  // berikutnya (melanggar prinsip data historis terkunci). Izinkan lewat di sini;
-  // cabang LUNAS date-aware (baris ~90: lunasDate > cur → fall-through) tetap
-  // mengembalikan target penuh. Untuk kolom HARI INI tak ada efek: tanggal lunas
-  // di masa depan mustahil, jadi masihAktifPadaTanggal selalu false → parity
-  // CF/Android terjaga 1:1.
+
+  // POIN 1: nasabah KINI 'Lunas' tapi tglLunas > dateStr → pada dateStr masih AKTIF.
   const lunasDateGuard = parseTanggalIndo((n.tanggalLunasCicilan || '').trim());
   const masihAktifPadaTanggal = lunasDateGuard && lunasDateGuard > cur;
-  if (!isStatusAktif && !lunasHariIni && !menungguHariIni && !masihAktifPadaTanggal) return 0;
+
+  // POIN 2: nasabah KINI 'MENUNGGU_PENCAIRAN' tapi tglStatusKhusus > dateStr →
+  // pada dateStr belum di-MP, pinjaman masih berjalan → MASIH AKTIF.
+  const mpDateGuard = parseTanggalIndo((n.tanggalStatusKhusus || '').trim());
+  const belumMenungguPadaTanggal = isMenungguPencairan && mpDateGuard && mpDateGuard > cur;
+
+  if (!isStatusAktif && !lunasHariIni && !menungguHariIni
+      && !masihAktifPadaTanggal && !belumMenungguPadaTanggal) return 0;
 
   const target = Math.floor((n.besarPinjaman || 0) * 3 / 100);
   const totalPelunasan = n.totalPelunasan || 0;
 
-  // --- Cabang LUNAS (match CF summaryHelpers.js:886-895) ---
-  // CF pakai totalDibayar all-time (calculateTotalDibayar: termasuk "Pelunasan Top-Up",
-  // exclude "Bunga") + field tanggalLunasCicilan — keduanya sudah disediakan bukuPokokApi.
-  // Sengaja pakai field yang sama, BUKAN map n.pembayaran (yang sudah memfilter Top-Up),
-  // agar identik dengan CF/Android. Date-aware: kolom historis tetap akurat lewat
-  // perbandingan tanggalLunasCicilan vs dateStr.
+  // ===== POIN 1 — Cabang LUNAS (match CF summaryHelpers.js:886-895) =====
+  // tglLunas === dateStr → return target (lunas hari itu, hari terakhir aktif).
+  // tglLunas <  dateStr → return 0 (sudah lunas sebelum kolom).
+  // tglLunas >  dateStr → fall-through ke pemeriksaan belum-lunas (masih aktif).
   const isSudahLunas = totalPelunasan > 0 && (n.totalDibayar || 0) >= totalPelunasan;
   if (isSudahLunas) {
     const tglLunas = (n.tanggalLunasCicilan || '').trim();
     const lunasDate = parseTanggalIndo(tglLunas);
     if (lunasDate) {
-      if (tglLunas === dateStr) return target; // lunas TEPAT hari itu (H+1) → tetap kena target
-      if (lunasDate < cur) return 0;           // sudah lunas sebelum tanggal ini
-      // lunasDate > cur → pada tanggal (historis) ini nasabah masih belum lunas → lanjut.
+      if (tglLunas === dateStr) return target;
+      if (lunasDate < cur) return 0;
+      // lunasDate > cur → masih aktif pada kolom historis ini → lanjut ke check di bawah.
     } else {
-      // tanggalLunasCicilan kosong/invalid: utk hari ini CF tak menambah (field ≠ today) &
-      // isSudahLunas ⇒ skip belum-lunas. Fallback date-aware via map utk kolom historis.
+      // tanggalLunasCicilan kosong/invalid: fallback date-aware via map pembayaran
+      // (CF/Android: hanya skip bila sumPembayaranSebelum >= totalPelunasan).
       if (sumPembayaranSebelum(n.pembayaran, cur) >= totalPelunasan) return 0;
     }
   }
 
-  // --- Cabang BELUM LUNAS (match CF summaryHelpers.js:896-935) ---
-  // MENUNGGU_PENCAIRAN manual (simpanan belum dicairkan) — CF L843-844.
-  const isMenunggu = n.statusKhusus === 'MENUNGGU_PENCAIRAN'
-    && (n.statusPencairanSimpanan || '') !== 'Dicairkan';
-  const isMenungguHariIni = isMenunggu && (n.tanggalStatusKhusus || '').trim() === dateStr;
-  // MENUNGGU hanya dihitung pada hari ditandai; selain itu dikecualikan.
-  if (isMenunggu && !isMenungguHariIni) return 0;
+  // ===== POIN 2 — Cabang BELUM LUNAS / MENUNGGU PENCAIRAN =====
+  // Aturan baru date-aware:
+  //   mpDate >  cur → JANGAN exclude (belum di-MP pada kolom itu, masih aktif).
+  //   mpDate === cur → JANGAN exclude (MP hari itu = hari terakhir, parity H+1).
+  //   mpDate <  cur → EXCLUDE (sudah MP sebelum kolom itu).
+  //   mpDate tidak parseable → fallback lama (exclude kecuali isMenungguHariIni).
+  if (isMenungguPencairan) {
+    if (mpDateGuard) {
+      if (mpDateGuard < cur) return 0;
+      // mpDateGuard >= cur → include (lanjut ke 3-month check).
+    } else {
+      if (!menungguHariIni) return 0;
+    }
+  }
 
   // Cair TEPAT pada tanggal ini → mulai dihitung besok (CF: pencairan === today).
   const tglPencairan = (n.tanggalPencairan || '').trim();
@@ -127,9 +156,19 @@ export function isEligibleForTarget(n, dateStr) {
   if (acuan) {
     // Belum aktif (acuan setelah tanggal ini) → date-aware exclude utk kolom historis.
     if (acuan > cur) return 0;
-    // Exclude > 3 bulan (batas: tanggal 1, tiga bulan sebelum bulan dateStr).
-    const tigaBulanLalu = new Date(cur.getFullYear(), cur.getMonth() - 3, 1);
-    if (acuan < tigaBulanLalu) return 0;
+
+    // ===== POIN 3 — Batas 3 bulan kalender (integer-month math, no live-state) =====
+    // Boundary: bulan kolom > (bulan_acuan + 3) → STOP. Diukur sebagai indeks
+    // bulan absolut (year*12 + month0..11) supaya menyeberang tahun aman.
+    // Contoh pimpinan:
+    //   Cair Feb 2026 (idx = y*12 + 1); kolom Jun 2026 (idx = y*12 + 5)
+    //     → diff = 4 → STOP (Jun 1 dst.). ✓
+    //   Cair Mar 2026 (idx = y*12 + 2); kolom Jul 2026 (idx = y*12 + 6)
+    //     → diff = 4 → STOP. ✓
+    //   Cair Feb 2026; kolom Mei 2026 (idx = y*12 + 4) → diff = 3 → masih hitung. ✓
+    const acuanMonthIdx = acuan.getFullYear() * 12 + acuan.getMonth();
+    const curMonthIdx = cur.getFullYear() * 12 + cur.getMonth();
+    if (curMonthIdx - acuanMonthIdx > 3) return 0;
   }
 
   return target;
