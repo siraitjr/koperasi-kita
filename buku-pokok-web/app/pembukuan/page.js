@@ -956,19 +956,33 @@ function parseTanggalIndo(tgl) {
   return { month, year: parseInt(parts[2]) };
 }
 
-function getKategoriNasabah(nasabah) {
+function getKategoriNasabah(nasabah, refDateStr) {
   const tgl = nasabah.tanggalPencairan || nasabah.tanggalPengajuan || nasabah.tanggalDaftar || '';
   const parsed = parseTanggalIndo(tgl);
   if (!parsed) return 'ML';
 
-  const now = new Date();
-  const wibOffset = 7 * 60 * 60 * 1000;
-  const wib = new Date(now.getTime() + (now.getTimezoneOffset() * 60000) + wibOffset);
-  const nowMonth = wib.getMonth();
-  const nowYear = wib.getFullYear();
+  // ✅ IMMUTABILITAS HISTORIS: kategori (PB/L1/CM/MB/ML) dihitung dari selisih
+  // bulan antara tanggal acuan pinjaman dan BULAN REFERENSI. Default = bulan
+  // berjalan (now) → dipakai tab kategori, allNasabahList, isML (state sekarang).
+  // Bila refDateStr ("dd MMM yyyy") diberikan (loop breakdown Storting per-
+  // tanggal), kategori dibekukan relatif tanggal kolom itu, sehingga distribusi
+  // L1/CM/MB/ML baris historis tidak bergeser saat kalender bulan berganti.
+  // TOTAL Storting tidak terpengaruh — hanya alokasi antar kolom kategori.
+  let refMonth, refYear;
+  const refParsed = refDateStr ? parseTanggalIndo(String(refDateStr).trim()) : null;
+  if (refParsed) {
+    refMonth = refParsed.month;
+    refYear = refParsed.year;
+  } else {
+    const now = new Date();
+    const wibOffset = 7 * 60 * 60 * 1000;
+    const wib = new Date(now.getTime() + (now.getTimezoneOffset() * 60000) + wibOffset);
+    refMonth = wib.getMonth();
+    refYear = wib.getFullYear();
+  }
 
   // Hitung selisih bulan
-  const diff = (nowYear - parsed.year) * 12 + (nowMonth - parsed.month);
+  const diff = (refYear - parsed.year) * 12 + (refMonth - parsed.month);
 
   if (diff === 0) return 'PB';
   if (diff === 1) return 'L1';
@@ -1289,8 +1303,8 @@ function getKategoriNasabah(nasabah) {
         if (pay) {
           const total = pay.total || 0;
           stortingKini += total;
-          // Breakdown per kategori
-          const kat = getKategoriNasabah(n);
+          // Breakdown per kategori — beku per tanggal kolom (dateStr).
+          const kat = getKategoriNasabah(n, dateStr);
           if (kat === 'PB') pbKini += total;
           else if (kat === 'L1') l1Kini += total;
           else if (kat === 'CM') cmKini += total;
@@ -1309,7 +1323,7 @@ function getKategoriNasabah(nasabah) {
           const rTotal = rPay.total || 0;
           stortingKini += rTotal;
           const histN = { ...n, tanggalPencairan: r.tanggalPencairan || '', tanggalPengajuan: r.tanggalPengajuan || '' };
-          const rKat = getKategoriNasabah(histN);
+          const rKat = getKategoriNasabah(histN, dateStr);
           if (rKat === 'PB') pbKini += rTotal;
           else if (rKat === 'L1') l1Kini += rTotal;
           else if (rKat === 'CM') cmKini += rTotal;
@@ -1396,7 +1410,7 @@ function getKategoriNasabah(nasabah) {
             const auid = n.adminUid || '_';
             if (!adminComputed[auid]) adminComputed[auid] = { pb:0, l1:0, cm:0, mb:0, ml:0 };
             const total = pay.total || 0;
-            const kat = getKategoriNasabah(n);
+            const kat = getKategoriNasabah(n, dateStr);
             if (kat === 'PB') adminComputed[auid].pb += total;
             else if (kat === 'L1') adminComputed[auid].l1 += total;
             else if (kat === 'CM') adminComputed[auid].cm += total;
@@ -1412,7 +1426,7 @@ function getKategoriNasabah(nasabah) {
             if (!adminComputed[auid]) adminComputed[auid] = { pb:0, l1:0, cm:0, mb:0, ml:0 };
             const total = rPay.total || 0;
             const histN = { ...n, tanggalPencairan: r.tanggalPencairan || '', tanggalPengajuan: r.tanggalPengajuan || '' };
-            const rKat = getKategoriNasabah(histN);
+            const rKat = getKategoriNasabah(histN, dateStr);
             if (rKat === 'PB') adminComputed[auid].pb += total;
             else if (rKat === 'L1') adminComputed[auid].l1 += total;
             else if (rKat === 'CM') adminComputed[auid].cm += total;
@@ -1545,27 +1559,29 @@ function getKategoriNasabah(nasabah) {
       list.forEach(n => {
         const auid = n.adminUid || '_';
         if (n.pembayaran) {
-          const kat = getKategoriNasabah(n);
-          if (kat !== 'PB') {
-            for (const [d, p] of Object.entries(n.pembayaran)) {
-              if (!dates.has(d)) continue;
-              if (!adminComputed[auid]) adminComputed[auid] = { l1:0, cm:0, mb:0, ml:0 };
-              const total = (p && p.total) || 0;
-              if (kat === 'L1') adminComputed[auid].l1 += total;
-              else if (kat === 'CM') adminComputed[auid].cm += total;
-              else if (kat === 'MB') adminComputed[auid].mb += total;
-              else adminComputed[auid].ml += total;
-            }
+          for (const [d, p] of Object.entries(n.pembayaran)) {
+            if (!dates.has(d)) continue;
+            // Kategori beku per tanggal pembayaran (d) — bukan now — agar saldo
+            // awal historis tidak bergeser saat bulan berganti.
+            const kat = getKategoriNasabah(n, d);
+            if (kat === 'PB') continue;
+            if (!adminComputed[auid]) adminComputed[auid] = { l1:0, cm:0, mb:0, ml:0 };
+            const total = (p && p.total) || 0;
+            if (kat === 'L1') adminComputed[auid].l1 += total;
+            else if (kat === 'CM') adminComputed[auid].cm += total;
+            else if (kat === 'MB') adminComputed[auid].mb += total;
+            else adminComputed[auid].ml += total;
           }
         }
         // Pembayaran historis dari riwayat_pinjaman — kategori per r.tanggalPencairan.
         (n.riwayatPinjaman || []).forEach(r => {
           if (!r.pembayaran) return;
           const histN = { ...n, tanggalPencairan: r.tanggalPencairan || '', tanggalPengajuan: r.tanggalPengajuan || '' };
-          const rKat = getKategoriNasabah(histN);
-          if (rKat === 'PB') return;
           for (const [d, p] of Object.entries(r.pembayaran)) {
             if (!dates.has(d)) continue;
+            // Kategori beku per tanggal pembayaran (d) — konsisten dgn blok di atas.
+            const rKat = getKategoriNasabah(histN, d);
+            if (rKat === 'PB') continue;
             if (!adminComputed[auid]) adminComputed[auid] = { l1:0, cm:0, mb:0, ml:0 };
             const total = (p && p.total) || 0;
             if (rKat === 'L1') adminComputed[auid].l1 += total;

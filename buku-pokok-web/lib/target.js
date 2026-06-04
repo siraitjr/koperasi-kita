@@ -69,7 +69,19 @@ export function isEligibleForTarget(n, dateStr) {
   const isMenungguPencairan = n.statusKhusus === 'MENUNGGU_PENCAIRAN'
     && (n.statusPencairanSimpanan || '') !== 'Dicairkan';
   const menungguHariIni = isMenungguPencairan && (n.tanggalStatusKhusus || '').trim() === dateStr;
-  if (!isStatusAktif && !lunasHariIni && !menungguHariIni) return 0;
+  // ✅ IMMUTABILITAS HISTORIS: nasabah yang KINI berstatus "Lunas" tetapi tanggal
+  // lunasnya (tanggalLunasCicilan) jatuh SETELAH dateStr berarti pada dateStr ia
+  // MASIH AKTIF — utang belum lunas pada kolom historis itu. Guard live-status
+  // lama menolaknya (field status sudah "Lunas") sebelum logika date-aware di
+  // bawah sempat jalan → kolom historis menyusut saat nasabah dilunasi di hari
+  // berikutnya (melanggar prinsip data historis terkunci). Izinkan lewat di sini;
+  // cabang LUNAS date-aware (baris ~90: lunasDate > cur → fall-through) tetap
+  // mengembalikan target penuh. Untuk kolom HARI INI tak ada efek: tanggal lunas
+  // di masa depan mustahil, jadi masihAktifPadaTanggal selalu false → parity
+  // CF/Android terjaga 1:1.
+  const lunasDateGuard = parseTanggalIndo((n.tanggalLunasCicilan || '').trim());
+  const masihAktifPadaTanggal = lunasDateGuard && lunasDateGuard > cur;
+  if (!isStatusAktif && !lunasHariIni && !menungguHariIni && !masihAktifPadaTanggal) return 0;
 
   const target = Math.floor((n.besarPinjaman || 0) * 3 / 100);
   const totalPelunasan = n.totalPelunasan || 0;
