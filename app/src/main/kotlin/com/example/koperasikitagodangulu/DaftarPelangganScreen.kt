@@ -49,6 +49,14 @@ import com.google.accompanist.systemuicontroller.rememberSystemUiController
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.material.icons.rounded.Cancel
 import androidx.compose.material.icons.rounded.AccountBalanceWallet
+// === Workflow Cairkan (kamera → review → upload + cairkan) ===
+import android.Manifest
+import android.content.pm.PackageManager
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.FileProvider
+import java.io.File
 
 // Modern Color Palette
 private object CustomerListColors {
@@ -910,12 +918,83 @@ private fun ModernCustomerCard(
                         )
                     }
                     // === TOMBOL CAIRKAN & BATAL (di bawah baris Detail/Disetujui) ===
+                    //
+                    // Workflow pimpinan (semua nominal pinjaman, no tier):
+                    //   1. Klik "Cairkan" → kamera LANGSUNG terbuka (foto wajib).
+                    //   2. Capture foto serah terima.
+                    //   3. Dialog Review tampil: preview foto + tombol OK / Batal.
+                    //      - Batal: buang foto, BUKA KAMERA LAGI untuk retake.
+                    //      - OK   : upload foto (uploadFotoSerahTerima) → setelah sukses
+                    //               panggil cairkanPinjaman → toast → done.
+                    //   4. fotoSerahTerimaUrl tersimpan ke RTDB & dipakai web sebagai
+                    //      fallback "Foto Nasabah" di Buku Pokok.
+                    //
+                    // Catatan reuse: uploadFotoSerahTerima (PelangganViewModel.kt:10910)
+                    // dipertahankan signature-nya (Opsi A); cairkanPinjaman juga tidak
+                    // diubah signature-nya — kita hanya chain di Composable.
                     if (pelanggan.status == "Disetujui") {
                         Spacer(modifier = Modifier.height(8.dp))
 
-                        var showCairkanDialog by remember { mutableStateOf(false) }
                         var showBatalDialog by remember { mutableStateOf(false) }
                         var isProcessing by remember { mutableStateOf(false) }
+                        var tempSerahTerimaUri by remember { mutableStateOf<Uri?>(null) }
+                        var capturedSerahTerimaUri by remember { mutableStateOf<Uri?>(null) }
+                        var showReviewDialog by remember { mutableStateOf(false) }
+                        var showPermissionDeniedDialog by remember { mutableStateOf(false) }
+
+                        // Ordering penting: launcher dideklarasikan SEBELUM helper yang
+                        // memanggilnya, karena Kotlin tidak izinkan forward-ref ke val.
+                        // Local function (openCairkanCamera/startCairkanFlow) boleh
+                        // forward-ref antar-fungsi, tapi tidak ke variable.
+
+                        // 1) Camera launcher → on success tampilkan dialog Review.
+                        val serahTerimaCameraLauncher = rememberLauncherForActivityResult(
+                            contract = ActivityResultContracts.TakePicture()
+                        ) { success ->
+                            if (success && tempSerahTerimaUri != null) {
+                                capturedSerahTerimaUri = tempSerahTerimaUri
+                                showReviewDialog = true
+                            }
+                        }
+
+                        // 2) Helper buka kamera — rujuk langsung ke launcher di atas.
+                        fun openCairkanCamera() {
+                            try {
+                                val photoFile = File(
+                                    context.cacheDir,
+                                    "foto_serah_terima_${pelanggan.id}_${System.currentTimeMillis()}.jpg"
+                                )
+                                val uri = FileProvider.getUriForFile(
+                                    context,
+                                    "${context.packageName}.provider",
+                                    photoFile
+                                )
+                                tempSerahTerimaUri = uri
+                                serahTerimaCameraLauncher.launch(uri)
+                            } catch (e: Exception) {
+                                Log.e("CairkanCamera", "Error opening camera: ${e.message}")
+                                Toast.makeText(context, "Gagal membuka kamera: ${e.message}", Toast.LENGTH_LONG).show()
+                            }
+                        }
+
+                        // 3) Permission launcher → granted: openCairkanCamera; denied: dialog.
+                        val cameraPermissionLauncher = rememberLauncherForActivityResult(
+                            contract = ActivityResultContracts.RequestPermission()
+                        ) { isGranted ->
+                            if (isGranted) openCairkanCamera()
+                            else showPermissionDeniedDialog = true
+                        }
+
+                        // 4) Pemicu utama klik "Cairkan": cek permission, lalu buka kamera.
+                        fun startCairkanFlow() {
+                            when {
+                                ContextCompat.checkSelfPermission(
+                                    context,
+                                    Manifest.permission.CAMERA
+                                ) == PackageManager.PERMISSION_GRANTED -> openCairkanCamera()
+                                else -> cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+                            }
+                        }
 
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -940,7 +1019,7 @@ private fun ModernCustomerCard(
                             }
 
                             Button(
-                                onClick = { showCairkanDialog = true },
+                                onClick = { startCairkanFlow() },
                                 modifier = Modifier.weight(1f),
                                 enabled = !isProcessing,
                                 colors = ButtonDefaults.buttonColors(
@@ -957,34 +1036,72 @@ private fun ModernCustomerCard(
                             }
                         }
 
-                        // Dialog Konfirmasi Cairkan
-                        if (showCairkanDialog) {
+                        // Dialog Review: preview foto + OK/Batal (retake).
+                        if (showReviewDialog && capturedSerahTerimaUri != null) {
                             AlertDialog(
-                                onDismissRequest = { if (!isProcessing) showCairkanDialog = false },
-                                title = { Text("Cairkan Pinjaman") },
+                                onDismissRequest = { if (!isProcessing) showReviewDialog = false },
+                                title = { Text("Konfirmasi Foto Serah Terima") },
                                 text = {
-                                    Text(
-                                        "Apakah Anda yakin akan mencairkan pinjaman " +
-                                                "Rp ${viewModel.formatRupiahPublic(pelanggan.besarPinjaman)} " +
-                                                "kepada ${pelanggan.namaPanggilan}?\n\n" +
-                                                "Jadwal cicilan akan dihitung mulai besok."
-                                    )
+                                    Column {
+                                        Text(
+                                            "Pastikan foto bukti serah terima uang sudah jelas. " +
+                                                "Setelah OK, pinjaman akan dicairkan.",
+                                            fontSize = 13.sp
+                                        )
+                                        Spacer(modifier = Modifier.height(12.dp))
+                                        AsyncImage(
+                                            model = capturedSerahTerimaUri,
+                                            contentDescription = "Preview foto serah terima",
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .height(220.dp)
+                                                .clip(RoundedCornerShape(8.dp)),
+                                            contentScale = ContentScale.Crop
+                                        )
+                                    }
                                 },
                                 confirmButton = {
                                     Button(
                                         onClick = {
+                                            val foto = capturedSerahTerimaUri ?: return@Button
                                             isProcessing = true
-                                            viewModel.cairkanPinjaman(
+                                            // Upload foto → setelah sukses chain ke cairkanPinjaman.
+                                            viewModel.uploadFotoSerahTerima(
                                                 pelangganId = pelanggan.id,
+                                                fotoUri = foto,
                                                 onSuccess = {
-                                                    isProcessing = false
-                                                    showCairkanDialog = false
-                                                    Toast.makeText(context, "✅ Pinjaman berhasil dicairkan", Toast.LENGTH_SHORT).show()
+                                                    viewModel.cairkanPinjaman(
+                                                        pelangganId = pelanggan.id,
+                                                        onSuccess = {
+                                                            isProcessing = false
+                                                            showReviewDialog = false
+                                                            capturedSerahTerimaUri = null
+                                                            tempSerahTerimaUri = null
+                                                            Toast.makeText(
+                                                                context,
+                                                                "✅ Pinjaman berhasil dicairkan",
+                                                                Toast.LENGTH_SHORT
+                                                            ).show()
+                                                        },
+                                                        onFailure = { e ->
+                                                            isProcessing = false
+                                                            showReviewDialog = false
+                                                            Toast.makeText(
+                                                                context,
+                                                                "❌ Gagal mencairkan: ${e.message}",
+                                                                Toast.LENGTH_LONG
+                                                            ).show()
+                                                        }
+                                                    )
                                                 },
                                                 onFailure = { e ->
                                                     isProcessing = false
-                                                    showCairkanDialog = false
-                                                    Toast.makeText(context, "❌ Gagal: ${e.message}", Toast.LENGTH_SHORT).show()
+                                                    // Pertahankan dialog agar admin bisa coba lagi.
+                                                    Toast.makeText(
+                                                        context,
+                                                        "❌ Gagal upload foto: ${e.message}",
+                                                        Toast.LENGTH_LONG
+                                                    ).show()
                                                 }
                                             )
                                         },
@@ -998,16 +1115,37 @@ private fun ModernCustomerCard(
                                                 strokeWidth = 2.dp
                                             )
                                         } else {
-                                            Text("Ya, Cairkan", color = Color.White)
+                                            Text("OK, Cairkan", color = Color.White)
                                         }
                                     }
                                 },
                                 dismissButton = {
                                     TextButton(
-                                        onClick = { showCairkanDialog = false },
+                                        onClick = {
+                                            // Batal: buang foto, buka kamera lagi (retake).
+                                            capturedSerahTerimaUri = null
+                                            showReviewDialog = false
+                                            openCairkanCamera()
+                                        },
                                         enabled = !isProcessing
                                     ) {
-                                        Text("Batal")
+                                        Text("Batal (Ambil Ulang)")
+                                    }
+                                }
+                            )
+                        }
+
+                        // Dialog permission denied.
+                        if (showPermissionDeniedDialog) {
+                            AlertDialog(
+                                onDismissRequest = { showPermissionDeniedDialog = false },
+                                title = { Text("Izin Kamera Diperlukan") },
+                                text = {
+                                    Text("Untuk mengambil foto serah terima, aplikasi memerlukan izin akses kamera. Silakan izinkan di pengaturan aplikasi.")
+                                },
+                                confirmButton = {
+                                    TextButton(onClick = { showPermissionDeniedDialog = false }) {
+                                        Text("OK")
                                     }
                                 }
                             )

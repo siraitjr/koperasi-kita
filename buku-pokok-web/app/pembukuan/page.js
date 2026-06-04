@@ -2360,13 +2360,19 @@ function DetailModal({ nasabah, onClose }) {
         </div>
 
         <div className="modal-body">
-          {/* Foto KTP & Foto Nasabah */}
-          {(nasabah.fotoKtpUrl || nasabah.fotoKtpSuamiUrl || nasabah.fotoKtpIstriUrl || nasabah.fotoNasabahUrl) && (
+          {/* Foto KTP & Foto Nasabah — setelah soft-removal: fotoSerahTerimaUrl
+              jadi fallback "Foto Nasabah" untuk nasabah baru yg tak punya foto registrasi. */}
+          {(nasabah.fotoKtpUrl || nasabah.fotoKtpSuamiUrl || nasabah.fotoKtpIstriUrl || nasabah.fotoNasabahUrl || nasabah.fotoSerahTerimaUrl) && (
             <div className="detail-photos">
-              {nasabah.fotoNasabahUrl && (
+              {nasabah.fotoNasabahUrl ? (
                 <div className="detail-photo-card" onClick={() => setZoomImage(nasabah.fotoNasabahUrl)}>
                   <img src={nasabah.fotoNasabahUrl} alt="Foto Nasabah" loading="lazy" />
                   <span className="detail-photo-label">Foto Nasabah</span>
+                </div>
+              ) : nasabah.fotoSerahTerimaUrl && (
+                <div className="detail-photo-card" onClick={() => setZoomImage(nasabah.fotoSerahTerimaUrl)}>
+                  <img src={nasabah.fotoSerahTerimaUrl} alt="Foto Serah Terima" loading="lazy" />
+                  <span className="detail-photo-label">Foto Serah Terima</span>
                 </div>
               )}
               {nasabah.fotoKtpUrl && (

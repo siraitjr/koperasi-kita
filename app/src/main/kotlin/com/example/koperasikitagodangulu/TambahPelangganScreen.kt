@@ -109,6 +109,17 @@ private object TambahPelangganColors {
     val info = Color(0xFF3B82F6)
 }
 
+// ============================================================================
+// SOFT-REMOVAL FLAGS — atas perintah pimpinan, NIK + Foto KTP + Foto Nasabah
+// disembunyikan dari UI input admin lapangan, tapi data model, CF triggers,
+// RTDB rules, render foto di approval/web tetap PRESERVED. Untuk restore: ubah
+// flag ke true → seluruh field input + tombol upload + Scan KTP muncul lagi.
+// Validator (line ~638 & ~671) sudah di-relax independen sehingga form bisa
+// submit walau flag true tapi user kosongkan field.
+// ============================================================================
+private const val SHOW_NIK_FIELDS = false
+private const val SHOW_FOTO_KTP_AND_NASABAH = false
+
 private fun validateKtpData(nik: String, nama: String, alamat: String): Boolean {
     val isNikValid = nik.length == 16 && nik.all { it.isDigit() }
     val isNamaValid = nama.length >= 3 &&
@@ -636,15 +647,16 @@ fun TambahPelangganScreen(
             val isPinjamanValid = pinjamanNumerik >= 50000
 
             namaKtp.isNotBlank() &&
-                    nik.isNotBlank() && nik.length == 16 &&
+                    // ✅ Soft-removal: NIK + fotoKtpUri + fotoNasabahUri tidak lagi
+                    // mempengaruhi validitas form (UI input dihilangkan di bawah).
+                    // Field model tetap dipertahankan agar data historis aman & web
+                    // tetap render foto lama; record baru menyimpan string/Uri kosong.
                     alamatKtp.isNotBlank() &&
                     alamatRumah.isNotBlank() &&
                     detailRumah.isNotBlank() &&
                     wilayah.isNotBlank() &&
                     jenisUsaha.isNotBlank() &&
                     besarPinjaman.isNotBlank() &&
-                    fotoKtpUri != null &&
-                    fotoNasabahUri != null &&
                     isPinjamanValid &&
                     tenorValue > 0
         }
@@ -669,18 +681,15 @@ fun TambahPelangganScreen(
             val isPinjamanValid = pinjamanNumerik >= 50000
 
             namaKtpSuami.isNotBlank() &&
-                    nikSuami.isNotBlank() && nikSuami.length == 16 &&
+                    // ✅ Soft-removal: NIK Suami/Istri + 3 fotoUri tidak lagi mempengaruhi
+                    // validitas form (UI input dihilangkan di bawah). Model tetap.
                     namaKtpIstri.isNotBlank() &&
-                    nikIstri.isNotBlank() && nikIstri.length == 16 &&
                     alamatKtp.isNotBlank() &&
                     alamatRumah.isNotBlank() &&
                     detailRumah.isNotBlank() &&
                     wilayah.isNotBlank() &&
                     jenisUsaha.isNotBlank() &&
                     besarPinjaman.isNotBlank() &&
-                    fotoKtpSuamiUri != null &&
-                    fotoKtpIstriUri != null &&
-                    fotoNasabahUri != null &&
                     isPinjamanValid &&
                     tenorValue > 0
         }
@@ -2601,23 +2610,28 @@ fun FormDibawah3JT(
                 subtitleColor = subtitleColor
             )
 
-            ModernTextField(
-                value = nik,
-                onValueChange = onNikChange,
-                label = "NIK",
-                isError = nik.length != 16,
-                supportingText = {
-                    if (nik.length != 16) {
-                        Text("NIK harus 16 digit angka")
-                    }
-                },
-                keyboardType = KeyboardType.Number,
-                isDark = isDark,
-                cardColor = cardColor,
-                borderColor = borderColor,
-                txtColor = txtColor,
-                subtitleColor = subtitleColor
-            )
+            // ✅ Soft-removal: NIK field disembunyikan. Field model `nik` (Pelanggan.kt)
+            // dipertahankan agar nasabah lama tetap render, dan bila pimpinan ingin
+            // restore, cukup hilangkan flag SHOW_NIK_FIELDS di file ini.
+            if (SHOW_NIK_FIELDS) {
+                ModernTextField(
+                    value = nik,
+                    onValueChange = onNikChange,
+                    label = "NIK",
+                    isError = nik.length != 16,
+                    supportingText = {
+                        if (nik.length != 16) {
+                            Text("NIK harus 16 digit angka")
+                        }
+                    },
+                    keyboardType = KeyboardType.Number,
+                    isDark = isDark,
+                    cardColor = cardColor,
+                    borderColor = borderColor,
+                    txtColor = txtColor,
+                    subtitleColor = subtitleColor
+                )
+            }
 
             ModernTextField(
                 value = namaPanggilan,
@@ -2630,17 +2644,21 @@ fun FormDibawah3JT(
                 subtitleColor = subtitleColor
             )
 
-            ModernKtpUploadSection(
-                title = "Foto KTP",
-                imageUri = fotoKtpUri,
-                onImageChange = onFotoKtpChange,
-                onScanKTP = onScanKTP,
-                onPickFromGallery = onPickFromGallery,
-                isDark = isDark,
-                borderColor = borderColor
-            )
+            if (SHOW_FOTO_KTP_AND_NASABAH) {
+                ModernKtpUploadSection(
+                    title = "Foto KTP",
+                    imageUri = fotoKtpUri,
+                    onImageChange = onFotoKtpChange,
+                    onScanKTP = onScanKTP,
+                    onPickFromGallery = onPickFromGallery,
+                    isDark = isDark,
+                    borderColor = borderColor
+                )
+            }
 
-            // ✅ BARU: Section Foto Nasabah untuk dibawah_3jt
+            // ✅ BARU: Section Foto Nasabah untuk dibawah_3jt — disembunyikan
+            // via SHOW_FOTO_KTP_AND_NASABAH (soft-removal).
+            if (SHOW_FOTO_KTP_AND_NASABAH) {
             Spacer(modifier = Modifier.height(8.dp))
 
             Text(
@@ -2751,6 +2769,7 @@ fun FormDibawah3JT(
                 color = Color.Gray,
                 modifier = Modifier.padding(top = 8.dp)
             )
+            } // ← tutup SHOW_FOTO_KTP_AND_NASABAH (inline Foto Nasabah dibawah_3jt)
         }
     }
 }
@@ -2823,23 +2842,25 @@ fun FormDiatas3JT(
                     subtitleColor = subtitleColor
                 )
 
-                ModernTextField(
-                    value = nikSuami,
-                    onValueChange = onNikSuamiChange,
-                    label = "NIK Suami",
-                    isError = nikSuami.length != 16,
-                    supportingText = {
-                        if (nikSuami.length != 16) {
-                            Text("NIK harus 16 digit angka")
-                        }
-                    },
-                    keyboardType = KeyboardType.Number,
-                    isDark = isDark,
-                    cardColor = cardColor,
-                    borderColor = borderColor,
-                    txtColor = txtColor,
-                    subtitleColor = subtitleColor
-                )
+                if (SHOW_NIK_FIELDS) {
+                    ModernTextField(
+                        value = nikSuami,
+                        onValueChange = onNikSuamiChange,
+                        label = "NIK Suami",
+                        isError = nikSuami.length != 16,
+                        supportingText = {
+                            if (nikSuami.length != 16) {
+                                Text("NIK harus 16 digit angka")
+                            }
+                        },
+                        keyboardType = KeyboardType.Number,
+                        isDark = isDark,
+                        cardColor = cardColor,
+                        borderColor = borderColor,
+                        txtColor = txtColor,
+                        subtitleColor = subtitleColor
+                    )
+                }
 
                 ModernTextField(
                     value = namaPanggilanSuami,
@@ -2852,15 +2873,17 @@ fun FormDiatas3JT(
                     subtitleColor = subtitleColor
                 )
 
-                ModernKtpUploadSection(
-                    title = "Foto KTP Suami",
-                    imageUri = fotoKtpSuamiUri,
-                    onImageChange = onFotoKtpSuamiChange,
-                    onScanKTP = onScanKTPSuami,
-                    onPickFromGallery = onPickFromGallerySuami,
-                    isDark = isDark,
-                    borderColor = borderColor
-                )
+                if (SHOW_FOTO_KTP_AND_NASABAH) {
+                    ModernKtpUploadSection(
+                        title = "Foto KTP Suami",
+                        imageUri = fotoKtpSuamiUri,
+                        onImageChange = onFotoKtpSuamiChange,
+                        onScanKTP = onScanKTPSuami,
+                        onPickFromGallery = onPickFromGallerySuami,
+                        isDark = isDark,
+                        borderColor = borderColor
+                    )
+                }
             }
         }
 
@@ -2897,23 +2920,25 @@ fun FormDiatas3JT(
                     subtitleColor = subtitleColor
                 )
 
-                ModernTextField(
-                    value = nikIstri,
-                    onValueChange = onNikIstriChange,
-                    label = "NIK Istri",
-                    isError = nikIstri.length != 16,
-                    supportingText = {
-                        if (nikIstri.length != 16) {
-                            Text("NIK harus 16 digit angka")
-                        }
-                    },
-                    keyboardType = KeyboardType.Number,
-                    isDark = isDark,
-                    cardColor = cardColor,
-                    borderColor = borderColor,
-                    txtColor = txtColor,
-                    subtitleColor = subtitleColor
-                )
+                if (SHOW_NIK_FIELDS) {
+                    ModernTextField(
+                        value = nikIstri,
+                        onValueChange = onNikIstriChange,
+                        label = "NIK Istri",
+                        isError = nikIstri.length != 16,
+                        supportingText = {
+                            if (nikIstri.length != 16) {
+                                Text("NIK harus 16 digit angka")
+                            }
+                        },
+                        keyboardType = KeyboardType.Number,
+                        isDark = isDark,
+                        cardColor = cardColor,
+                        borderColor = borderColor,
+                        txtColor = txtColor,
+                        subtitleColor = subtitleColor
+                    )
+                }
 
                 ModernTextField(
                     value = namaPanggilanIstri,
@@ -2926,19 +2951,22 @@ fun FormDiatas3JT(
                     subtitleColor = subtitleColor
                 )
 
-                ModernKtpUploadSection(
-                    title = "Foto KTP Istri",
-                    imageUri = fotoKtpIstriUri,
-                    onImageChange = onFotoKtpIstriChange,
-                    onScanKTP = onScanKTPIstri,
-                    onPickFromGallery = onPickFromGalleryIstri,
-                    isDark = isDark,
-                    borderColor = borderColor
-                )
+                if (SHOW_FOTO_KTP_AND_NASABAH) {
+                    ModernKtpUploadSection(
+                        title = "Foto KTP Istri",
+                        imageUri = fotoKtpIstriUri,
+                        onImageChange = onFotoKtpIstriChange,
+                        onScanKTP = onScanKTPIstri,
+                        onPickFromGallery = onPickFromGalleryIstri,
+                        isDark = isDark,
+                        borderColor = borderColor
+                    )
+                }
             }
         }
 
-        // ✅ BARU: Card Foto Nasabah
+        // ✅ BARU: Card Foto Nasabah — disembunyikan via SHOW_FOTO_KTP_AND_NASABAH.
+        if (SHOW_FOTO_KTP_AND_NASABAH) {
         ModernCardContainer(
             isDark = isDark,
             cardColor = cardColor
@@ -3056,6 +3084,7 @@ fun FormDiatas3JT(
                 )
             }
         }
+        } // ← tutup SHOW_FOTO_KTP_AND_NASABAH (Card Foto Nasabah diatas_3jt)
     }
 }
 

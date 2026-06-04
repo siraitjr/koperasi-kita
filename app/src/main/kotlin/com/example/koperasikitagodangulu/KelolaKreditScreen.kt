@@ -48,6 +48,16 @@ import com.google.accompanist.systemuicontroller.rememberSystemUiController
 // Pastikan CompleteScanResult sudah ada di file terpisah (lihat Models.kt)
 // atau sudah bisa diakses dari package yang sama
 
+// ============================================================================
+// SOFT-REMOVAL FLAGS — sejajar dengan TambahPelangganScreen. NIK + Foto KTP +
+// Foto Nasabah disembunyikan dari UI input admin lapangan. Data model + render
+// foto historis tetap utuh. Restore: ubah flag ke true.
+// ============================================================================
+private object KelolaKreditFlags {
+    const val SHOW_NIK_FIELDS = false
+    const val SHOW_FOTO_KTP_AND_NASABAH = false
+}
+
 // Modern Color Palette
 private object LoanManageColors {
     val primaryGradient = listOf(Color(0xFF6366F1), Color(0xFF8B5CF6))
@@ -311,27 +321,22 @@ fun KelolaKreditScreen(
         Log.d("KelolaKredit", "tipePinjamanBaru: $tipePinjamanBaru, isUpgrade: $isUpgrade, isDowngrade: $isDowngrade")
     }
 
-    // ✅ BARU: Validasi foto berdasarkan tipe pinjaman
-    val isFotoValid = when (tipePinjamanBaru) {
-        "dibawah_3jt" -> {
-            fotoKtpUri != null && fotoNasabahUri != null
-        }
-        "diatas_3jt" -> {
-            fotoKtpSuamiUri != null && fotoKtpIstriUri != null && fotoNasabahUri != null
-        }
-        else -> false
-    }
+    // ✅ Soft-removal pimpinan: NIK + Foto KTP + Foto Nasabah tidak lagi
+    // mempengaruhi validitas form (UI input di-gate via SHOW_NIK_FIELDS /
+    // SHOW_FOTO_KTP_AND_NASABAH di TambahPelangganScreen.kt; KelolaKreditScreen
+    // ikut pola sama). isFotoValid jadi konstan true; isDataValid tetap minta
+    // nama + alamat + nama panggilan (data dasar yang tidak ikut soft-removal).
+    val isFotoValid = true
 
-    // ✅ BARU: Validasi data berdasarkan tipe pinjaman
     val isDataValid = when (tipePinjamanBaru) {
         "dibawah_3jt" -> {
-            namaKtp.isNotBlank() && nik.length == 16 && alamatKtp.isNotBlank() && namaPanggilanInput.isNotBlank()
+            namaKtp.isNotBlank() && alamatKtp.isNotBlank() && namaPanggilanInput.isNotBlank()
         }
         "diatas_3jt" -> {
             if (isUpgrade) {
-                // Upgrade: perlu data suami istri lengkap
-                namaKtpSuami.isNotBlank() && nikSuami.length == 16 &&
-                        namaKtpIstri.isNotBlank() && nikIstri.length == 16 &&
+                // Upgrade: perlu data suami istri lengkap (kecuali NIK)
+                namaKtpSuami.isNotBlank() &&
+                        namaKtpIstri.isNotBlank() &&
                         namaPanggilanSuami.isNotBlank() && namaPanggilanIstri.isNotBlank() &&
                         alamatKtp.isNotBlank()
             } else {
@@ -1045,7 +1050,11 @@ fun KelolaKreditScreen(
                             }
                         }
 
-                        when (tipePinjamanBaru) {
+                        // ✅ Soft-removal pimpinan: seluruh blok PhotoUploadSection
+                        // (Foto KTP utama/suami/istri + Foto Nasabah) disembunyikan.
+                        // Composable & state Uri tetap dipertahankan agar pola foto
+                        // serah terima (di DaftarPelangganScreen) tidak terdampak.
+                        if (KelolaKreditFlags.SHOW_FOTO_KTP_AND_NASABAH) when (tipePinjamanBaru) {
                             "dibawah_3jt" -> {
                                 // Foto KTP Nasabah
                                 PhotoUploadSection(
@@ -1504,15 +1513,19 @@ private fun KtpInputForm(
             leadingIcon = {
                 ModernFieldIcon(Icons.Rounded.Person, LoanManageColors.primary)
             },
-            trailingIcon = {
-                IconButton(onClick = onScanKtp) {
-                    Icon(
-                        Icons.Rounded.CameraAlt,
-                        "Scan KTP",
-                        tint = LoanManageColors.primary
-                    )
+            // Trailing Scan KTP icon disembunyikan (soft-removal); bila NIK fields
+            // di-restore, kembalikan ikon ini juga.
+            trailingIcon = if (KelolaKreditFlags.SHOW_NIK_FIELDS) {
+                {
+                    IconButton(onClick = onScanKtp) {
+                        Icon(
+                            Icons.Rounded.CameraAlt,
+                            "Scan KTP",
+                            tint = LoanManageColors.primary
+                        )
+                    }
                 }
-            },
+            } else null,
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(14.dp),
             colors = OutlinedTextFieldDefaults.colors(
@@ -1528,35 +1541,37 @@ private fun KtpInputForm(
             )
         )
 
-        // NIK
-        OutlinedTextField(
-            value = nik,
-            onValueChange = onNikChange,
-            label = { Text("NIK", color = subtitleColor) },
-            leadingIcon = {
-                ModernFieldIcon(Icons.Rounded.CreditCard, LoanManageColors.primary)
-            },
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(14.dp),
-            isError = nik.isNotEmpty() && nik.length != 16,
-            supportingText = {
-                if (nik.isNotEmpty() && nik.length != 16) {
-                    Text("NIK harus 16 digit angka", color = LoanManageColors.danger, fontSize = 12.sp)
-                }
-            },
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedContainerColor = cardColor,
-                unfocusedContainerColor = cardColor,
-                focusedBorderColor = LoanManageColors.primary,
-                unfocusedBorderColor = borderColor,
-                cursorColor = LoanManageColors.primary,
-                focusedTextColor = txtColor,
-                unfocusedTextColor = txtColor,
-                focusedLabelColor = LoanManageColors.primary,
-                unfocusedLabelColor = subtitleColor
+        // NIK — di-gate via SHOW_NIK_FIELDS (soft-removal).
+        if (KelolaKreditFlags.SHOW_NIK_FIELDS) {
+            OutlinedTextField(
+                value = nik,
+                onValueChange = onNikChange,
+                label = { Text("NIK", color = subtitleColor) },
+                leadingIcon = {
+                    ModernFieldIcon(Icons.Rounded.CreditCard, LoanManageColors.primary)
+                },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(14.dp),
+                isError = nik.isNotEmpty() && nik.length != 16,
+                supportingText = {
+                    if (nik.isNotEmpty() && nik.length != 16) {
+                        Text("NIK harus 16 digit angka", color = LoanManageColors.danger, fontSize = 12.sp)
+                    }
+                },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedContainerColor = cardColor,
+                    unfocusedContainerColor = cardColor,
+                    focusedBorderColor = LoanManageColors.primary,
+                    unfocusedBorderColor = borderColor,
+                    cursorColor = LoanManageColors.primary,
+                    focusedTextColor = txtColor,
+                    unfocusedTextColor = txtColor,
+                    focusedLabelColor = LoanManageColors.primary,
+                    unfocusedLabelColor = subtitleColor
+                )
             )
-        )
+        }
 
         // Nama Panggilan
         OutlinedTextField(

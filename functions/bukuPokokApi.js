@@ -607,6 +607,11 @@ exports.getBukuPokok = functions
                         fotoKtpSuamiUrl: p.fotoKtpSuamiUrl || '',
                         fotoKtpIstriUrl: p.fotoKtpIstriUrl || '',
                         fotoNasabahUrl: p.fotoNasabahUrl || '',
+                        // ✅ Setelah soft-removal NIK/Foto KTP/Foto Nasabah, foto serah
+                        // terima jadi pengganti visual utama "Foto Nasabah" di web (fallback
+                        // bila fotoNasabahUrl kosong). Wajib di-expose CF agar render web bisa
+                        // pakai dengan elegan tanpa tambahan RTDB read.
+                        fotoSerahTerimaUrl: p.fotoSerahTerimaUrl || '',
                         // Riwayat pinjaman lama
                         sisaUtangLama: sisaUtangLama,
                         sisaUtangLamaSebelumTopUp: p.sisaUtangLamaSebelumTopUp || 0,
@@ -669,6 +674,7 @@ exports.getBukuPokok = functions
                         fotoKtpSuamiUrl: '',
                         fotoKtpIstriUrl: '',
                         fotoNasabahUrl: '',
+                        fotoSerahTerimaUrl: '',
                         sisaUtangLama: sisaUtangLama,
                         sisaUtangLamaSebelumTopUp: 0,
                         riwayatPinjaman: riwayat,

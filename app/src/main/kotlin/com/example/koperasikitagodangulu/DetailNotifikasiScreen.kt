@@ -1,12 +1,7 @@
 package com.example.koperasikitagodangulu
 
-import android.Manifest
-import android.content.pm.PackageManager
 import android.net.Uri
 import android.util.Log
-import android.widget.Toast
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -29,12 +24,9 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.content.ContextCompat
-import androidx.core.content.FileProvider
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
 import kotlinx.coroutines.delay
-import java.io.File
 import java.text.NumberFormat
 import java.text.SimpleDateFormat
 import java.util.*
@@ -68,10 +60,11 @@ fun DetailNotifikasiScreen(
         systemUiController.setNavigationBarColor(bgColor, darkIcons = !isDark)
     }
 
-    // ✅ State untuk foto serah terima
-    var tempSerahTerimaUri by remember { mutableStateOf<Uri?>(null) }
-    var isUploadingSerahTerima by remember { mutableStateOf(false) }
-    var showPermissionDeniedDialog by remember { mutableStateOf(false) }
+    // ✅ Foto serah terima sekarang ditangkap saat aksi "Cairkan" di
+    // DaftarPelangganScreen (workflow pimpinan: kamera→review→upload+cairkan).
+    // Card di bawah jadi READ-ONLY: tetap render foto/pending bila sudah ada
+    // (notifikasi historis), tidak menampilkan tombol capture/upload lagi.
+    // State + launcher + permission untuk capture sengaja dihapus.
 
     // ✅ Ambil data pelanggan dari notifikasi (dengan re-fetch saat daftarPelanggan berubah)
     // ✅ FIX: Hapus .size dari key — derivedStateOf sudah otomatis melacak perubahan daftarPelanggan
@@ -86,84 +79,9 @@ fun DetailNotifikasiScreen(
         return "Rp ${formatter.format(amount)}"
     }
 
-    // ✅ Camera launcher untuk foto serah terima
-    val serahTerimaCameraLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.TakePicture()
-    ) { success ->
-        if (success && tempSerahTerimaUri != null && currentNotification != null) {
-            isUploadingSerahTerima = true
-            viewModel.uploadFotoSerahTerima(
-                pelangganId = currentNotification.pelangganId,
-                fotoUri = tempSerahTerimaUri!!,
-                onSuccess = {
-                    isUploadingSerahTerima = false
-                    Toast.makeText(context, "✅ Foto serah terima berhasil diupload", Toast.LENGTH_SHORT).show()
-                },
-                onFailure = { e ->
-                    isUploadingSerahTerima = false
-                    Toast.makeText(context, "❌ Gagal: ${e.message}", Toast.LENGTH_LONG).show()
-                }
-            )
-        }
-    }
-
-    // ✅ PERMISSION LAUNCHER - Request camera permission
-    val cameraPermissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission()
-    ) { isGranted ->
-        if (isGranted) {
-            // Permission granted, buka kamera
-            try {
-                val photoFile = File(
-                    context.cacheDir,
-                    "foto_serah_terima_${System.currentTimeMillis()}.jpg"
-                )
-                tempSerahTerimaUri = FileProvider.getUriForFile(
-                    context,
-                    "${context.packageName}.provider",
-                    photoFile
-                )
-                serahTerimaCameraLauncher.launch(tempSerahTerimaUri)
-            } catch (e: Exception) {
-                Log.e("DetailNotifikasi", "Error opening camera: ${e.message}")
-                Toast.makeText(context, "Gagal membuka kamera: ${e.message}", Toast.LENGTH_LONG).show()
-            }
-        } else {
-            // Permission denied
-            showPermissionDeniedDialog = true
-        }
-    }
-
-    // ✅ FUNGSI UNTUK MEMBUKA KAMERA (dengan permission check)
-    fun openSerahTerimaCamera() {
-        when {
-            ContextCompat.checkSelfPermission(
-                context,
-                Manifest.permission.CAMERA
-            ) == PackageManager.PERMISSION_GRANTED -> {
-                // Permission sudah ada, langsung buka kamera
-                try {
-                    val photoFile = File(
-                        context.cacheDir,
-                        "foto_serah_terima_${System.currentTimeMillis()}.jpg"
-                    )
-                    tempSerahTerimaUri = FileProvider.getUriForFile(
-                        context,
-                        "${context.packageName}.provider",
-                        photoFile
-                    )
-                    serahTerimaCameraLauncher.launch(tempSerahTerimaUri)
-                } catch (e: Exception) {
-                    Log.e("DetailNotifikasi", "Error opening camera: ${e.message}")
-                    Toast.makeText(context, "Gagal membuka kamera: ${e.message}", Toast.LENGTH_LONG).show()
-                }
-            }
-            else -> {
-                // Request permission
-                cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
-            }
-        }
-    }
+    // ✅ Camera/permission launcher untuk capture foto serah terima dipindah ke
+    // DaftarPelangganScreen (workflow Cairkan: kamera→review→upload+cairkan).
+    // Layar ini sekarang read-only — tidak lagi memicu capture.
 
     // ✅ TAMBAH: Refresh pelanggan data saat screen dibuka
     LaunchedEffect(notificationId) {
@@ -192,21 +110,8 @@ fun DetailNotifikasiScreen(
         }
     }
 
-    // ✅ DIALOG PERMISSION DENIED
-    if (showPermissionDeniedDialog) {
-        AlertDialog(
-            onDismissRequest = { showPermissionDeniedDialog = false },
-            title = { Text("Izin Kamera Diperlukan") },
-            text = {
-                Text("Untuk mengambil foto serah terima, aplikasi memerlukan izin akses kamera. Silakan izinkan di pengaturan aplikasi.")
-            },
-            confirmButton = {
-                TextButton(onClick = { showPermissionDeniedDialog = false }) {
-                    Text("OK")
-                }
-            }
-        )
-    }
+    // ✅ Dialog permission denied dipindah ke DaftarPelangganScreen (tempat
+    // capture foto serah terima sekarang berada).
 
     Scaffold(
         topBar = {
@@ -574,9 +479,16 @@ fun DetailNotifikasiScreen(
                     }
                 }
 
-                // ✅ BARU: Card Foto Serah Terima Uang (hanya untuk APPROVAL pinjaman 3jt ke atas)
+                // ✅ Card Foto Serah Terima Uang — READ-ONLY mode.
+                // Tier-gate ≥3jt dihapus (foto serah terima kini diambil untuk SEMUA
+                // nominal lewat workflow Cairkan di DaftarPelangganScreen). Card di
+                // sini hanya menampilkan foto/pending yang sudah ada (historis); tidak
+                // ada lagi tombol capture/upload. Bila tidak ada foto sama sekali,
+                // card disembunyikan agar tidak menampilkan header kosong.
+                val hasSerahTerimaContent = (pelanggan?.fotoSerahTerimaUrl?.isNotBlank() == true) ||
+                    (pelanggan?.pendingFotoSerahTerimaUri?.isNotBlank() == true)
                 if ((notification.type == "APPROVAL" || notification.type == "DUAL_APPROVAL_APPROVED") &&
-                    (pelanggan?.tipePinjaman == "diatas_3jt" || notification.pinjamanDisetujui >= 3000000)
+                    hasSerahTerimaContent
                 ) {
 
                     Spacer(modifier = Modifier.height(16.dp))
@@ -690,57 +602,10 @@ fun DetailNotifikasiScreen(
                                     }
                                 }
 
-                                // Belum ada foto - tampilkan tombol upload
-                                else -> {
-                                    Text(
-                                        "Setelah menyerahkan uang kepada nasabah, ambil foto sebagai bukti serah terima.",
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = txtColor.copy(alpha = 0.8f)
-                                    )
-
-                                    Spacer(modifier = Modifier.height(16.dp))
-
-                                    Button(
-                                        onClick = { openSerahTerimaCamera() },
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .height(50.dp),
-                                        colors = ButtonDefaults.buttonColors(
-                                            containerColor = Color(0xFF4CAF50)
-                                        ),
-                                        shape = RoundedCornerShape(12.dp),
-                                        enabled = !isUploadingSerahTerima
-                                    ) {
-                                        if (isUploadingSerahTerima) {
-                                            CircularProgressIndicator(
-                                                modifier = Modifier.size(24.dp),
-                                                color = Color.White,
-                                                strokeWidth = 2.dp
-                                            )
-                                            Spacer(modifier = Modifier.width(8.dp))
-                                            Text("Mengupload...")
-                                        } else {
-                                            Icon(
-                                                Icons.Default.CameraAlt,
-                                                contentDescription = null,
-                                                modifier = Modifier.size(20.dp)
-                                            )
-                                            Spacer(modifier = Modifier.width(8.dp))
-                                            Text(
-                                                "Ambil Foto Serah Terima",
-                                                fontWeight = FontWeight.Bold
-                                            )
-                                        }
-                                    }
-
-                                    Spacer(modifier = Modifier.height(8.dp))
-
-                                    Text(
-                                        "💡 Pastikan foto menampilkan nasabah menerima uang dengan jelas",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = txtColor.copy(alpha = 0.6f)
-                                    )
-                                }
+                                // ✅ Else-branch upload button dihapus — capture pindah
+                                // ke DaftarPelangganScreen (workflow Cairkan). Card outer
+                                // sudah di-guard hasSerahTerimaContent → cabang else ini
+                                // tak pernah terpicu untuk record baru tanpa foto.
                             }
                         }
                     }
