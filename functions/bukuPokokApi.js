@@ -36,6 +36,30 @@ const db = admin.database();
 const CACHE_TTL_MS = 10 * 60 * 1000;  // 10 menit
 const METADATA_CACHE_TTL_MS = 15 * 60 * 1000;  // 15 menit (metadata sangat jarang berubah)
 
+// =========================================================================
+// ⚠️ BYPASS CACHE SEMENTARA — Pimpinan testing immutabilitas historis 04 Jun 2026
+// -------------------------------------------------------------------------
+// Setelah deploy fix lib/target.js (commit 5d7fc3b: guard masihAktifPadaTanggal),
+// pimpinan masih melihat target kolom 03 Jun menyusut. Hipotesis: instance CF
+// memegang respons lama di bukuPokokCache → klien menerima payload dengan
+// tanggalLunasCicilan tertinggal dari pelanggan/ live, sehingga logika date-aware
+// di lib/target.js tidak punya bahan yang benar.
+//
+// Window bypass: sampai 2026-06-04T05:59:33Z (~90 menit dari commit ini, 12:59
+// WIB). Selama window: getFromCache SELALU return null + setToCache SKIP write.
+// Setelah window auto-expire, cache aktif lagi tanpa edit lain. Pimpinan dapat
+// menggeser/menghapus konstanta ini setelah verifikasi selesai.
+//
+// Trade-off (eksplisit, persetujuan pimpinan): selama window, getBukuPokok
+// membaca pelanggan/, riwayat_pinjaman/, pembayaran_harian/ langsung tiap
+// request → beban RTDB sementara naik. Window pendek menjaganya tetap aman.
+// =========================================================================
+const BYPASS_CACHE_UNTIL_MS = Date.parse('2026-06-04T05:59:33Z');
+
+function isCacheBypassActive() {
+    return Date.now() < BYPASS_CACHE_UNTIL_MS;
+}
+
 // Cache untuk getBukuPokok: key = "cabangId:statusFilter:adminUid"
 const bukuPokokCache = new Map();
 
@@ -50,6 +74,8 @@ function getCacheKey(cabangId, statusFilter, adminUid, bulan) {
 }
 
 function getFromCache(key) {
+    // Bypass window aktif → paksa miss agar request berikutnya re-eval dari RTDB.
+    if (isCacheBypassActive()) return null;
     const cached = bukuPokokCache.get(key);
     if (cached && (Date.now() - cached.timestamp) < CACHE_TTL_MS) {
         return cached.data;
@@ -60,6 +86,11 @@ function getFromCache(key) {
 }
 
 function setToCache(key, data) {
+    // Bypass window aktif → JANGAN populate cache. Bila menulis, request
+    // berikutnya dalam window masih mungkin hit-stale bila getFromCache
+    // di-by-pass tapi sumber yg ditulis ini sudah terlanjur stale di payload.
+    // Skip write paling aman & paling sederhana untuk dipulihkan.
+    if (isCacheBypassActive()) return;
     // Bersihkan cache lama jika terlalu banyak (max 50 entries untuk hemat memory)
     if (bukuPokokCache.size > 50) {
         const oldest = bukuPokokCache.keys().next().value;
