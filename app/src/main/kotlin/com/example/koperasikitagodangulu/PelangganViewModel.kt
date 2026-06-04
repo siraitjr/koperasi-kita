@@ -16223,11 +16223,35 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     .await()
 
                 val pelangganIdsLokal = daftarPelanggan.map { it.id }.toHashSet()
+
+                // ✅ FIX kebocoran lintas admin lapangan: pembayaran_harian/{cabangId}
+                // bersifat CABANG-WIDE (berisi entri SEMUA admin lapangan di cabang).
+                // Filter lama HANYA men-skip pelangganId yang ada di daftarPelanggan
+                // admin ini → entri milik admin lapangan LAIN (yang pelangganId-nya
+                // memang tidak ada di daftar admin ini) lolos & bocor ke Laporan Harian
+                // + Ringkasan Dashboard. Bug ini laten sampai commit 69c83cf membetulkan
+                // format tanggalKey ("dd MMM yyyy") sehingga query mulai mengembalikan
+                // data (sebelumnya selalu kosong karena key "yyyy-MM-dd" tak pernah
+                // match) — sejak itu kebocoran aktif. Wajib di-scope ke UID sesi aktif:
+                // hanya entri milik admin lapangan yang sedang login yang dihitung
+                // (kasus sah = pelunasan nasabah SENDIRI yang sudah dihapus via
+                // cairkanSimpanan). Sejajar dengan fix orphan sisi Web (commit 6dea90e).
+                val sessionAdminUid = Firebase.auth.currentUser?.uid.orEmpty()
+                if (sessionAdminUid.isBlank()) {
+                    _pelunasanEksternalHariIni.value = emptyList()
+                    return@launch
+                }
+
                 val eksternal = mutableListOf<PembayaranHarianItem>()
 
                 snapshot.children.forEach { entry ->
                     val pelangganId = entry.child("pelangganId").getValue(String::class.java) ?: ""
                     if (pelangganId.isBlank() || pelangganIdsLokal.contains(pelangganId)) {
+                        return@forEach
+                    }
+                    // Strict isolation: lewati entri milik admin lapangan lain.
+                    val entryAdminUid = entry.child("adminUid").getValue(String::class.java).orEmpty()
+                    if (entryAdminUid != sessionAdminUid) {
                         return@forEach
                     }
                     val jumlahLong = entry.child("jumlah").getValue(Long::class.java)
