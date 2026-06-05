@@ -268,6 +268,46 @@ class OfflineRepository private constructor(context: Context) {
         )
     }
 
+    /**
+     * Antri operasi SERAH_TERIMA (foto serah terima yang diambil saat OFFLINE
+     * pada aksi "Cairkan"). Saat reconnect, SyncManager akan:
+     *   upload foto → tulis fotoSerahTerimaUrl ke RTDB → dispatch notifikasi
+     *   SERAH_TERIMA ke Pimpinan/Pengawas/Koordinator (identik jalur online).
+     *
+     * Semua data yang dibutuhkan notifikasi dibawa di payload agar SyncManager
+     * tidak perlu membaca ulang node pelanggan (hemat RTDB).
+     */
+    suspend fun queueSerahTerima(
+        adminUid: String,
+        pelangganId: String,
+        cabangId: String,
+        pendingUri: String,
+        namaPanggilan: String,
+        adminName: String,
+        besarPinjaman: Int,
+        tenor: Int,
+        tanggalSerahTerima: String
+    ): Long {
+        val firebasePath = "pelanggan/$adminUid/$pelangganId"
+        val payload = mapOf(
+            "pendingUri" to pendingUri,
+            "cabangId" to cabangId,
+            "namaPanggilan" to namaPanggilan,
+            "adminName" to adminName,
+            "besarPinjaman" to besarPinjaman,
+            "tenor" to tenor,
+            "tanggalSerahTerima" to tanggalSerahTerima
+        )
+        Log.d(TAG, "🚀 queueSerahTerima() → $firebasePath")
+        return syncManager.queueOperation(
+            operationType = "SERAH_TERIMA",
+            firebasePath = firebasePath,
+            dataJson = com.google.gson.Gson().toJson(payload),
+            adminUid = adminUid,
+            pelangganId = pelangganId
+        )
+    }
+
     // =========================================================================
     // STATUS & SYNC
     // =========================================================================

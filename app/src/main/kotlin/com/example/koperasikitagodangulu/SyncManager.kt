@@ -50,6 +50,11 @@ class SyncManager private constructor(private val context: Context) {
     private val storage = Firebase.storage
     private val gson = Gson()
 
+    // Dispatcher notifikasi serah terima (background-safe). Dipakai saat operasi
+    // SERAH_TERIMA tersinkron supaya atasan tetap dinotifikasi walau pencairan
+    // dilakukan saat offline — logic & payload identik dengan jalur online.
+    private val serahTerimaNotifier by lazy { SerahTerimaNotifier(firebase) }
+
     companion object {
         private const val TAG = "SyncManager"
         private const val MAX_RETRY = 5
@@ -745,6 +750,13 @@ class SyncManager private constructor(private val context: Context) {
                         // saat sync (sebelumnya direct write yang gagal offline).
                         ref.removeValue().await()
                     }
+                    "SERAH_TERIMA" -> {
+                        // Foto serah terima yang diambil saat OFFLINE: upload foto ke
+                        // Storage → tulis fotoSerahTerimaUrl ke RTDB → dispatch notifikasi
+                        // ke Pimpinan/Pengawas/Koordinator. Tanpa branch ini, foto offline
+                        // tidak pernah ter-upload & atasan tidak pernah dinotifikasi.
+                        handleSerahTerimaSync(operation)
+                    }
                     else -> {
                         // Default setValue — dipakai oleh:
                         // - ADD_JURNAL_TRANSAKSI (firebasePath sudah berisi push key
@@ -772,6 +784,98 @@ class SyncManager private constructor(private val context: Context) {
                 false
             }
         }
+    }
+
+    /**
+     * Proses sinkronisasi operasi SERAH_TERIMA (foto serah terima yang diambil
+     * saat OFFLINE pada aksi "Cairkan").
+     *
+     * Langkah:
+     *   1. Idempotent guard: kalau fotoSerahTerimaUrl SUDAH terisi di RTDB,
+     *      operasi sudah pernah sukses → skip (mencegah upload & notifikasi ganda).
+     *   2. Upload foto pending (content:// URI lokal device) ke Storage. Kalau
+     *      gagal → throw supaya di-retry oleh syncAllPending (URL belum tertulis,
+     *      jadi retry aman).
+     *   3. Tulis fotoSerahTerimaUrl + statusSerahTerima="Selesai" ke RTDB, serta
+     *      bersihkan pendingFotoSerahTerimaUri.
+     *   4. Dispatch notifikasi SERAH_TERIMA (berisi fotoSerahTerimaUrl) ke
+     *      Pimpinan/Pengawas/Koordinator — identik dengan jalur online. Dispatch
+     *      menelan error internalnya sendiri sehingga kegagalan kirim notifikasi
+     *      tidak menggagalkan operasi sync (foto sudah aman tertulis).
+     *
+     * Payload (dataJson) dibawa dari OfflineRepository.queueSerahTerima agar
+     * notifikasi tidak perlu membaca ulang node pelanggan (hemat RTDB).
+     */
+    private suspend fun handleSerahTerimaSync(operation: PendingOperation) {
+        val adminUid = operation.adminUid
+        val pelangganId = operation.pelangganId ?: ""
+        if (adminUid.isBlank() || pelangganId.isBlank()) {
+            Log.e(TAG, "❌ SERAH_TERIMA: adminUid/pelangganId kosong, skip")
+            return
+        }
+
+        @Suppress("UNCHECKED_CAST")
+        val payload: Map<String, Any?> = try {
+            gson.fromJson(operation.dataJson, Map::class.java) as Map<String, Any?>
+        } catch (e: Exception) {
+            emptyMap()
+        }
+
+        val pendingUri = payload["pendingUri"] as? String ?: ""
+        val cabangId = payload["cabangId"] as? String ?: ""
+        val namaPanggilan = payload["namaPanggilan"] as? String ?: ""
+        val adminName = payload["adminName"] as? String ?: "Admin"
+        val besarPinjaman = (payload["besarPinjaman"] as? Number)?.toInt() ?: 0
+        val tenor = (payload["tenor"] as? Number)?.toInt() ?: 0
+        val tanggalSerahTerima = payload["tanggalSerahTerima"] as? String ?: ""
+
+        val pelangganRef = firebase.getReference("pelanggan/$adminUid/$pelangganId")
+
+        // (1) Idempotent guard.
+        val existingUrl = try {
+            pelangganRef.child("fotoSerahTerimaUrl").get().await().getValue(String::class.java) ?: ""
+        } catch (e: Exception) {
+            ""
+        }
+        if (existingUrl.isNotBlank()) {
+            Log.d(TAG, "ℹ️ SERAH_TERIMA: fotoSerahTerimaUrl sudah ada, skip (idempotent)")
+            return
+        }
+
+        if (pendingUri.isBlank()) {
+            // Tidak ada yang bisa di-upload — jangan retry selamanya.
+            Log.e(TAG, "❌ SERAH_TERIMA: pendingUri kosong, tidak ada foto untuk diupload")
+            return
+        }
+
+        // (2) Upload foto → throw kalau gagal (akan di-retry).
+        Log.d(TAG, "📷 SERAH_TERIMA: uploading foto pending...")
+        val uploadedUrl = uploadFotoKtp(Uri.parse(pendingUri), adminUid, pelangganId, "serah_terima")
+            ?: throw IllegalStateException("Upload foto serah terima gagal (akan retry)")
+
+        // (3) Tulis URL final + status + bersihkan pending.
+        pelangganRef.updateChildren(
+            mapOf(
+                "fotoSerahTerimaUrl" to uploadedUrl,
+                "statusSerahTerima" to "Selesai",
+                "pendingFotoSerahTerimaUri" to ""
+            )
+        ).await()
+        Log.d(TAG, "✅ SERAH_TERIMA: foto uploaded & RTDB updated → $uploadedUrl")
+
+        // (4) Dispatch notifikasi (menelan error internal — tidak menggagalkan op).
+        serahTerimaNotifier.dispatchAll(
+            adminUid = adminUid,
+            pelangganId = pelangganId,
+            cabangId = cabangId,
+            namaPanggilan = namaPanggilan,
+            adminName = adminName,
+            besarPinjaman = besarPinjaman,
+            tenor = tenor,
+            fotoUrl = uploadedUrl,
+            tanggalSerahTerima = tanggalSerahTerima
+        )
+        Log.d(TAG, "✅ SERAH_TERIMA: notifikasi atasan ter-dispatch")
     }
 
     /**

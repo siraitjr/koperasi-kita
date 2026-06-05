@@ -11091,6 +11091,30 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
 
                     val uploadAdminUid = if (pelanggan.adminUid.isNotBlank()) pelanggan.adminUid else foundAdminUid
 
+                    // ✅ FIX BUG OFFLINE (Audit #3): antri operasi SERAH_TERIMA ke Room
+                    // PALING AWAL (sebelum direct write yang await-nya bisa tertunda
+                    // sampai reconnect). Room insert bersifat lokal & instan sehingga
+                    // operasi DURABLE — bertahan walau app di-kill, dan tetap diproses
+                    // WorkManager saat online. Saat reconnect, SyncManager: upload foto →
+                    // tulis fotoSerahTerimaUrl ke RTDB → MEN-DISPATCH notifikasi ke
+                    // Pimpinan/Pengawas/Koordinator (lewat SerahTerimaNotifier), PERSIS
+                    // seperti jalur ONLINE di atas. Tanpa ini, jalur offline hanya
+                    // menulis pendingFotoSerahTerimaUri tanpa upload & tanpa notifikasi.
+                    // Tidak ada risiko duplikat: blok ini hanya jalan saat OFFLINE,
+                    // sedangkan notifikasi jalur online hanya jalan saat ONLINE
+                    // (mutually-exclusive per pencairan); ID notifikasi pun deterministik.
+                    offlineRepo.queueSerahTerima(
+                        adminUid = uploadAdminUid,
+                        pelangganId = pelangganId,
+                        cabangId = pelanggan.cabangId,
+                        pendingUri = fotoUri.toString(),
+                        namaPanggilan = pelanggan.namaPanggilan,
+                        adminName = adminName,
+                        besarPinjaman = pelanggan.besarPinjaman,
+                        tenor = pelanggan.tenor,
+                        tanggalSerahTerima = tanggalSerahTerima
+                    )
+
                     val updatedPelanggan = pelanggan.copy(
                         id = pelangganId,
                         adminUid = uploadAdminUid,

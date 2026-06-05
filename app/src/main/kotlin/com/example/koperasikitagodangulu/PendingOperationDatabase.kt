@@ -15,7 +15,8 @@ data class PendingOperation(
     @PrimaryKey(autoGenerate = true)
     val id: Long = 0,
 
-    // Tipe operasi: "ADD_PELANGGAN", "UPDATE_PELANGGAN", "ADD_PEMBAYARAN", "ADD_SUB_PEMBAYARAN"
+    // Tipe operasi: "ADD_PELANGGAN", "UPDATE_PELANGGAN", "ADD_PEMBAYARAN", "ADD_SUB_PEMBAYARAN",
+    //               "SERAH_TERIMA" (upload foto serah terima offline + notifikasi atasan), dll.
     val operationType: String,
 
     // Path di Firebase (e.g., "pelanggan/{adminUid}/{pelangganId}")
