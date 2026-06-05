@@ -50,6 +50,12 @@ import kotlinx.coroutines.delay
 import com.example.koperasikitagodangulu.utils.formatRupiahInput
 
 @OptIn(ExperimentalMaterial3Api::class)
+// ✅ Flag kebijakan "No KTP" (pimpinan): false = sembunyikan container Foto KTP
+// & Foto Nasabah di layar approval (obsolete di alur registrasi baru; placeholder
+// "tidak tersedia" membingungkan approver). Foto Serah Terima ada di tab terpisah
+// (PengawasSerahTerimaTabContent) — TIDAK terdampak flag ini. Restore: true.
+private const val SHOW_KTP_NASABAH_PHOTOS = false
+
 @Composable
 fun PengawasApprovalScreen(
     navController: NavHostController,
@@ -1108,6 +1114,10 @@ private fun PengawasDetailPengajuanSheet(
             DetailRow(label = "Tanggal Pengajuan", value = pelanggan.tanggalPengajuan)
         }
 
+        // ✅ Kebijakan "No KTP": container "Dokumen Foto" (Foto KTP & Foto Nasabah)
+        // disembunyikan via SHOW_KTP_NASABAH_PHOTOS. Layout collapse bersih ke
+        // section berikutnya. Foto Serah Terima ada di tab terpisah (tak terdampak).
+        if (SHOW_KTP_NASABAH_PHOTOS) {
         Spacer(modifier = Modifier.height(16.dp))
 
         // =========================================================================
@@ -1303,6 +1313,7 @@ private fun PengawasDetailPengajuanSheet(
                 }
             }
         }
+        } // ← tutup if (SHOW_KTP_NASABAH_PHOTOS): Dokumen Foto
 
         Spacer(modifier = Modifier.height(24.dp))
 

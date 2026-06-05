@@ -49,6 +49,12 @@ import androidx.compose.material.icons.filled.AccountBalanceWallet
 import com.google.accompanist.systemuicontroller.rememberSystemUiController
 
 @OptIn(ExperimentalMaterial3Api::class)
+// ✅ Flag kebijakan "No KTP" (pimpinan): false = sembunyikan container Foto KTP
+// & Foto Nasabah di layar approval (obsolete di alur registrasi baru; placeholder
+// "tidak tersedia" membingungkan approver). Foto Serah Terima ada di tab terpisah
+// (KoordinatorSerahTerimaTabContent) — TIDAK terdampak flag ini. Restore: true.
+private const val SHOW_KTP_NASABAH_PHOTOS = false
+
 @Composable
 fun KoordinatorApprovalScreen(
     navController: NavHostController,
@@ -1252,6 +1258,10 @@ private fun KoordinatorDetailPengajuanSheet(
             DetailRow(isDark = isDark, label = "Tanggal Pengajuan", value = pelanggan.tanggalPengajuan)
         }
 
+        // ✅ Kebijakan "No KTP": container "Dokumen Foto" (Foto KTP & Foto Nasabah)
+        // disembunyikan via SHOW_KTP_NASABAH_PHOTOS. Layout collapse bersih ke
+        // section berikutnya. Foto Serah Terima ada di tab terpisah (tak terdampak).
+        if (SHOW_KTP_NASABAH_PHOTOS) {
         Spacer(modifier = Modifier.height(16.dp))
 
         // =========================================================================
@@ -1447,6 +1457,7 @@ private fun KoordinatorDetailPengajuanSheet(
                 }
             }
         }
+        } // ← tutup if (SHOW_KTP_NASABAH_PHOTOS): Dokumen Foto
 
         Spacer(modifier = Modifier.height(24.dp))
 

@@ -119,6 +119,12 @@ import androidx.compose.runtime.SideEffect
 import com.google.accompanist.systemuicontroller.rememberSystemUiController
 
 @OptIn(ExperimentalMaterial3Api::class)
+// ✅ Flag kebijakan "No KTP" (pimpinan): false = sembunyikan container Foto KTP
+// & Foto Nasabah di sheet approval (obsolete; placeholder "tidak tersedia"
+// membingungkan approver). Foto Serah Terima (≥3jt, di dalam sheet ini) TETAP
+// tampil — di-exclude dari flag. Restore: true.
+private const val SHOW_KTP_NASABAH_PHOTOS = false
+
 @Composable
 fun PimpinanApprovalScreen(
     navController: NavHostController,
@@ -1264,6 +1270,10 @@ fun DetailPengajuanSheet(
             }
         }
 
+        // ✅ Kebijakan "No KTP": header + container Foto KTP/Nasabah disembunyikan
+        // via SHOW_KTP_NASABAH_PHOTOS (obsolete; placeholder membingungkan approver).
+        // Foto Serah Terima (≥3jt) di branch diatas_3jt di bawah TETAP tampil.
+        if (SHOW_KTP_NASABAH_PHOTOS) {
         Spacer(modifier = Modifier.height(24.dp))
 
         Text(
@@ -1271,6 +1281,7 @@ fun DetailPengajuanSheet(
             style = MaterialTheme.typography.titleMedium,
             modifier = Modifier.padding(bottom = 12.dp)
         )
+        }
 
         // URL foto approval. Top-up: utamakan pendingFoto*Url (foto pengajuan baru).
         // Kalau pendingFoto*Url kosong (mis. record pre-fix atau sync gagal), fallback
@@ -1292,6 +1303,7 @@ fun DetailPengajuanSheet(
         when {
             // Untuk pinjaman di bawah 3jt (single KTP + Foto Nasabah)
             pelanggan.tipePinjaman == "dibawah_3jt" || pelanggan.besarPinjaman < 3000000 -> {
+                if (SHOW_KTP_NASABAH_PHOTOS) {
                 Column(
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
@@ -1317,12 +1329,16 @@ fun DetailPengajuanSheet(
                         PhotoPlaceholder("Foto Nasabah tidak tersedia")
                     }
                 }
+                } // ← tutup if (SHOW_KTP_NASABAH_PHOTOS): foto <3jt
             }
             // Untuk pinjaman di atas 3jt (KTP Suami & Istri + Foto Nasabah + Foto Serah Terima)
             pelanggan.tipePinjaman == "diatas_3jt" || pelanggan.besarPinjaman >= 3000000 -> {
                 Column(
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
+                    // ✅ Foto KTP Suami/Istri + Foto Nasabah disembunyikan via flag;
+                    // Foto Serah Terima di bawah (dalam Column ini) tetap tampil.
+                    if (SHOW_KTP_NASABAH_PHOTOS) {
                     // Row untuk KTP Suami & Istri
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -1365,6 +1381,7 @@ fun DetailPengajuanSheet(
                     } else {
                         PhotoPlaceholder("Foto Nasabah tidak tersedia")
                     }
+                    } // ← tutup if (SHOW_KTP_NASABAH_PHOTOS): foto ≥3jt
 
                     // =====================================================
                     // ✅ BARU: FOTO SERAH TERIMA UANG
@@ -1521,6 +1538,7 @@ fun DetailPengajuanSheet(
                 }
             }
             else -> {
+                if (SHOW_KTP_NASABAH_PHOTOS) {
                 // Fallback - juga tampilkan foto nasabah
                 Column(
                     verticalArrangement = Arrangement.spacedBy(16.dp)
@@ -1542,6 +1560,7 @@ fun DetailPengajuanSheet(
                         )
                     }
                 }
+                } // ← tutup if (SHOW_KTP_NASABAH_PHOTOS): foto fallback
             }
         }
 
