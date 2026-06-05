@@ -50,12 +50,17 @@ import com.google.accompanist.systemuicontroller.rememberSystemUiController
 
 // ============================================================================
 // SOFT-REMOVAL FLAGS — sejajar dengan TambahPelangganScreen. NIK + Foto KTP +
-// Foto Nasabah disembunyikan dari UI input admin lapangan. Data model + render
-// foto historis tetap utuh. Restore: ubah flag ke true.
+// Foto Nasabah + seluruh card "Data KTP Nasabah" & "Foto Dokumen" disembunyikan
+// dari UI input admin lapangan (kebijakan "No KTP"). Data model + render foto
+// historis tetap utuh. Restore: ubah flag ke true.
 // ============================================================================
 private object KelolaKreditFlags {
     const val SHOW_NIK_FIELDS = false
     const val SHOW_FOTO_KTP_AND_NASABAH = false
+    // Sembunyikan seluruh card section (header + isi). Validasi terkait di-relax
+    // (isFotoValid/isDataValid) agar tidak jadi blocker submit.
+    const val SHOW_DATA_KTP_SECTION = false
+    const val SHOW_FOTO_DOKUMEN_SECTION = false
 }
 
 // Modern Color Palette
@@ -321,31 +326,16 @@ fun KelolaKreditScreen(
         Log.d("KelolaKredit", "tipePinjamanBaru: $tipePinjamanBaru, isUpgrade: $isUpgrade, isDowngrade: $isDowngrade")
     }
 
-    // ✅ Soft-removal pimpinan: NIK + Foto KTP + Foto Nasabah tidak lagi
-    // mempengaruhi validitas form (UI input di-gate via SHOW_NIK_FIELDS /
-    // SHOW_FOTO_KTP_AND_NASABAH di TambahPelangganScreen.kt; KelolaKreditScreen
-    // ikut pola sama). isFotoValid jadi konstan true; isDataValid tetap minta
-    // nama + alamat + nama panggilan (data dasar yang tidak ikut soft-removal).
+    // ✅ Soft-removal pimpinan (kebijakan "No KTP"): NIK + Foto KTP + Foto Nasabah,
+    // serta SELURUH card "Data KTP Nasabah" & "Foto Dokumen" disembunyikan
+    // (SHOW_DATA_KTP_SECTION / SHOW_FOTO_DOKUMEN_SECTION). Karena seluruh field
+    // input (namaKtp, namaPanggilan, nama/alamat suami-istri, foto) kini berada di
+    // dalam card yang disembunyikan, admin lapangan tidak bisa lagi mengisi/
+    // memperbaikinya → validasi WAJIB di-relax jadi true agar tidak jadi blocker
+    // submit. Data existing nasabah tetap dipertahankan (tidak ditimpa kosong oleh
+    // logic simpan; lihat alur update di onClick simpan). Restore: aktifkan flag.
     val isFotoValid = true
-
-    val isDataValid = when (tipePinjamanBaru) {
-        "dibawah_3jt" -> {
-            namaKtp.isNotBlank() && alamatKtp.isNotBlank() && namaPanggilanInput.isNotBlank()
-        }
-        "diatas_3jt" -> {
-            if (isUpgrade) {
-                // Upgrade: perlu data suami istri lengkap (kecuali NIK)
-                namaKtpSuami.isNotBlank() &&
-                        namaKtpIstri.isNotBlank() &&
-                        namaPanggilanSuami.isNotBlank() && namaPanggilanIstri.isNotBlank() &&
-                        alamatKtp.isNotBlank()
-            } else {
-                // Sudah punya data suami istri
-                alamatKtp.isNotBlank()
-            }
-        }
-        else -> false
-    }
+    val isDataValid = true
 
     Scaffold(
         containerColor = bgColor,
@@ -776,8 +766,10 @@ fun KelolaKreditScreen(
             Spacer(modifier = Modifier.height(16.dp))
 
             // ✅ BARU: Data KTP Card - Dinamis berdasarkan tipe pinjaman
+            // ✅ Soft-removal: seluruh card disembunyikan via SHOW_DATA_KTP_SECTION
+            // (kebijakan "No KTP"). Validasi terkait di-relax (isDataValid).
             AnimatedVisibility(
-                visible = isVisible && pinjamanBaruInt > 0,
+                visible = KelolaKreditFlags.SHOW_DATA_KTP_SECTION && isVisible && pinjamanBaruInt > 0,
                 enter = fadeIn(tween(400, delayMillis = 200)) + slideInVertically(
                     initialOffsetY = { 30 },
                     animationSpec = tween(400, delayMillis = 200)
@@ -995,8 +987,10 @@ fun KelolaKreditScreen(
             Spacer(modifier = Modifier.height(16.dp))
 
             // ✅ BARU: Foto Section Card
+            // ✅ Soft-removal: seluruh card "Foto Dokumen" disembunyikan via
+            // SHOW_FOTO_DOKUMEN_SECTION. Validasi foto di-relax (isFotoValid=true).
             AnimatedVisibility(
-                visible = isVisible && pinjamanBaruInt > 0,
+                visible = KelolaKreditFlags.SHOW_FOTO_DOKUMEN_SECTION && isVisible && pinjamanBaruInt > 0,
                 enter = fadeIn(tween(400, delayMillis = 300)) + slideInVertically(
                     initialOffsetY = { 30 },
                     animationSpec = tween(400, delayMillis = 300)

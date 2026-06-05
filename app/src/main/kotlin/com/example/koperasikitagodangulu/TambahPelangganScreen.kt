@@ -110,15 +110,16 @@ private object TambahPelangganColors {
 }
 
 // ============================================================================
-// SOFT-REMOVAL FLAGS — atas perintah pimpinan, NIK + Foto KTP + Foto Nasabah
-// disembunyikan dari UI input admin lapangan, tapi data model, CF triggers,
-// RTDB rules, render foto di approval/web tetap PRESERVED. Untuk restore: ubah
-// flag ke true → seluruh field input + tombol upload + Scan KTP muncul lagi.
-// Validator (line ~638 & ~671) sudah di-relax independen sehingga form bisa
-// submit walau flag true tapi user kosongkan field.
+// SOFT-REMOVAL FLAGS — atas perintah pimpinan, NIK + Foto KTP + Foto Nasabah +
+// Alamat KTP disembunyikan dari UI input admin lapangan, tapi data model, CF
+// triggers, RTDB rules, render foto/alamat di approval/web tetap PRESERVED.
+// Untuk restore: ubah flag ke true → field input + tombol upload + Scan KTP
+// muncul lagi. Validator (line ~638 & ~671) sudah di-relax independen sehingga
+// form bisa submit walau flag true tapi admin lapangan kosongkan field.
 // ============================================================================
 private const val SHOW_NIK_FIELDS = false
 private const val SHOW_FOTO_KTP_AND_NASABAH = false
+private const val SHOW_ALAMAT_KTP_FIELD = false
 
 private fun validateKtpData(nik: String, nama: String, alamat: String): Boolean {
     val isNikValid = nik.length == 16 && nik.all { it.isDigit() }
@@ -647,11 +648,11 @@ fun TambahPelangganScreen(
             val isPinjamanValid = pinjamanNumerik >= 50000
 
             namaKtp.isNotBlank() &&
-                    // ✅ Soft-removal: NIK + fotoKtpUri + fotoNasabahUri tidak lagi
-                    // mempengaruhi validitas form (UI input dihilangkan di bawah).
-                    // Field model tetap dipertahankan agar data historis aman & web
-                    // tetap render foto lama; record baru menyimpan string/Uri kosong.
-                    alamatKtp.isNotBlank() &&
+                    // ✅ Soft-removal: NIK + fotoKtpUri + fotoNasabahUri + Alamat KTP
+                    // tidak lagi mempengaruhi validitas form (UI input dihilangkan di
+                    // bawah). Field model tetap dipertahankan agar data historis aman &
+                    // web tetap render foto/alamat lama; record baru simpan string/Uri
+                    // kosong. `alamatKtp` sengaja TIDAK ikut syarat submit.
                     alamatRumah.isNotBlank() &&
                     detailRumah.isNotBlank() &&
                     wilayah.isNotBlank() &&
@@ -681,10 +682,10 @@ fun TambahPelangganScreen(
             val isPinjamanValid = pinjamanNumerik >= 50000
 
             namaKtpSuami.isNotBlank() &&
-                    // ✅ Soft-removal: NIK Suami/Istri + 3 fotoUri tidak lagi mempengaruhi
-                    // validitas form (UI input dihilangkan di bawah). Model tetap.
+                    // ✅ Soft-removal: NIK Suami/Istri + 3 fotoUri + Alamat KTP tidak lagi
+                    // mempengaruhi validitas form (UI input dihilangkan di bawah). Model
+                    // tetap. `alamatKtp` sengaja TIDAK ikut syarat submit.
                     namaKtpIstri.isNotBlank() &&
-                    alamatKtp.isNotBlank() &&
                     alamatRumah.isNotBlank() &&
                     detailRumah.isNotBlank() &&
                     wilayah.isNotBlank() &&
@@ -1045,22 +1046,28 @@ fun TambahPelangganScreen(
                             Column(
                                 verticalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
-                                ModernTextField(
-                                    value = alamatKtp,
-                                    onValueChange = { alamatKtp = it.capitalizeWords() },
-                                    label = "Alamat KTP",
-                                    isError = alamatKtp.isBlank(),
-                                    supportingText = {
-                                        if (alamatKtp.isBlank()) {
-                                            Text("Alamat KTP wajib diisi")
-                                        }
-                                    },
-                                    isDark = isDark,
-                                    cardColor = cardColor,
-                                    borderColor = borderColor,
-                                    txtColor = txtColor,
-                                    subtitleColor = subtitleColor
-                                )
+                                // ✅ Soft-removal: Alamat KTP disembunyikan (kebijakan
+                                // "No KTP"). Card "Field Umum" ini dipakai bersama kedua
+                                // tier (< 3jt & >= 3jt), jadi satu gate menutup keduanya.
+                                // Field model `alamatKtp` tetap dipertahankan.
+                                if (SHOW_ALAMAT_KTP_FIELD) {
+                                    ModernTextField(
+                                        value = alamatKtp,
+                                        onValueChange = { alamatKtp = it.capitalizeWords() },
+                                        label = "Alamat KTP",
+                                        isError = alamatKtp.isBlank(),
+                                        supportingText = {
+                                            if (alamatKtp.isBlank()) {
+                                                Text("Alamat KTP wajib diisi")
+                                            }
+                                        },
+                                        isDark = isDark,
+                                        cardColor = cardColor,
+                                        borderColor = borderColor,
+                                        txtColor = txtColor,
+                                        subtitleColor = subtitleColor
+                                    )
+                                }
 
                                 ModernTextField(
                                     value = alamatRumah,
@@ -1457,12 +1464,8 @@ fun TambahPelangganScreen(
                                         return@ModernGradientButton
                                     }
                                     // [Logika validasi dan simpan tetap sama...]
-                                    if (alamatKtp.isBlank()) {
-                                        showValidationError = true
-                                        validationMessage = "Alamat KTP tidak boleh kosong"
-                                        return@ModernGradientButton
-                                    }
-
+                                    // ✅ Soft-removal: guard "Alamat KTP tidak boleh kosong"
+                                    // dihapus (kebijakan "No KTP"). alamatKtp boleh "".
                                     if (alamatRumah.isBlank()) {
                                         showValidationError = true
                                         validationMessage = "Alamat rumah tidak boleh kosong"
@@ -1492,8 +1495,12 @@ fun TambahPelangganScreen(
 //                                }
                                     when (tipePinjaman) {
                                         "dibawah_3jt" -> {
-                                            if (namaKtp.isBlank() || nik.length != 16 || namaPanggilan.isBlank() ||
-                                                alamatKtp.isBlank() || alamatRumah.isBlank() || detailRumah.isBlank() ||
+                                            // ✅ Soft-removal: guard nik.length & alamatKtp
+                                            // dihapus (kebijakan "No KTP"). Keduanya boleh
+                                            // kosong; data dasar (nama/alamat rumah/wilayah/
+                                            // usaha/pinjaman) tetap wajib.
+                                            if (namaKtp.isBlank() || namaPanggilan.isBlank() ||
+                                                alamatRumah.isBlank() || detailRumah.isBlank() ||
                                                 wilayah.isBlank() || jenisUsaha.isBlank() || besarPinjaman.isBlank()
                                             ) {
                                                 Toast.makeText(
@@ -1506,10 +1513,14 @@ fun TambahPelangganScreen(
                                         }
 
                                         "diatas_3jt" -> {
-                                            if (namaKtpSuami.isBlank() || nikSuami.length != 16 ||
-                                                namaKtpIstri.isBlank() || nikIstri.length != 16 ||
+                                            // ✅ Soft-removal: guard nikSuami/nikIstri.length
+                                            // & alamatKtp dihapus (kebijakan "No KTP").
+                                            // Boleh kosong; nama suami/istri + nama panggilan
+                                            // + data dasar tetap wajib.
+                                            if (namaKtpSuami.isBlank() ||
+                                                namaKtpIstri.isBlank() ||
                                                 namaPanggilanSuami.isBlank() || namaPanggilanIstri.isBlank() ||
-                                                alamatKtp.isBlank() || alamatRumah.isBlank() || detailRumah.isBlank() ||
+                                                alamatRumah.isBlank() || detailRumah.isBlank() ||
                                                 wilayah.isBlank() || jenisUsaha.isBlank() || besarPinjaman.isBlank()
                                             ) {
                                                 Toast.makeText(
@@ -2596,7 +2607,7 @@ fun FormDibawah3JT(
             ModernTextField(
                 value = namaKtp,
                 onValueChange = onNamaKtpChange,
-                label = "Nama Sesuai KTP",
+                label = "Nama Nasabah",
                 isError = namaKtp.length < 3,
                 supportingText = {
                     if (namaKtp.length < 3) {
@@ -2828,7 +2839,7 @@ fun FormDiatas3JT(
                 ModernTextField(
                     value = namaKtpSuami,
                     onValueChange = onNamaKtpSuamiChange,
-                    label = "Nama KTP Suami",
+                    label = "Nama Suami",
                     isError = namaKtpSuami.length < 3,
                     supportingText = {
                         if (namaKtpSuami.length < 3) {
@@ -2906,7 +2917,7 @@ fun FormDiatas3JT(
                 ModernTextField(
                     value = namaKtpIstri,
                     onValueChange = onNamaKtpIstriChange,
-                    label = "Nama KTP Istri",
+                    label = "Nama Istri",
                     isError = namaKtpIstri.length < 3,
                     supportingText = {
                         if (namaKtpIstri.length < 3) {
