@@ -29,6 +29,10 @@ import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.launch
 import java.text.NumberFormat
 import com.google.accompanist.systemuicontroller.rememberSystemUiController
+// ✅ Unifikasi UX: thumbnail foto serah terima di kartu notif PENCAIRAN.
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
+import coil.compose.AsyncImage
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -245,6 +249,7 @@ fun NotificationCard(
                                     color = when (notification.type) {
                                         "REJECTION", "DUAL_APPROVAL_REJECTED" -> Color(0xFFFF5252) // Merah
                                         "APPROVAL", "DUAL_APPROVAL_APPROVED" -> Color(0xFF4CAF50) // Hijau
+                                        "PENCAIRAN" -> Color(0xFF1E88E5) // Biru tua (badge "Dicairkan")
                                         else -> Color(0xFF2196F3) // Biru (default)
                                     },
                                     shape = RoundedCornerShape(4.dp)
@@ -255,6 +260,7 @@ fun NotificationCard(
                                 when (notification.type) {
                                     "REJECTION", "DUAL_APPROVAL_REJECTED" -> "Ditolak"
                                     "APPROVAL", "DUAL_APPROVAL_APPROVED" -> "Disetujui"
+                                    "PENCAIRAN" -> "Dicairkan"
                                     else -> "Info"
                                 },
                                 color = Color.White,
@@ -286,14 +292,54 @@ fun NotificationCard(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Content
-            Text(
-                notification.message,
-                style = MaterialTheme.typography.bodyMedium,
-                color = txtColor,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
-            )
+            // ✅ Unifikasi UX: kartu notif PENCAIRAN dengan foto serah terima
+            // → render thumbnail 64dp di kiri + message di kanan. Tap kartu
+            // membuka DetailNotifikasiScreen (existing) yang menampilkan foto
+            // ukuran penuh dari pelanggan.fotoSerahTerimaUrl. Kartu jenis lain
+            // (APPROVAL/REJECTION/dst) tetap render Content lama tanpa thumbnail.
+            val showSerahTerimaThumb = notification.type == "PENCAIRAN" &&
+                notification.fotoSerahTerimaUrl.isNotBlank()
+            if (showSerahTerimaThumb) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    AsyncImage(
+                        model = notification.fotoSerahTerimaUrl,
+                        contentDescription = "Foto Serah Terima",
+                        modifier = Modifier
+                            .size(64.dp)
+                            .clip(RoundedCornerShape(8.dp)),
+                        contentScale = ContentScale.Crop
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            notification.message,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = txtColor,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            "📷 Bukti serah terima terlampir — ketuk untuk lihat",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color(0xFF1E88E5),
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
+            } else {
+                // Content (default)
+                Text(
+                    notification.message,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = txtColor,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
 
             // ✅ TAMBAH: Tampilkan preview catatan persetujuan jika ada
             if ((notification.type == "APPROVAL" || notification.type == "DUAL_APPROVAL_APPROVED") && notification.isPinjamanDiubah) {

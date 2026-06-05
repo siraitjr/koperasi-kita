@@ -566,9 +566,16 @@ data class AdminNotification(
     val pengawasBy: String = "",
 
     val timestamp: Long = 0L,
-    val read: Boolean = false
+    val read: Boolean = false,
+
+    // ✅ Unifikasi UX (kebijakan pimpinan): saat notif type="PENCAIRAN", embed
+    // foto serah terima langsung di payload agar superior bisa lihat thumbnail
+    // di kartu notif TANPA pindah tab. Default "" → backward compatible (notif
+    // lama tanpa field tetap valid). Diinjeksi oleh sendNotifToPimpinan/Koord/
+    // Pengawas dari pelanggan.fotoSerahTerimaUrl (no extra RTDB read).
+    val fotoSerahTerimaUrl: String = ""
 ) {
-    constructor() : this("", "", "", "", "", "", "", "", 0, 0, 0, 0, false, "", "", "", "", "", "", "", "", "", "", "", 0L, false)
+    constructor() : this("", "", "", "", "", "", "", "", 0, 0, 0, 0, false, "", "", "", "", "", "", "", "", "", "", "", 0L, false, "")
 }
 
 data class DashboardData(
@@ -5309,15 +5316,23 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                 // ============================================================
                 // STEP 1: Kirim ke PIMPINAN (SELALU, berapapun pinjamannya)
                 // ============================================================
-                sendNotifToPimpinan(cabangId, pelanggan.id, title, message, notifType, pelanggan.namaPanggilan)
+                // ✅ Unifikasi UX: untuk PENCAIRAN, embed foto serah terima ke
+                // payload notif agar superior lihat thumbnail di kartu notif
+                // tanpa pindah tab. Foto sudah tersedia di memory (online path:
+                // uploadFotoSerahTerima sudah update pelanggan sebelum
+                // cairkanPinjaman dipanggil) → no extra RTDB read. Untuk
+                // PEMBATALAN biarkan kosong.
+                val fotoUrl = if (isCairkan) pelanggan.fotoSerahTerimaUrl else ""
+
+                sendNotifToPimpinan(cabangId, pelanggan.id, title, message, notifType, pelanggan.namaPanggilan, fotoUrl)
 
                 // ============================================================
                 // STEP 2: Jika >= 3 juta, kirim juga ke KOORDINATOR & PENGAWAS
                 // ============================================================
                 if (besarPinjaman >= 3_000_000) {
                     Log.d("CairkanBatalNotif", "💰 Pinjaman >= 3 juta, kirim ke koordinator & pengawas juga")
-                    sendNotifToKoordinator(pelanggan.id, title, message, notifType, pelanggan.namaPanggilan)
-                    sendNotifToPengawas(pelanggan.id, title, message, notifType, pelanggan.namaPanggilan)
+                    sendNotifToKoordinator(pelanggan.id, title, message, notifType, pelanggan.namaPanggilan, fotoUrl)
+                    sendNotifToPengawas(pelanggan.id, title, message, notifType, pelanggan.namaPanggilan, fotoUrl)
                 }
 
             } catch (e: Exception) {
@@ -5339,7 +5354,9 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
         title: String,
         message: String,
         notifType: String,
-        pelangganNama: String
+        pelangganNama: String,
+        // ✅ Embed foto untuk PENCAIRAN (default "" — backward compatible).
+        fotoSerahTerimaUrl: String = ""
     ) {
         try {
             var pimpinanUid: String? = null
@@ -5409,7 +5426,8 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                 "pelangganId" to pelangganId,
                 "pelangganNama" to pelangganNama,
                 "timestamp" to System.currentTimeMillis(),
-                "read" to false
+                "read" to false,
+                "fotoSerahTerimaUrl" to fotoSerahTerimaUrl
             )
 
             database.child("admin_notifications").child(resolvedUid).child(notificationId)
@@ -5431,7 +5449,9 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
         title: String,
         message: String,
         notifType: String,
-        pelangganNama: String
+        pelangganNama: String,
+        // ✅ Embed foto untuk PENCAIRAN (default "" — backward compatible).
+        fotoSerahTerimaUrl: String = ""
     ) {
         try {
             val koordinatorSnapshot = database.child("metadata/roles/koordinator").get().await()
@@ -5454,7 +5474,8 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     "pelangganId" to pelangganId,
                     "pelangganNama" to pelangganNama,
                     "timestamp" to System.currentTimeMillis(),
-                    "read" to false
+                    "read" to false,
+                    "fotoSerahTerimaUrl" to fotoSerahTerimaUrl
                 )
                 batchUpdates["admin_notifications/$uid/$notificationId"] = notificationData
             }
@@ -5478,7 +5499,9 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
         title: String,
         message: String,
         notifType: String,
-        pelangganNama: String
+        pelangganNama: String,
+        // ✅ Embed foto untuk PENCAIRAN (default "" — backward compatible).
+        fotoSerahTerimaUrl: String = ""
     ) {
         try {
             val pengawasSnapshot = database.child("metadata/roles/pengawas").get().await()
@@ -5501,7 +5524,8 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     "pelangganId" to pelangganId,
                     "pelangganNama" to pelangganNama,
                     "timestamp" to System.currentTimeMillis(),
-                    "read" to false
+                    "read" to false,
+                    "fotoSerahTerimaUrl" to fotoSerahTerimaUrl
                 )
                 batchUpdates["admin_notifications/$uid/$notificationId"] = notificationData
             }
