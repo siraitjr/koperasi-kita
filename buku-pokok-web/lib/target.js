@@ -87,6 +87,36 @@ export function isEligibleForTarget(n, dateStr) {
   const cur = parseTanggalIndo(dateStr);
   if (!cur) return 0;
 
+  // =========================================================================
+  // POIN 4 — Cutoff arsip date-aware (fix shrinking-target historis).
+  // -------------------------------------------------------------------------
+  // Entry `dariArsip` adalah nasabah yang sudah DIHAPUS (cairkanSimpanan)
+  // dan di-inject kembali ke nasabahList oleh bukuPokokApi.js agar storting
+  // pelunasan-via-tabungan tetap tercatat di buku rekap/buku pokok.
+  //
+  // Aturan immutabilitas historis (audit pimpinan 05 Jun 2026):
+  //   tanggalArsip >  cur → AKTIF pada kolom historis itu (saat itu masih
+  //     ditagih, jadi target HARUS tetap dihitung). Tanpa cabang ini, target
+  //     tanggal lampau "menyusut" saat nasabah baru di-arsip hari ini.
+  //   tanggalArsip === cur → 0 (hari arsip = pelunasan via tabungan; tidak ada
+  //     tagihan tunai harian — konsisten dengan fix 02 Jun anti-over-count).
+  //   tanggalArsip <  cur → 0 (sudah berhenti ditagih sebelum kolom itu).
+  //   tanggalArsip kosong/invalid → 0 (legacy arsip tanpa metadata
+  //     archivedAt; pertahankan perilaku fix 02 Jun agar tidak regresi
+  //     over-count untuk nasabah lama yang tanggalLunasCicilan kosong).
+  //
+  // Ini menggantikan blanket pre-skip `!n.dariArsip` yang sebelumnya
+  // ditaruh di kasir/page.js & pembukuan/page.js — pre-skip itu menyusutkan
+  // target historis (penyebab bug yang dilaporkan pimpinan).
+  // =========================================================================
+  if (n.dariArsip) {
+    const arsipDate = parseTanggalIndo((n.tanggalArsip || '').trim());
+    if (!arsipDate) return 0;
+    if (arsipDate <= cur) return 0;
+    // arsipDate > cur → pada kolom historis itu nasabah masih aktif; lanjut
+    // ke evaluasi normal di bawah (status, lunas, MP, 3-month, dst).
+  }
+
   // ===== Pre-guard live-status (date-aware, semua jalur immutabilitas) =====
   const statusLower = (n.status || '').toLowerCase();
   const isStatusAktif = statusLower === 'aktif' || statusLower === 'active';

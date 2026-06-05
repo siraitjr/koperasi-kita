@@ -244,6 +244,25 @@ function getTodayIndonesia() {
 }
 
 // =========================================================================
+// HELPER: Format epoch millis → "dd MMM yyyy" di TZ Asia/Jakarta (WIB).
+// -------------------------------------------------------------------------
+// Dipakai untuk men-derive `tanggalArsip` dari `archivedAt` (ServerValue.
+// TIMESTAMP / System.currentTimeMillis()) di branch arsip — agar helper
+// target client (lib/target.js) bisa apply cutoff date-aware dan mencegah
+// "shrinking target" historis saat nasabah dihapus via cairkanSimpanan.
+// Tidak ada RTDB read tambahan — semua dari data yang sudah dibaca.
+// =========================================================================
+function formatEpochToTanggalIndo(epochMs) {
+    if (!epochMs || typeof epochMs !== 'number' || !Number.isFinite(epochMs)) return '';
+    const wibOffset = 7 * 60 * 60 * 1000;
+    const wibDate = new Date(epochMs + wibOffset);
+    const day = wibDate.getUTCDate().toString().padStart(2, '0');
+    const month = BULAN_INDO[wibDate.getUTCMonth()];
+    const year = wibDate.getUTCFullYear();
+    return `${day} ${month} ${year}`;
+}
+
+// =========================================================================
 // HELPER: Generate hari kerja berurutan (Senin-Sabtu, skip Minggu)
 // Format: "27 Feb 2025" — sama dengan format pembayaran di RTDB
 // =========================================================================
@@ -679,7 +698,19 @@ exports.getBukuPokok = functions
                         sisaUtangLamaSebelumTopUp: 0,
                         riwayatPinjaman: riwayat,
                         // Penanda bahwa ini nasabah dari arsip (sudah dicairkan tabungannya)
-                        dariArsip: true
+                        dariArsip: true,
+                        // ✅ Tanggal nasabah berhenti menagih (= waktu cairkanSimpanan).
+                        // Dipakai helper isEligibleForTarget sebagai CUTOFF date-aware:
+                        //   cur >= tanggalArsip → 0 (sudah berhenti ditagih pada/sebelum kolom)
+                        //   cur <  tanggalArsip → evaluasi normal (saat itu masih aktif)
+                        // Tanpa cutoff ini, fix lama men-skip TUNTAS `dariArsip` →
+                        // menyebabkan target tanggal lampau MENYUSUT saat nasabah baru
+                        // diarsip hari ini. archivedAt di-set ServerValue.TIMESTAMP oleh
+                        // CF onPelangganWrite (top-up) & System.currentTimeMillis() oleh
+                        // Android cairkanSimpanan — selalu ada untuk arsip baru. Arsip
+                        // lama tanpa archivedAt → "" → helper terapkan skip (preserve
+                        // fix 02 Jun untuk hindari over-count regresi).
+                        tanggalArsip: formatEpochToTanggalIndo(d.archivedAt)
                     });
                 });
             }

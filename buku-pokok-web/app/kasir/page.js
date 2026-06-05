@@ -1826,14 +1826,19 @@ function BukuRekapScreen({ user, cabang, cabangList, onBack, onLogout, onNavigat
       // Dihitung lewat shared helper (lib/target.js) — single source of truth yang
       // identik dengan Buku Pokok, CF summaryHelpers.js, & Android (termasuk H+1).
       //
-      // ✅ FIX drift target: SKIP entry arsip (dariArsip=true) — nasabah yang
-      // sudah DIHAPUS (cairkan simpanan) di-inject ke nasabahList oleh
-      // bukuPokokApi.js:609 agar Storting tetap tercatat, tapi tidak punya
-      // target (tidak ada yang ditagih). Identik dengan fix di Buku Pokok
-      // (pembukuan/page.js). isHistorical/isOrphan = guard defensif client-only.
+      // ✅ FIX shrinking-target historis (audit pimpinan 05 Jun 2026):
+      // Pre-skip `!n.dariArsip` DIHAPUS — sebelumnya entry arsip (nasabah yang
+      // dihapus via cairkanSimpanan) di-skip TUNTAS, menyebabkan target tanggal
+      // LAMPAU menyusut saat nasabah baru diarsip hari ini. Pengaturan cutoff
+      // sekarang dipindah ke helper (lib/target.js POIN 4) yang menerapkan
+      // logic date-aware via field `tanggalArsip`:
+      //   tanggalArsip > cur → target tetap dihitung (saat itu masih ditagih)
+      //   tanggalArsip ≤ cur → 0 (sudah berhenti ditagih pada/sebelum kolom)
+      // isHistorical/isOrphan tetap di-skip — itu flag client-only (lihat
+      // pembukuan/page.js:1084,1142), bukan dari arsip CF.
       let target = 0;
       resortNasabah.forEach(n => {
-        if (!n.dariArsip && !n.isHistorical && !n.isOrphan) {
+        if (!n.isHistorical && !n.isOrphan) {
           target += isEligibleForTarget(n, todayStr);
         }
       });

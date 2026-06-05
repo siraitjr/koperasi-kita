@@ -1335,19 +1335,20 @@ function getKategoriNasabah(nasabah, refDateStr) {
         // Dihitung lewat shared helper (lib/target.js) — single source of truth yang
         // identik dengan Buku Rekap, CF summaryHelpers.js, & Android (termasuk H+1).
         //
-        // ✅ FIX drift target: SKIP entry arsip (dariArsip=true). bukuPokokApi.js:609
-        // mendorong nasabah dari riwayat_pinjaman arsip (nasabah yang sudah DIHAPUS
-        // setelah cairkan simpanan) ke nasabahList agar Storting pelunasan-via-
-        // tabungan tetap tercatat. TAPI nasabah terhapus tidak boleh menyumbang
-        // TARGET — tidak ada lagi yang bisa ditagih. Sebelum fix ini, entry arsip
-        // yang loan-nya masih "Aktif" + pencairan < 3 bulan + tanggalLunasCicilan
-        // kosong (pelunasan via tabungan terjadi hari penghapusan) lolos
-        // isEligibleForTarget → over-count target (drift +Rp15rb/45rb/18rb di
-        // audit 02 Jun 2026). dariArsip = field sebenarnya yang dipakai CF;
-        // isHistorical/isOrphan adalah flag client-only (nasabahExpanded) yang
-        // tidak pernah ada di data.nasabah — disertakan sebagai guard defensif
-        // bila suatu saat loop ini iterate list yang sudah di-expand.
-        if (!n.dariArsip && !n.isHistorical && !n.isOrphan) {
+        // ✅ FIX shrinking-target historis (audit pimpinan 05 Jun 2026):
+        // Pre-skip `!n.dariArsip` DIHAPUS. Sebelumnya entry arsip (nasabah yang
+        // dihapus via cairkanSimpanan) di-skip TUNTAS — itu benar untuk kolom
+        // hari ini (audit 02 Jun anti-over-count) tapi SALAH untuk kolom
+        // historis: target tanggal lampau menyusut saat nasabah baru diarsip
+        // hari ini. Pengaturan dipindah ke helper (lib/target.js POIN 4) yang
+        // menerapkan cutoff date-aware via `tanggalArsip` (di-derive dari
+        // archivedAt di bukuPokokApi.js):
+        //   tanggalArsip >  cur → target dihitung (saat itu masih aktif)
+        //   tanggalArsip ≤  cur → 0 (sudah berhenti ditagih)
+        //   tanggalArsip kosong → 0 (legacy arsip; preserve fix 02 Jun)
+        // isHistorical/isOrphan tetap di-skip — itu flag client-only (lihat
+        // line 1084 & 1142), bukan dari arsip CF; tetap valid sebagai guard.
+        if (!n.isHistorical && !n.isOrphan) {
           targetKini += isEligibleForTarget(n, dateStr);
         }
       });
