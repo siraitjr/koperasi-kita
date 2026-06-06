@@ -125,6 +125,7 @@ import com.google.accompanist.systemuicontroller.rememberSystemUiController
 // tampil — di-exclude dari flag. Restore: true.
 private const val SHOW_KTP_NASABAH_PHOTOS = false
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PimpinanApprovalScreen(
     navController: NavHostController,

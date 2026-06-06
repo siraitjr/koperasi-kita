@@ -55,6 +55,7 @@ import com.google.accompanist.systemuicontroller.rememberSystemUiController
 // (KoordinatorSerahTerimaTabContent) — TIDAK terdampak flag ini. Restore: true.
 private const val SHOW_KTP_NASABAH_PHOTOS = false
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun KoordinatorApprovalScreen(
     navController: NavHostController,
