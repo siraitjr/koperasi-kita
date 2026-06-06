@@ -442,7 +442,11 @@ class SyncManager private constructor(private val context: Context) {
                         mutableData["fotoSerahTerimaUrl"] = outcome.url
                         mutableData["pendingFotoSerahTerimaUri"] = ""
                         mutableData["statusSerahTerima"] = "Selesai"
-                        Log.d(TAG, "✅ Foto Serah Terima uploaded: ${outcome.url}")
+                        // ✅ Aturan pimpinan 06 Jun 2026: Data Cleanse + mapping
+                        // wajah → fotoNasabahUrl. Identik dengan jalur
+                        // PelangganViewModel.buildCairkanCleansePayload.
+                        applyCairkanCleanseTo(mutableData, outcome.url)
+                        Log.d(TAG, "✅ Foto Serah Terima uploaded + data cleanse: ${outcome.url}")
                     }
                     // ✅ Audit pimpinan: URI mati (cacheDir di-evict OS / file
                     // di-hapus user) → bersihkan pendingFotoSerahTerimaUri agar
@@ -543,6 +547,53 @@ class SyncManager private constructor(private val context: Context) {
         data class Success(val url: String) : FotoUploadOutcome()
         object DeadUri : FotoUploadOutcome()
         object TransientFailure : FotoUploadOutcome()
+    }
+
+    // =====================================================================
+    // ✅ Aturan pimpinan 06 Jun 2026 — Data Cleanse di momen Cairkan.
+    // ---------------------------------------------------------------------
+    // Saat Foto Serah Terima berhasil ter-upload pada proses Cairkan,
+    // sistem mengganti data legacy (NIK + foto KTP + foto Nasabah + URI/URL
+    // pending) dengan standar baru "No KTP, No NIK" — dan memetakan
+    // fotoSerahTerimaUrl → fotoNasabahUrl agar Web "Buku Pokok" yang membaca
+    // fotoNasabahUrl/fotoKtpUrl langsung memakai Foto Serah Terima sebagai
+    // wajah utama TANPA perubahan kode Web.
+    //
+    // Implementasi identik dengan PelangganViewModel.buildCairkanCleansePayload
+    // (jalur ONLINE). Dipanggil dari TIGA call site SyncManager:
+    //   1. uploadPendingPhotosForData (serah-terima sub-block, jalur bulk
+    //      transaction yang merge ke mutableData).
+    //   2. handleSerahTerimaSync (jalur post-upload reconnect, atomic
+    //      updateChildren langsung ke RTDB).
+    //   3. (tidak ada call site lain — pencairan top-up cuma melewati dua
+    //      titik di atas.)
+    //
+    // Integritas anti-duplikat NIK: pembersihan nik_registry/{NIK_lama}
+    // di-handle oleh Cloud Function trigger
+    // onPelanggan{Nik,NikSuami,NikIstri}ClearedRemoveRegistry — Android
+    // client TIDAK menulis nik_registry langsung (taat CLAUDE.md §5.3).
+    // =====================================================================
+    private fun applyCairkanCleanseTo(target: MutableMap<String, Any?>, serahTerimaUrl: String) {
+        // NIK legacy → kosong (memicu trigger Cloud Function hapus nik_registry).
+        target["nik"] = ""
+        target["nikSuami"] = ""
+        target["nikIstri"] = ""
+        // Foto KTP legacy → kosong.
+        target["fotoKtpUrl"] = ""
+        target["fotoKtpSuamiUrl"] = ""
+        target["fotoKtpIstriUrl"] = ""
+        // Mapping wajah utama: Foto Serah Terima jadi fotoNasabahUrl untuk Web.
+        target["fotoNasabahUrl"] = serahTerimaUrl
+        // Pending URI/URL legacy → kosong, agar offline queue TIDAK menghidupkan
+        // kembali data yang sudah di-cleanse pada gelombang sync berikutnya.
+        target["pendingFotoKtpUri"] = ""
+        target["pendingFotoKtpSuamiUri"] = ""
+        target["pendingFotoKtpIstriUri"] = ""
+        target["pendingFotoNasabahUri"] = ""
+        target["pendingFotoKtpUrl"] = ""
+        target["pendingFotoKtpSuamiUrl"] = ""
+        target["pendingFotoKtpIstriUrl"] = ""
+        target["pendingFotoNasabahUrl"] = ""
     }
 
     /**
@@ -937,15 +988,19 @@ class SyncManager private constructor(private val context: Context) {
                 throw IllegalStateException("Upload foto serah terima gagal transient (akan retry)")
         }
 
-        // (3) Tulis URL final + status + bersihkan pending.
-        pelangganRef.updateChildren(
-            mapOf(
-                "fotoSerahTerimaUrl" to uploadedUrl,
-                "statusSerahTerima" to "Selesai",
-                "pendingFotoSerahTerimaUri" to ""
-            )
-        ).await()
-        Log.d(TAG, "✅ SERAH_TERIMA: foto uploaded & RTDB updated → $uploadedUrl")
+        // (3) Tulis URL final + status + bersihkan pending + DATA CLEANSE.
+        //     Atomic multi-path: foto URL, status, pendingUri, cleanse legacy
+        //     (NIK/foto KTP/pending URI), dan mapping fotoSerahTerimaUrl →
+        //     fotoNasabahUrl untuk Web Buku Pokok. Lihat
+        //     PelangganViewModel.buildCairkanCleansePayload untuk rasionalitas.
+        val finalUpdates: MutableMap<String, Any?> = mutableMapOf(
+            "fotoSerahTerimaUrl" to uploadedUrl,
+            "statusSerahTerima" to "Selesai",
+            "pendingFotoSerahTerimaUri" to ""
+        )
+        applyCairkanCleanseTo(finalUpdates, uploadedUrl)
+        pelangganRef.updateChildren(finalUpdates).await()
+        Log.d(TAG, "✅ SERAH_TERIMA: foto uploaded + data cleanse & RTDB updated → $uploadedUrl")
 
         // (4) Dispatch notifikasi (menelan error internal — tidak menggagalkan op).
         serahTerimaNotifier.dispatchAll(

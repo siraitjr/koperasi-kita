@@ -64,6 +64,11 @@ exports.onPembayaranUpdateNikStatus = onNikRegistry.onPembayaranUpdateNikStatus;
 exports.onSubPembayaranUpdateNikStatus = onNikRegistry.onSubPembayaranUpdateNikStatus;
 exports.onStatusChangeUpdateNik = onNikRegistry.onStatusChangeUpdateNik;
 exports.onPelangganDeletedRemoveNik = onNikRegistry.onPelangganDeletedRemoveNik;
+// ✅ Aturan pimpinan 06 Jun 2026 — Data Cleanse Cairkan (NIK → kosong).
+// Hapus nik_registry/{NIK_lama} agar tidak memblokir re-registrasi nasabah.
+exports.onNikClearedRemoveRegistry      = onNikRegistry.onNikClearedRemoveRegistry;
+exports.onNikSuamiClearedRemoveRegistry = onNikRegistry.onNikSuamiClearedRemoveRegistry;
+exports.onNikIstriClearedRemoveRegistry = onNikRegistry.onNikIstriClearedRemoveRegistry;
 
 // =========================================================================
 // PUSH NOTIFICATION TRIGGERS

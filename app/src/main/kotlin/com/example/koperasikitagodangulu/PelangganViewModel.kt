@@ -11267,13 +11267,22 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
      */
     private suspend fun updatePelangganSerahTerimaWithAdminUid(pelanggan: Pelanggan, adminUid: String) {
         try {
-            val updates = mapOf(
+            val updates: MutableMap<String, Any?> = mutableMapOf(
                 "fotoSerahTerimaUrl" to pelanggan.fotoSerahTerimaUrl,
                 "pendingFotoSerahTerimaUri" to pelanggan.pendingFotoSerahTerimaUri,
                 "statusSerahTerima" to pelanggan.statusSerahTerima,
                 "tanggalSerahTerima" to pelanggan.tanggalSerahTerima,
                 "lastUpdated" to SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
             )
+
+            // ✅ Aturan pimpinan 06 Jun 2026 — Data Cleanse di momen Cairkan.
+            // Hanya pada FINAL commit (status="Selesai" + URL Serah Terima sudah
+            // ada). JANGAN saat optimistic offline (status="Pending", URL kosong)
+            // karena legacy data harus tetap tampil sampai foto benar-benar
+            // ter-upload pada gelombang sync berikutnya.
+            if (pelanggan.statusSerahTerima == "Selesai" && pelanggan.fotoSerahTerimaUrl.isNotBlank()) {
+                updates.putAll(buildCairkanCleansePayload(pelanggan.fotoSerahTerimaUrl))
+            }
 
             database.child("pelanggan")
                 .child(adminUid)
@@ -11290,6 +11299,47 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     /**
+     * ✅ Data Cleanse payload (aturan pimpinan 06 Jun 2026, jalur Cairkan top-up).
+     *
+     * Saat Foto Serah Terima berhasil ter-upload pada proses Cairkan, sistem:
+     *   1. Menghapus data legacy: NIK utama/suami/istri, fotoKtp* URLs,
+     *      semua pending URI/URL foto Ktp/Nasabah.
+     *   2. Memetakan fotoSerahTerimaUrl → fotoNasabahUrl agar Web "Buku Pokok"
+     *      (yang membaca fotoNasabahUrl/fotoKtpUrl) langsung menampilkan
+     *      Foto Serah Terima sebagai wajah utama TANPA perlu mengubah Web.
+     *
+     * Integritas anti-duplikat NIK:
+     *   Penghapusan nik_registry/{NIK_lama} DILAKUKAN OLEH Cloud Function
+     *   trigger onPelanggan{Nik,NikSuami,NikIstri}ClearedRemoveRegistry —
+     *   Android client tidak menulis nik_registry langsung (taat CLAUDE.md §5.3).
+     *   Tanpa trigger ini nik_registry/{NIK} akan tetap "aktif" selamanya dan
+     *   memblokir re-registrasi nasabah di masa depan.
+     */
+    private fun buildCairkanCleansePayload(serahTerimaUrl: String): Map<String, Any?> = mapOf(
+        // NIK legacy → kosong. Cloud Function trigger menyusul menghapus
+        // nik_registry/{oldNik} secara atomic per-field.
+        "nik" to "",
+        "nikSuami" to "",
+        "nikIstri" to "",
+        // Foto KTP legacy → kosong (standar baru "No KTP").
+        "fotoKtpUrl" to "",
+        "fotoKtpSuamiUrl" to "",
+        "fotoKtpIstriUrl" to "",
+        // Mapping wajah utama: Foto Serah Terima jadi fotoNasabahUrl untuk Web.
+        "fotoNasabahUrl" to serahTerimaUrl,
+        // Pending URI/URL legacy → kosong, agar offline queue TIDAK menghidupkan
+        // kembali data yang sudah di-cleanse pada gelombang sync berikutnya.
+        "pendingFotoKtpUri" to "",
+        "pendingFotoKtpSuamiUri" to "",
+        "pendingFotoKtpIstriUri" to "",
+        "pendingFotoNasabahUri" to "",
+        "pendingFotoKtpUrl" to "",
+        "pendingFotoKtpSuamiUrl" to "",
+        "pendingFotoKtpIstriUrl" to "",
+        "pendingFotoNasabahUrl" to ""
+    )
+
+    /**
      * Update data pelanggan untuk serah terima ke Firebase
      */
     private suspend fun updatePelangganSerahTerima(pelanggan: Pelanggan) {
@@ -11298,13 +11348,19 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                 .child(pelanggan.adminUid)
                 .child(pelanggan.id)
 
-            val updates = mapOf(
+            val updates: MutableMap<String, Any?> = mutableMapOf(
                 "fotoSerahTerimaUrl" to pelanggan.fotoSerahTerimaUrl,
                 "pendingFotoSerahTerimaUri" to pelanggan.pendingFotoSerahTerimaUri,
                 "statusSerahTerima" to pelanggan.statusSerahTerima,
                 "tanggalSerahTerima" to pelanggan.tanggalSerahTerima,
                 "lastUpdated" to SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
             )
+
+            // ✅ Aturan pimpinan 06 Jun 2026 — gating identik dengan jalur
+            // updatePelangganSerahTerimaWithAdminUid (lihat helper di bawah).
+            if (pelanggan.statusSerahTerima == "Selesai" && pelanggan.fotoSerahTerimaUrl.isNotBlank()) {
+                updates.putAll(buildCairkanCleansePayload(pelanggan.fotoSerahTerimaUrl))
+            }
 
             pelangganRef.updateChildren(updates).await()
             Log.d("SerahTerima", "✅ Firebase updated")

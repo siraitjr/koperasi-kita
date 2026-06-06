@@ -320,6 +320,49 @@ exports.onPelangganDeletedRemoveNik = functions
     });
 
 // =========================================================================
+// TRIGGER 6/7/8: Saat NIK / NIK Suami / NIK Istri DI-CLEAR (Data Cleanse Cairkan)
+// =========================================================================
+// Konteks: aturan pimpinan 06 Jun 2026 — pada momen Cairkan top-up nasabah
+// legacy, Android client menulis nik = "" (juga nikSuami / nikIstri).
+// Trigger ini menghapus nik_registry/{NIK_lama} agar NIK tersebut TIDAK
+// "abadi-aktif" yang memblokir re-registrasi nasabah di masa depan via
+// searchNikGlobal. Android client TIDAK menulis nik_registry langsung
+// (taat CLAUDE.md §5.3 — Cloud Function satu-satunya pihak yang berwenang).
+//
+// Gating: hanya bertindak bila SEBELUM = 16-digit valid dan SESUDAH ≠ 16-digit
+// (kosong/null/format invalid). Pertukaran NIK ke NIK valid lain TIDAK
+// memicu cleanse — itu skenario edit data, bukan cleanse cairkan.
+// =========================================================================
+function makeNikClearedTrigger(fieldName) {
+    return functions
+        .region('asia-southeast1')
+        .database
+        .ref(`/pelanggan/{adminUid}/{pelangganId}/${fieldName}`)
+        .onUpdate(async (change, context) => {
+            const beforeNik = (change.before.val() || '').toString();
+            const afterNik = (change.after.val() || '').toString();
+
+            // Bukan transisi valid → cleared, abaikan.
+            if (beforeNik.length !== 16) return null;
+            if (afterNik.length === 16) return null;
+
+            console.log(`🧹 [NIK Cleanse] ${fieldName} di-clear pada pelanggan ${context.params.pelangganId}: ${beforeNik} → ""`);
+
+            try {
+                await removeNikFromRegistry(beforeNik);
+            } catch (error) {
+                console.error(`❌ [NIK Cleanse] Gagal hapus nik_registry/${beforeNik}: ${error.message}`);
+            }
+
+            return null;
+        });
+}
+
+exports.onNikClearedRemoveRegistry      = makeNikClearedTrigger('nik');
+exports.onNikSuamiClearedRemoveRegistry = makeNikClearedTrigger('nikSuami');
+exports.onNikIstriClearedRemoveRegistry = makeNikClearedTrigger('nikIstri');
+
+// =========================================================================
 // HTTP FUNCTION: Migrasi NIK (SEKALI PAKAI)
 // =========================================================================
 // URL: https://us-central1-koperasikitagodangulu.cloudfunctions.net/migrateNikToRegistry
