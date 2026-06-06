@@ -1701,7 +1701,7 @@ fun TambahPelangganScreen(
                                                 fotoKtpUri = if (tipePinjaman == "dibawah_3jt") fotoKtpUri else null,
                                                 fotoKtpSuamiUri = if (tipePinjaman == "diatas_3jt") fotoKtpSuamiUri else null,
                                                 fotoKtpIstriUri = if (tipePinjaman == "diatas_3jt") fotoKtpIstriUri else null,
-                                                fotoNasabahUri = fotoNasabahUri, // ✅ DIUBAH: Foto nasabah wajib untuk semua tipe pinjaman
+                                                fotoNasabahUri = fotoNasabahUri, // ℹ️ Soft-removal: UI tangkap foto dimatikan via SHOW_FOTO_KTP_AND_NASABAH=false (§121). URI praktis selalu null; param dipertahankan agar restore flag tidak butuh perubahan signature.
                                                 onSuccess = {
                                                     isUploading = false
                                                     Toast.makeText(

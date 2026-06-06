@@ -435,14 +435,29 @@ class SyncManager private constructor(private val context: Context) {
             val currentSerahTerimaUrl = mutableData["fotoSerahTerimaUrl"] as? String ?: ""
             if (pendingSerahTerimaUri.isNotBlank() && currentSerahTerimaUrl.isBlank()) {
                 Log.d(TAG, "📷 Uploading pending foto Serah Terima...")
-                val uploadedUrl = uploadFotoKtp(
+                when (val outcome = uploadFotoKtp(
                     Uri.parse(pendingSerahTerimaUri), adminUid, pelangganId, "serah_terima"
-                )
-                if (uploadedUrl != null) {
-                    mutableData["fotoSerahTerimaUrl"] = uploadedUrl
-                    mutableData["pendingFotoSerahTerimaUri"] = ""
-                    mutableData["statusSerahTerima"] = "Selesai"
-                    Log.d(TAG, "✅ Foto Serah Terima uploaded: $uploadedUrl")
+                )) {
+                    is FotoUploadOutcome.Success -> {
+                        mutableData["fotoSerahTerimaUrl"] = outcome.url
+                        mutableData["pendingFotoSerahTerimaUri"] = ""
+                        mutableData["statusSerahTerima"] = "Selesai"
+                        Log.d(TAG, "✅ Foto Serah Terima uploaded: ${outcome.url}")
+                    }
+                    // ✅ Audit pimpinan: URI mati (cacheDir di-evict OS / file
+                    // di-hapus user) → bersihkan pendingFotoSerahTerimaUri agar
+                    // sync TIDAK retry tak terhingga membaca sumber yang sudah
+                    // tidak ada. Foto fisik memang hilang; ini menghentikan
+                    // perdarahan diam (silent loss → silent + tercatat).
+                    is FotoUploadOutcome.DeadUri -> {
+                        mutableData["pendingFotoSerahTerimaUri"] = ""
+                        Log.w(TAG, "⚠️ Foto Serah Terima URI mati ($pendingSerahTerimaUri) — di-skip permanen")
+                    }
+                    // Kegagalan jaringan/Storage: BIARKAN pendingUri agar
+                    // sync berikutnya mencoba lagi (perilaku lama, aman).
+                    is FotoUploadOutcome.TransientFailure -> {
+                        Log.w(TAG, "⏳ Foto Serah Terima gagal transient — retry pada sync berikutnya")
+                    }
                 }
             }
 
@@ -480,14 +495,54 @@ class SyncManager private constructor(private val context: Context) {
         }
 
         Log.d(TAG, "📷 Uploading $jenisKtp ${if (isTopUp) "[pending]" else "[permanent]"}...")
-        val uploadedUrl = uploadFotoKtp(
+        when (val outcome = uploadFotoKtp(
             Uri.parse(pendingUri), adminUid, pelangganId, jenisKtp, isPending = isTopUp
-        )
-        if (uploadedUrl != null) {
-            mutableData[targetUrlKey] = uploadedUrl
-            mutableData[uriKey] = ""
-            Log.d(TAG, "✅ $jenisKtp uploaded → $uploadedUrl")
+        )) {
+            is FotoUploadOutcome.Success -> {
+                mutableData[targetUrlKey] = outcome.url
+                mutableData[uriKey] = ""
+                Log.d(TAG, "✅ $jenisKtp uploaded → ${outcome.url}")
+            }
+            // ✅ Audit pimpinan: URI mati → bersihkan uriKey untuk hentikan
+            // infinite-retry. Data nasabah lainnya tetap ter-sync; hanya foto
+            // KTP/Nasabah ini yang hilang permanen (di-evict OS / di-delete).
+            is FotoUploadOutcome.DeadUri -> {
+                mutableData[uriKey] = ""
+                Log.w(TAG, "⚠️ $jenisKtp URI mati ($pendingUri) — di-skip permanen")
+            }
+            is FotoUploadOutcome.TransientFailure -> {
+                Log.w(TAG, "⏳ $jenisKtp gagal transient — retry pada sync berikutnya")
+            }
         }
+    }
+
+    // =====================================================================
+    // ✅ Discriminated outcome untuk uploadFotoKtp (audit pimpinan 06 Jun 2026).
+    // ---------------------------------------------------------------------
+    // Sebelumnya uploadFotoKtp mengembalikan String? (null = "entah kenapa").
+    // Caller hanya bisa "skip" pada null → pendingFoto*Uri tidak pernah
+    // dibersihkan saat URI cacheDir sudah dievict OS → sync mengulang baca
+    // URI mati selamanya (silent loss + retry tak terhingga).
+    //
+    // Discriminator ini membedakan:
+    //   - Success(url)        → write URL + clear pendingUri (perilaku lama).
+    //   - DeadUri             → CLEAR pendingUri agar berhenti retry. Sinyal
+    //                           ini muncul HANYA dari kegagalan baca/dekode
+    //                           LOKAL di compressImageForKtp (tidak ada I/O
+    //                           jaringan di langkah itu) — jadi aman dipakai
+    //                           sebagai "file fisik tak terbaca lagi".
+    //   - TransientFailure    → JANGAN clear pendingUri (jaringan/Storage).
+    //                           Retry pada sync berikutnya seperti sebelumnya.
+    //
+    // Risiko false-positive (clear yang seharusnya transient): rendah —
+    // compressImageForKtp 100% lokal; bila gambar terlalu besar (>700KB)
+    // juga di-treat DeadUri karena tidak akan sembuh dengan retry sumber
+    // yang sama.
+    // =====================================================================
+    private sealed class FotoUploadOutcome {
+        data class Success(val url: String) : FotoUploadOutcome()
+        object DeadUri : FotoUploadOutcome()
+        object TransientFailure : FotoUploadOutcome()
     }
 
     /**
@@ -502,7 +557,7 @@ class SyncManager private constructor(private val context: Context) {
         pelangganId: String,
         jenisKtp: String = "utama",
         isPending: Boolean = false
-    ): String? {
+    ): FotoUploadOutcome {
         return withContext(Dispatchers.IO) {
             try {
                 Log.d(TAG, "📷 uploadFotoKtp: $jenisKtp for $pelangganId${if (isPending) " [pending]" else ""}")
@@ -511,17 +566,20 @@ class SyncManager private constructor(private val context: Context) {
                 val folder = if (isPending) "ktp_images_pending" else "ktp_images"
                 val ktpRef = storageRef.child("$folder/$adminUid/$pelangganId/ktp_$jenisKtp.jpg")
 
-                // Kompresi gambar
+                // Kompresi gambar — 100% lokal (tanpa I/O jaringan).
+                // Gagal di sini = URI fisik tidak terbaca → DeadUri (retry
+                // sumber yang sama tidak akan sembuh; clear di caller).
                 val compressedImage = compressImageForKtp(imageUri)
                 if (compressedImage.isEmpty()) {
-                    Log.e(TAG, "❌ Gagal kompresi gambar")
-                    return@withContext null
+                    Log.e(TAG, "❌ Gagal kompresi gambar — URI dianggap mati")
+                    return@withContext FotoUploadOutcome.DeadUri
                 }
 
-                // Validasi ukuran
-                if (compressedImage.size > 700 * 1024) { // Dinaikkan dari 500KB ke 700KB
-                    Log.e(TAG, "❌ Gambar terlalu besar: ${compressedImage.size / 1024}KB (max 700KB)")
-                    return@withContext null
+                // Validasi ukuran — juga DeadUri (sumber tidak akan menyusut
+                // dengan retry; user perlu ambil foto ulang).
+                if (compressedImage.size > 700 * 1024) {
+                    Log.e(TAG, "❌ Gambar terlalu besar: ${compressedImage.size / 1024}KB (max 700KB) — di-skip permanen")
+                    return@withContext FotoUploadOutcome.DeadUri
                 }
 
                 val metadata = StorageMetadata.Builder()
@@ -535,27 +593,30 @@ class SyncManager private constructor(private val context: Context) {
                 // Timeout 60s agar SyncWorker tidak terkunci selamanya pada upload macet.
                 val task = withTimeoutOrNull(60_000L) { uploadTask.await() }
                 if (task == null) {
-                    Log.e(TAG, "❌ Upload KTP timeout 60s (SyncManager)")
+                    Log.e(TAG, "❌ Upload KTP timeout 60s (SyncManager) — transient")
                     try { uploadTask.cancel() } catch (_: Exception) {}
-                    return@withContext null
+                    return@withContext FotoUploadOutcome.TransientFailure
                 }
 
                 if (task.task.isSuccessful) {
                     // Timeout 15s untuk ambil downloadUrl (hanya query metadata Storage).
                     val downloadUrl = withTimeoutOrNull(15_000L) { ktpRef.downloadUrl.await() }
                     if (downloadUrl == null) {
-                        Log.e(TAG, "❌ downloadUrl timeout 15s (SyncManager)")
-                        return@withContext null
+                        Log.e(TAG, "❌ downloadUrl timeout 15s (SyncManager) — transient")
+                        return@withContext FotoUploadOutcome.TransientFailure
                     }
                     Log.d(TAG, "✅ Foto KTP uploaded: ${compressedImage.size / 1024}KB → $downloadUrl")
-                    downloadUrl.toString()
+                    FotoUploadOutcome.Success(downloadUrl.toString())
                 } else {
-                    Log.e(TAG, "❌ Upload gagal: ${task.task.exception?.message}")
-                    null
+                    Log.e(TAG, "❌ Upload gagal: ${task.task.exception?.message} — transient")
+                    FotoUploadOutcome.TransientFailure
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "❌ Exception upload foto KTP: ${e.message}")
-                null
+                // Sampai di sini = exception SETELAH compressImageForKtp lolos
+                // (compressImageForKtp punya try/catch sendiri yg return empty
+                // bytes). Berarti ini sisi jaringan/Storage → TransientFailure.
+                Log.e(TAG, "❌ Exception upload foto KTP: ${e.message} — transient")
+                FotoUploadOutcome.TransientFailure
             }
         }
     }
@@ -848,10 +909,33 @@ class SyncManager private constructor(private val context: Context) {
             return
         }
 
-        // (2) Upload foto → throw kalau gagal (akan di-retry).
+        // (2) Upload foto → discriminated outcome (audit pimpinan 06 Jun 2026):
+        //   - Success: lanjut tulis URL + dispatch notifikasi.
+        //   - DeadUri: jangan throw (retry sumber mati = sia-sia). Bersihkan
+        //     pendingFotoSerahTerimaUri di RTDB, mark status agar tidak terus
+        //     muncul sebagai "ada pending foto", lalu RETURN tanpa dispatch
+        //     notifikasi (tidak ada foto yang bisa dilampirkan).
+        //   - TransientFailure: throw seperti sebelumnya → operasi di-retry
+        //     oleh syncAllPending pada gelombang berikutnya (jaringan kembali).
         Log.d(TAG, "📷 SERAH_TERIMA: uploading foto pending...")
-        val uploadedUrl = uploadFotoKtp(Uri.parse(pendingUri), adminUid, pelangganId, "serah_terima")
-            ?: throw IllegalStateException("Upload foto serah terima gagal (akan retry)")
+        val uploadedUrl = when (val outcome = uploadFotoKtp(
+            Uri.parse(pendingUri), adminUid, pelangganId, "serah_terima"
+        )) {
+            is FotoUploadOutcome.Success -> outcome.url
+            is FotoUploadOutcome.DeadUri -> {
+                Log.w(TAG, "⚠️ SERAH_TERIMA: URI foto mati ($pendingUri) — bersihkan pending, skip notifikasi")
+                try {
+                    pelangganRef.updateChildren(
+                        mapOf("pendingFotoSerahTerimaUri" to "")
+                    ).await()
+                } catch (e: Exception) {
+                    Log.w(TAG, "⚠️ SERAH_TERIMA: gagal bersihkan pendingFotoSerahTerimaUri: ${e.message}")
+                }
+                return
+            }
+            is FotoUploadOutcome.TransientFailure ->
+                throw IllegalStateException("Upload foto serah terima gagal transient (akan retry)")
+        }
 
         // (3) Tulis URL final + status + bersihkan pending.
         pelangganRef.updateChildren(
