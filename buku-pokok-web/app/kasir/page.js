@@ -1862,6 +1862,33 @@ function BukuRekapScreen({ user, cabang, cabangList, onBack, onLogout, onNavigat
         : (orphanArr?.[adm.uid] || 0); // back-compat shape lama bila CF belum di-deploy
       storting += orphanStortingAdm;
 
+      // =====================================================================
+      // ✅ BENTENG ANTI-SHRINK: override Target+Storting dari rekapBeku.
+      // ---------------------------------------------------------------------
+      // Untuk kolom HISTORIS (todayStr !== data.today), bila ada snapshot
+      // beku yang ditulis CF freezeRekapHarian (23:59 WIB), pakai itu sebagai
+      // sumber otoritatif. Snapshot diambil dari summary/perAdmin
+      // (targetHariIni + pembayaranHariIni) tepat akhir hari → permanen,
+      // imun terhadap mutasi retroaktif manapun (edit besarPinjaman,
+      // koreksi pembayaran lama, penghapusan via request).
+      //
+      // Bila tidak ada entri beku (hari ini, atau hari yg belum sempat
+      // ter-freeze — mis. baru deploy), tetap pakai kalkulasi live di atas
+      // yang sudah immutable via lib/target.js POIN 4 (fix 6aa8cd3) → zero
+      // regresi, zero kejutan.
+      //
+      // UI/layout TIDAK berubah — hanya sumber nilai numerik untuk Target &
+      // Storting di baris historis.
+      // =====================================================================
+      const isToday = todayStr === data.today;
+      const bekuEntry = (!isToday && data.rekapBeku && data.rekapBeku[adm.uid])
+        ? data.rekapBeku[adm.uid][todayStr]
+        : null;
+      if (bekuEntry) {
+        target = bekuEntry.target;
+        storting = bekuEntry.storting;
+      }
+
       // Persen = storting / target * 100
       const persen = target > 0 ? Math.round(storting / target * 100) : 0;
 

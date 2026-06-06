@@ -262,6 +262,22 @@ function formatEpochToTanggalIndo(epochMs) {
     return `${day} ${month} ${year}`;
 }
 
+// Konversi key node beku ("YYYY-MM-DD", WIB) → format display ("dd MMM yyyy").
+// Dipakai saat assemble `rekapBeku` di response getBukuPokok agar frontend
+// (kasir/page.js) bisa lookup langsung dengan dateStr yang sama dengan
+// kolom Buku Rekap — nol konversi tambahan di client.
+function isoKeyToTanggalIndo(isoKey) {
+    if (!isoKey || typeof isoKey !== 'string') return '';
+    const parts = isoKey.split('-');
+    if (parts.length !== 3) return '';
+    const y = parseInt(parts[0], 10);
+    const m = parseInt(parts[1], 10) - 1; // 0-indexed
+    const d = parseInt(parts[2], 10);
+    if (Number.isNaN(y) || Number.isNaN(m) || Number.isNaN(d)) return '';
+    if (m < 0 || m > 11) return '';
+    return `${String(d).padStart(2, '0')} ${BULAN_INDO[m]} ${y}`;
+}
+
 // =========================================================================
 // HELPER: Generate hari kerja berurutan (Senin-Sabtu, skip Minggu)
 // Format: "27 Feb 2025" — sama dengan format pembayaran di RTDB
@@ -433,7 +449,15 @@ exports.getBukuPokok = functions
             const readPromises = [
                 Promise.all(adminUids.map(aUid => db.ref(`metadata/admins/${aUid}`).once('value'))),
                 Promise.all(adminUids.map(aUid => db.ref(`pelanggan/${aUid}`).once('value'))),
-                Promise.all(adminUids.map(aUid => db.ref(`summary/perAdmin/${aUid}`).once('value')))
+                Promise.all(adminUids.map(aUid => db.ref(`summary/perAdmin/${aUid}`).once('value'))),
+                // ✅ Benteng anti-shrink: rekap harian beku per admin (audit
+                // pimpinan 06 Jun 2026). Node ini diisi oleh freezeRekapHarian
+                // CF setiap 23:59 WIB. Frontend Buku Rekap memakainya sebagai
+                // OVERRIDE Target+Storting untuk kolom historis — bila entri
+                // tidak ada (hari ini / sebelum CF di-deploy), fallback ke
+                // kalkulasi live (yang sudah immutable via boundary fix 6aa8cd3).
+                // Snapshot kecil (dateKey:object), 1 read paralel per admin.
+                Promise.all(adminUids.map(aUid => db.ref(`rekap_harian_final/${aUid}`).once('value')))
             ];
 
             // Hanya baca riwayat_pinjaman jika dibutuhkan
@@ -444,8 +468,8 @@ exports.getBukuPokok = functions
             }
 
             const results = await Promise.all(readPromises);
-            const [adminMetaResults, pelangganResults, summaryResults] = results;
-            const riwayatResults = needsRiwayat ? results[3] : [];
+            const [adminMetaResults, pelangganResults, summaryResults, rekapBekuResults] = results;
+            const riwayatResults = needsRiwayat ? results[4] : [];
 
             // Process admin names
             adminUids.forEach((aUid, i) => {
@@ -904,6 +928,34 @@ exports.getBukuPokok = functions
                 }
             }
 
+            // ============================================================
+            // ✅ Assemble rekapBeku — benteng anti-shrink historis.
+            // Bentuk: { [adminUid]: { [dateStr 'dd MMM yyyy']: {target, storting} } }
+            // dateKey RTDB di-konversi ke format display agar frontend lookup
+            // langsung dengan kolom Buku Rekap yang ada. Bila admin/tanggal
+            // tidak punya entri, frontend fallback ke kalkulasi live yang
+            // sudah immutable via lib/target.js POIN 4 (fix 6aa8cd3).
+            // ============================================================
+            const rekapBeku = {};
+            adminUids.forEach((aUid, i) => {
+                const snap = rekapBekuResults[i];
+                if (!snap || !snap.exists()) return;
+                const adminMap = snap.val() || {};
+                const perTanggal = {};
+                Object.entries(adminMap).forEach(([isoKey, entry]) => {
+                    if (!entry) return;
+                    const dateStr = isoKeyToTanggalIndo(isoKey);
+                    if (!dateStr) return;
+                    perTanggal[dateStr] = {
+                        target: Number.isFinite(entry.target) ? entry.target : 0,
+                        storting: Number.isFinite(entry.storting) ? entry.storting : 0
+                    };
+                });
+                if (Object.keys(perTanggal).length > 0) {
+                    rekapBeku[aUid] = perTanggal;
+                }
+            });
+
             const responseBody = {
                 success: true,
                 type: 'buku_pokok',
@@ -917,7 +969,8 @@ exports.getBukuPokok = functions
                     totalPinjaman: nasabahList.reduce((sum, n) => sum + (n.besarPinjaman || 0), 0),
                     pembayaranHariIni: totalPembayaranHariIni,
                     targetHarianHariIni: totalTargetHarian,
-                    orphanPaymentsByDate: orphanPaymentsByDate
+                    orphanPaymentsByDate: orphanPaymentsByDate,
+                    rekapBeku: rekapBeku
                 }
             };
 

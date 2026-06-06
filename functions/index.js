@@ -38,6 +38,11 @@ const kasirApi = require('./kasirApi');
 const detectDuplicate = require('./detectDuplicateNasabah');
 const { cleanupDuplicateApprovals } = require('./cleanupDuplicateApprovals');
 const auditDataSampah = require('./auditDataSampah');
+// ✅ Benteng anti-shrink historis: freeze rekap harian per-admin pada 23:59 WIB
+// (audit pimpinan 06 Jun 2026). Snapshot Target+Storting dari summary/perAdmin
+// ke rekap_harian_final/{adminUid}/{YYYY-MM-DD}. Dipakai bukuPokokApi.js untuk
+// override kolom historis di Buku Rekap. Nol scan pelanggan/* — cuma agregat.
+const freezeRekapHarian = require('./freezeRekapHarian');
 
 // =========================================================================
 // PELANGGAN TRIGGERS
@@ -105,6 +110,8 @@ exports.dailyTargetRecalc = scheduledFunctions.dailyTargetRecalc;
 exports.dailyUpdatePelangganBermasalah = scheduledFunctions.dailyUpdatePelangganBermasalah;
 exports.weeklyFullRecalc = scheduledFunctions.weeklyFullRecalc;
 exports.cleanupProcessedApprovals = scheduledFunctions.cleanupProcessedApprovals;
+// 23:59 WIB — kunci rekap harian (audit pimpinan 06 Jun 2026, lihat ./freezeRekapHarian.js).
+exports.freezeRekapHarian = freezeRekapHarian.freezeRekapHarian;
 exports.cleanupOldNotifications = scheduledFunctions.cleanupOldNotifications;
 exports.cleanupOldEventHarian = scheduledFunctions.cleanupOldEventHarian;
 exports.summaryHealthCheck = summaryRepair.smartHealthCheck;
