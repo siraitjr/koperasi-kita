@@ -98,9 +98,22 @@ export function isEligibleForTarget(n, dateStr) {
   //   tanggalArsip >  cur → AKTIF pada kolom historis itu (saat itu masih
   //     ditagih, jadi target HARUS tetap dihitung). Tanpa cabang ini, target
   //     tanggal lampau "menyusut" saat nasabah baru di-arsip hari ini.
-  //   tanggalArsip === cur → 0 (hari arsip = pelunasan via tabungan; tidak ada
-  //     tagihan tunai harian — konsisten dengan fix 02 Jun anti-over-count).
-  //   tanggalArsip <  cur → 0 (sudah berhenti ditagih sebelum kolom itu).
+  //   tanggalArsip === cur → AKTIF (hari arsip = hari TERAKHIR nasabah ditagih;
+  //     pelunasan via tabungan justru tercatat sebagai pembayaran hari itu).
+  //     Boundary ini WAJIB parity dengan H+1 di POIN 1 (LUNAS: `=== → target`)
+  //     dan POIN 2 (MP: `=== → include`).
+  //
+  //     ⚠️ FIX 06 Jun 2026 (penyebab "menyusut AGAIN" yang dilaporkan pimpinan):
+  //     Sebelumnya boundary ini `<= cur → 0` (men-nol-kan hari arsip). Itu
+  //     menyebabkan SHRINK pada hari arsip itu sendiri: SEBELUM archival,
+  //     nasabah ada di `pelanggan/` live → hari D dihitung; SESUDAH archival
+  //     (cairkanSimpanan) nasabah pindah ke arsip dgn tanggalArsip=D → `<=`
+  //     mengembalikan 0 → target hari D anjlok sebesar kontribusi nasabah itu.
+  //     Pimpinan melihatnya keesokan hari sebagai "kemarin menyusut". Dengan
+  //     `< cur` (strict), hari D tetap dihitung sebelum & sesudah archival →
+  //     NOL penyusutan, historis benar-benar beku, konsisten dgn LUNAS/MP.
+  //   tanggalArsip <  cur → 0 (sudah berhenti ditagih SEBELUM kolom itu;
+  //     tidak ada over-count untuk hari-hari setelah arsip).
   //   tanggalArsip kosong/invalid → 0 (legacy arsip tanpa metadata
   //     archivedAt; pertahankan perilaku fix 02 Jun agar tidak regresi
   //     over-count untuk nasabah lama yang tanggalLunasCicilan kosong).
@@ -112,9 +125,11 @@ export function isEligibleForTarget(n, dateStr) {
   if (n.dariArsip) {
     const arsipDate = parseTanggalIndo((n.tanggalArsip || '').trim());
     if (!arsipDate) return 0;
-    if (arsipDate <= cur) return 0;
-    // arsipDate > cur → pada kolom historis itu nasabah masih aktif; lanjut
-    // ke evaluasi normal di bawah (status, lunas, MP, 3-month, dst).
+    // STRICT `<` (bukan `<=`): hari arsip = hari terakhir aktif, tetap dihitung
+    // (parity H+1 LUNAS/MP). Hanya hari SETELAH arsip yang di-nol-kan.
+    if (arsipDate < cur) return 0;
+    // arsipDate >= cur → pada kolom itu nasabah masih aktif (atau hari terakhir);
+    // lanjut ke evaluasi normal di bawah (status, lunas, MP, 3-month, dst).
   }
 
   // ===== Pre-guard live-status (date-aware, semua jalur immutabilitas) =====

@@ -1343,8 +1343,9 @@ function getKategoriNasabah(nasabah, refDateStr) {
         // hari ini. Pengaturan dipindah ke helper (lib/target.js POIN 4) yang
         // menerapkan cutoff date-aware via `tanggalArsip` (di-derive dari
         // archivedAt di bukuPokokApi.js):
-        //   tanggalArsip >  cur → target dihitung (saat itu masih aktif)
-        //   tanggalArsip ≤  cur → 0 (sudah berhenti ditagih)
+        //   tanggalArsip ≥  cur → target dihitung (hari arsip = hari terakhir
+        //     aktif; parity H+1 LUNAS/MP — fix shrink 06 Jun 2026, dulu keliru ≤)
+        //   tanggalArsip <  cur → 0 (sudah berhenti ditagih SEBELUM kolom)
         //   tanggalArsip kosong → 0 (legacy arsip; preserve fix 02 Jun)
         // isHistorical/isOrphan tetap di-skip — itu flag client-only (lihat
         // line 1084 & 1142), bukan dari arsip CF; tetap valid sebagai guard.

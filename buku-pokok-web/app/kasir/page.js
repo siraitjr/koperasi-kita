@@ -1832,8 +1832,9 @@ function BukuRekapScreen({ user, cabang, cabangList, onBack, onLogout, onNavigat
       // LAMPAU menyusut saat nasabah baru diarsip hari ini. Pengaturan cutoff
       // sekarang dipindah ke helper (lib/target.js POIN 4) yang menerapkan
       // logic date-aware via field `tanggalArsip`:
-      //   tanggalArsip > cur → target tetap dihitung (saat itu masih ditagih)
-      //   tanggalArsip ≤ cur → 0 (sudah berhenti ditagih pada/sebelum kolom)
+      //   tanggalArsip ≥ cur → target tetap dihitung (hari arsip = hari terakhir
+      //     aktif; parity H+1 LUNAS/MP — fix shrink 06 Jun 2026, dulu keliru ≤)
+      //   tanggalArsip < cur → 0 (sudah berhenti ditagih SEBELUM kolom)
       // isHistorical/isOrphan tetap di-skip — itu flag client-only (lihat
       // pembukuan/page.js:1084,1142), bukan dari arsip CF.
       let target = 0;
