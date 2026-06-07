@@ -1863,25 +1863,29 @@ function BukuRekapScreen({ user, cabang, cabangList, onBack, onLogout, onNavigat
       storting += orphanStortingAdm;
 
       // =====================================================================
-      // ✅ BENTENG ANTI-SHRINK: override Target+Storting dari rekapBeku.
+      // ✅ BENTENG ANTI-SHRINK: snapshot rekap_harian_final ADALAH OTORITAS.
       // ---------------------------------------------------------------------
-      // Untuk kolom HISTORIS (todayStr !== data.today), bila ada snapshot
-      // beku yang ditulis CF freezeRekapHarian (23:59 WIB), pakai itu sebagai
-      // sumber otoritatif. Snapshot diambil dari summary/perAdmin
-      // (targetHariIni + pembayaranHariIni) tepat akhir hari → permanen,
-      // imun terhadap mutasi retroaktif manapun (edit besarPinjaman,
-      // koreksi pembayaran lama, penghapusan via request).
+      // Aturan pimpinan 07 Jun 2026 (final): "Jika target pada 06 Jun adalah
+      // 1.450.000, dia HARUS tetap 1.450.000 selamanya — bahkan dilihat 10
+      // tahun kemudian." Sebelumnya kode ini memakai gate `!isToday`
+      // (todayStr !== data.today) untuk memutuskan apakah snapshot dipakai.
+      // Gate itu CACAT: pada Minggu/hari libur web menyembunyikan tanggal
+      // tersebut sehingga internal logic bisa menyamakan tanggal yang dilihat
+      // dengan data.today → snapshot dilewati → live calc → target menyusut.
       //
-      // Bila tidak ada entri beku (hari ini, atau hari yg belum sempat
-      // ter-freeze — mis. baru deploy), tetap pakai kalkulasi live di atas
-      // yang sudah immutable via lib/target.js POIN 4 (fix 6aa8cd3) → zero
-      // regresi, zero kejutan.
+      // Aturan baru — TANPA SYARAT:
+      //   • Bila rekap_harian_final punya entri (adm.uid, dateStr) → PAKAI.
+      //     Snapshot ditulis freezeRekapHarian CF setiap 23:59 WIB
+      //     (target + storting tepat akhir hari). Permanen, imun terhadap
+      //     mutasi retroaktif manapun.
+      //   • Bila tidak ada entri (hari yang masih berjalan / belum sempat
+      //     ter-freeze sebelum CF di-deploy) → fallback ke live calc di atas
+      //     (yang sudah immutable via lib/target.js POIN 4, fix 6aa8cd3).
       //
-      // UI/layout TIDAK berubah — hanya sumber nilai numerik untuk Target &
-      // Storting di baris historis.
+      // Live calc TIDAK pernah "mengoreksi" snapshot — itulah inti benteng.
+      // UI/layout TIDAK berubah — hanya sumber nilai numerik Target & Storting.
       // =====================================================================
-      const isToday = todayStr === data.today;
-      const bekuEntry = (!isToday && data.rekapBeku && data.rekapBeku[adm.uid])
+      const bekuEntry = (data.rekapBeku && data.rekapBeku[adm.uid])
         ? data.rekapBeku[adm.uid][todayStr]
         : null;
       if (bekuEntry) {
