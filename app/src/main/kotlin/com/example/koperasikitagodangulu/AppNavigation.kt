@@ -1,21 +1,149 @@
 package com.example.koperasikitagodangulu
 
+import android.net.Uri
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.CameraAlt
+import androidx.compose.material.icons.rounded.Visibility
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.navArgument
 import androidx.navigation.NavType
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
 import com.example.koperasikitagodangulu.ui.screens.SplashScreen
 
+// =========================================================================
+// ✅ GLOBAL SCAFFOLD HOST (pimpinan 07 Jun 2026)
+// -------------------------------------------------------------------------
+// Scaffold + bottom bar di-hoist ke level NavHost agar bottom navigation
+// muncul di SELURUH tab utama Admin Lapangan tanpa duplikasi per-screen.
+// Visibility kondisional: bottom bar TAMPIL hanya bila currentRoute ∈
+// mainTabRoutes (detail screen, dialog screen, role lain → bottom bar hilang).
+//
+// Dialog profil (Lihat / Ubah foto) juga di-hoist ke sini supaya bisa
+// dipicu oleh:
+//   1. Tab "Akun" di bottom bar (dari layar manapun di main tabs).
+//   2. Klik avatar di hero card AdminHomeScreen (via callback onAvatarClick).
+// Logika dialog identik dengan versi sebelumnya — hanya pindah container.
+// =========================================================================
+private val mainTabRoutes = setOf(
+    "dashboard",
+    "daftarPelanggan",
+    "kalkulatorPinjaman",
+    "laporanHarian"
+)
+
 @Composable
 fun AppNavigation(navController: NavHostController, viewModel: PelangganViewModel) {
-    NavHost(
-        navController = navController,
-        startDestination = "splash"
-    ) {
+    val isDark by viewModel.isDarkMode
+
+    // Track current route untuk highlight tab aktif + conditional visibility.
+    val navBackStackEntry by navController.currentBackStackEntryAsState()
+    val currentRoute = navBackStackEntry?.destination?.route
+    val showBottomBar = currentRoute in mainTabRoutes
+
+    // ── State dialog profil (hoisted dari AdminHomeScreen) ──────────────
+    val context = LocalContext.current
+    val adminPhotoUrl by viewModel.adminPhotoUrl.collectAsState()
+    var showPhotoOptionsDialog by remember { mutableStateOf(false) }
+    var showFullPhotoDialog by remember { mutableStateOf(false) }
+    var isUploadingPhoto by remember { mutableStateOf(false) }
+
+    // Pre-load foto profil sekali agar tap "Akun" sebelum user pernah ke
+    // Beranda tetap punya data foto. Idempoten (ViewModel guard internal).
+    LaunchedEffect(Unit) {
+        try { viewModel.loadAdminPhotoUrl() } catch (_: Exception) {}
+    }
+
+    val photoPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uri?.let {
+            isUploadingPhoto = true
+            viewModel.uploadAdminPhoto(
+                imageUri = it,
+                onSuccess = { _ ->
+                    isUploadingPhoto = false
+                    Toast.makeText(context, "Foto profil berhasil diupload", Toast.LENGTH_SHORT).show()
+                },
+                onFailure = { error ->
+                    isUploadingPhoto = false
+                    Toast.makeText(context, "Gagal upload: $error", Toast.LENGTH_SHORT).show()
+                }
+            )
+        }
+    }
+
+    val onProfileAction: () -> Unit = {
+        if (!adminPhotoUrl.isNullOrBlank()) showPhotoOptionsDialog = true
+        else photoPickerLauncher.launch("image/*")
+    }
+
+    Scaffold(
+        bottomBar = {
+            if (showBottomBar) {
+                AdminBottomNavBar(
+                    currentRoute = currentRoute,
+                    isDark = isDark,
+                    onTabSelected = { route ->
+                        if (route != currentRoute) {
+                            navController.navigate(route) {
+                                popUpTo("dashboard") { saveState = true }
+                                launchSingleTop = true
+                                restoreState = true
+                            }
+                        }
+                    },
+                    onAkunClick = onProfileAction
+                )
+            }
+        }
+    ) { innerPadding ->
+        NavHost(
+            navController = navController,
+            startDestination = "splash",
+            modifier = Modifier.padding(innerPadding)
+        ) {
 
         // ✅ Splash Screen
         composable("splash") {
@@ -33,7 +161,15 @@ fun AppNavigation(navController: NavHostController, viewModel: PelangganViewMode
         }
 
         composable("dashboard") {
-            AdminHomeScreen(navController, viewModel)
+            // onAvatarClick: avatar di hero card AdminHomeScreen → dialog profil
+            // di-host di AppNavigation (di-share dengan tab Akun). isUploadingPhoto
+            // diteruskan agar spinner avatar hero & dialog konsisten.
+            AdminHomeScreen(
+                navController = navController,
+                viewModel = viewModel,
+                onAvatarClick = onProfileAction,
+                isUploadingPhoto = isUploadingPhoto
+            )
         }
 
         // ✅ MODIFIKASI: TambahPelanggan dengan support prefill dari CariPelangganScreen
@@ -426,5 +562,94 @@ fun AppNavigation(navController: NavHostController, viewModel: PelangganViewMode
         composable("absensi") {
             AbsensiScreen(navController = navController, viewModel = viewModel)
         }
+        }  // end NavHost
+    }      // end Scaffold
+
+    // =====================================================================
+    // DIALOG PROFIL (hoisted dari AdminHomeScreen) — dipicu oleh tab "Akun"
+    // di bottom bar maupun klik avatar di hero card AdminHomeScreen.
+    // Logic identik dgn versi sebelumnya, hanya pindah container ke parent.
+    // =====================================================================
+    if (showPhotoOptionsDialog) {
+        AlertDialog(
+            onDismissRequest = { showPhotoOptionsDialog = false },
+            title = { Text(text = "Foto Profil", fontWeight = FontWeight.Bold) },
+            text = {
+                androidx.compose.foundation.layout.Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = {
+                            showPhotoOptionsDialog = false
+                            showFullPhotoDialog = true
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Icon(Icons.Rounded.Visibility, contentDescription = null, modifier = Modifier.size(20.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Lihat Foto")
+                    }
+                    Button(
+                        onClick = {
+                            showPhotoOptionsDialog = false
+                            photoPickerLauncher.launch("image/*")
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6366F1))
+                    ) {
+                        Icon(Icons.Rounded.CameraAlt, contentDescription = null, modifier = Modifier.size(20.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Ubah Foto")
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { showPhotoOptionsDialog = false }) { Text("Batal") }
+            }
+        )
+    }
+
+    if (showFullPhotoDialog && !adminPhotoUrl.isNullOrBlank()) {
+        AlertDialog(
+            onDismissRequest = { showFullPhotoDialog = false },
+            title = { Text(text = "Foto Profil", fontWeight = FontWeight.Bold) },
+            text = {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .aspectRatio(1f)
+                        .clip(RoundedCornerShape(16.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    AsyncImage(
+                        model = ImageRequest.Builder(LocalContext.current)
+                            .data(adminPhotoUrl).crossfade(true).build(),
+                        contentDescription = "Foto Profil",
+                        modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(16.dp)),
+                        contentScale = ContentScale.Crop
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showFullPhotoDialog = false
+                        photoPickerLauncher.launch("image/*")
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6366F1))
+                ) {
+                    Icon(Icons.Rounded.CameraAlt, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Ubah Foto")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showFullPhotoDialog = false }) { Text("Tutup") }
+            }
+        )
     }
 }

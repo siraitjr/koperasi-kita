@@ -53,9 +53,6 @@ import java.text.NumberFormat
 import java.util.Locale
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
-import android.net.Uri
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.ui.layout.ContentScale
 import com.example.koperasikitagodangulu.services.LocationTrackingMonitor
 import com.example.koperasikitagodangulu.services.LocationCheckWorker
@@ -116,7 +113,15 @@ private fun formatRupiahHome(value: Long): String = "Rp " + rupiahFormatter.form
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalAnimationApi::class)
 @Composable
-fun AdminHomeScreen(navController: NavController, viewModel: PelangganViewModel) {
+fun AdminHomeScreen(
+    navController: NavController,
+    viewModel: PelangganViewModel,
+    // ✅ Hoisted (pimpinan 07 Jun 2026): bottom bar + dialog profil tinggal di
+    // AppNavigation. AdminHomeScreen menerima callback klik avatar & flag upload
+    // dari parent supaya hero card & dialog konsisten.
+    onAvatarClick: () -> Unit = {},
+    isUploadingPhoto: Boolean = false
+) {
     val isDark by viewModel.isDarkMode
     val cardColor = if (isDark) AdminColors.darkCard else HomeTheme.cardWhite
     val txtColor = if (isDark) Color.White else HomeTheme.titleText
@@ -183,21 +188,27 @@ fun AdminHomeScreen(navController: NavController, viewModel: PelangganViewModel)
     val totalNasabahAktif: Int = remember(daftarPelangganList.toList()) {
         viewModel.getFilteredPelanggan("", "AKTIF").size
     }
-    val pembayaranCountHariIni: Int = remember(daftarPelangganList.toList(), todayStr) {
-        daftarPelangganList.sumOf { p ->
-            p.pembayaranList.count { it.tanggal == todayStr } +
-                p.pembayaranList.sumOf { pem -> pem.subPembayaran.count { it.tanggal == todayStr } }
+    // ✅ #1 (pimpinan 07 Jun 2026): jumlah UNIK nasabah yang bayar hari ini —
+    // bukan total entri pembayaran. Cek per-nasabah ada/tidak storting > 0
+    // hari ini (utama atau sub). Count distinct via `.count { ... }` pada list
+    // nasabah → tiap nasabah dihitung maksimal 1.
+    val nasabahBayarHariIni: Int = remember(daftarPelangganList.toList(), todayStr) {
+        daftarPelangganList.count { p ->
+            val utamaHariIni = p.pembayaranList.any { it.tanggal == todayStr && it.jumlah > 0 }
+            val subHariIni = p.pembayaranList.any { pem ->
+                pem.subPembayaran.any { it.tanggal == todayStr && it.jumlah > 0 }
+            }
+            utamaHariIni || subHariIni
         }
     }
 
     // Animation states
     var isVisible by remember { mutableStateOf(false) }
 
-    // State untuk foto profil
+    // State foto profil: avatar URL tetap dibaca lokal (untuk hero card display).
+    // Dialog profil dipindah ke AppNavigation (di-hoist). Lihat onAvatarClick
+    // parameter — dipanggil saat user tap avatar di hero card.
     val adminPhotoUrl by viewModel.adminPhotoUrl.collectAsState()
-    var showPhotoOptionsDialog by remember { mutableStateOf(false) }
-    var isUploadingPhoto by remember { mutableStateOf(false) }
-    var showFullPhotoDialog by remember { mutableStateOf(false) }
     var showLogoutAbsensiDialog by remember { mutableStateOf(false) }
 
     val systemUiController = rememberSystemUiController()
@@ -205,32 +216,6 @@ fun AdminHomeScreen(navController: NavController, viewModel: PelangganViewModel)
     SideEffect {
         systemUiController.setStatusBarColor(bgColor, darkIcons = !isDark)
         systemUiController.setNavigationBarColor(bgColor, darkIcons = !isDark)
-    }
-
-    val photoPickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri: Uri? ->
-        uri?.let {
-            isUploadingPhoto = true
-            viewModel.uploadAdminPhoto(
-                imageUri = it,
-                onSuccess = { _ ->
-                    isUploadingPhoto = false
-                    Toast.makeText(context, "Foto profil berhasil diupload", Toast.LENGTH_SHORT).show()
-                },
-                onFailure = { error ->
-                    isUploadingPhoto = false
-                    Toast.makeText(context, "Gagal upload: $error", Toast.LENGTH_SHORT).show()
-                }
-            )
-        }
-    }
-
-    // Aksi profil (avatar / tab Akun): jika sudah ada foto → dialog opsi, kalau
-    // belum → langsung pilih foto. Logic identik dgn versi sebelumnya.
-    val onProfileAction: () -> Unit = {
-        if (!adminPhotoUrl.isNullOrBlank()) showPhotoOptionsDialog = true
-        else photoPickerLauncher.launch("image/*")
     }
 
     LaunchedEffect(Unit) {
@@ -263,30 +248,20 @@ fun AdminHomeScreen(navController: NavController, viewModel: PelangganViewModel)
         }
     }
 
-    Scaffold(
-        containerColor = bgColor,
-        bottomBar = {
-            AdminBottomNavBar(
-                isDark = isDark,
-                onTabSelected = { route ->
-                    if (route != "dashboard") {
-                        navController.navigate(route) {
-                            popUpTo("dashboard") { saveState = true }
-                            launchSingleTop = true
-                            restoreState = true
-                        }
-                    }
-                },
-                onAkunClick = onProfileAction
-            )
-        }
-    ) { scaffoldPadding ->
+    // Outer container: Box mengisi area yang TERSISA setelah outer Scaffold
+    // di AppNavigation memberi padding bottom (untuk bottom nav). Tidak ada
+    // Scaffold lokal — pimpinan minta bottom bar global (hindari duplikasi).
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(bgColor)
+    ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
                 .padding(top = systemBarsPadding.calculateTopPadding())
-                .padding(bottom = scaffoldPadding.calculateBottomPadding() + 16.dp)
+                .padding(bottom = 16.dp)
         ) {
             // ── (2) Header Actions Row ──────────────────────────────────────
             TopActionsRow(
@@ -323,7 +298,7 @@ fun AdminHomeScreen(navController: NavController, viewModel: PelangganViewModel)
                     email = email,
                     adminPhotoUrl = adminPhotoUrl,
                     isUploadingPhoto = isUploadingPhoto,
-                    onAvatarClick = onProfileAction
+                    onAvatarClick = onAvatarClick
                 )
             }
 
@@ -404,7 +379,7 @@ fun AdminHomeScreen(navController: NavController, viewModel: PelangganViewModel)
                 RingkasanHariIniCard(
                     tanggal = todayStr,
                     nasabahAktif = totalNasabahAktif,
-                    pembayaran = pembayaranCountHariIni,
+                    nasabahBayar = nasabahBayarHariIni,
                     dropHariIni = dropHariIni,
                     storting = stortingHariIni,
                     isDark = isDark,
@@ -485,96 +460,9 @@ fun AdminHomeScreen(navController: NavController, viewModel: PelangganViewModel)
     }
 
     // ===================== DIALOGS (logic dipertahankan 1:1) =====================
-    // Dialog Pilihan Foto (Lihat / Ubah)
-    if (showPhotoOptionsDialog) {
-        AlertDialog(
-            onDismissRequest = { showPhotoOptionsDialog = false },
-            title = { Text(text = "Foto Profil", fontWeight = FontWeight.Bold) },
-            text = {
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    OutlinedButton(
-                        onClick = {
-                            showPhotoOptionsDialog = false
-                            showFullPhotoDialog = true
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Icon(Icons.Rounded.Visibility, contentDescription = null, modifier = Modifier.size(20.dp))
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Lihat Foto")
-                    }
-                    Button(
-                        onClick = {
-                            showPhotoOptionsDialog = false
-                            photoPickerLauncher.launch("image/*")
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6366F1))
-                    ) {
-                        Icon(Icons.Rounded.CameraAlt, contentDescription = null, modifier = Modifier.size(20.dp))
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Ubah Foto")
-                    }
-                }
-            },
-            confirmButton = {},
-            dismissButton = {
-                TextButton(onClick = { showPhotoOptionsDialog = false }) { Text("Batal") }
-            },
-            containerColor = cardColor,
-            titleContentColor = txtColor,
-            textContentColor = txtColor
-        )
-    }
-
-    // Dialog Lihat Foto Besar
-    if (showFullPhotoDialog && !adminPhotoUrl.isNullOrBlank()) {
-        AlertDialog(
-            onDismissRequest = { showFullPhotoDialog = false },
-            title = { Text(text = "Foto Profil", fontWeight = FontWeight.Bold) },
-            text = {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .aspectRatio(1f)
-                        .clip(RoundedCornerShape(16.dp)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    AsyncImage(
-                        model = ImageRequest.Builder(LocalContext.current)
-                            .data(adminPhotoUrl).crossfade(true).build(),
-                        contentDescription = "Foto Profil",
-                        modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(16.dp)),
-                        contentScale = ContentScale.Crop
-                    )
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        showFullPhotoDialog = false
-                        photoPickerLauncher.launch("image/*")
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6366F1))
-                ) {
-                    Icon(Icons.Rounded.CameraAlt, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Ubah Foto")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showFullPhotoDialog = false }) { Text("Tutup") }
-            },
-            containerColor = cardColor,
-            titleContentColor = txtColor,
-            textContentColor = txtColor
-        )
-    }
+    // Dialog Pilihan Foto (Lihat / Ubah) + Dialog Lihat Foto Besar di-HOIST
+    // ke AppNavigation supaya bisa dipicu dari tab "Akun" di bottom bar global
+    // maupun avatar di hero card. Lihat AppNavigation.kt.
 
     // Dialog pilihan Absen / Logout
     if (showLogoutAbsensiDialog) {
@@ -884,7 +772,7 @@ private fun ProfileHeroCard(
 private fun RingkasanHariIniCard(
     tanggal: String,
     nasabahAktif: Int,
-    pembayaran: Int,
+    nasabahBayar: Int,
     dropHariIni: Int,
     storting: Long,
     isDark: Boolean,
@@ -959,8 +847,10 @@ private fun RingkasanHariIniCard(
                     icon = Icons.Rounded.CreditCard,
                     iconTint = Color(0xFF10B981),
                     iconBg = Color(0xFFE7F8F1),
-                    value = pembayaran.toString(),
-                    label = "Pembayaran",
+                    value = nasabahBayar.toString(),
+                    // ✅ #1 pimpinan 07 Jun 2026: label "Pembayaran" → "Nasabah Bayar"
+                    // dengan metrik count UNIK nasabah yang bayar hari ini.
+                    label = "Nasabah Bayar",
                     labelColor = labelColor,
                     valueColor = titleColor
                 )
@@ -981,7 +871,9 @@ private fun RingkasanHariIniCard(
                     iconTint = HomeTheme.coral,
                     iconBg = Color.White,
                     value = formatRupiahHome(storting),
-                    label = "Total Setoran",
+                    // ✅ #2 pimpinan 07 Jun 2026: label "Total Setoran" → "Storting Hari Ini".
+                    // Nilai TETAP stortingHariIni (sinkron dgn RingkasanDashboardScreen).
+                    label = "Storting Hari Ini",
                     labelColor = HomeTheme.coral.copy(alpha = 0.85f),
                     valueColor = HomeTheme.coral,
                     highlightBg = if (isDark) HomeTheme.coral.copy(alpha = 0.12f) else HomeTheme.coralBg,
@@ -1121,73 +1013,6 @@ private fun MenuActionCard(item: ModernMenuItem, isDark: Boolean) {
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
                     .size(18.dp)
-            )
-        }
-    }
-}
-
-// =========================================================================
-// (6) BOTTOM NAVIGATION — Material 3, pill indigo pada item terpilih
-// =========================================================================
-@Composable
-private fun AdminBottomNavBar(
-    isDark: Boolean,
-    onTabSelected: (route: String) -> Unit,
-    onAkunClick: () -> Unit
-) {
-    data class NavTab(val key: String, val route: String?, val label: String, val icon: ImageVector)
-    val tabs = remember {
-        listOf(
-            NavTab("beranda", "dashboard", "Beranda", Icons.Rounded.Home),
-            NavTab("nasabah", "daftarPelanggan", "Nasabah", Icons.Rounded.Groups),
-            NavTab("transaksi", "inputPembayaran", "Transaksi", Icons.Rounded.SwapHoriz),
-            NavTab("laporan", "laporanHarian", "Laporan", Icons.Rounded.Assessment),
-            NavTab("akun", null, "Akun", Icons.Rounded.Person)
-        )
-    }
-
-    val containerColor = if (isDark) AdminColors.darkCard else HomeTheme.cardWhite
-    val selectedColor = if (isDark) Color(0xFFA5B4FC) else HomeTheme.indigo
-    val unselectedColor = if (isDark) Color(0xFF94A3B8) else Color(0xFF94A3B8)
-
-    NavigationBar(
-        containerColor = containerColor,
-        tonalElevation = 6.dp,
-        modifier = Modifier
-            .fillMaxWidth()
-            .windowInsetsPadding(WindowInsets.navigationBars)
-    ) {
-        tabs.forEach { tab ->
-            val isSelected = tab.key == "beranda"   // Home is home
-            NavigationBarItem(
-                selected = isSelected,
-                onClick = {
-                    if (tab.route != null) onTabSelected(tab.route) else onAkunClick()
-                },
-                icon = {
-                    Icon(
-                        imageVector = tab.icon,
-                        contentDescription = tab.label,
-                        modifier = Modifier.size(22.dp)
-                    )
-                },
-                label = {
-                    Text(
-                        text = tab.label,
-                        fontSize = 11.sp,
-                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                },
-                colors = NavigationBarItemDefaults.colors(
-                    selectedIconColor = selectedColor,
-                    selectedTextColor = selectedColor,
-                    indicatorColor = selectedColor.copy(alpha = 0.16f),  // pill indigo
-                    unselectedIconColor = unselectedColor,
-                    unselectedTextColor = unselectedColor
-                ),
-                alwaysShowLabel = true
             )
         }
     }
