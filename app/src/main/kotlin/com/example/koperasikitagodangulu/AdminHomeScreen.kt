@@ -115,6 +115,51 @@ fun AdminHomeScreen(navController: NavController, viewModel: PelangganViewModel)
     val activeBroadcasts by viewModel.activeBroadcasts.collectAsState()
     val systemBarsPadding = WindowInsets.systemBars.asPaddingValues()
 
+    // =========================================================================
+    // ✅ KONSOLIDASI METRIK PIMPINAN 07 JUN 2026 (UI-only, tidak menyentuh VM)
+    // -------------------------------------------------------------------------
+    // Tiga metrik dari layar lain, di-derive di sini sebagai pure UI consumption
+    // dari state ViewModel yang sudah ada (daftarPelanggan + pelunasanEksternal).
+    // Formula 1:1 dengan layar sumber, sehingga angka SELALU sama dan tidak
+    // pernah divergen:
+    //   - Storting Hari Ini  → RingkasanDashboardScreen.kt:160-187 (totalTagihanHariIni).
+    //   - Drop Hari Ini      → RingkasanDashboardScreen.kt:197-205 (nasabahBaruHariIni).
+    //   - Total Nasabah Aktif→ DaftarPelangganScreen.kt:148 (getFilteredPelanggan AKTIF).
+    // Reactivity: collectAsState untuk StateFlow, daftarPelanggan = SnapshotStateList
+    // sehingga setiap mutasi memicu recomposition Compose otomatis.
+    // =========================================================================
+    val daftarPelangganList = viewModel.daftarPelanggan
+    val pelunasanEksternal by viewModel.pelunasanEksternalHariIni.collectAsState()
+    val todayStr = remember { todayIndo() }
+
+    val stortingHariIni: Long = remember(daftarPelangganList.toList(), pelunasanEksternal, todayStr) {
+        val tagihanCicilan = daftarPelangganList.flatMap { pelanggan ->
+            pelanggan.pembayaranList.flatMap { pem ->
+                val utama = if (pem.tanggal == todayStr) listOf(pem.jumlah.toLong()) else emptyList()
+                val sub = pem.subPembayaran.filter { it.tanggal == todayStr }.map { it.jumlah.toLong() }
+                utama + sub
+            }
+        }.sum()
+        val pelunasanSisaUtang = daftarPelangganList
+            .filter { it.pinjamanKe > 1 && it.sisaUtangLamaSebelumTopUp > 0
+                && it.tanggalPencairan == todayStr && it.status == "Aktif" }
+            .sumOf { it.sisaUtangLamaSebelumTopUp.toLong() }
+        val pelunasanEks = pelunasanEksternal.sumOf { it.jumlah }
+        tagihanCicilan + pelunasanSisaUtang + pelunasanEks
+    }
+    val dropHariIni: Int = remember(daftarPelangganList.toList(), todayStr) {
+        daftarPelangganList.count { p ->
+            if (p.tanggalPencairan.isNotBlank()) {
+                p.tanggalPencairan == todayStr && p.status == "Aktif"
+            } else {
+                p.tanggalDaftar == todayStr || p.tanggalPengajuan == todayStr
+            }
+        }
+    }
+    val totalNasabahAktif: Int = remember(daftarPelangganList.toList()) {
+        viewModel.getFilteredPelanggan("", "AKTIF").size
+    }
+
     // Animation states
     var isVisible by remember { mutableStateOf(false) }
 
@@ -183,15 +228,33 @@ fun AdminHomeScreen(navController: NavController, viewModel: PelangganViewModel)
         }
     }
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(bgColor)
-    ) {
+    Scaffold(
+        containerColor = bgColor,
+        bottomBar = {
+            // ✅ Modern Material 3 NavigationBar — pimpinan 07 Jun 2026.
+            // 4 tab tujuan paling sering dipakai Admin Lapangan. Beranda
+            // selalu selected karena ini layar Beranda; tap tab lain
+            // navigasi ke route yang sudah ada (tidak menambah route baru,
+            // tidak mengubah AppNavigation.kt).
+            AdminBottomNavigationBar(
+                isDark = isDark,
+                onTabSelected = { route ->
+                    if (route != "dashboard") {
+                        navController.navigate(route) {
+                            popUpTo("dashboard") { saveState = true }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    }
+                }
+            )
+        }
+    ) { scaffoldPadding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(top = systemBarsPadding.calculateTopPadding())
+                .padding(bottom = scaffoldPadding.calculateBottomPadding())
         ) {
             // Modern Header
             AnimatedVisibility(
@@ -246,6 +309,29 @@ fun AdminHomeScreen(navController: NavController, viewModel: PelangganViewModel)
             // Indikator sinkronisasi offline — auto-hide bila tidak ada pending/failed.
             // Klik → AlertDialog berisi daftar FAILED + errorMessage + tombol "Coba Lagi".
             SyncStatusBlock()
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // ✅ Premium Summary Card — konsolidasi metrik harian (pimpinan 07 Jun 2026).
+            // Storting + Drop + Total Nasabah Aktif dalam satu kartu hero ber-gradient,
+            // di-derive langsung dari state ViewModel yang sudah ada (lihat blok
+            // KONSOLIDASI METRIK di awal composable). Tap kartu → buka Ringkasan
+            // lengkap untuk detail lebih dalam.
+            AnimatedVisibility(
+                visible = isVisible,
+                enter = fadeIn(animationSpec = tween(550)) + slideInVertically(
+                    initialOffsetY = { 60 },
+                    animationSpec = tween(550)
+                )
+            ) {
+                PremiumSummaryCard(
+                    stortingHariIni = stortingHariIni,
+                    dropHariIni = dropHariIni,
+                    totalNasabahAktif = totalNasabahAktif,
+                    isDark = isDark,
+                    onClick = { navController.navigate("ringkasan") }
+                )
+            }
 
             Spacer(modifier = Modifier.height(16.dp))
 
@@ -315,13 +401,15 @@ fun AdminHomeScreen(navController: NavController, viewModel: PelangganViewModel)
                 Spacer(modifier = Modifier.height(12.dp))
             }
 
-            // Menu Grid
+            // Menu Grid — bottom inset sudah ditangani Scaffold (outer Column
+            // padding(bottom = scaffoldPadding.calculateBottomPadding())), jadi
+            // di sini cukup 16.dp breathing room saja agar tidak dobel padding.
             LazyVerticalGrid(
                 columns = GridCells.Fixed(2),
                 contentPadding = PaddingValues(
                     start = 16.dp,
                     end = 16.dp,
-                    bottom = systemBarsPadding.calculateBottomPadding() + 16.dp
+                    bottom = 16.dp
                 ),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -369,13 +457,9 @@ fun AdminHomeScreen(navController: NavController, viewModel: PelangganViewModel)
                         subtitle = "Hitung pinjaman",
                         icon = Icons.Rounded.Calculate,
                         gradient = AdminColors.orangeGradient
-                    ) { navController.navigate("kalkulatorPinjaman") },
-                    ModernMenuItem(
-                        title = "Cari Nasabah",
-                        subtitle = "Cari Nasabah Berdasarkan KTP",
-                        icon = Icons.Rounded.Search,
-                        gradient = AdminColors.primaryGradient
-                    ) { navController.navigate("cari_pelanggan") }
+                    ) { navController.navigate("kalkulatorPinjaman") }
+                    // ✅ "Cari Nasabah" dihapus dari grid sesuai arahan pimpinan
+                    // (07 Jun 2026) — feature search sudah tidak dipakai dari Home.
                 )
 
                 itemsIndexed(menuItems) { index, item ->
@@ -1194,4 +1278,286 @@ fun SyncStatusIndicator(
         onManualSync = onManualSync,
         isDark = textColor == Color.White
     )
+}
+
+// =========================================================================
+// ✅ PREMIUM SUMMARY CARD — pimpinan 07 Jun 2026
+// -------------------------------------------------------------------------
+// Hero card di Home: gradient halus, currency Storting prominen, Drop & Total
+// Aktif sebagai dua badge sekunder dengan ikon dan tipografi modern. Onclick
+// → navigasi Ringkasan lengkap untuk detail lebih dalam.
+//
+// CATATAN:
+//   - Tidak ada perhitungan ulang di sini — semua angka di-pass dari parent
+//     yang sudah men-derive dari state ViewModel (lihat blok KONSOLIDASI
+//     METRIK di awal composable AdminHomeScreen).
+//   - Formatter rupiah memakai Locale ID utk titik ribuan ("Rp 1.234.567").
+//   - Responsif: outer card maxWidth = parent, badge ditata Row dengan weight
+//     1f masing-masing → otomatis equal width di layar kecil; teks panjang
+//     pakai TextOverflow.Ellipsis dgn maxLines=1 supaya tidak overlap.
+// =========================================================================
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun PremiumSummaryCard(
+    stortingHariIni: Long,
+    dropHariIni: Int,
+    totalNasabahAktif: Int,
+    isDark: Boolean,
+    onClick: () -> Unit
+) {
+    val rupiah = remember(stortingHariIni) {
+        "Rp " + NumberFormat.getNumberInstance(Locale("in", "ID")).format(stortingHariIni)
+    }
+    // Gradient hero — premium fintech feel; tetap subtle agar tidak melawan
+    // kontras teks. Dark mode pakai versi lebih dalam (indigo→violet),
+    // light mode pakai indigo→biru cerah dgn alpha card.
+    val gradient = if (isDark) {
+        Brush.linearGradient(
+            colors = listOf(Color(0xFF312E81), Color(0xFF6D28D9)),
+            start = Offset(0f, 0f),
+            end = Offset(900f, 900f)
+        )
+    } else {
+        Brush.linearGradient(
+            colors = listOf(Color(0xFF4F46E5), Color(0xFF7C3AED)),
+            start = Offset(0f, 0f),
+            end = Offset(900f, 900f)
+        )
+    }
+
+    Card(
+        onClick = onClick,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp)
+            .shadow(
+                elevation = 14.dp,
+                shape = RoundedCornerShape(24.dp),
+                ambientColor = Color(0xFF6366F1).copy(alpha = 0.35f),
+                spotColor = Color(0xFF6366F1).copy(alpha = 0.45f)
+            ),
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.Transparent)
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(gradient)
+                .padding(20.dp)
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                // ── Header strip: judul + ikon trending halus ───────────────
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Ringkasan Hari Ini",
+                            color = Color.White.copy(alpha = 0.85f),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium,
+                            letterSpacing = 1.2.sp
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = "Storting Hari Ini",
+                            color = Color.White.copy(alpha = 0.95f),
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                    Box(
+                        modifier = Modifier
+                            .size(40.dp)
+                            .clip(CircleShape)
+                            .background(Color.White.copy(alpha = 0.18f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.TrendingUp,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+                }
+
+                // ── Currency prominen: alignment baseline ke kiri ───────────
+                Text(
+                    text = rupiah,
+                    color = Color.White,
+                    fontSize = 28.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    letterSpacing = 0.3.sp
+                )
+
+                // ── Divider sangat tipis utk hierarki visual ───────────────
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(1.dp)
+                        .background(Color.White.copy(alpha = 0.18f))
+                )
+
+                // ── Dua badge sekunder: Drop + Total Aktif ─────────────────
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    SummaryBadge(
+                        modifier = Modifier.weight(1f),
+                        label = "Drop Hari Ini",
+                        value = dropHariIni.toString(),
+                        valueSuffix = if (dropHariIni == 1) "nasabah" else "nasabah",
+                        icon = Icons.Rounded.PersonAdd
+                    )
+                    SummaryBadge(
+                        modifier = Modifier.weight(1f),
+                        label = "Nasabah Aktif",
+                        value = totalNasabahAktif.toString(),
+                        valueSuffix = "total",
+                        icon = Icons.Rounded.Groups
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SummaryBadge(
+    modifier: Modifier = Modifier,
+    label: String,
+    value: String,
+    valueSuffix: String,
+    icon: ImageVector
+) {
+    Row(
+        modifier = modifier
+            .clip(RoundedCornerShape(14.dp))
+            .background(Color.White.copy(alpha = 0.12f))
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(32.dp)
+                .clip(CircleShape)
+                .background(Color.White.copy(alpha = 0.22f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = Color.White,
+                modifier = Modifier.size(18.dp)
+            )
+        }
+        Spacer(modifier = Modifier.width(10.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = label,
+                color = Color.White.copy(alpha = 0.78f),
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Medium,
+                letterSpacing = 0.6.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Spacer(modifier = Modifier.height(1.dp))
+            Row(verticalAlignment = Alignment.Bottom) {
+                Text(
+                    text = value,
+                    color = Color.White,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(
+                    text = valueSuffix,
+                    color = Color.White.copy(alpha = 0.7f),
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(bottom = 2.dp)
+                )
+            }
+        }
+    }
+}
+
+// =========================================================================
+// ✅ ADMIN BOTTOM NAVIGATION BAR — pimpinan 07 Jun 2026
+// -------------------------------------------------------------------------
+// Material 3 NavigationBar dengan 4 tab tujuan paling sering dipakai Admin
+// Lapangan. Beranda selalu ditandai selected (Home is home); tap tab lain
+// → navController.navigate(route) dgn popUpTo("dashboard"){saveState=true}
+// + launchSingleTop=true + restoreState=true → tidak ada akumulasi stack.
+// Tidak menambah/mengubah route di AppNavigation.kt.
+// =========================================================================
+@Composable
+private fun AdminBottomNavigationBar(
+    isDark: Boolean,
+    onTabSelected: (route: String) -> Unit
+) {
+    data class NavTab(val route: String, val label: String, val icon: ImageVector)
+    val tabs = remember {
+        listOf(
+            NavTab("dashboard", "Beranda", Icons.Rounded.Home),
+            NavTab("daftarPelanggan", "Nasabah", Icons.Rounded.Groups),
+            NavTab("ringkasan", "Ringkasan", Icons.Rounded.Analytics),
+            NavTab("laporanHarian", "Laporan", Icons.Rounded.Assessment)
+        )
+    }
+
+    val containerColor = if (isDark) AdminColors.darkCard else AdminColors.lightCard
+    val selectedItemColor = if (isDark) Color(0xFFA5B4FC) else Color(0xFF4F46E5)
+    val unselectedItemColor = if (isDark) Color(0xFF94A3B8) else Color(0xFF64748B)
+
+    NavigationBar(
+        containerColor = containerColor,
+        tonalElevation = 4.dp,
+        modifier = Modifier
+            .fillMaxWidth()
+            .windowInsetsPadding(WindowInsets.navigationBars)
+    ) {
+        tabs.forEach { tab ->
+            val isSelected = tab.route == "dashboard"
+            NavigationBarItem(
+                selected = isSelected,
+                onClick = { onTabSelected(tab.route) },
+                icon = {
+                    Icon(
+                        imageVector = tab.icon,
+                        contentDescription = tab.label,
+                        modifier = Modifier.size(22.dp)
+                    )
+                },
+                label = {
+                    Text(
+                        text = tab.label,
+                        fontSize = 11.sp,
+                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                },
+                colors = NavigationBarItemDefaults.colors(
+                    selectedIconColor = selectedItemColor,
+                    selectedTextColor = selectedItemColor,
+                    indicatorColor = selectedItemColor.copy(alpha = 0.14f),
+                    unselectedIconColor = unselectedItemColor,
+                    unselectedTextColor = unselectedItemColor
+                ),
+                alwaysShowLabel = true
+            )
+        }
+    }
 }
