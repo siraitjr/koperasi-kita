@@ -8,8 +8,9 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -248,9 +249,11 @@ fun AdminHomeScreen(
         }
     }
 
-    // Outer container: Box mengisi area yang TERSISA setelah outer Scaffold
-    // di AppNavigation memberi padding bottom (untuk bottom nav). Tidak ada
-    // Scaffold lokal — pimpinan minta bottom bar global (hindari duplikasi).
+    // ✅ #4 pimpinan 07 Jun 2026: STICKY HEADER + scrollable grid only.
+    // Outer Column NON-SCROLL. Header (TopActionsRow, Hero, SyncStatus, banner,
+    // Ringkasan, "Menu Utama" judul) fixed di atas; LazyVerticalGrid di bawah
+    // dgn Modifier.weight(1f) → mengisi sisa space & handle scroll-nya sendiri.
+    // Bottom inset bottom-nav sudah diberikan outer Scaffold di AppNavigation.
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -259,9 +262,7 @@ fun AdminHomeScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .verticalScroll(rememberScrollState())
                 .padding(top = systemBarsPadding.calculateTopPadding())
-                .padding(bottom = 16.dp)
         ) {
             // ── (2) Header Actions Row ──────────────────────────────────────
             TopActionsRow(
@@ -376,14 +377,16 @@ fun AdminHomeScreen(
                     initialOffsetY = { 40 }, animationSpec = tween(550)
                 )
             ) {
+                // ✅ #3 pimpinan 07 Jun 2026: kartu Ringkasan jadi DISPLAY-ONLY,
+                // tanpa onClick / ripple. Akses Ringkasan tetap tersedia via grid
+                // menu "Ringkasan" + tab bottom-nav nanti bila ditambah.
                 RingkasanHariIniCard(
                     tanggal = todayStr,
                     nasabahAktif = totalNasabahAktif,
                     nasabahBayar = nasabahBayarHariIni,
                     dropHariIni = dropHariIni,
                     storting = stortingHariIni,
-                    isDark = isDark,
-                    onClick = { navController.navigate("ringkasan") }
+                    isDark = isDark
                 )
             }
 
@@ -412,48 +415,36 @@ fun AdminHomeScreen(
 
             Spacer(modifier = Modifier.height(14.dp))
 
+            // ✅ #2 pimpinan 07 Jun 2026: "Semua Nasabah" & "Laporan Harian" dihapus
+            // dari grid karena sudah jadi tab bottom nav (Nasabah, Laporan).
+            // Sisanya 4 kartu operasional yang sering dipakai di Beranda.
             val menuItems = listOf(
                 ModernMenuItem("Tambah Nasabah", "Ajukan pinjaman nasabah baru",
                     Icons.Rounded.PersonAdd, AdminColors.infoGradient) { navController.navigate("tambahPelanggan") },
                 ModernMenuItem("Input Pembayaran", "Catat pembayaran nasabah",
                     Icons.Rounded.Payment, AdminColors.successGradient) { navController.navigate("inputPembayaran") },
-                ModernMenuItem("Semua Nasabah", "Lihat dan kelola data nasabah",
-                    Icons.Rounded.Groups, AdminColors.tealGradient) { navController.navigate("daftarPelanggan") },
                 ModernMenuItem("Kunjungan Hari Ini", "Jadwal dan kutip nasabah",
                     Icons.Rounded.Today, AdminColors.warningGradient) { navController.navigate("pelangganKutip") },
                 ModernMenuItem("Ringkasan", "Lihat ringkasan dan performa",
-                    Icons.Rounded.Analytics, AdminColors.purpleGradient) { navController.navigate("ringkasan") },
-                ModernMenuItem("Laporan Harian", "Rekap transaksi dan aktivitas",
-                    Icons.Rounded.Assessment, AdminColors.roseGradient) { navController.navigate("laporanHarian") }
+                    Icons.Rounded.Analytics, AdminColors.purpleGradient) { navController.navigate("ringkasan") }
             )
 
-            // Grid 2 kolom manual (chunked) — aman di dalam verticalScroll,
-            // tidak nesting LazyVerticalGrid. 3 baris × 2 kartu.
-            Column(
+            // ✅ #4 pimpinan: LazyVerticalGrid mengisi sisa space (weight 1f) dan
+            // SATU-SATUNYA komponen scrollable di layar Beranda. Header di atas
+            // tetap fixed. Padding bottom = 16.dp (bottom-nav inset sudah dipasok
+            // outer Scaffold di AppNavigation via Modifier.padding(innerPadding)).
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(2),
                 modifier = Modifier
                     .fillMaxWidth()
+                    .weight(1f)
                     .padding(horizontal = 16.dp),
+                contentPadding = PaddingValues(bottom = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                menuItems.chunked(2).forEachIndexed { rowIndex, rowItems ->
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(14.dp)
-                    ) {
-                        rowItems.forEachIndexed { colIndex, item ->
-                            val itemIndex = rowIndex * 2 + colIndex
-                            AnimatedVisibility(
-                                visible = isVisible,
-                                modifier = Modifier.weight(1f),
-                                enter = fadeIn(tween(400, delayMillis = 100 + itemIndex * 50)) +
-                                    scaleIn(initialScale = 0.85f, animationSpec = tween(400, delayMillis = 100 + itemIndex * 50))
-                            ) {
-                                MenuActionCard(item = item, isDark = isDark)
-                            }
-                        }
-                        // Jika baris ganjil (tidak akan terjadi utk 6 item), isi kosong
-                        if (rowItems.size == 1) Spacer(modifier = Modifier.weight(1f))
-                    }
+                items(menuItems) { item ->
+                    MenuActionCard(item = item, isDark = isDark)
                 }
             }
         }
@@ -766,8 +757,11 @@ private fun ProfileHeroCard(
 
 // =========================================================================
 // (4) RINGKASAN HARI INI — white card, 4 kolom; kolom Setoran di-highlight
+// -------------------------------------------------------------------------
+// ✅ #3 pimpinan 07 Jun 2026: DISPLAY-ONLY. Tanpa onClick, tanpa ripple,
+// tanpa Card(onClick=…) eksperimental → @OptIn ExperimentalMaterial3Api
+// TIDAK lagi dibutuhkan untuk composable ini.
 // =========================================================================
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun RingkasanHariIniCard(
     tanggal: String,
@@ -775,16 +769,15 @@ private fun RingkasanHariIniCard(
     nasabahBayar: Int,
     dropHariIni: Int,
     storting: Long,
-    isDark: Boolean,
-    onClick: () -> Unit
+    isDark: Boolean
 ) {
     val cardBg = if (isDark) AdminColors.darkCard else HomeTheme.cardWhite
     val borderColor = if (isDark) AdminColors.darkBorder else HomeTheme.cardBorder
     val titleColor = if (isDark) Color.White else HomeTheme.titleText
     val labelColor = if (isDark) Color(0xFFA1A1AA) else HomeTheme.subtitleText
 
+    // Non-interaktif: tanpa onClick → tidak ada ripple/state selection apapun.
     Card(
-        onClick = onClick,
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp)
@@ -821,7 +814,39 @@ private fun RingkasanHariIniCard(
                         tint = labelColor,
                         modifier = Modifier.size(15.dp)
                     )
-                    Text(text = tanggal, fontSize = 12.sp, color = labelColor, fontWeight = FontWeight.Medium)
+                    // ✅ #5 pimpinan 07 Jun 2026: indikator LIBUR di samping tanggal.
+                    // Pakai com.example.koperasikitagodangulu.utils.HolidayUtils yang
+                    // sudah ada (Minggu OR tanggal merah nasional). Jika libur →
+                    // "DD MMM YYYY / LIBUR" dgn "/ LIBUR" tint merah & bold;
+                    // hari kerja → tanggal biasa.
+                    val isLibur = remember(tanggal) {
+                        try {
+                            val cal = com.example.koperasikitagodangulu.utils.HolidayUtils.parseTanggal(tanggal)
+                            com.example.koperasikitagodangulu.utils.HolidayUtils.isMinggu(cal) ||
+                                com.example.koperasikitagodangulu.utils.HolidayUtils.isTanggalMerah(cal)
+                        } catch (_: Exception) { false }
+                    }
+                    if (isLibur) {
+                        Text(
+                            text = tanggal,
+                            fontSize = 12.sp,
+                            color = labelColor,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Text(
+                            text = " / LIBUR",
+                            fontSize = 12.sp,
+                            color = HomeTheme.coral,
+                            fontWeight = FontWeight.Bold
+                        )
+                    } else {
+                        Text(
+                            text = tanggal,
+                            fontSize = 12.sp,
+                            color = labelColor,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
                 }
             }
 
