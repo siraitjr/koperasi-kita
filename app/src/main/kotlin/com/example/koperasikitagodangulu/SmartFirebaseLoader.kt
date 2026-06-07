@@ -13,6 +13,7 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import com.example.koperasikitagodangulu.SubPembayaran
@@ -51,6 +52,14 @@ class SmartFirebaseLoader(
 ) {
     companion object {
         private const val TAG = "SmartFirebaseLoader"
+
+        // ✅ ANTI-LENGKET (audit pimpinan 07 Jun 2026): batas tunggu get() bulk
+        // pelanggan Admin Lapangan. Pada koneksi "hidup tapi throughput nol"
+        // (captive portal / tower lemah) isOnline() tetap true → get() bisa
+        // menggantung sampai timeout internal SDK yang panjang → spinner infinite.
+        // 8 dtk: cukup longgar untuk koneksi lambat-tapi-jalan, cukup ketat agar
+        // tidak pernah terasa "infinite"; saat lewat → fallback LocalStorage.
+        private const val FIREBASE_LOAD_TIMEOUT_MS = 8_000L
     }
 
     // PERF: jaga node milik admin aktif tetap ter-sinkron via DELTA (persistence sudah ON di MyApp).
@@ -170,7 +179,19 @@ class SmartFirebaseLoader(
         try {
             Log.d(TAG, "🌐 Loading from Firebase for admin: $adminUid")
 
-            val snapshot = database.child("pelanggan").child(adminUid).get().await()
+            // ✅ ANTI-LENGKET: get() dibungkus timeout. Tanpa ini, pada koneksi
+            // throttled/throughput-nol (isOnline()==true tapi data tak mengalir)
+            // get() menggantung → isLoading tak pernah dilepas → spinner infinite
+            // di layar Admin Lapangan. Saat timeout → JATUH ke LocalStorage (data
+            // offline lengkap termasuk yang belum sync) sehingga layar SELALU terisi.
+            // keepSynced(true)+persistence tetap menghidrasi cache di latar; saat
+            // koneksi pulih, refreshDataFromFirebase mengambil data fresh.
+            val snapshot = withTimeoutOrNull(FIREBASE_LOAD_TIMEOUT_MS) {
+                database.child("pelanggan").child(adminUid).get().await()
+            } ?: run {
+                Log.w(TAG, "⏱️ get() pelanggan/$adminUid > ${FIREBASE_LOAD_TIMEOUT_MS}ms (koneksi throttled) — fallback LocalStorage")
+                return loadFromLocalStorage(adminUid)
+            }
 
             val pelangganList = mutableListOf<Pelanggan>()
             snapshot.children.forEach { child ->
