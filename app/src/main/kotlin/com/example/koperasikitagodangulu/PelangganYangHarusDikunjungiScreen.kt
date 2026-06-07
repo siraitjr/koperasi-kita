@@ -183,48 +183,14 @@ fun PelangganYangHarusDikunjungiScreen(
         filtered.filter { it.id !in dismissedIds }
     }
 
-    // ✅ Target Harian = SAMA dengan RingkasanDashboardScreen (besarPinjaman × 3%)
-    val threeMonthsAgo = Calendar.getInstance(wib).apply {
-        add(Calendar.MONTH, -3)
-        set(Calendar.DAY_OF_MONTH, 1)
-        set(Calendar.HOUR_OF_DAY, 0)
-        set(Calendar.MINUTE, 0)
-        set(Calendar.SECOND, 0)
-        set(Calendar.MILLISECOND, 0)
-    }.time
-
-    val targetHarian = daftarPelanggan.filter { pelanggan ->
-        val isStatusAktif = pelanggan.status == "Aktif" ||
-                pelanggan.status.equals("aktif", ignoreCase = true) ||
-                pelanggan.status == "Active"
-
-        val totalBayar = pelanggan.pembayaranList.sumOf { pay ->
-            pay.jumlah.toLong() + pay.subPembayaran.sumOf { sub -> sub.jumlah.toLong() }
-        }
-        val isBelumLunas = totalBayar < pelanggan.totalPelunasan.toLong()
-        val isMenungguPencairan = pelanggan.statusKhusus == "MENUNGGU_PENCAIRAN"
-
-        val tglAcuan = pelanggan.tanggalPencairan.ifBlank {
-            pelanggan.tanggalPengajuan.ifBlank { pelanggan.tanggalDaftar }
-        }
-        val isOverThreeMonths = try {
-            val acuanDate = dateFormat.parse(tglAcuan)
-            acuanDate != null && acuanDate.before(threeMonthsAgo)
-        } catch (_: Exception) { false }
-
-        val isCairHariIni = pelanggan.tanggalPencairan.isNotBlank() && pelanggan.tanggalPencairan == tanggalIni
-
-        // ✅ FIX: Nasabah yang lunas cicilan HARI INI tetap masuk target sampai besok
-        val isLunasHariIni = !isBelumLunas && pelanggan.tanggalLunasCicilan == tanggalIni
-
-        // ✅ FIX: Nasabah yang ditandai MENUNGGU_PENCAIRAN HARI INI tetap masuk target sampai besok
-        val isMenungguPencairanHariIni = isMenungguPencairan && pelanggan.tanggalStatusKhusus == tanggalIni
-
-        (isBelumLunas || isLunasHariIni) &&
-                (!isMenungguPencairan || isMenungguPencairanHariIni) &&
-                !isOverThreeMonths && !isCairHariIni &&
-                (isStatusAktif || isLunasHariIni || isMenungguPencairanHariIni)
-    }.sumOf { it.besarPinjaman * 3L / 100L }.toInt()
+    // ✅ Target Harian via helper bersama (TargetHarianHelper.kt) — cermin 1:1
+    // Web lib/target.js & CF summaryHelpers.js. Sebelumnya inline filter+sum
+    // di sini DIVERGEN (fallback acuan ke tanggalPengajuan/Daftar → LEAK
+    // Scenario 4; tidak handle anchor pinjaman lama hari Cairkan top-up →
+    // SHRINK Scenario 5). `tanggalIni` = "dd MMM yyyy" WIB hari ini.
+    val targetHarian = daftarPelanggan
+        .sumOf { calculateTargetContribution(it, tanggalIni) }
+        .toInt()
 
     val totalCicilanFiltered = targetHarian
 

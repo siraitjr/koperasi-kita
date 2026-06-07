@@ -186,10 +186,13 @@ fun RingkasanDashboardScreen(
 
     val totalTagihanHariIni: Long = totalTagihanDariCicilan + pelunasanSisaUtangHariIni + pelunasanEksternalHariIni
 
-    // ✅ Target harian = besarPinjaman × 3% (nasabah > 3 bulan sudah difilter di nasabahAktif)
-    val targetHarian: Long = nasabahAktif.sumOf { pelanggan ->
-        (pelanggan.besarPinjaman * 3L / 100L)
-    }
+    // ✅ Target harian via helper bersama (TargetHarianHelper.kt) — cermin 1:1
+    // Web lib/target.js & CF summaryHelpers.js. Diaplikasikan ke daftarPelanggan
+    // langsung (bukan `nasabahAktif` list di atas), karena `nasabahAktif` masih
+    // memakai fallback acuan ke tanggalPengajuan/Daftar (LEAK Scenario 4 belum
+    // di-fix di COUNT itu — di luar scope target fix). Helper menjawab 5 skenario
+    // pimpinan: Lunas H+1, MP H+1, 3-bulan Option A, Cairkan H+1, Top-up anchor.
+    val targetHarian: Long = daftarPelanggan.sumOf { calculateTargetContribution(it, today) }
 
     val nasabahBaruHariIni = daftarPelanggan.count { pelanggan ->
         if (pelanggan.tanggalPencairan.isNotBlank()) {

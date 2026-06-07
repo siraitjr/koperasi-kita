@@ -235,6 +235,11 @@ data class Pelanggan(
     val tanggalSerahTerima: String = "",
     val sisaUtangLamaSebelumTopUp: Int = 0,
     val totalPelunasanLamaSebelumTopUp: Int = 0,
+    // ✅ Scenario 5 (pimpinan 07 Jun 2026): besarPinjaman pinjaman LAMA, di-snapshot
+    // pada momen SUBMIT top-up. Anchor target hari Cairkan top-up (pinjaman lama
+    // tetap menyumbang target hari itu; pinjaman BARU efektif H+1). Default 0
+    // (pinjaman pertama / nasabah belum pernah top-up). Cermin Web Fix C (lib/target.js).
+    val besarPinjamanLamaSebelumTopUp: Int = 0,
     val tarikTabungan: Int = 0,
     val statusPencairanSimpanan: String = "",
     val tanggalLunasCicilan: String = "",
@@ -470,6 +475,7 @@ fun parsePelangganFromSnapshot(child: DataSnapshot): Pelanggan? {
             tanggalSerahTerima = str("tanggalSerahTerima"),
             sisaUtangLamaSebelumTopUp = int("sisaUtangLamaSebelumTopUp"),
             totalPelunasanLamaSebelumTopUp = int("totalPelunasanLamaSebelumTopUp"),
+            besarPinjamanLamaSebelumTopUp = int("besarPinjamanLamaSebelumTopUp"),
             tarikTabungan = int("tarikTabungan"),
             statusPencairanSimpanan = str("statusPencairanSimpanan"),
             tanggalLunasCicilan = str("tanggalLunasCicilan"),
@@ -1169,81 +1175,16 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     fun calculateTargetHarian(): Int {
-        Log.d("TargetHarian", "🔍 Menghitung target harian (konsisten RingkasanDashboard)")
-
+        // ✅ Single source of truth: calculateTargetContribution (TargetHarianHelper.kt)
+        // — cermin 1:1 dari buku-pokok-web/lib/target.js. Sebelumnya fungsi ini punya
+        // filter+sum inline yang DIVERGEN dari Web (fallback acuan ke
+        // tanggalPengajuan/tanggalDaftar → LEAK Scenario 4; tidak handle anchor
+        // pinjaman lama pada hari Cairkan top-up → SHRINK Scenario 5).
         return try {
-            val wib = TimeZone.getTimeZone("Asia/Jakarta")
-            val dateFormat = SimpleDateFormat("dd MMM yyyy", Locale("in", "ID")).apply { timeZone = wib }
-            val today = dateFormat.format(Date())
-
-            // Batas 3 bulan yang lalu dari tanggal 1 (SAMA dengan RingkasanDashboardScreen)
-            val threeMonthsAgo = Calendar.getInstance(wib).apply {
-                add(Calendar.MONTH, -3)
-                set(Calendar.DAY_OF_MONTH, 1)
-                set(Calendar.HOUR_OF_DAY, 0)
-                set(Calendar.MINUTE, 0)
-                set(Calendar.SECOND, 0)
-                set(Calendar.MILLISECOND, 0)
-            }.time
-
-            val activeCustomers = daftarPelanggan.filter { pelanggan ->
-                // 1. Status harus Aktif (atau lunas/menunggu pencairan hari ini)
-                val isStatusAktif = pelanggan.status == "Aktif" ||
-                        pelanggan.status.equals("aktif", ignoreCase = true) ||
-                        pelanggan.status == "Active"
-
-                // 2. Belum lunas
-                val totalBayar = pelanggan.pembayaranList.sumOf { pay ->
-                    pay.jumlah.toLong() + pay.subPembayaran.sumOf { sub -> sub.jumlah.toLong() }
-                }
-                val isBelumLunas = totalBayar < pelanggan.totalPelunasan.toLong()
-
-                // 3. Bukan MENUNGGU_PENCAIRAN
-                val isMenungguPencairan = pelanggan.statusKhusus == "MENUNGGU_PENCAIRAN"
-
-                // ✅ FIX: Nasabah lunas cicilan HARI INI tetap masuk target sampai besok
-                val isLunasHariIni = !isBelumLunas && pelanggan.tanggalLunasCicilan == today
-
-                // ✅ FIX: Nasabah ditandai MENUNGGU_PENCAIRAN HARI INI tetap masuk target sampai besok
-                val isMenungguPencairanHariIni = isMenungguPencairan && pelanggan.tanggalStatusKhusus == today
-
-                if (!(isBelumLunas || isLunasHariIni)) return@filter false
-                if (isMenungguPencairan && !isMenungguPencairanHariIni) return@filter false
-
-                // 4. Tidak lebih dari 3 bulan
-                val tglAcuan = pelanggan.tanggalPencairan.ifBlank {
-                    pelanggan.tanggalPengajuan.ifBlank { pelanggan.tanggalDaftar }
-                }
-                val isOverThreeMonths = try {
-                    val acuanDate = dateFormat.parse(tglAcuan)
-                    acuanDate != null && acuanDate.before(threeMonthsAgo)
-                } catch (_: Exception) { false }
-                if (isOverThreeMonths) return@filter false
-
-                // 5. Bukan cair hari ini
-                val isCairHariIni = pelanggan.tanggalPencairan.isNotBlank() && pelanggan.tanggalPencairan == today
-                if (isCairHariIni) return@filter false
-
-                if (!isStatusAktif && !isLunasHariIni && !isMenungguPencairanHariIni) return@filter false
-
-                true
-            }
-
-            Log.d("TargetHarian", "👥 Total nasabah aktif (filtered): ${activeCustomers.size}")
-
-            // Target = besarPinjaman × 3% (flat, SAMA dengan RingkasanDashboardScreen)
-            val totalTarget = activeCustomers.sumOf { pelanggan ->
-                val targetHariIni = pelanggan.besarPinjaman * 3 / 100
-
-                Log.d(
-                    "TargetHarian",
-                    "   📅 ${pelanggan.namaPanggilan}: Rp $targetHariIni (3% dari ${pelanggan.besarPinjaman})"
-                )
-                targetHariIni
-            }
-
-            Log.d("TargetHarian", "🎯 Total target harian: Rp $totalTarget")
-            totalTarget
+            val today = todayIndo()
+            val total = daftarPelanggan.sumOf { calculateTargetContribution(it, today) }
+            Log.d("TargetHarian", "🎯 Total target harian (helper): Rp $total")
+            total.toInt()
         } catch (e: Exception) {
             Log.e("TargetHarian", "❌ Error menghitung target harian: ${e.message}")
             0
@@ -2314,6 +2255,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
             "pendingFotoNasabahUri" to pelanggan.pendingFotoNasabahUri,
             "sisaUtangLamaSebelumTopUp" to pelanggan.sisaUtangLamaSebelumTopUp,
             "totalPelunasanLamaSebelumTopUp" to pelanggan.totalPelunasanLamaSebelumTopUp,
+            "besarPinjamanLamaSebelumTopUp" to pelanggan.besarPinjamanLamaSebelumTopUp,
             "tanggalPencairan" to pelanggan.tanggalPencairan,
             "isSynced" to pelanggan.isSynced
         )
@@ -3950,6 +3892,10 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     // === Data Referensi ===
                     sisaUtangLamaSebelumTopUp = sisaUtangLama,
                     totalPelunasanLamaSebelumTopUp = totalPelunasanLama,
+                    // ✅ Scenario 5 anchor: besarPinjaman LAMA dipakai helper
+                    // calculateTargetContribution agar target hari Cairkan top-up
+                    // = 3% × pinjaman lama (pinjaman baru efektif H+1).
+                    besarPinjamanLamaSebelumTopUp = dataSebelumTopUp.besarPinjaman,
 
                     // === Backup Terstruktur utk Rollback saat Ditolak ===
                     // Ditulis pada write yang sama (tidak menambah RTDB write).
@@ -14143,6 +14089,13 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                 val totalPelunasanValue = pelanggan.totalPelunasan.toLong()
                 val isSudahLunas = totalPelunasanValue > 0 && totalDibayar >= totalPelunasanValue
 
+                // ✅ Target dihitung di luar when via helper (single source of truth).
+                // Helper memutuskan eligibility & nilai sesuai 5 skenario pimpinan
+                // (Lunas H+1, MP H+1, 3-bulan Option A, Cairkan H+1, Top-up anchor).
+                // Logic nasabahAktif/Lunas/Pinjaman/Piutang di bawah TIDAK disentuh —
+                // itu kategori COUNT, di luar scope fix target (taat CLAUDE.md §10).
+                targetHariIni += calculateTargetContribution(pelanggan, today)
+
                 when {
                     status == "aktif" || status == "active" -> {
                         if (isSudahLunas) {
@@ -14152,47 +14105,10 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                                 pay.tanggal == today || pay.subPembayaran.any { it.tanggal == today }
                             }
                             if (adaPembayaranHariIni) nasabahLunasHariIni++
-
-                            // ✅ FIX: Nasabah lunas cicilan HARI INI tetap masuk target sampai besok
-                            if (pelanggan.tanggalLunasCicilan == today) {
-                                targetHariIni += pelanggan.besarPinjaman * 3L / 100L
-                            }
                         } else {
                             nasabahAktif++
                             totalPinjamanAktif += totalPelunasanValue
                             totalPiutang += (totalPelunasanValue - totalDibayar).coerceAtLeast(0)
-
-                            // Hitung target hari ini — SAMA dengan calculateTargetHarian() admin lapangan:
-                            // 1. Skip jika statusKhusus == MENUNGGU_PENCAIRAN (kecuali ditandai hari ini)
-                            // 2. Skip jika > 3 bulan
-                            // 3. Skip jika cair hari ini
-                            // 4. Flat 3% dari besarPinjaman
-                            val isMenungguPencairan = pelanggan.statusKhusus == "MENUNGGU_PENCAIRAN"
-                            // ✅ FIX: Nasabah ditandai MENUNGGU_PENCAIRAN HARI INI tetap masuk target sampai besok
-                            val isMenungguPencairanHariIni = isMenungguPencairan && pelanggan.tanggalStatusKhusus == today
-                            val skipTarget = isMenungguPencairan && !isMenungguPencairanHariIni
-                            val tglAcuan = pelanggan.tanggalPencairan.ifBlank {
-                                pelanggan.tanggalPengajuan.ifBlank { pelanggan.tanggalDaftar }
-                            }
-                            val dateFormatCheck = SimpleDateFormat("dd MMM yyyy", Locale("in", "ID")).apply { timeZone = wib }
-                            val threeMonthsAgo = Calendar.getInstance(wib).apply {
-                                add(Calendar.MONTH, -3)
-                                set(Calendar.DAY_OF_MONTH, 1)
-                                set(Calendar.HOUR_OF_DAY, 0)
-                                set(Calendar.MINUTE, 0)
-                                set(Calendar.SECOND, 0)
-                                set(Calendar.MILLISECOND, 0)
-                            }.time
-                            val isOverThreeMonths = try {
-                                val acuanDate = dateFormatCheck.parse(tglAcuan)
-                                acuanDate != null && acuanDate.before(threeMonthsAgo)
-                            } catch (_: Exception) { false }
-                            val isCairHariIni = pelanggan.tanggalPencairan.isNotBlank() && pelanggan.tanggalPencairan == today
-
-                            if (!skipTarget && !isOverThreeMonths && !isCairHariIni) {
-                                targetHariIni += pelanggan.besarPinjaman * 3L / 100L
-                            }
-
 
                             // Cek nasabah baru hari ini
                             val tanggalDaftar = pelanggan.tanggalDaftar.ifBlank { pelanggan.tanggalPengajuan }
