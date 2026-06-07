@@ -617,6 +617,23 @@ exports.getBukuPokok = functions
                     // Hitung total sisa utang dari pinjaman lama yang belum lunas
                     const sisaUtangLama = riwayat.reduce((sum, r) => sum + (r.sisaUtang || 0), 0);
 
+                    // ── Fix B (Scenario 5): besar pinjaman LAMA untuk anchor target
+                    // pada HARI Cairkan top-up. Diisi HANYA saat tanggalPencairan ===
+                    // hari ini & pinjamanKe > 1 (transisi Cairkan top-up). Diambil
+                    // dari entry riwayat_pinjaman terakhir (pinjamanKe terbesar —
+                    // riwayatLookup sudah di-sort ASC di L518). Dipakai helper
+                    // isEligibleForTarget (lib/target.js Fix C) agar target hari ini
+                    // tetap dari pinjaman lama; pinjaman baru efektif BESOK.
+                    let besarPinjamanLamaSebelumTopUp = 0;
+                    const tglCairTopUp = (p.tanggalPencairan || '').trim();
+                    if (tglCairTopUp === getTodayIndonesia() && (p.pinjamanKe || 1) > 1) {
+                        const rwTopUp = riwayatLookup[pId] || [];
+                        const lastRw = rwTopUp.length > 0 ? rwTopUp[rwTopUp.length - 1] : null;
+                        if (lastRw && Number.isFinite(lastRw.besarPinjaman)) {
+                            besarPinjamanLamaSebelumTopUp = lastRw.besarPinjaman;
+                        }
+                    }
+
                     nasabahList.push({
                         id: pId,
                         namaKtp: p.namaKtp || '',
@@ -658,6 +675,8 @@ exports.getBukuPokok = functions
                         // Riwayat pinjaman lama
                         sisaUtangLama: sisaUtangLama,
                         sisaUtangLamaSebelumTopUp: p.sisaUtangLamaSebelumTopUp || 0,
+                        // Fix B (Scenario 5): anchor target hari Cairkan top-up.
+                        besarPinjamanLamaSebelumTopUp: besarPinjamanLamaSebelumTopUp,
                         riwayatPinjaman: riwayat
                     });
                 });

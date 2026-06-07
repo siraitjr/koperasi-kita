@@ -224,20 +224,24 @@ function isOverFourMonths(dateStr) {
 // =========================================================================
 function calculateTargetHariIni(pelanggan) {
     const today = getTodayIndonesia();
-    
+
     if (isHoliday(today)) return 0;
     if (!pelanggan) return 0;
-    
-    // Exclude nasabah macet (> 3 bulan) — konsisten dengan Android
-    const tglAcuan = (pelanggan.tanggalPencairan || '').trim()
-        || (pelanggan.tanggalPengajuan || '').trim()
-        || (pelanggan.tanggalDaftar || '').trim();
-    if (isOverThreeMonths(tglAcuan)) return 0;
-    
-    // Exclude nasabah cair hari ini (Android: baru mulai besok)
+
+    // ✅ Scenario 4 (koreksi pimpinan 07 Jun 2026): target HANYA mulai H+1
+    // SETELAH Cairkan. tanggalPencairan kosong (approved tapi BELUM di-Cairkan)
+    // → 0. TIDAK ada fallback ke tanggalPengajuan/tanggalDaftar — fallback itu
+    // mengaktifkan target secara prematur (LEAK) sebelum pencairan nyata.
     const tanggalPencairan = (pelanggan.tanggalPencairan || '').trim();
+    if (!tanggalPencairan) return 0;
+
+    // Exclude nasabah cair hari ini (Android: baru mulai besok)
     if (tanggalPencairan === today) return 0;
-    
+
+    // Exclude nasabah macet (> 3 bulan) — acuan = tanggalPencairan (Option A,
+    // tidak berubah: untuk nasabah yang sudah cair, acuan dulu memang pencairan).
+    if (isOverThreeMonths(tanggalPencairan)) return 0;
+
     // Flat 3% dari besarPinjaman — SAMA dengan Android
     return Math.floor((pelanggan.besarPinjaman || 0) * 3 / 100);
 }
@@ -565,7 +569,19 @@ function calculateDelta(before, after) {
                 const isTransisiHariIni = (afterCategory === 'menungguPencairan' || afterCategory === 'lunas')
                     && ((after.tanggalLunasCicilan || '').trim() === today
                         || (after.tanggalStatusKhusus || '').trim() === today);
-                if (!isTransisiHariIni) {
+                // ✅ Scenario 5 (Fix A): TOP-UP yang di-submit HARI INI menutup
+                // pinjaman LAMA (Pelunasan Top-Up) — pinjaman lama setara "lunas
+                // hari ini". H+1 parity: target hari ini TETAP dari pinjaman lama,
+                // JANGAN dikurangi. Pinjaman BARU baru efektif H+1 setelah Cairkan
+                // (ditambahkan fullRecalc 02:00 keesokan hari setelah pencairan,
+                // BUKAN di sini). Single-fire tepat di transisi submit top-up via
+                // kenaikan pinjamanKe + sisaUtangLamaSebelumTopUp + tanggalPengajuan
+                // hari ini. (Transisi nyata = aktif→"Menunggu Approval", BUKAN
+                // aktif→cairHariIni: Cairkan baru terjadi dari status "Disetujui".)
+                const isTopUpHariIni = (after.pinjamanKe || 1) > (before.pinjamanKe || 1)
+                    && (after.sisaUtangLamaSebelumTopUp || 0) > 0
+                    && (after.tanggalPengajuan || '').trim() === today;
+                if (!isTransisiHariIni && !isTopUpHariIni) {
                     delta.targetHariIniChange -= calculateTargetHariIni(before);
                 }
                             } else if (beforeCategory === 'cairHariIni' || beforeCategory === 'nonAktifMacet') {
@@ -919,17 +935,15 @@ async function fullRecalculateAdminSummary(adminUid) {
                         }
 
                         if (!isHariLibur) {
-                            // ✅ BARU: Exclude nasabah macet (> 4 bulan)
-                            const tglAcuan = (p.tanggalPencairan || '').trim()
-                                || (p.tanggalPengajuan || '').trim()
-                                || (p.tanggalDaftar || '').trim();
-                            if (!isOverThreeMonths(tglAcuan)) {
-                                // Exclude nasabah cair hari ini (konsisten Android)
-                                const tglCair2 = (p.tanggalPencairan || '').trim();
-                                if (tglCair2 !== today) {
-                                    // Flat 3% — konsisten dengan Android
-                                    targetHariIni += Math.floor((p.besarPinjaman || 0) * 3 / 100);
-                                }
+                            // ✅ Scenario 4 (koreksi pimpinan 07 Jun 2026): target HANYA
+                            // mulai H+1 setelah Cairkan. tanggalPencairan WAJIB ada &
+                            // bukan hari ini. Tanpa pencairan (approved-belum-cair) → 0;
+                            // TIDAK ada fallback ke pengajuan/daftar (LEAK target prematur).
+                            // 3-month macet pakai acuan = tanggalPencairan (Option A).
+                            const tglCair2 = (p.tanggalPencairan || '').trim();
+                            if (tglCair2 && tglCair2 !== today && !isOverThreeMonths(tglCair2)) {
+                                // Flat 3% — konsisten dengan Android
+                                targetHariIni += Math.floor((p.besarPinjaman || 0) * 3 / 100);
                             }
                         }
                     }

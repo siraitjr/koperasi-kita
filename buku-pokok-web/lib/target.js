@@ -189,32 +189,57 @@ export function isEligibleForTarget(n, dateStr) {
     }
   }
 
-  // Cair TEPAT pada tanggal ini → mulai dihitung besok (CF: pencairan === today).
+  // =========================================================================
+  // POIN 5 — Target HANYA mulai H+1 SETELAH "Cairkan" (tanggalPencairan).
+  // -------------------------------------------------------------------------
+  // Koreksi pimpinan (Scenario 4, sesi 07 Jun 2026): jeda antara approval dan
+  // "Cairkan" NYATA terjadi (pinjaman besar — admin belum bawa cukup kas di
+  // hari approval, Cairkan mundur ke hari berikutnya). Target WAJIB mulai
+  // tepat 1 hari SETELAH tanggalPencairan AKTUAL.
+  //
+  //   tanggalPencairan kosong (approved tapi BELUM di-Cairkan) → 0.
+  //   tanggalPencairan === dateStr (Cairkan tepat hari itu)    → 0 (mulai besok).
+  //   tanggalPencairan >  dateStr (Cairkan di masa depan kolom)→ 0.
+  //   tanggalPencairan <  dateStr (sudah di-Cairkan, H+1+)     → eligible.
+  //
+  // ❌ FALLBACK ke tanggalPengajuan/tanggalDaftar DIHAPUS dari jalur target.
+  //    Itu LEAK: nasabah approved-belum-cair ikut target prematur karena
+  //    tanggalDaftar/Pengajuan === hari ini. Acuan target = HANYA
+  //    tanggalPencairan. (3-month macet POIN 3 juga pakai acuan ini — identik
+  //    hasilnya untuk nasabah yang SUDAH cair, karena dulu pencairan memang
+  //    elemen pertama pada rantai fallback → Option A tidak berubah.)
+  // =========================================================================
   const tglPencairan = (n.tanggalPencairan || '').trim();
-  if (tglPencairan && tglPencairan === dateStr) return 0;
 
-  // Tanggal acuan: pencairan → pengajuan → daftar.
-  const tglAcuan = tglPencairan
-    || (n.tanggalPengajuan || '').trim()
-    || (n.tanggalDaftar || '').trim();
-  const acuan = parseTanggalIndo(tglAcuan);
-  if (acuan) {
-    // Belum aktif (acuan setelah tanggal ini) → date-aware exclude utk kolom historis.
-    if (acuan > cur) return 0;
-
-    // ===== POIN 3 — Batas 3 bulan kalender (integer-month math, no live-state) =====
-    // Boundary: bulan kolom > (bulan_acuan + 3) → STOP. Diukur sebagai indeks
-    // bulan absolut (year*12 + month0..11) supaya menyeberang tahun aman.
-    // Contoh pimpinan:
-    //   Cair Feb 2026 (idx = y*12 + 1); kolom Jun 2026 (idx = y*12 + 5)
-    //     → diff = 4 → STOP (Jun 1 dst.). ✓
-    //   Cair Mar 2026 (idx = y*12 + 2); kolom Jul 2026 (idx = y*12 + 6)
-    //     → diff = 4 → STOP. ✓
-    //   Cair Feb 2026; kolom Mei 2026 (idx = y*12 + 4) → diff = 3 → masih hitung. ✓
-    const acuanMonthIdx = acuan.getFullYear() * 12 + acuan.getMonth();
-    const curMonthIdx = cur.getFullYear() * 12 + cur.getMonth();
-    if (curMonthIdx - acuanMonthIdx > 3) return 0;
+  // ── Fix C (Scenario 5): hari Cairkan TOP-UP = hari terakhir pinjaman LAMA ──
+  // Pada tanggalPencairan === dateStr untuk top-up (pinjamanKe > 1), target hari
+  // itu di-anchor ke besarPinjaman LAMA (3%). Pinjaman BARU baru efektif BESOK
+  // (parity H+1 dengan LUNAS/MP). besarPinjamanLamaSebelumTopUp di-expose CF
+  // (bukuPokokApi.js) dari entry riwayat_pinjaman terakhir.
+  if (tglPencairan && tglPencairan === dateStr) {
+    if ((n.pinjamanKe || 1) > 1 && (n.besarPinjamanLamaSebelumTopUp || 0) > 0) {
+      return Math.floor(n.besarPinjamanLamaSebelumTopUp * 3 / 100);
+    }
+    return 0;
   }
+
+  // Tanpa tanggalPencairan valid → belum di-Cairkan → NOL target (tanpa fallback).
+  const acuan = parseTanggalIndo(tglPencairan);
+  if (!acuan) return 0;
+
+  // Pencairan di masa depan relatif kolom ini → belum aktif (kolom historis aman).
+  if (acuan > cur) return 0;
+
+  // ===== POIN 3 — Batas 3 bulan kalender (acuan = tanggalPencairan; Option A) =====
+  // Boundary: bulan kolom > (bulan_pencairan + 3) → STOP. Indeks bulan absolut
+  // (year*12 + month0..11) supaya menyeberang tahun aman. Deterministik, tidak
+  // menyentuh state hari ini.
+  //   Cair Feb 2026 (idx y*12+1); kolom Jun 2026 (idx y*12+5) → diff 4 → STOP. ✓
+  //   Cair Mar 2026 (idx y*12+2); kolom Jul 2026 (idx y*12+6) → diff 4 → STOP. ✓
+  //   Cair Feb 2026; kolom Mei 2026 (idx y*12+4) → diff 3 → masih hitung. ✓
+  const acuanMonthIdx = acuan.getFullYear() * 12 + acuan.getMonth();
+  const curMonthIdx = cur.getFullYear() * 12 + cur.getMonth();
+  if (curMonthIdx - acuanMonthIdx > 3) return 0;
 
   return target;
 }
