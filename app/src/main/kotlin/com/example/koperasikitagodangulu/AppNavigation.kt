@@ -66,21 +66,20 @@ import com.example.koperasikitagodangulu.ui.screens.SplashScreen
 //   2. Klik avatar di hero card AdminHomeScreen (via callback onAvatarClick).
 // Logika dialog identik dengan versi sebelumnya — hanya pindah container.
 // =========================================================================
-// Aturan visibility bottom nav (pimpinan 07 Jun 2026, revisi):
-//   - 4 main tab Admin Lapangan: dashboard, daftarPelanggan, kalkulatorPinjaman,
-//     laporanHarian.
-//   - 2 tracking screen yang sering dipakai Admin Lapangan dari Beranda:
-//     "ringkasan" (RingkasanDashboardScreen) & "pelangganKutip"
-//     (PelangganYangHarusDikunjungiScreen).
-//   - Selain itu (form input, detail, registrasi, role lain) → bottom bar
-//     SEMBUNYI agar tidak mengganggu keyboard/clutter layout.
+// Aturan visibility bottom nav (pimpinan 07 Jun 2026, revisi final):
+//   Visible HANYA di 4 route berikut:
+//     - dashboard            (Beranda)
+//     - daftarPelanggan      (tab Nasabah)
+//     - pelangganKutip       (PelangganYangHarusDikunjungiScreen — kunjungan harian)
+//     - laporanHarian        (tab Laporan)
+//   DISEMBUNYIKAN di "ringkasan" (RingkasanDashboardScreen) dan
+//   "kalkulatorPinjaman" supaya layar penuh untuk dashboard analitik & kalkulasi.
+//   Sub-screen lain (form input, detail, registrasi, role lain) → sembunyi.
 private val mainTabRoutes = setOf(
     "dashboard",
     "daftarPelanggan",
-    "kalkulatorPinjaman",
-    "laporanHarian",
-    "ringkasan",
-    "pelangganKutip"
+    "pelangganKutip",
+    "laporanHarian"
 )
 
 @Composable

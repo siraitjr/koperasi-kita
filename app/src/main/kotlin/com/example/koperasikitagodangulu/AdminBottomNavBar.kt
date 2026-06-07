@@ -6,9 +6,8 @@ import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Analytics
 import androidx.compose.material.icons.rounded.Assessment
-import androidx.compose.material.icons.rounded.Calculate
+import androidx.compose.material.icons.rounded.EventNote
 import androidx.compose.material.icons.rounded.Groups
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Person
@@ -35,14 +34,15 @@ import androidx.compose.ui.unit.sp
 // tanpa duplikasi per-screen. Selected tab di-track dari currentBackStackEntry
 // di AppNavigation (parameter currentRoute).
 //
-// Aturan tab:
-//   - Beranda    → route "dashboard"          (Home, ikon Home)
-//   - Nasabah    → route "daftarPelanggan"    (ikon Groups)
-//   - Kalkulator → route "kalkulatorPinjaman" (ikon Calculate) [RENAME dari "Transaksi"]
-//   - Laporan    → route "laporanHarian"      (ikon Assessment)
-//   - Akun       → action onAkunClick (dialog profil di AppNavigation; tidak
-//                  punya route → tidak pernah ter-highlight; ini disengaja
-//                  karena Akun = trigger aksi, bukan navigasi layar)
+// Aturan tab (pimpinan 07 Jun 2026 revisi):
+//   - Beranda   → route "dashboard"        (ikon Home)
+//   - Nasabah   → route "daftarPelanggan"  (ikon Groups)
+//   - Kunjungan → route "pelangganKutip"   (ikon EventNote)
+//                  [SWAP: dulu "Kalkulator"; kalkulator pindah ke grid Beranda]
+//   - Laporan   → route "laporanHarian"    (ikon Assessment)
+//   - Akun      → action onAkunClick (dialog profil di AppNavigation; tidak
+//                 punya route → tidak pernah ter-highlight; ini disengaja
+//                 karena Akun = trigger aksi, bukan navigasi layar)
 //
 // Visibility kondisional ditangani di AppNavigation (Scaffold bottomBar
 // muncul HANYA bila currentRoute ∈ mainTabRoutes). Detail screen / dialog
@@ -65,11 +65,11 @@ fun AdminBottomNavBar(
 ) {
     val tabs = remember {
         listOf(
-            AdminNavTab("beranda",    "dashboard",         "Beranda",    Icons.Rounded.Home),
-            AdminNavTab("nasabah",    "daftarPelanggan",   "Nasabah",    Icons.Rounded.Groups),
-            AdminNavTab("kalkulator", "kalkulatorPinjaman","Kalkulator", Icons.Rounded.Calculate),
-            AdminNavTab("laporan",    "laporanHarian",     "Laporan",    Icons.Rounded.Assessment),
-            AdminNavTab("akun",       null,                "Akun",       Icons.Rounded.Person)
+            AdminNavTab("beranda",   "dashboard",        "Beranda",   Icons.Rounded.Home),
+            AdminNavTab("nasabah",   "daftarPelanggan",  "Nasabah",   Icons.Rounded.Groups),
+            AdminNavTab("kunjungan", "pelangganKutip",   "Kunjungan", Icons.Rounded.EventNote),
+            AdminNavTab("laporan",   "laporanHarian",    "Laporan",   Icons.Rounded.Assessment),
+            AdminNavTab("akun",      null,               "Akun",      Icons.Rounded.Person)
         )
     }
 

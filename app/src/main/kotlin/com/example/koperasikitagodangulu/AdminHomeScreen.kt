@@ -202,6 +202,14 @@ fun AdminHomeScreen(
             utamaHariIni || subHariIni
         }
     }
+    // ✅ #3 pimpinan 07 Jun 2026: Target Hari Ini untuk hero card.
+    // Pakai single source of truth calculateTargetContribution
+    // (TargetHarianHelper.kt — cermin 1:1 Web lib/target.js & CF summaryHelpers).
+    // Dengan begitu nilai di hero card SAMA persis dengan kolom Storting/target
+    // di Ringkasan, Buku Pokok web, dan dashboard pimpinan. NOL DB hit baru.
+    val targetHariIni: Long = remember(daftarPelangganList.toList(), todayStr) {
+        daftarPelangganList.sumOf { calculateTargetContribution(it, todayStr) }
+    }
 
     // Animation states
     var isVisible by remember { mutableStateOf(false) }
@@ -299,6 +307,7 @@ fun AdminHomeScreen(
                     email = email,
                     adminPhotoUrl = adminPhotoUrl,
                     isUploadingPhoto = isUploadingPhoto,
+                    targetHariIni = targetHariIni,
                     onAvatarClick = onAvatarClick
                 )
             }
@@ -415,16 +424,16 @@ fun AdminHomeScreen(
 
             Spacer(modifier = Modifier.height(14.dp))
 
-            // ✅ #2 pimpinan 07 Jun 2026: "Semua Nasabah" & "Laporan Harian" dihapus
-            // dari grid karena sudah jadi tab bottom nav (Nasabah, Laporan).
-            // Sisanya 4 kartu operasional yang sering dipakai di Beranda.
+            // ✅ Grid 4 kartu (pimpinan 07 Jun 2026, revisi swap):
+            //    "Kunjungan Hari Ini" → "Kalkulator" (swap dgn tab bottom-nav;
+            //    kunjungan sekarang ada di tab bottom-nav "Kunjungan").
             val menuItems = listOf(
                 ModernMenuItem("Tambah Nasabah", "Ajukan pinjaman nasabah baru",
                     Icons.Rounded.PersonAdd, AdminColors.infoGradient) { navController.navigate("tambahPelanggan") },
                 ModernMenuItem("Input Pembayaran", "Catat pembayaran nasabah",
                     Icons.Rounded.Payment, AdminColors.successGradient) { navController.navigate("inputPembayaran") },
-                ModernMenuItem("Kunjungan Hari Ini", "Jadwal dan kutip nasabah",
-                    Icons.Rounded.Today, AdminColors.warningGradient) { navController.navigate("pelangganKutip") },
+                ModernMenuItem("Kalkulator", "Hitung simulasi pinjaman",
+                    Icons.Rounded.Calculate, AdminColors.warningGradient) { navController.navigate("kalkulatorPinjaman") },
                 ModernMenuItem("Ringkasan", "Lihat ringkasan dan performa",
                     Icons.Rounded.Analytics, AdminColors.purpleGradient) { navController.navigate("ringkasan") }
             )
@@ -608,6 +617,7 @@ private fun ProfileHeroCard(
     email: String,
     adminPhotoUrl: String?,
     isUploadingPhoto: Boolean,
+    targetHariIni: Long,
     onAvatarClick: () -> Unit
 ) {
     Card(
@@ -718,28 +728,61 @@ private fun ProfileHeroCard(
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // Email pill badge
+                // ✅ #3 pimpinan 07 Jun 2026: email pill (kiri) + Target Hari Ini
+                // (kanan) dalam satu Row SpaceBetween. Email weight(1f, fill=false)
+                // supaya pill tidak menelan ruang Target di kanan; Target
+                // wrapContentSize → tidak terpotong. Email truncate dgn ellipsis.
                 Row(
-                    modifier = Modifier
-                        .background(Color.White.copy(alpha = 0.18f), RoundedCornerShape(50))
-                        .padding(horizontal = 14.dp, vertical = 9.dp),
+                    modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Icon(
-                        imageVector = Icons.Rounded.Email,
-                        contentDescription = null,
-                        tint = Color.White.copy(alpha = 0.9f),
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Text(
-                        text = email,
-                        color = Color.White,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Medium,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
+                    // Email pill badge (kiri)
+                    Row(
+                        modifier = Modifier
+                            .weight(1f, fill = false)
+                            .background(Color.White.copy(alpha = 0.18f), RoundedCornerShape(50))
+                            .padding(horizontal = 14.dp, vertical = 9.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Email,
+                            contentDescription = null,
+                            tint = Color.White.copy(alpha = 0.9f),
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Text(
+                            text = email,
+                            color = Color.White,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.width(12.dp))
+
+                    // Target Hari Ini (kanan, right-aligned column)
+                    Column(horizontalAlignment = Alignment.End) {
+                        Text(
+                            text = "Target Hari Ini",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color.White.copy(alpha = 0.8f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = formatRupiahHome(targetHariIni),
+                            style = MaterialTheme.typography.titleMedium,
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(12.dp))
