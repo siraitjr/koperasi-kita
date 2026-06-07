@@ -8,9 +8,8 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.itemsIndexed
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -87,14 +86,41 @@ object AdminColors {
     val lightBorder = Color(0xFFE2E8F0)
 }
 
+// =========================================================================
+// ✅ REDESIGN BERANDA — referensi screenshot pimpinan (07 Jun 2026)
+// -------------------------------------------------------------------------
+// Soft off-white background, hero gradient biru→ungu, "Ringkasan Hari Ini"
+// 4-kolom (kolom Setoran di-highlight pastel), grid menu 2 kolom dgn arrow,
+// dan Material 3 NavigationBar (pill indigo pada item terpilih).
+//
+// DATA INTEGRITY (CLAUDE.md §10 + commit 4dcec3b): TIDAK ada DB hit baru,
+// TIDAK ada perubahan ViewModel/listener. Semua metrik di-derive O(N) dari
+// state ViewModel yang sudah ada lalu di-bind ke kartu baru.
+// =========================================================================
+private object HomeTheme {
+    val screenBg = Color(0xFFF8F9FA)        // soft off-white
+    val cardWhite = Color(0xFFFFFFFF)
+    val cardBorder = Color(0xFFEEF1F5)
+    val titleText = Color(0xFF1E293B)
+    val subtitleText = Color(0xFF94A3B8)
+    val indigo = Color(0xFF6366F1)
+    val coralBg = Color(0xFFFFF1F2)         // pastel pink utk kolom Setoran
+    val coral = Color(0xFFF43F5E)
+    val heroStart = Color(0xFF6366F1)
+    val heroMid = Color(0xFF8B5CF6)
+    val heroEnd = Color(0xFFA855F7)
+}
+
+private val rupiahFormatter: NumberFormat = NumberFormat.getNumberInstance(Locale("in", "ID"))
+private fun formatRupiahHome(value: Long): String = "Rp " + rupiahFormatter.format(value)
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalAnimationApi::class)
 @Composable
 fun AdminHomeScreen(navController: NavController, viewModel: PelangganViewModel) {
-//    val systemUiController = rememberSystemUiController()
     val isDark by viewModel.isDarkMode
-    val cardColor = if (isDark) AdminColors.darkCard else AdminColors.lightCard
-    val txtColor = if (isDark) Color.White else Color(0xFF1E293B)
-    val subtitleColor = if (isDark) Color(0xFFA1A1AA) else Color(0xFF64748B)
+    val cardColor = if (isDark) AdminColors.darkCard else HomeTheme.cardWhite
+    val txtColor = if (isDark) Color.White else HomeTheme.titleText
+    val subtitleColor = if (isDark) Color(0xFFA1A1AA) else HomeTheme.subtitleText
 
     val adminNotifications by viewModel.adminNotifications.collectAsState()
     val unreadNotifications = adminNotifications.filter { !it.read }
@@ -104,7 +130,6 @@ fun AdminHomeScreen(navController: NavController, viewModel: PelangganViewModel)
     val takeoverStatus by viewModel.takeoverStatus.collectAsState()
     val email = auth.currentUser?.email ?: "Tidak ada email"
     val context = LocalContext.current
-    var isScreenFocused by remember { mutableStateOf(true) }
 
     val isOnline by viewModel.isOnline.collectAsState()
     val isSyncing by viewModel.isSyncing.collectAsState()
@@ -118,15 +143,14 @@ fun AdminHomeScreen(navController: NavController, viewModel: PelangganViewModel)
     // =========================================================================
     // ✅ KONSOLIDASI METRIK PIMPINAN 07 JUN 2026 (UI-only, tidak menyentuh VM)
     // -------------------------------------------------------------------------
-    // Tiga metrik dari layar lain, di-derive di sini sebagai pure UI consumption
-    // dari state ViewModel yang sudah ada (daftarPelanggan + pelunasanEksternal).
-    // Formula 1:1 dengan layar sumber, sehingga angka SELALU sama dan tidak
-    // pernah divergen:
+    // Metrik dari layar lain, di-derive di sini sebagai pure UI consumption dari
+    // state ViewModel yang sudah ada (daftarPelanggan + pelunasanEksternal).
+    // Formula 1:1 dengan layar sumber, sehingga angka SELALU sama:
     //   - Storting Hari Ini  → RingkasanDashboardScreen.kt:160-187 (totalTagihanHariIni).
     //   - Drop Hari Ini      → RingkasanDashboardScreen.kt:197-205 (nasabahBaruHariIni).
     //   - Total Nasabah Aktif→ DaftarPelangganScreen.kt:148 (getFilteredPelanggan AKTIF).
-    // Reactivity: collectAsState untuk StateFlow, daftarPelanggan = SnapshotStateList
-    // sehingga setiap mutasi memicu recomposition Compose otomatis.
+    //   - Pembayaran Hari Ini→ count entri pembayaran (utama+sub) bertanggal hari ini.
+    // SEMUA O(N) atas SnapshotStateList in-memory — TANPA DB hit baru (commit 4dcec3b).
     // =========================================================================
     val daftarPelangganList = viewModel.daftarPelanggan
     val pelunasanEksternal by viewModel.pelunasanEksternalHariIni.collectAsState()
@@ -159,21 +183,25 @@ fun AdminHomeScreen(navController: NavController, viewModel: PelangganViewModel)
     val totalNasabahAktif: Int = remember(daftarPelangganList.toList()) {
         viewModel.getFilteredPelanggan("", "AKTIF").size
     }
+    val pembayaranCountHariIni: Int = remember(daftarPelangganList.toList(), todayStr) {
+        daftarPelangganList.sumOf { p ->
+            p.pembayaranList.count { it.tanggal == todayStr } +
+                p.pembayaranList.sumOf { pem -> pem.subPembayaran.count { it.tanggal == todayStr } }
+        }
+    }
 
     // Animation states
     var isVisible by remember { mutableStateOf(false) }
 
-    // State dialog biaya awal dihapus - kasbon pagi sudah diinput oleh kasir via web
-
     // State untuk foto profil
     val adminPhotoUrl by viewModel.adminPhotoUrl.collectAsState()
-    var showPhotoUploadDialog by remember { mutableStateOf(false) }
-    var isUploadingPhoto by remember { mutableStateOf(false) }
     var showPhotoOptionsDialog by remember { mutableStateOf(false) }
+    var isUploadingPhoto by remember { mutableStateOf(false) }
     var showFullPhotoDialog by remember { mutableStateOf(false) }
     var showLogoutAbsensiDialog by remember { mutableStateOf(false) }
+
     val systemUiController = rememberSystemUiController()
-    val bgColor = if (isDark) AdminColors.darkSurface else AdminColors.lightSurface
+    val bgColor = if (isDark) AdminColors.darkSurface else HomeTheme.screenBg
     SideEffect {
         systemUiController.setStatusBarColor(bgColor, darkIcons = !isDark)
         systemUiController.setNavigationBarColor(bgColor, darkIcons = !isDark)
@@ -186,7 +214,7 @@ fun AdminHomeScreen(navController: NavController, viewModel: PelangganViewModel)
             isUploadingPhoto = true
             viewModel.uploadAdminPhoto(
                 imageUri = it,
-                onSuccess = { url ->
+                onSuccess = { _ ->
                     isUploadingPhoto = false
                     Toast.makeText(context, "Foto profil berhasil diupload", Toast.LENGTH_SHORT).show()
                 },
@@ -196,6 +224,13 @@ fun AdminHomeScreen(navController: NavController, viewModel: PelangganViewModel)
                 }
             )
         }
+    }
+
+    // Aksi profil (avatar / tab Akun): jika sudah ada foto → dialog opsi, kalau
+    // belum → langsung pilih foto. Logic identik dgn versi sebelumnya.
+    val onProfileAction: () -> Unit = {
+        if (!adminPhotoUrl.isNullOrBlank()) showPhotoOptionsDialog = true
+        else photoPickerLauncher.launch("image/*")
     }
 
     LaunchedEffect(Unit) {
@@ -231,12 +266,7 @@ fun AdminHomeScreen(navController: NavController, viewModel: PelangganViewModel)
     Scaffold(
         containerColor = bgColor,
         bottomBar = {
-            // ✅ Modern Material 3 NavigationBar — pimpinan 07 Jun 2026.
-            // 4 tab tujuan paling sering dipakai Admin Lapangan. Beranda
-            // selalu selected karena ini layar Beranda; tap tab lain
-            // navigasi ke route yang sudah ada (tidak menambah route baru,
-            // tidak mengubah AppNavigation.kt).
-            AdminBottomNavigationBar(
+            AdminBottomNavBar(
                 isDark = isDark,
                 onTabSelected = { route ->
                     if (route != "dashboard") {
@@ -246,99 +276,68 @@ fun AdminHomeScreen(navController: NavController, viewModel: PelangganViewModel)
                             restoreState = true
                         }
                     }
-                }
+                },
+                onAkunClick = onProfileAction
             )
         }
     ) { scaffoldPadding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .verticalScroll(rememberScrollState())
                 .padding(top = systemBarsPadding.calculateTopPadding())
-                .padding(bottom = scaffoldPadding.calculateBottomPadding())
+                .padding(bottom = scaffoldPadding.calculateBottomPadding() + 16.dp)
         ) {
-            // Modern Header
+            // ── (2) Header Actions Row ──────────────────────────────────────
+            TopActionsRow(
+                isDark = isDark,
+                txtColor = txtColor,
+                isOnline = isOnline,
+                isSyncing = isSyncing,
+                unsyncedCount = unsyncedCount,
+                unreadCount = unreadNotifications.size,
+                onDarkModeToggle = { viewModel.setDarkMode(it) },
+                onManualSync = { viewModel.manualSync() },
+                onNotificationClick = { navController.navigate("notifikasi") },
+                onLogoutClick = {
+                    if (isTakeoverMode) {
+                        viewModel.returnToPimpinanAccount(
+                            navController = navController,
+                            context = context,
+                            onError = { msg -> Toast.makeText(context, msg, Toast.LENGTH_LONG).show() }
+                        )
+                    } else {
+                        showLogoutAbsensiDialog = true
+                    }
+                }
+            )
+
+            // ── (3) Profile Hero Card ───────────────────────────────────────
             AnimatedVisibility(
                 visible = isVisible,
-                enter = fadeIn(animationSpec = tween(500)) + slideInVertically(
-                    initialOffsetY = { -50 },
-                    animationSpec = tween(500)
+                enter = fadeIn(tween(500)) + slideInVertically(
+                    initialOffsetY = { -40 }, animationSpec = tween(500)
                 )
             ) {
-                ModernHeader(
+                ProfileHeroCard(
                     email = email,
-                    isDark = isDark,
-                    txtColor = txtColor,
-                    subtitleColor = subtitleColor,
-                    cardColor = cardColor,
-                    unreadCount = unreadNotifications.size,
-                    isOnline = isOnline,
-                    isSyncing = isSyncing,
-                    unsyncedCount = unsyncedCount,
                     adminPhotoUrl = adminPhotoUrl,
                     isUploadingPhoto = isUploadingPhoto,
-                    onDarkModeToggle = { viewModel.setDarkMode(it) },
-                    onNotificationClick = { navController.navigate("notifikasi") },
-                    onLogoutClick = {
-                        if (isTakeoverMode) {
-                            // Dalam mode takeover, kembali ke akun pimpinan
-                            viewModel.returnToPimpinanAccount(
-                                navController = navController,
-                                context = context,
-                                onError = { msg ->
-                                    Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
-                                }
-                            )
-                        } else {
-                            showLogoutAbsensiDialog = true
-                        }
-                    },
-                    onManualSync = { viewModel.manualSync() },
-                    onWelcomeCardClick = { /* tidak ada aksi - kasbon pagi diinput kasir via web */ },
-                    onAvatarClick = {
-                        if (!adminPhotoUrl.isNullOrBlank()) {
-                            // Jika sudah ada foto, tampilkan dialog pilihan
-                            showPhotoOptionsDialog = true
-                        } else {
-                            // Jika belum ada foto, langsung upload
-                            photoPickerLauncher.launch("image/*")
-                        }
-                    }
+                    onAvatarClick = onProfileAction
                 )
             }
 
             // Indikator sinkronisasi offline — auto-hide bila tidak ada pending/failed.
-            // Klik → AlertDialog berisi daftar FAILED + errorMessage + tombol "Coba Lagi".
             SyncStatusBlock()
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // ✅ Premium Summary Card — konsolidasi metrik harian (pimpinan 07 Jun 2026).
-            // Storting + Drop + Total Nasabah Aktif dalam satu kartu hero ber-gradient,
-            // di-derive langsung dari state ViewModel yang sudah ada (lihat blok
-            // KONSOLIDASI METRIK di awal composable). Tap kartu → buka Ringkasan
-            // lengkap untuk detail lebih dalam.
-            AnimatedVisibility(
-                visible = isVisible,
-                enter = fadeIn(animationSpec = tween(550)) + slideInVertically(
-                    initialOffsetY = { 60 },
-                    animationSpec = tween(550)
-                )
-            ) {
-                PremiumSummaryCard(
-                    stortingHariIni = stortingHariIni,
-                    dropHariIni = dropHariIni,
-                    totalNasabahAktif = totalNasabahAktif,
-                    isDark = isDark,
-                    onClick = { navController.navigate("ringkasan") }
-                )
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
 
             // ✅ BANNER TAKEOVER MODE
             if (isTakeoverMode) {
+                Spacer(modifier = Modifier.height(12.dp))
                 Surface(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp),
+                    shape = RoundedCornerShape(16.dp),
                     color = Color(0xFFFEF3C7)
                 ) {
                     Row(
@@ -366,14 +365,10 @@ fun AdminHomeScreen(navController: NavController, viewModel: PelangganViewModel)
                                 viewModel.returnToPimpinanAccount(
                                     navController = navController,
                                     context = context,
-                                    onError = { msg ->
-                                        Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
-                                    }
+                                    onError = { msg -> Toast.makeText(context, msg, Toast.LENGTH_LONG).show() }
                                 )
                             },
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = Color(0xFFF59E0B)
-                            ),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF59E0B)),
                             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
                             enabled = takeoverStatus !is TakeoverStatus.Restoring
                         ) {
@@ -389,280 +384,608 @@ fun AdminHomeScreen(navController: NavController, viewModel: PelangganViewModel)
                         }
                     }
                 }
-                Spacer(modifier = Modifier.height(8.dp))
             }
 
-            // ✅ BARU: Broadcast Banner
+            // ✅ Broadcast Banner
             if (activeBroadcasts.isNotEmpty()) {
-                BroadcastBannerSection(
-                    broadcasts = activeBroadcasts,
-                    isDark = isDark
-                )
                 Spacer(modifier = Modifier.height(12.dp))
+                BroadcastBannerSection(broadcasts = activeBroadcasts, isDark = isDark)
             }
 
-            // Menu Grid — bottom inset sudah ditangani Scaffold (outer Column
-            // padding(bottom = scaffoldPadding.calculateBottomPadding())), jadi
-            // di sini cukup 16.dp breathing room saja agar tidak dobel padding.
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(2),
-                contentPadding = PaddingValues(
-                    start = 16.dp,
-                    end = 16.dp,
-                    bottom = 16.dp
-                ),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-                modifier = Modifier.fillMaxSize()
-            ) {
-                val menuItems = listOf(
-                    ModernMenuItem(
-                        title = "Tambah Nasabah",
-                        subtitle = "Ajukan pinjaman nasabah",
-                        icon = Icons.Rounded.PersonAdd,
-                        gradient = AdminColors.infoGradient
-                    ) { navController.navigate("tambahPelanggan") },
-                    ModernMenuItem(
-                        title = "Input Pembayaran",
-                        subtitle = "Catat pembayaran cepat",
-                        icon = Icons.Rounded.Payment,
-                        gradient = AdminColors.successGradient
-                    ) { navController.navigate("inputPembayaran") },
-                    ModernMenuItem(
-                        title = "Semua Nasabah",
-                        subtitle = "Lihat daftar lengkap",
-                        icon = Icons.Rounded.Groups,
-                        gradient = AdminColors.tealGradient
-                    ) { navController.navigate("daftarPelanggan") },
-                    ModernMenuItem(
-                        title = "Kunjungan Hari Ini",
-                        subtitle = "Jadwal kutip nasabah",
-                        icon = Icons.Rounded.Today,
-                        gradient = AdminColors.warningGradient
-                    ) { navController.navigate("pelangganKutip") },
-                    ModernMenuItem(
-                        title = "Ringkasan",
-                        subtitle = "Dashboard analitik",
-                        icon = Icons.Rounded.Analytics,
-                        gradient = AdminColors.purpleGradient
-                    ) { navController.navigate("ringkasan") },
-                    ModernMenuItem(
-                        title = "Laporan Harian",
-                        subtitle = "Rekap transaksi",
-                        icon = Icons.Rounded.Assessment,
-                        gradient = AdminColors.roseGradient
-                    ) { navController.navigate("laporanHarian") },
-                    ModernMenuItem(
-                        title = "Kalkulator",
-                        subtitle = "Hitung pinjaman",
-                        icon = Icons.Rounded.Calculate,
-                        gradient = AdminColors.orangeGradient
-                    ) { navController.navigate("kalkulatorPinjaman") }
-                    // ✅ "Cari Nasabah" dihapus dari grid sesuai arahan pimpinan
-                    // (07 Jun 2026) — feature search sudah tidak dipakai dari Home.
-                )
+            Spacer(modifier = Modifier.height(20.dp))
 
-                itemsIndexed(menuItems) { index, item ->
-                    AnimatedVisibility(
-                        visible = isVisible,
-                        enter = fadeIn(
-                            animationSpec = tween(
-                                durationMillis = 400,
-                                delayMillis = 100 + (index * 50)
-                            )
-                        ) + scaleIn(
-                            initialScale = 0.8f,
-                            animationSpec = tween(
-                                durationMillis = 400,
-                                delayMillis = 100 + (index * 50)
-                            )
-                        )
+            // ── (4) Ringkasan Hari Ini ──────────────────────────────────────
+            AnimatedVisibility(
+                visible = isVisible,
+                enter = fadeIn(tween(550)) + slideInVertically(
+                    initialOffsetY = { 40 }, animationSpec = tween(550)
+                )
+            ) {
+                RingkasanHariIniCard(
+                    tanggal = todayStr,
+                    nasabahAktif = totalNasabahAktif,
+                    pembayaran = pembayaranCountHariIni,
+                    dropHariIni = dropHariIni,
+                    storting = stortingHariIni,
+                    isDark = isDark,
+                    onClick = { navController.navigate("ringkasan") }
+                )
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // ── (5) Menu Utama ──────────────────────────────────────────────
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Bottom
+            ) {
+                Text(
+                    text = "Menu Utama",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = txtColor
+                )
+                Text(
+                    text = "Kelola data dengan cepat",
+                    fontSize = 12.sp,
+                    color = subtitleColor
+                )
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            val menuItems = listOf(
+                ModernMenuItem("Tambah Nasabah", "Ajukan pinjaman nasabah baru",
+                    Icons.Rounded.PersonAdd, AdminColors.infoGradient) { navController.navigate("tambahPelanggan") },
+                ModernMenuItem("Input Pembayaran", "Catat pembayaran nasabah",
+                    Icons.Rounded.Payment, AdminColors.successGradient) { navController.navigate("inputPembayaran") },
+                ModernMenuItem("Semua Nasabah", "Lihat dan kelola data nasabah",
+                    Icons.Rounded.Groups, AdminColors.tealGradient) { navController.navigate("daftarPelanggan") },
+                ModernMenuItem("Kunjungan Hari Ini", "Jadwal dan kutip nasabah",
+                    Icons.Rounded.Today, AdminColors.warningGradient) { navController.navigate("pelangganKutip") },
+                ModernMenuItem("Ringkasan", "Lihat ringkasan dan performa",
+                    Icons.Rounded.Analytics, AdminColors.purpleGradient) { navController.navigate("ringkasan") },
+                ModernMenuItem("Laporan Harian", "Rekap transaksi dan aktivitas",
+                    Icons.Rounded.Assessment, AdminColors.roseGradient) { navController.navigate("laporanHarian") }
+            )
+
+            // Grid 2 kolom manual (chunked) — aman di dalam verticalScroll,
+            // tidak nesting LazyVerticalGrid. 3 baris × 2 kartu.
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                menuItems.chunked(2).forEachIndexed { rowIndex, rowItems ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(14.dp)
                     ) {
-                        ModernMenuCard(item = item, isDark = isDark)
+                        rowItems.forEachIndexed { colIndex, item ->
+                            val itemIndex = rowIndex * 2 + colIndex
+                            AnimatedVisibility(
+                                visible = isVisible,
+                                modifier = Modifier.weight(1f),
+                                enter = fadeIn(tween(400, delayMillis = 100 + itemIndex * 50)) +
+                                    scaleIn(initialScale = 0.85f, animationSpec = tween(400, delayMillis = 100 + itemIndex * 50))
+                            ) {
+                                MenuActionCard(item = item, isDark = isDark)
+                            }
+                        }
+                        // Jika baris ganjil (tidak akan terjadi utk 6 item), isi kosong
+                        if (rowItems.size == 1) Spacer(modifier = Modifier.weight(1f))
                     }
                 }
             }
-            // Dialog Biaya Awal dihapus - kasbon pagi sudah diinput oleh kasir via web
-            // Dialog Pilihan Foto (Lihat / Ubah)
-            if (showPhotoOptionsDialog) {
-                AlertDialog(
-                    onDismissRequest = { showPhotoOptionsDialog = false },
-                    title = {
-                        Text(
-                            text = "Foto Profil",
-                            fontWeight = FontWeight.Bold
-                        )
-                    },
-                    text = {
-                        Column(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            // Tombol Lihat Foto
-                            OutlinedButton(
-                                onClick = {
-                                    showPhotoOptionsDialog = false
-                                    showFullPhotoDialog = true
-                                },
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(12.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.Visibility,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text("Lihat Foto")
-                            }
+        }
+    }
 
-                            // Tombol Ubah Foto
-                            Button(
-                                onClick = {
-                                    showPhotoOptionsDialog = false
-                                    photoPickerLauncher.launch("image/*")
-                                },
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(12.dp),
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = Color(0xFF6366F1)
-                                )
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.CameraAlt,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text("Ubah Foto")
-                            }
-                        }
+    // ===================== DIALOGS (logic dipertahankan 1:1) =====================
+    // Dialog Pilihan Foto (Lihat / Ubah)
+    if (showPhotoOptionsDialog) {
+        AlertDialog(
+            onDismissRequest = { showPhotoOptionsDialog = false },
+            title = { Text(text = "Foto Profil", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = {
+                            showPhotoOptionsDialog = false
+                            showFullPhotoDialog = true
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Icon(Icons.Rounded.Visibility, contentDescription = null, modifier = Modifier.size(20.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Lihat Foto")
+                    }
+                    Button(
+                        onClick = {
+                            showPhotoOptionsDialog = false
+                            photoPickerLauncher.launch("image/*")
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6366F1))
+                    ) {
+                        Icon(Icons.Rounded.CameraAlt, contentDescription = null, modifier = Modifier.size(20.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Ubah Foto")
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { showPhotoOptionsDialog = false }) { Text("Batal") }
+            },
+            containerColor = cardColor,
+            titleContentColor = txtColor,
+            textContentColor = txtColor
+        )
+    }
+
+    // Dialog Lihat Foto Besar
+    if (showFullPhotoDialog && !adminPhotoUrl.isNullOrBlank()) {
+        AlertDialog(
+            onDismissRequest = { showFullPhotoDialog = false },
+            title = { Text(text = "Foto Profil", fontWeight = FontWeight.Bold) },
+            text = {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .aspectRatio(1f)
+                        .clip(RoundedCornerShape(16.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    AsyncImage(
+                        model = ImageRequest.Builder(LocalContext.current)
+                            .data(adminPhotoUrl).crossfade(true).build(),
+                        contentDescription = "Foto Profil",
+                        modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(16.dp)),
+                        contentScale = ContentScale.Crop
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showFullPhotoDialog = false
+                        photoPickerLauncher.launch("image/*")
                     },
-                    confirmButton = {},
-                    dismissButton = {
-                        TextButton(onClick = { showPhotoOptionsDialog = false }) {
-                            Text("Batal")
-                        }
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6366F1))
+                ) {
+                    Icon(Icons.Rounded.CameraAlt, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Ubah Foto")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showFullPhotoDialog = false }) { Text("Tutup") }
+            },
+            containerColor = cardColor,
+            titleContentColor = txtColor,
+            textContentColor = txtColor
+        )
+    }
+
+    // Dialog pilihan Absen / Logout
+    if (showLogoutAbsensiDialog) {
+        AlertDialog(
+            onDismissRequest = { showLogoutAbsensiDialog = false },
+            title = { Text("Keluar", fontWeight = FontWeight.Bold) },
+            text = { Text("Apakah Anda ingin absen terlebih dahulu sebelum keluar?") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showLogoutAbsensiDialog = false
+                        navController.navigate("absensi")
                     },
-                    containerColor = cardColor,
-                    titleContentColor = txtColor,
-                    textContentColor = txtColor
+                    colors = ButtonDefaults.buttonColors(containerColor = AdminColors.primaryGradient[0])
+                ) {
+                    Icon(Icons.Rounded.CheckCircle, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Absen Dulu")
+                }
+            },
+            dismissButton = {
+                OutlinedButton(
+                    onClick = {
+                        showLogoutAbsensiDialog = false
+                        LocationTrackingMonitor.stopMonitoring()
+                        LocationCheckWorker.cancel(context)
+                        auth.signOut()
+                        Toast.makeText(context, "Logout sukses", Toast.LENGTH_SHORT).show()
+                        navController.navigate("auth") {
+                            popUpTo("dashboard") { inclusive = true }
+                        }
+                    }
+                ) {
+                    Icon(Icons.Rounded.Logout, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Langsung Keluar")
+                }
+            },
+            containerColor = cardColor,
+            titleContentColor = txtColor,
+            textContentColor = txtColor
+        )
+    }
+}
+
+// =========================================================================
+// (2) TOP ACTIONS ROW — sun toggle (kiri), sync+bell(badge)+logout (kanan)
+// =========================================================================
+@Composable
+private fun TopActionsRow(
+    isDark: Boolean,
+    txtColor: Color,
+    isOnline: Boolean,
+    isSyncing: Boolean,
+    unsyncedCount: Int,
+    unreadCount: Int,
+    onDarkModeToggle: (Boolean) -> Unit,
+    onManualSync: () -> Unit,
+    onNotificationClick: () -> Unit,
+    onLogoutClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 6.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        // Sun/theme toggle (kiri)
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Icon(
+                imageVector = if (isDark) Icons.Rounded.DarkMode else Icons.Rounded.LightMode,
+                contentDescription = null,
+                tint = if (isDark) Color(0xFFFBBF24) else Color(0xFFF59E0B),
+                modifier = Modifier.size(20.dp)
+            )
+            Switch(
+                checked = isDark,
+                onCheckedChange = onDarkModeToggle,
+                modifier = Modifier.scale(0.8f),
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = Color(0xFF8B5CF6),
+                    checkedTrackColor = Color(0xFF8B5CF6).copy(alpha = 0.5f),
+                    uncheckedThumbColor = Color.White,
+                    uncheckedTrackColor = Color(0xFF6366F1)
                 )
-            }
+            )
+        }
 
-            // Dialog Lihat Foto Besar
-            if (showFullPhotoDialog && !adminPhotoUrl.isNullOrBlank()) {
-                AlertDialog(
-                    onDismissRequest = { showFullPhotoDialog = false },
-                    title = {
-                        Text(
-                            text = "Foto Profil",
-                            fontWeight = FontWeight.Bold
-                        )
-                    },
-                    text = {
+        // Right actions
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(2.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            ModernSyncStatusIndicator(
+                isOnline = isOnline,
+                isSyncing = isSyncing,
+                unsyncedCount = unsyncedCount,
+                onManualSync = onManualSync,
+                isDark = isDark
+            )
+            // Notification bell + red badge
+            IconButton(onClick = onNotificationClick) {
+                Box {
+                    Icon(
+                        imageVector = Icons.Rounded.Notifications,
+                        contentDescription = "Notifikasi",
+                        tint = txtColor,
+                        modifier = Modifier.size(26.dp)
+                    )
+                    if (unreadCount > 0) {
                         Box(
                             modifier = Modifier
-                                .fillMaxWidth()
-                                .aspectRatio(1f)
-                                .clip(RoundedCornerShape(16.dp)),
+                                .size(18.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFFEF4444))
+                                .align(Alignment.TopEnd)
+                                .offset(x = 4.dp, y = (-4).dp),
                             contentAlignment = Alignment.Center
                         ) {
-                            AsyncImage(
-                                model = ImageRequest.Builder(LocalContext.current)
-                                    .data(adminPhotoUrl)
-                                    .crossfade(true)
-                                    .build(),
-                                contentDescription = "Foto Profil",
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .clip(RoundedCornerShape(16.dp)),
-                                contentScale = ContentScale.Crop
+                            Text(
+                                text = if (unreadCount > 9) "9+" else unreadCount.toString(),
+                                color = Color.White,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold
                             )
                         }
-                    },
-                    confirmButton = {
-                        Button(
-                            onClick = {
-                                showFullPhotoDialog = false
-                                photoPickerLauncher.launch("image/*")
-                            },
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = Color(0xFF6366F1)
+                    }
+                }
+            }
+            // Logout/exit
+            IconButton(onClick = onLogoutClick) {
+                Icon(
+                    imageVector = Icons.Rounded.Logout,
+                    contentDescription = "Logout",
+                    tint = Color(0xFFF43F5E),
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+        }
+    }
+}
+
+// =========================================================================
+// (3) PROFILE HERO CARD — gradient biru→ungu, avatar, welcome, email pill
+// =========================================================================
+@Composable
+private fun ProfileHeroCard(
+    email: String,
+    adminPhotoUrl: String?,
+    isUploadingPhoto: Boolean,
+    onAvatarClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp)
+            .shadow(
+                elevation = 16.dp,
+                shape = RoundedCornerShape(24.dp),
+                ambientColor = HomeTheme.indigo.copy(alpha = 0.25f),
+                spotColor = HomeTheme.indigo.copy(alpha = 0.30f)
+            ),
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.Transparent)
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(
+                    Brush.linearGradient(
+                        colors = listOf(HomeTheme.heroStart, HomeTheme.heroMid, HomeTheme.heroEnd),
+                        start = Offset(0f, 0f),
+                        end = Offset(Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY)
+                    )
+                )
+        ) {
+            // Decorative ambient circles
+            Box(
+                modifier = Modifier
+                    .size(130.dp)
+                    .align(Alignment.TopEnd)
+                    .offset(x = 40.dp, y = (-40).dp)
+                    .background(Color.White.copy(alpha = 0.10f), CircleShape)
+            )
+            Box(
+                modifier = Modifier
+                    .size(90.dp)
+                    .align(Alignment.BottomEnd)
+                    .offset(x = 24.dp, y = 24.dp)
+                    .background(Color.White.copy(alpha = 0.08f), CircleShape)
+            )
+
+            Column(modifier = Modifier.fillMaxWidth().padding(22.dp)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    // Avatar with white border
+                    Box(
+                        modifier = Modifier
+                            .size(58.dp)
+                            .clip(CircleShape)
+                            .background(Color.White.copy(alpha = 0.2f))
+                            .border(2.dp, Color.White.copy(alpha = 0.7f), CircleShape)
+                            .clickable { onAvatarClick() },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        when {
+                            isUploadingPhoto -> CircularProgressIndicator(
+                                modifier = Modifier.size(24.dp), color = Color.White, strokeWidth = 2.dp
                             )
+                            !adminPhotoUrl.isNullOrBlank() -> AsyncImage(
+                                model = ImageRequest.Builder(LocalContext.current)
+                                    .data(adminPhotoUrl).crossfade(true).build(),
+                                contentDescription = "Foto Profil",
+                                modifier = Modifier.fillMaxSize().clip(CircleShape),
+                                contentScale = ContentScale.Crop
+                            )
+                            else -> Icon(
+                                imageVector = Icons.Rounded.AdminPanelSettings,
+                                contentDescription = null,
+                                tint = Color.White,
+                                modifier = Modifier.size(32.dp)
+                            )
+                        }
+                        // Camera badge
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.BottomEnd)
+                                .size(18.dp)
+                                .background(Color.White, CircleShape)
+                                .padding(2.dp),
+                            contentAlignment = Alignment.Center
                         ) {
                             Icon(
                                 imageVector = Icons.Rounded.CameraAlt,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp)
+                                contentDescription = "Ubah foto",
+                                tint = HomeTheme.indigo,
+                                modifier = Modifier.size(12.dp)
                             )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Ubah Foto")
                         }
-                    },
-                    dismissButton = {
-                        TextButton(onClick = { showFullPhotoDialog = false }) {
-                            Text("Tutup")
-                        }
-                    },
-                    containerColor = cardColor,
-                    titleContentColor = txtColor,
-                    textContentColor = txtColor
+                    }
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Selamat Datang! 👋",
+                            color = Color.White.copy(alpha = 0.9f),
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Text(
+                            text = "Dashboard PDL",
+                            color = Color.White,
+                            fontSize = 24.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Email pill badge
+                Row(
+                    modifier = Modifier
+                        .background(Color.White.copy(alpha = 0.18f), RoundedCornerShape(50))
+                        .padding(horizontal = 14.dp, vertical = 9.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Email,
+                        contentDescription = null,
+                        tint = Color.White.copy(alpha = 0.9f),
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Text(
+                        text = email,
+                        color = Color.White,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Text(
+                    text = "Kelola nasabah, pembayaran, dan laporan koperasi dengan mudah",
+                    color = Color.White.copy(alpha = 0.85f),
+                    fontSize = 12.sp,
+                    lineHeight = 17.sp
                 )
             }
+        }
+    }
+}
 
-            // Dialog pilihan Absen / Logout
-            if (showLogoutAbsensiDialog) {
-                AlertDialog(
-                    onDismissRequest = { showLogoutAbsensiDialog = false },
-                    title = { Text("Keluar", fontWeight = FontWeight.Bold) },
-                    text = {
-                        Text("Apakah Anda ingin absen terlebih dahulu sebelum keluar?")
-                    },
-                    confirmButton = {
-                        Button(
-                            onClick = {
-                                showLogoutAbsensiDialog = false
-                                navController.navigate("absensi")
-                            },
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = AdminColors.primaryGradient[0]
-                            )
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.CheckCircle,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Absen Dulu")
-                        }
-                    },
-                    dismissButton = {
-                        OutlinedButton(
-                            onClick = {
-                                showLogoutAbsensiDialog = false
-                                LocationTrackingMonitor.stopMonitoring()
-                                LocationCheckWorker.cancel(context)
-                                auth.signOut()
-                                Toast.makeText(context, "Logout sukses", Toast.LENGTH_SHORT).show()
-                                navController.navigate("auth") {
-                                    popUpTo("dashboard") { inclusive = true }
-                                }
-                            }
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.Logout,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Langsung Keluar")
-                        }
-                    },
-                    containerColor = cardColor,
-                    titleContentColor = txtColor,
-                    textContentColor = txtColor
+// =========================================================================
+// (4) RINGKASAN HARI INI — white card, 4 kolom; kolom Setoran di-highlight
+// =========================================================================
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun RingkasanHariIniCard(
+    tanggal: String,
+    nasabahAktif: Int,
+    pembayaran: Int,
+    dropHariIni: Int,
+    storting: Long,
+    isDark: Boolean,
+    onClick: () -> Unit
+) {
+    val cardBg = if (isDark) AdminColors.darkCard else HomeTheme.cardWhite
+    val borderColor = if (isDark) AdminColors.darkBorder else HomeTheme.cardBorder
+    val titleColor = if (isDark) Color.White else HomeTheme.titleText
+    val labelColor = if (isDark) Color(0xFFA1A1AA) else HomeTheme.subtitleText
+
+    Card(
+        onClick = onClick,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp)
+            .shadow(
+                elevation = 6.dp,
+                shape = RoundedCornerShape(20.dp),
+                ambientColor = Color.Black.copy(alpha = 0.04f),
+                spotColor = Color.Black.copy(alpha = 0.06f)
+            ),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = cardBg),
+        border = androidx.compose.foundation.BorderStroke(1.dp, borderColor)
+    ) {
+        Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
+            // Header: judul + tanggal (kalender)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Ringkasan Hari Ini",
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = titleColor
+                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.CalendarMonth,
+                        contentDescription = null,
+                        tint = labelColor,
+                        modifier = Modifier.size(15.dp)
+                    )
+                    Text(text = tanggal, fontSize = 12.sp, color = labelColor, fontWeight = FontWeight.Medium)
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // 4 kolom
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                StatColumn(
+                    modifier = Modifier.weight(1f),
+                    icon = Icons.Rounded.Groups,
+                    iconTint = Color(0xFF6366F1),
+                    iconBg = Color(0xFFEEF0FE),
+                    value = nasabahAktif.toString(),
+                    label = "Nasabah Aktif",
+                    labelColor = labelColor,
+                    valueColor = titleColor
+                )
+                StatColumn(
+                    modifier = Modifier.weight(1f),
+                    icon = Icons.Rounded.CreditCard,
+                    iconTint = Color(0xFF10B981),
+                    iconBg = Color(0xFFE7F8F1),
+                    value = pembayaran.toString(),
+                    label = "Pembayaran",
+                    labelColor = labelColor,
+                    valueColor = titleColor
+                )
+                StatColumn(
+                    modifier = Modifier.weight(1f),
+                    icon = Icons.Rounded.Today,
+                    iconTint = Color(0xFFF59E0B),
+                    iconBg = Color(0xFFFEF4E2),
+                    value = dropHariIni.toString(),
+                    label = "Drop Hari Ini",
+                    labelColor = labelColor,
+                    valueColor = titleColor
+                )
+                // Kolom Setoran — highlighted pastel coral
+                StatColumn(
+                    modifier = Modifier.weight(1.15f),
+                    icon = Icons.Rounded.BarChart,
+                    iconTint = HomeTheme.coral,
+                    iconBg = Color.White,
+                    value = formatRupiahHome(storting),
+                    label = "Total Setoran",
+                    labelColor = HomeTheme.coral.copy(alpha = 0.85f),
+                    valueColor = HomeTheme.coral,
+                    highlightBg = if (isDark) HomeTheme.coral.copy(alpha = 0.12f) else HomeTheme.coralBg,
+                    valueFontSize = 11.sp
                 )
             }
         }
@@ -670,305 +993,59 @@ fun AdminHomeScreen(navController: NavController, viewModel: PelangganViewModel)
 }
 
 @Composable
-private fun ModernHeader(
-    email: String,
-    isDark: Boolean,
-    txtColor: Color,
-    subtitleColor: Color,
-    cardColor: Color,
-    unreadCount: Int,
-    isOnline: Boolean,
-    isSyncing: Boolean,
-    unsyncedCount: Int,
-    adminPhotoUrl: String?,                    // <-- TAMBAH
-    isUploadingPhoto: Boolean,                 // <-- TAMBAH
-    onDarkModeToggle: (Boolean) -> Unit,
-    onNotificationClick: () -> Unit,
-    onLogoutClick: () -> Unit,
-    onManualSync: () -> Unit,
-    onWelcomeCardClick: () -> Unit,
-    onAvatarClick: () -> Unit                  // <-- TAMBAH
+private fun StatColumn(
+    modifier: Modifier = Modifier,
+    icon: ImageVector,
+    iconTint: Color,
+    iconBg: Color,
+    value: String,
+    label: String,
+    labelColor: Color,
+    valueColor: Color,
+    highlightBg: Color? = null,
+    valueFontSize: androidx.compose.ui.unit.TextUnit = 16.sp
 ) {
-    val borderColor = if (isDark) AdminColors.darkBorder else AdminColors.lightBorder
-
     Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp)
+        modifier = modifier
+            .clip(RoundedCornerShape(14.dp))
+            .then(if (highlightBg != null) Modifier.background(highlightBg) else Modifier)
+            .padding(vertical = 10.dp, horizontal = 4.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        // Top Actions Row
-        Row(
+        Box(
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 8.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+                .size(34.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .background(iconBg),
+            contentAlignment = Alignment.Center
         ) {
-            // Dark Mode Toggle with label
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Icon(
-                    imageVector = if (isDark) Icons.Rounded.DarkMode else Icons.Rounded.LightMode,
-                    contentDescription = null,
-                    tint = if (isDark) Color(0xFFFBBF24) else Color(0xFFF59E0B),
-                    modifier = Modifier.size(20.dp)
-                )
-                Switch(
-                    checked = isDark,
-                    onCheckedChange = onDarkModeToggle,
-                    modifier = Modifier.scale(0.8f),
-                    colors = SwitchDefaults.colors(
-                        checkedThumbColor = Color(0xFF8B5CF6),
-                        checkedTrackColor = Color(0xFF8B5CF6).copy(alpha = 0.5f),
-                        uncheckedThumbColor = Color(0xFF6366F1),
-                        uncheckedTrackColor = Color(0xFF6366F1).copy(alpha = 0.3f)
-                    )
-                )
-            }
-
-            // Right Actions
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // Sync Status
-                ModernSyncStatusIndicator(
-                    isOnline = isOnline,
-                    isSyncing = isSyncing,
-                    unsyncedCount = unsyncedCount,
-                    onManualSync = onManualSync,
-                    isDark = isDark
-                )
-
-                // Notification Button
-                IconButton(onClick = onNotificationClick) {
-                    Box {
-                        Icon(
-                            imageVector = Icons.Rounded.Notifications,
-                            contentDescription = "Notifikasi",
-                            tint = txtColor,
-                            modifier = Modifier.size(26.dp)
-                        )
-                        if (unreadCount > 0) {
-                            Box(
-                                modifier = Modifier
-                                    .size(18.dp)
-                                    .clip(CircleShape)
-                                    .background(
-                                        Brush.linearGradient(AdminColors.roseGradient)
-                                    )
-                                    .align(Alignment.TopEnd)
-                                    .offset(x = 4.dp, y = (-4).dp)
-                            ) {
-                                Text(
-                                    text = if (unreadCount > 9) "9+" else unreadCount.toString(),
-                                    color = Color.White,
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    modifier = Modifier.align(Alignment.Center)
-                                )
-                            }
-                        }
-                    }
-                }
-
-                // Logout Button
-                IconButton(onClick = onLogoutClick) {
-                    Icon(
-                        imageVector = Icons.Rounded.Logout,
-                        contentDescription = "Logout",
-                        tint = Color(0xFFF43F5E),
-                        modifier = Modifier.size(24.dp)
-                    )
-                }
-            }
+            Icon(imageVector = icon, contentDescription = null, tint = iconTint, modifier = Modifier.size(18.dp))
         }
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .shadow(
-                    elevation = 20.dp,
-                    shape = RoundedCornerShape(24.dp),
-                    ambientColor = Color(0xFF6366F1).copy(alpha = 0.3f),
-                    spotColor = Color(0xFF6366F1).copy(alpha = 0.3f)
-                ),
-            shape = RoundedCornerShape(24.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = Color.Transparent
-            )
-        ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(
-                        Brush.linearGradient(
-                            colors = listOf(
-                                Color(0xFF6366F1),
-                                Color(0xFF8B5CF6),
-                                Color(0xFFA855F7)
-                            ),
-                            start = Offset(0f, 0f),
-                            end = Offset(Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY)
-                        )
-                    )
-            ) {
-                // Decorative circles
-                Box(
-                    modifier = Modifier
-                        .size(120.dp)
-                        .offset(x = (-30).dp, y = (-30).dp)
-                        .background(
-                            Color.White.copy(alpha = 0.1f),
-                            CircleShape
-                        )
-                )
-                Box(
-                    modifier = Modifier
-                        .size(80.dp)
-                        .align(Alignment.BottomEnd)
-                        .offset(x = 20.dp, y = 20.dp)
-                        .background(
-                            Color.White.copy(alpha = 0.1f),
-                            CircleShape
-                        )
-                )
-
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(24.dp)
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        // Avatar - DENGAN FOTO PROFIL
-                        Box(
-                            modifier = Modifier
-                                .size(56.dp)
-                                .clip(CircleShape)
-                                .background(Color.White.copy(alpha = 0.2f))
-                                .border(
-                                    width = 2.dp,
-                                    color = Color.White.copy(alpha = 0.5f),
-                                    shape = CircleShape
-                                )
-                                .clickable { onAvatarClick() },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            if (isUploadingPhoto) {
-                                // Loading indicator saat upload
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(24.dp),
-                                    color = Color.White,
-                                    strokeWidth = 2.dp
-                                )
-                            } else if (!adminPhotoUrl.isNullOrBlank()) {
-                                // Tampilkan foto profil
-                                AsyncImage(
-                                    model = ImageRequest.Builder(LocalContext.current)
-                                        .data(adminPhotoUrl)
-                                        .crossfade(true)
-                                        .build(),
-                                    contentDescription = "Foto Profil",
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .clip(CircleShape),
-                                    contentScale = ContentScale.Crop
-                                )
-                            } else {
-                                // Default icon jika tidak ada foto
-                                Icon(
-                                    imageVector = Icons.Rounded.AdminPanelSettings,
-                                    contentDescription = null,
-                                    tint = Color.White,
-                                    modifier = Modifier.size(32.dp)
-                                )
-                            }
-
-                            // Badge kamera kecil di pojok
-                            Box(
-                                modifier = Modifier
-                                    .align(Alignment.BottomEnd)
-                                    .size(18.dp)
-                                    .background(Color.White, CircleShape)
-                                    .padding(2.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.CameraAlt,
-                                    contentDescription = "Ubah foto",
-                                    tint = Color(0xFF6366F1),
-                                    modifier = Modifier.size(12.dp)
-                                )
-                            }
-                        }
-
-                        Column {
-                            Text(
-                                text = "Selamat Datang! 👋",
-                                color = Color.White.copy(alpha = 0.9f),
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Medium
-                            )
-                            Text(
-                                text = "Dashboard PDL",
-                                color = Color.White,
-                                fontSize = 24.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    // Info Row
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(
-                                Color.White.copy(alpha = 0.15f),
-                                RoundedCornerShape(12.dp)
-                            )
-                            .padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.Email,
-                            contentDescription = null,
-                            tint = Color.White.copy(alpha = 0.8f),
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Text(
-                            text = email,
-                            color = Color.White.copy(alpha = 0.9f),
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Medium,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    Text(
-                        text = "Kelola nasabah, pembayaran, dan laporan koperasi",
-                        color = Color.White.copy(alpha = 0.8f),
-                        fontSize = 13.sp,
-                        lineHeight = 18.sp
-                    )
-                }
-            }
-        }
+        Text(
+            text = value,
+            fontSize = valueFontSize,
+            fontWeight = FontWeight.Bold,
+            color = valueColor,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            textAlign = TextAlign.Center
+        )
+        Text(
+            text = label,
+            fontSize = 9.sp,
+            fontWeight = FontWeight.Medium,
+            color = labelColor,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            textAlign = TextAlign.Center
+        )
     }
 }
 
+// =========================================================================
+// (5) MENU ACTION CARD — white, colored icon box, title, desc, arrow ↘
+// =========================================================================
 data class ModernMenuItem(
     val title: String,
     val subtitle: String,
@@ -977,101 +1054,148 @@ data class ModernMenuItem(
     val onClick: () -> Unit
 )
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ModernMenuCard(item: ModernMenuItem, isDark: Boolean) {
-    val coroutineScope = rememberCoroutineScope()
-    var pressed by remember { mutableStateOf(false) }
-
-    val scale by animateFloatAsState(
-        targetValue = if (pressed) 0.95f else 1f,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessLow
-        ),
-        label = "scale"
-    )
-
-    val cardBgColor = if (isDark) AdminColors.darkCard else Color.White
-    val borderColor = if (isDark) AdminColors.darkBorder else Color(0xFFE2E8F0)
-    val titleColor = if (isDark) Color.White else Color(0xFF1E293B)
-    val subtitleColor = if (isDark) Color(0xFFA1A1AA) else Color(0xFF64748B)
+private fun MenuActionCard(item: ModernMenuItem, isDark: Boolean) {
+    val cardBg = if (isDark) AdminColors.darkCard else HomeTheme.cardWhite
+    val borderColor = if (isDark) AdminColors.darkBorder else HomeTheme.cardBorder
+    val titleColor = if (isDark) Color.White else HomeTheme.titleText
+    val subtitleColor = if (isDark) Color(0xFFA1A1AA) else HomeTheme.subtitleText
 
     Card(
+        onClick = item.onClick,
         modifier = Modifier
-            .aspectRatio(1f)
-            .scale(scale)
+            .fillMaxWidth()
+            .height(150.dp)
             .shadow(
-                elevation = if (pressed) 4.dp else 12.dp,
+                elevation = 5.dp,
                 shape = RoundedCornerShape(20.dp),
-                ambientColor = item.gradient[0].copy(alpha = 0.2f),
-                spotColor = item.gradient[0].copy(alpha = 0.2f)
-            )
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null
-            ) {
-                coroutineScope.launch {
-                    pressed = true
-                    delay(100)
-                    item.onClick()
-                    pressed = false
-                }
-            },
+                ambientColor = Color.Black.copy(alpha = 0.04f),
+                spotColor = Color.Black.copy(alpha = 0.05f)
+            ),
         shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = cardBgColor),
-        border = CardDefaults.outlinedCardBorder().copy(
-            brush = Brush.linearGradient(
-                colors = listOf(borderColor, borderColor)
-            )
-        )
+        colors = CardDefaults.cardColors(containerColor = cardBg),
+        border = androidx.compose.foundation.BorderStroke(1.dp, borderColor)
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(16.dp),
-            verticalArrangement = Arrangement.SpaceBetween
-        ) {
-            // Icon with gradient background
-            Box(
-                modifier = Modifier
-                    .size(48.dp)
-                    .background(
-                        Brush.linearGradient(item.gradient),
-                        RoundedCornerShape(14.dp)
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = item.icon,
-                    contentDescription = item.title,
-                    tint = Color.White,
-                    modifier = Modifier.size(26.dp)
-                )
-            }
-
-            Column {
+        Box(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+            Column(modifier = Modifier.fillMaxSize()) {
+                // Colored icon box
+                Box(
+                    modifier = Modifier
+                        .size(46.dp)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(Brush.linearGradient(item.gradient)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = item.icon,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.height(12.dp))
                 Text(
                     text = item.title,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
                     color = titleColor,
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    lineHeight = 18.sp
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = item.subtitle,
-                    color = subtitleColor,
-                    fontSize = 12.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
+                Spacer(modifier = Modifier.height(3.dp))
+                Text(
+                    text = item.subtitle,
+                    fontSize = 11.sp,
+                    color = subtitleColor,
+                    lineHeight = 14.sp,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
             }
+            // Arrow bottom-right
+            Icon(
+                imageVector = Icons.Rounded.ArrowForward,
+                contentDescription = null,
+                tint = if (isDark) Color(0xFFCBD5E1) else Color(0xFF334155),
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .size(18.dp)
+            )
         }
     }
 }
 
+// =========================================================================
+// (6) BOTTOM NAVIGATION — Material 3, pill indigo pada item terpilih
+// =========================================================================
+@Composable
+private fun AdminBottomNavBar(
+    isDark: Boolean,
+    onTabSelected: (route: String) -> Unit,
+    onAkunClick: () -> Unit
+) {
+    data class NavTab(val key: String, val route: String?, val label: String, val icon: ImageVector)
+    val tabs = remember {
+        listOf(
+            NavTab("beranda", "dashboard", "Beranda", Icons.Rounded.Home),
+            NavTab("nasabah", "daftarPelanggan", "Nasabah", Icons.Rounded.Groups),
+            NavTab("transaksi", "inputPembayaran", "Transaksi", Icons.Rounded.SwapHoriz),
+            NavTab("laporan", "laporanHarian", "Laporan", Icons.Rounded.Assessment),
+            NavTab("akun", null, "Akun", Icons.Rounded.Person)
+        )
+    }
+
+    val containerColor = if (isDark) AdminColors.darkCard else HomeTheme.cardWhite
+    val selectedColor = if (isDark) Color(0xFFA5B4FC) else HomeTheme.indigo
+    val unselectedColor = if (isDark) Color(0xFF94A3B8) else Color(0xFF94A3B8)
+
+    NavigationBar(
+        containerColor = containerColor,
+        tonalElevation = 6.dp,
+        modifier = Modifier
+            .fillMaxWidth()
+            .windowInsetsPadding(WindowInsets.navigationBars)
+    ) {
+        tabs.forEach { tab ->
+            val isSelected = tab.key == "beranda"   // Home is home
+            NavigationBarItem(
+                selected = isSelected,
+                onClick = {
+                    if (tab.route != null) onTabSelected(tab.route) else onAkunClick()
+                },
+                icon = {
+                    Icon(
+                        imageVector = tab.icon,
+                        contentDescription = tab.label,
+                        modifier = Modifier.size(22.dp)
+                    )
+                },
+                label = {
+                    Text(
+                        text = tab.label,
+                        fontSize = 11.sp,
+                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                },
+                colors = NavigationBarItemDefaults.colors(
+                    selectedIconColor = selectedColor,
+                    selectedTextColor = selectedColor,
+                    indicatorColor = selectedColor.copy(alpha = 0.16f),  // pill indigo
+                    unselectedIconColor = unselectedColor,
+                    unselectedTextColor = unselectedColor
+                ),
+                alwaysShowLabel = true
+            )
+        }
+    }
+}
+
+// =========================================================================
+// SYNC STATUS INDICATOR (dipertahankan dari versi sebelumnya — dipakai header)
+// =========================================================================
 @Composable
 fun ModernSyncStatusIndicator(
     isOnline: Boolean,
@@ -1092,26 +1216,10 @@ fun ModernSyncStatusIndicator(
     )
 
     val (bgColor, iconColor, icon) = when {
-        !isOnline -> Triple(
-            Color(0xFFFEE2E2),
-            Color(0xFFEF4444),
-            Icons.Rounded.CloudOff
-        )
-        isSyncing -> Triple(
-            Color(0xFFDBEAFE),
-            Color(0xFF3B82F6),
-            Icons.Rounded.Sync
-        )
-        unsyncedCount > 0 -> Triple(
-            Color(0xFFFEF3C7),
-            Color(0xFFF59E0B),
-            Icons.Rounded.CloudSync
-        )
-        else -> Triple(
-            Color(0xFFD1FAE5),
-            Color(0xFF10B981),
-            Icons.Rounded.CloudDone
-        )
+        !isOnline -> Triple(Color(0xFFFEE2E2), Color(0xFFEF4444), Icons.Rounded.CloudOff)
+        isSyncing -> Triple(Color(0xFFDBEAFE), Color(0xFF3B82F6), Icons.Rounded.Sync)
+        unsyncedCount > 0 -> Triple(Color(0xFFFEF3C7), Color(0xFFF59E0B), Icons.Rounded.CloudSync)
+        else -> Triple(Color(0xFFD1FAE5), Color(0xFF10B981), Icons.Rounded.CloudDone)
     }
 
     Box(
@@ -1134,20 +1242,13 @@ fun ModernSyncStatusIndicator(
                 tint = iconColor,
                 modifier = Modifier
                     .size(18.dp)
-                    .then(
-                        if (isSyncing) Modifier.graphicsLayer { rotationZ = rotation }
-                        else Modifier
-                    )
+                    .then(if (isSyncing) Modifier.graphicsLayer { rotationZ = rotation } else Modifier)
             )
-
             if (unsyncedCount > 0 && !isSyncing) {
                 Box(
                     modifier = Modifier
                         .size(18.dp)
-                        .background(
-                            Brush.linearGradient(AdminColors.roseGradient),
-                            CircleShape
-                        ),
+                        .background(Brush.linearGradient(AdminColors.roseGradient), CircleShape),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
@@ -1163,9 +1264,8 @@ fun ModernSyncStatusIndicator(
 }
 
 // =========================================================================
-// BROADCAST BANNER SECTION
+// BROADCAST BANNER SECTION (dipertahankan)
 // =========================================================================
-
 @Composable
 private fun BroadcastBannerSection(
     broadcasts: List<BroadcastMessage>,
@@ -1178,10 +1278,7 @@ private fun BroadcastBannerSection(
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         broadcasts.forEach { broadcast ->
-            BroadcastBannerCard(
-                broadcast = broadcast,
-                isDark = isDark
-            )
+            BroadcastBannerCard(broadcast = broadcast, isDark = isDark)
         }
     }
 }
@@ -1208,11 +1305,8 @@ private fun BroadcastBannerCard(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.Top
         ) {
-            // Icon
             Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .background(iconBgColor, CircleShape),
+                modifier = Modifier.size(40.dp).background(iconBgColor, CircleShape),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
@@ -1222,24 +1316,12 @@ private fun BroadcastBannerCard(
                     modifier = Modifier.size(24.dp)
                 )
             }
-
-            // Content
             Column(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                Text(
-                    text = broadcast.title,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 14.sp,
-                    color = titleColor
-                )
-                Text(
-                    text = broadcast.message,
-                    fontSize = 13.sp,
-                    color = messageColor,
-                    lineHeight = 18.sp
-                )
+                Text(text = broadcast.title, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = titleColor)
+                Text(text = broadcast.message, fontSize = 13.sp, color = messageColor, lineHeight = 18.sp)
                 Row(
                     modifier = Modifier.padding(top = 4.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -1251,11 +1333,7 @@ private fun BroadcastBannerCard(
                         tint = senderColor,
                         modifier = Modifier.size(14.dp)
                     )
-                    Text(
-                        text = broadcast.senderName,
-                        fontSize = 11.sp,
-                        color = senderColor
-                    )
+                    Text(text = broadcast.senderName, fontSize = 11.sp, color = senderColor)
                 }
             }
         }
@@ -1278,286 +1356,4 @@ fun SyncStatusIndicator(
         onManualSync = onManualSync,
         isDark = textColor == Color.White
     )
-}
-
-// =========================================================================
-// ✅ PREMIUM SUMMARY CARD — pimpinan 07 Jun 2026
-// -------------------------------------------------------------------------
-// Hero card di Home: gradient halus, currency Storting prominen, Drop & Total
-// Aktif sebagai dua badge sekunder dengan ikon dan tipografi modern. Onclick
-// → navigasi Ringkasan lengkap untuk detail lebih dalam.
-//
-// CATATAN:
-//   - Tidak ada perhitungan ulang di sini — semua angka di-pass dari parent
-//     yang sudah men-derive dari state ViewModel (lihat blok KONSOLIDASI
-//     METRIK di awal composable AdminHomeScreen).
-//   - Formatter rupiah memakai Locale ID utk titik ribuan ("Rp 1.234.567").
-//   - Responsif: outer card maxWidth = parent, badge ditata Row dengan weight
-//     1f masing-masing → otomatis equal width di layar kecil; teks panjang
-//     pakai TextOverflow.Ellipsis dgn maxLines=1 supaya tidak overlap.
-// =========================================================================
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun PremiumSummaryCard(
-    stortingHariIni: Long,
-    dropHariIni: Int,
-    totalNasabahAktif: Int,
-    isDark: Boolean,
-    onClick: () -> Unit
-) {
-    val rupiah = remember(stortingHariIni) {
-        "Rp " + NumberFormat.getNumberInstance(Locale("in", "ID")).format(stortingHariIni)
-    }
-    // Gradient hero — premium fintech feel; tetap subtle agar tidak melawan
-    // kontras teks. Dark mode pakai versi lebih dalam (indigo→violet),
-    // light mode pakai indigo→biru cerah dgn alpha card.
-    val gradient = if (isDark) {
-        Brush.linearGradient(
-            colors = listOf(Color(0xFF312E81), Color(0xFF6D28D9)),
-            start = Offset(0f, 0f),
-            end = Offset(900f, 900f)
-        )
-    } else {
-        Brush.linearGradient(
-            colors = listOf(Color(0xFF4F46E5), Color(0xFF7C3AED)),
-            start = Offset(0f, 0f),
-            end = Offset(900f, 900f)
-        )
-    }
-
-    Card(
-        onClick = onClick,
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp)
-            .shadow(
-                elevation = 14.dp,
-                shape = RoundedCornerShape(24.dp),
-                ambientColor = Color(0xFF6366F1).copy(alpha = 0.35f),
-                spotColor = Color(0xFF6366F1).copy(alpha = 0.45f)
-            ),
-        shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.Transparent)
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(gradient)
-                .padding(20.dp)
-        ) {
-            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                // ── Header strip: judul + ikon trending halus ───────────────
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "Ringkasan Hari Ini",
-                            color = Color.White.copy(alpha = 0.85f),
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Medium,
-                            letterSpacing = 1.2.sp
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = "Storting Hari Ini",
-                            color = Color.White.copy(alpha = 0.95f),
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                    }
-                    Box(
-                        modifier = Modifier
-                            .size(40.dp)
-                            .clip(CircleShape)
-                            .background(Color.White.copy(alpha = 0.18f)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.TrendingUp,
-                            contentDescription = null,
-                            tint = Color.White,
-                            modifier = Modifier.size(22.dp)
-                        )
-                    }
-                }
-
-                // ── Currency prominen: alignment baseline ke kiri ───────────
-                Text(
-                    text = rupiah,
-                    color = Color.White,
-                    fontSize = 28.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    letterSpacing = 0.3.sp
-                )
-
-                // ── Divider sangat tipis utk hierarki visual ───────────────
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(1.dp)
-                        .background(Color.White.copy(alpha = 0.18f))
-                )
-
-                // ── Dua badge sekunder: Drop + Total Aktif ─────────────────
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    SummaryBadge(
-                        modifier = Modifier.weight(1f),
-                        label = "Drop Hari Ini",
-                        value = dropHariIni.toString(),
-                        valueSuffix = if (dropHariIni == 1) "nasabah" else "nasabah",
-                        icon = Icons.Rounded.PersonAdd
-                    )
-                    SummaryBadge(
-                        modifier = Modifier.weight(1f),
-                        label = "Nasabah Aktif",
-                        value = totalNasabahAktif.toString(),
-                        valueSuffix = "total",
-                        icon = Icons.Rounded.Groups
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun SummaryBadge(
-    modifier: Modifier = Modifier,
-    label: String,
-    value: String,
-    valueSuffix: String,
-    icon: ImageVector
-) {
-    Row(
-        modifier = modifier
-            .clip(RoundedCornerShape(14.dp))
-            .background(Color.White.copy(alpha = 0.12f))
-            .padding(horizontal = 12.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Box(
-            modifier = Modifier
-                .size(32.dp)
-                .clip(CircleShape)
-                .background(Color.White.copy(alpha = 0.22f)),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = Color.White,
-                modifier = Modifier.size(18.dp)
-            )
-        }
-        Spacer(modifier = Modifier.width(10.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = label,
-                color = Color.White.copy(alpha = 0.78f),
-                fontSize = 10.sp,
-                fontWeight = FontWeight.Medium,
-                letterSpacing = 0.6.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Spacer(modifier = Modifier.height(1.dp))
-            Row(verticalAlignment = Alignment.Bottom) {
-                Text(
-                    text = value,
-                    color = Color.White,
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Spacer(modifier = Modifier.width(4.dp))
-                Text(
-                    text = valueSuffix,
-                    color = Color.White.copy(alpha = 0.7f),
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Medium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(bottom = 2.dp)
-                )
-            }
-        }
-    }
-}
-
-// =========================================================================
-// ✅ ADMIN BOTTOM NAVIGATION BAR — pimpinan 07 Jun 2026
-// -------------------------------------------------------------------------
-// Material 3 NavigationBar dengan 4 tab tujuan paling sering dipakai Admin
-// Lapangan. Beranda selalu ditandai selected (Home is home); tap tab lain
-// → navController.navigate(route) dgn popUpTo("dashboard"){saveState=true}
-// + launchSingleTop=true + restoreState=true → tidak ada akumulasi stack.
-// Tidak menambah/mengubah route di AppNavigation.kt.
-// =========================================================================
-@Composable
-private fun AdminBottomNavigationBar(
-    isDark: Boolean,
-    onTabSelected: (route: String) -> Unit
-) {
-    data class NavTab(val route: String, val label: String, val icon: ImageVector)
-    val tabs = remember {
-        listOf(
-            NavTab("dashboard", "Beranda", Icons.Rounded.Home),
-            NavTab("daftarPelanggan", "Nasabah", Icons.Rounded.Groups),
-            NavTab("ringkasan", "Ringkasan", Icons.Rounded.Analytics),
-            NavTab("laporanHarian", "Laporan", Icons.Rounded.Assessment)
-        )
-    }
-
-    val containerColor = if (isDark) AdminColors.darkCard else AdminColors.lightCard
-    val selectedItemColor = if (isDark) Color(0xFFA5B4FC) else Color(0xFF4F46E5)
-    val unselectedItemColor = if (isDark) Color(0xFF94A3B8) else Color(0xFF64748B)
-
-    NavigationBar(
-        containerColor = containerColor,
-        tonalElevation = 4.dp,
-        modifier = Modifier
-            .fillMaxWidth()
-            .windowInsetsPadding(WindowInsets.navigationBars)
-    ) {
-        tabs.forEach { tab ->
-            val isSelected = tab.route == "dashboard"
-            NavigationBarItem(
-                selected = isSelected,
-                onClick = { onTabSelected(tab.route) },
-                icon = {
-                    Icon(
-                        imageVector = tab.icon,
-                        contentDescription = tab.label,
-                        modifier = Modifier.size(22.dp)
-                    )
-                },
-                label = {
-                    Text(
-                        text = tab.label,
-                        fontSize = 11.sp,
-                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                },
-                colors = NavigationBarItemDefaults.colors(
-                    selectedIconColor = selectedItemColor,
-                    selectedTextColor = selectedItemColor,
-                    indicatorColor = selectedItemColor.copy(alpha = 0.14f),
-                    unselectedIconColor = unselectedItemColor,
-                    unselectedTextColor = unselectedItemColor
-                ),
-                alwaysShowLabel = true
-            )
-        }
-    }
 }
