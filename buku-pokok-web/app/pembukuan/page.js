@@ -1354,6 +1354,48 @@ function getKategoriNasabah(nasabah, refDateStr) {
         }
       });
 
+      // =====================================================================
+      // ✅ RULE 3 — ABSOLUTE FREEZE (pimpinan 08 Jun 2026 final)
+      // ---------------------------------------------------------------------
+      // Buku Pokok WAJIB mengikuti aturan snapshot-otoritas-absolut yang sama
+      // dengan Buku Rekap (commit 11bd5df): bila rekap_harian_final punya
+      // entri untuk tanggal ini, snapshot menang TANPA SYARAT — angka
+      // historis imun mutasi retroaktif (edit pembayaran lama, hapus nasabah,
+      // koreksi besarPinjaman, dst.).
+      //
+      // Aggregate strategy: rekapBeku struktur = { [adminUid]: { [dateStr]:
+      // {target, storting} } } per admin. Buku Pokok = agregat lintas-admin →
+      // sum semua admin di cabang untuk dateStr.
+      //
+      // Yang di-override: targetKini + stortingKini (TOTAL kolom harian).
+      // Yang TIDAK di-override:
+      //   - dropKini → schema rekap_harian_final saat ini hanya freeze
+      //     target+storting (lihat freezeRekapHarian.js); Drop praktis
+      //     immutable karena nasabah dihapus tetap di-arsip & re-injected
+      //     (commit e5abea6 dst.) — perubahan retroaktif sangat jarang.
+      //   - Breakdown kategori (pbKini/l1Kini/cmKini/mbKini/mlKini) → snapshot
+      //     tidak punya breakdown; tetap live. Trade-off: pada tanggal yang
+      //     ada koreksi retroaktif, sum breakdown bisa beda dgn stortingKini
+      //     snapshot. Total = snapshot otoritas; breakdown = visibility live.
+      // =====================================================================
+      if (data.rekapBeku) {
+        let bekuTargetSum = 0;
+        let bekuStortingSum = 0;
+        let adaBeku = false;
+        Object.values(data.rekapBeku).forEach(perAdmin => {
+          const e = perAdmin && perAdmin[dateStr];
+          if (e) {
+            bekuTargetSum += e.target || 0;
+            bekuStortingSum += e.storting || 0;
+            adaBeku = true;
+          }
+        });
+        if (adaBeku) {
+          targetKini = bekuTargetSum;
+          stortingKini = bekuStortingSum;
+        }
+      }
+
       dropBerjalan += dropKini;
       targetBerjalan += targetKini;
       stortingBerjalan += stortingKini;

@@ -1862,6 +1862,22 @@ function BukuRekapScreen({ user, cabang, cabangList, onBack, onLogout, onNavigat
         : (orphanArr?.[adm.uid] || 0); // back-compat shape lama bila CF belum di-deploy
       storting += orphanStortingAdm;
 
+      // ✅ RULE 2 komponen #2 (pimpinan 08 Jun 2026 final): pelunasan utang lama
+      // top-up (sisaUtangLamaSebelumTopUp) — uang masuk dari nasabah saat top-up
+      // dicairkan, TIDAK ter-record di n.pembayaran pinjaman baru. Sebelum patch
+      // ini Web Buku Rekap (live) MELEWATKAN komponen ini → divergensi dgn
+      // Android RingkasanDashboardScreen.kt:179-181, Web Buku Pokok (riwayat),
+      // dan CF summary.pembayaranHariIni (calculateDelta:644-678).
+      // Filter identik dgn Android: pinjamanKe>1 & sisaUtang>0 &
+      // tanggalPencairan==todayStr & status==Aktif (top-up baru hari ini).
+      const pelunasanTopUpAdm = resortNasabah
+        .filter(n => (n.pinjamanKe || 1) > 1
+          && (n.sisaUtangLamaSebelumTopUp || 0) > 0
+          && (n.tanggalPencairan || '').trim() === todayStr
+          && (n.status || '') === 'Aktif')
+        .reduce((s, n) => s + (n.sisaUtangLamaSebelumTopUp || 0), 0);
+      storting += pelunasanTopUpAdm;
+
       // =====================================================================
       // ✅ BENTENG ANTI-SHRINK: snapshot rekap_harian_final ADALAH OTORITAS.
       // ---------------------------------------------------------------------
