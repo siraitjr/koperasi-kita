@@ -117,26 +117,80 @@ fun calculateTargetContribution(p: Pelanggan, today: String): Long {
         }
     }
 
-    // ── POIN 4 & 5: acuan = HANYA tanggalPencairan (no fallback) ───────────
+    // =====================================================================
+    // ── POIN 4 & 5: acuan tanggal pencairan, dgn FALLBACK utk legacy data ──
+    // ---------------------------------------------------------------------
+    // Audit pimpinan 08 Jun 2026 (Resort Sederhana & Harmonis): commit
+    // sebelumnya (Scenario 4) melarang fallback ke tglPengajuan/tglDaftar
+    // SAMA SEKALI. Itu BENAR untuk mencegah leak nasabah approved-belum-cair,
+    // TAPI terlalu agresif untuk nasabah LEGACY yang sudah `status="Aktif"`
+    // namun field `tanggalPencairan` kosong (workflow lama / migrasi data).
+    //
+    // Bukti dari audit forensik:
+    //   - Resort Harmonis (file 69d60d8c): 7 nasabah Aktif tglPencairan=""
+    //     (Tasni, Rodiah, Tata, SANTI, MEMO, TRI, SUPRIANTO) → total target
+    //     hilang Rp 144.000 → persis match gap manual book.
+    //   - Resort Sederhana (file 4842194b): 1 nasabah Aktif tglPencairan=""
+    //     (Irawati, besar 1.000.000) → target hilang Rp 30.000 → persis match
+    //     gap manual book.
+    //
+    // ATURAN BARU:
+    //   BRANCH A (tglPencairan ADA) → jalur Scenario 4/5 asli (DIPERTAHANKAN):
+    //     - tglPencairan == today + pinjamanKe>1 + besarLama>0 → anchor lama.
+    //     - tglPencairan == today + pinjaman pertama          → 0 (besok mulai).
+    //     - tglPencairan > today                              → 0 (belum cair).
+    //     - tglPencairan < today + 3-bulan boundary check     → eligible.
+    //
+    //   BRANCH B (tglPencairan KOSONG):
+    //     - Sampai sini berarti pre-guard live status lolos → nasabah pasti
+    //       status="Aktif" / lunas-hari-ini / MP-hari-ini / masih-aktif-pada-
+    //       tanggal / belum-MP-pada-tanggal. JADI Scenario 4 (reject approved-
+    //       belum-cair) tetap terjaga: nasabah dgn status "Disetujui" /
+    //       "Menunggu Approval" sudah ditolak di pre-guard (line 73-78).
+    //     - Fallback acuan ke tglPengajuan → tglDaftar utk 3-bulan check
+    //       (legacy data sering hanya punya tanggal pengajuan/daftar).
+    //     - TIDAK menjalankan gate "cair hari ini" (tidak ada tanggal pencairan).
+    //     - Bila kedua fallback juga kosong → tetap dihitung (legacy nasabah
+    //       aktif tanpa tanggal apapun = buku manual tetap menagih mereka).
+    // =====================================================================
     val tglPencairan = p.tanggalPencairan
-    if (tglPencairan.isNotEmpty() && tglPencairan == today) {
-        // POIN 5: Top-up Cairkan today → anchor pinjaman LAMA.
-        if (p.pinjamanKe > 1 && p.besarPinjamanLamaSebelumTopUp > 0) {
-            return p.besarPinjamanLamaSebelumTopUp.toLong() * 3L / 100L
-        }
-        // Pinjaman pertama Cairkan today → mulai besok.
-        return 0L
-    }
-    val pencairanDate = parseTanggalIndo(tglPencairan) ?: return 0L
-    // Cairkan di masa depan relatif kolom → belum aktif.
-    if (pencairanDate.after(curDate)) return 0L
 
-    // ── POIN 3: Batas 3 bulan kalender (Option A: drop di hari boundary) ───
-    val acuanCal = Calendar.getInstance(WIB).apply { time = pencairanDate }
-    val curCal = Calendar.getInstance(WIB).apply { time = curDate }
-    val acuanIdx = acuanCal.get(Calendar.YEAR) * 12 + acuanCal.get(Calendar.MONTH)
-    val curIdx = curCal.get(Calendar.YEAR) * 12 + curCal.get(Calendar.MONTH)
-    if (curIdx - acuanIdx > 3) return 0L
+    // BRANCH A: jalur normal — tanggalPencairan ADA
+    if (tglPencairan.isNotEmpty()) {
+        if (tglPencairan == today) {
+            // POIN 5: Top-up Cairkan today → anchor pinjaman LAMA.
+            if (p.pinjamanKe > 1 && p.besarPinjamanLamaSebelumTopUp > 0) {
+                return p.besarPinjamanLamaSebelumTopUp.toLong() * 3L / 100L
+            }
+            // Pinjaman pertama Cairkan today → mulai besok.
+            return 0L
+        }
+        val pencairanDate = parseTanggalIndo(tglPencairan) ?: return 0L
+        if (pencairanDate.after(curDate)) return 0L
+        // POIN 3: 3-bulan kalender Option A.
+        val acuanCalA = Calendar.getInstance(WIB).apply { time = pencairanDate }
+        val curCalA = Calendar.getInstance(WIB).apply { time = curDate }
+        val acuanIdxA = acuanCalA.get(Calendar.YEAR) * 12 + acuanCalA.get(Calendar.MONTH)
+        val curIdxA = curCalA.get(Calendar.YEAR) * 12 + curCalA.get(Calendar.MONTH)
+        if (curIdxA - acuanIdxA > 3) return 0L
+        return targetFlat
+    }
+
+    // BRANCH B: legacy fallback — tanggalPencairan KOSONG, status=Aktif (sudah
+    // lolos pre-guard). Pakai tglPengajuan → tglDaftar utk 3-bulan check saja.
+    val tglAcuan = p.tanggalPengajuan.takeIf { it.isNotBlank() } ?: p.tanggalDaftar
+    val acuanDate = parseTanggalIndo(tglAcuan)
+    if (acuanDate == null) {
+        // Legacy aktif tanpa tanggal apapun → tetap dihitung (rule pimpinan
+        // 08 Jun 2026: buku manual menagih nasabah aktif walau metadata cacat).
+        return targetFlat
+    }
+    if (acuanDate.after(curDate)) return 0L  // pengajuan di masa depan → safety
+    val acuanCalB = Calendar.getInstance(WIB).apply { time = acuanDate }
+    val curCalB = Calendar.getInstance(WIB).apply { time = curDate }
+    val acuanIdxB = acuanCalB.get(Calendar.YEAR) * 12 + acuanCalB.get(Calendar.MONTH)
+    val curIdxB = curCalB.get(Calendar.YEAR) * 12 + curCalB.get(Calendar.MONTH)
+    if (curIdxB - acuanIdxB > 3) return 0L
 
     return targetFlat
 }
