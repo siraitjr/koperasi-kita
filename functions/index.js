@@ -127,6 +127,9 @@ exports.summaryHealthCheck = summaryRepair.smartHealthCheck;
 exports.updateAllSummaries = updateAllSummaries.updateAllSummaries;
 exports.triggerTargetRecalc = updateAllSummaries.triggerTargetRecalc;
 exports.recalculateNow = updateAllSummaries.recalculateNow;
+// ✅ Maintenance one-shot re-freeze (pimpinan 08 Jun 2026) — override eksplisit
+// Rule 3 dengan auth+role+audit trail. Lihat refreezeRekapHarian.js.
+exports.refreezeRekapHarian = require('./refreezeRekapHarian').refreezeRekapHarian;
 exports.searchNikGlobal = onNikRegistry.searchNikGlobal;
 
 // =========================================================================

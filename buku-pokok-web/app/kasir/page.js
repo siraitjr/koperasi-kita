@@ -5,7 +5,7 @@
 // KASIR WEB - Jurnal Kasir & Akses Buku Pokok
 // =========================================================================
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { onAuthStateChanged, signInWithEmailAndPassword, signOut } from 'firebase/auth';
 import { auth, storage, database } from '../../lib/firebase';
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
@@ -1718,6 +1718,68 @@ function BukuRekapScreen({ user, cabang, cabangList, onBack, onLogout, onNavigat
   const [selectedBulan, setSelectedBulan] = useState(bulanOptions[0]?.key || '');
   // Pencairan tabungan (jurnal_transaksi) untuk kolom "Cair Tab." + kredit tunaiPasar.
   const [jurnalEntries, setJurnalEntries] = useState([]);
+
+  // =====================================================================
+  // ✅ OPTIMISTIC UPDATE (pimpinan 08 Jun 2026, SAFE BUDGET MODE)
+  // ---------------------------------------------------------------------
+  // Tujuan: Storting di Buku Rekap update INSTAN saat pembayaran/cicilan
+  // berhasil di-submit, tanpa menunggu CF triggers selesai meng-agregat
+  // summary node ATAU menunggu cache TTL (10 menit) habis.
+  //
+  // Cara kerja:
+  //   1. Helper `applyOptimisticPembayaran` MUTASI data.nasabah langsung di
+  //      memori (immutable update): tambah jumlah ke pembayaran[tanggal].total
+  //      pada nasabah pelangganId. computeRekapRows otomatis recompute →
+  //      storting UI bertambah instan.
+  //   2. Cross-component trigger via window CustomEvent
+  //      'bukuRekap:optimisticPembayaran' — page/komponen manapun yang
+  //      berhasil menulis cicilan ke RTDB tinggal dispatch event ini setelah
+  //      mutasi sukses.
+  //   3. Ketika getBukuPokok fetch berikutnya (cache miss / refresh manual),
+  //      setData(result.data) menimpa state → optimistic patch otomatis
+  //      bersih (tidak ada double-count permanen).
+  //
+  // Constraint TAAT pimpinan:
+  //   - Cache TTL getBukuPokok TIDAK disentuh (tetap hemat RTDB).
+  //   - Hanya WRITE MUTATION sukses yang trigger update (dispatcher hanya
+  //     dispatch setelah RTDB write berhasil).
+  //   - TIDAK ada listener real-time RTDB baru.
+  //
+  // Contract event:
+  //   window.dispatchEvent(new CustomEvent('bukuRekap:optimisticPembayaran', {
+  //     detail: { pelangganId: string, jumlah: number, tanggal: string }
+  //   }))
+  //   tanggal format: 'dd MMM yyyy' (mis. '08 Jun 2026').
+  // =====================================================================
+  const applyOptimisticPembayaran = useCallback((pelangganId, jumlah, tanggal) => {
+    if (!pelangganId || !Number.isFinite(jumlah) || jumlah <= 0 || !tanggal) return;
+    setData(prev => {
+      if (!prev || !Array.isArray(prev.nasabah)) return prev;
+      const idx = prev.nasabah.findIndex(n => n && n.id === pelangganId);
+      if (idx === -1) return prev;
+      const n = prev.nasabah[idx];
+      const prevPay = (n.pembayaran && n.pembayaran[tanggal]) || { total: 0, entries: [] };
+      const newPembayaran = {
+        ...(n.pembayaran || {}),
+        [tanggal]: {
+          ...prevPay,
+          total: (prevPay.total || 0) + jumlah
+        }
+      };
+      const newNasabah = prev.nasabah.slice();
+      newNasabah[idx] = { ...n, pembayaran: newPembayaran };
+      return { ...prev, nasabah: newNasabah };
+    });
+  }, []);
+
+  useEffect(() => {
+    const handler = (e) => {
+      const d = e.detail || {};
+      applyOptimisticPembayaran(d.pelangganId, Number(d.jumlah), d.tanggal);
+    };
+    window.addEventListener('bukuRekap:optimisticPembayaran', handler);
+    return () => window.removeEventListener('bukuRekap:optimisticPembayaran', handler);
+  }, [applyOptimisticPembayaran]);
 
   useEffect(() => {
     if (!activeCabang) return;
