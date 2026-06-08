@@ -2895,6 +2895,30 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                         }
                     }
 
+                    // ✅ FIX DROP COUNT (audit pimpinan 08 Jun 2026): drop per admin
+                    // (= nasabahBaruHariIni) sebelumnya TIDAK dihitung di builder lokal
+                    // ini → AdminSummary.nasabahBaruHariIni default 0 → "drop hilang"
+                    // di PimpinanReportsScreen/KoordinatorReportsScreen saat app
+                    // memakai jalur calculateAdminSummary (fallback) alih-alih
+                    // SmartFirebaseLoader (server summary). Mirror 1:1 dengan sibling
+                    // calculateAdminSummaryFromRawData (PVM:14108-14115): nasabah
+                    // berstatus Aktif, BELUM lunas, tanggalDaftar (fallback
+                    // tanggalPengajuan) == hari ini. Drop = pencairan/registrasi baru.
+                    val nasabahBaruHariIniAdmin = pelangganList.count { pelanggan ->
+                        val isStatusAktif = pelanggan.status == "Aktif" ||
+                                pelanggan.status.equals("aktif", ignoreCase = true) ||
+                                pelanggan.status == "Active"
+                        if (!isStatusAktif) return@count false
+                        val totalBayar = pelanggan.pembayaranList.sumOf { pay ->
+                            pay.jumlah.toLong() + pay.subPembayaran.sumOf { sub -> sub.jumlah.toLong() }
+                        }
+                        val isBelumLunas = totalBayar < pelanggan.totalPelunasan.toLong() ||
+                                pelanggan.totalPelunasan <= 0
+                        if (!isBelumLunas) return@count false
+                        val tanggalDaftar = pelanggan.tanggalDaftar.ifBlank { pelanggan.tanggalPengajuan }
+                        tanggalDaftar == summaryToday
+                    }
+
                     AdminSummary(
                         adminId = adminId,
                         adminEmail = adminEmail,
@@ -2904,6 +2928,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                         nasabahAktif = nasabahAktif,
                         nasabahLunas = nasabahLunas,
                         nasabahMenungguPencairan = nasabahMenungguPencairan, // ✅ v4: Tambah field baru
+                        nasabahBaruHariIni = nasabahBaruHariIniAdmin, // ✅ FIX drop count (08 Jun 2026)
                         totalPiutang = totalPiutang,
                         pembayaranHariIni = pembayaranHariIniAdmin
                     )

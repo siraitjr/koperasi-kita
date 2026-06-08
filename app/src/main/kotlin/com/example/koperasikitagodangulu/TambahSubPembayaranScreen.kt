@@ -178,6 +178,9 @@ fun TambahSubPembayaranScreen(
     val isSimpanEnabled = remember(jumlahNumerik, tanggalSubPembayaran) {
         jumlahNumerik >= 1000 && tanggalSubPembayaran.isNotBlank()
     }
+    // ✅ Defensive double-write guard (audit pimpinan 08 Jun 2026): cegah double-tap
+    // offline → sub-pembayaran ganda. Layar popBackStack setelah submit (no reset).
+    var isSubmitting by remember { mutableStateOf(false) }
 
     Scaffold(
         containerColor = bgColor,
@@ -262,11 +265,13 @@ fun TambahSubPembayaranScreen(
                                 Toast.makeText(context, "Tanggal harus diisi", Toast.LENGTH_SHORT).show()
                                 return@SubPaymentGradientButton
                             }
+                            if (isSubmitting) return@SubPaymentGradientButton
+                            isSubmitting = true
                             viewModel.tambahSubPembayaran(pelangganId, pembayaranIndex, jumlahNumerik, tanggalSubPembayaran)
                             Toast.makeText(context, "Sub pembayaran berhasil ditambahkan", Toast.LENGTH_SHORT).show()
                             navController.popBackStack()
                         },
-                        enabled = isSimpanEnabled,
+                        enabled = isSimpanEnabled && !isSubmitting,
                         gradient = SubPaymentColors.successGradient,
                         icon = Icons.Rounded.Add
                     )

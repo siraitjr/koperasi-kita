@@ -93,6 +93,13 @@ fun InputPembayaranLangsungScreen(
     var queryNama by remember { mutableStateOf("") }
     var expanded by remember { mutableStateOf(false) }
     var showSplitConfirmation by remember { mutableStateOf(false) }
+    // ✅ Defensive double-write guard (audit pimpinan 08 Jun 2026): cegah double-tap
+    // offline → pembayaran ganda. Layar ini RESET form (tidak popBackStack), jadi
+    // isSubmitting di-reset saat admin memilih nasabah baru (LaunchedEffect di bawah).
+    var isSubmitting by remember { mutableStateOf(false) }
+    LaunchedEffect(selectedPelanggan) {
+        if (selectedPelanggan != null) isSubmitting = false
+    }
 
     val datePickerDialog = DatePickerDialog(
         context,
@@ -264,7 +271,8 @@ fun InputPembayaranLangsungScreen(
                         onClick = {
                             if (jumlahInt > jumlahCicilanReferensi && jumlahCicilanReferensi > 0) {
                                 showSplitConfirmation = true
-                            } else {
+                            } else if (!isSubmitting) {
+                                isSubmitting = true
                                 viewModel.tambahPembayaran(pelangganIdSelected, jumlahInt, tanggalPembayaran)
                                 Toast.makeText(context, "Pembayaran berhasil disimpan.", Toast.LENGTH_SHORT).show()
                                 // Reset form
@@ -274,7 +282,7 @@ fun InputPembayaranLangsungScreen(
                                 queryNama = ""
                             }
                         },
-                        enabled = formValid,
+                        enabled = formValid && !isSubmitting,
                         gradient = InputColors.successGradient,
                         icon = Icons.Rounded.Save
                     )
@@ -308,6 +316,8 @@ fun InputPembayaranLangsungScreen(
                 },
                 confirmButton = {
                     TextButton(onClick = {
+                        if (isSubmitting) return@TextButton
+                        isSubmitting = true
                         showSplitConfirmation = false
                         viewModel.tambahMultiplePembayaran(
                             pelangganIdSelected,
@@ -328,6 +338,8 @@ fun InputPembayaranLangsungScreen(
                 },
                 dismissButton = {
                     TextButton(onClick = {
+                        if (isSubmitting) return@TextButton
+                        isSubmitting = true
                         showSplitConfirmation = false
                         viewModel.tambahPembayaran(pelangganIdSelected, jumlahInt, tanggalPembayaran)
                         Toast.makeText(context, "Pembayaran berhasil disimpan.", Toast.LENGTH_SHORT).show()
