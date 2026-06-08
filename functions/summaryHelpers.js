@@ -228,22 +228,29 @@ function calculateTargetHariIni(pelanggan) {
     if (isHoliday(today)) return 0;
     if (!pelanggan) return 0;
 
-    // ✅ Scenario 4 (koreksi pimpinan 07 Jun 2026): target HANYA mulai H+1
-    // SETELAH Cairkan. tanggalPencairan kosong (approved tapi BELUM di-Cairkan)
-    // → 0. TIDAK ada fallback ke tanggalPengajuan/tanggalDaftar — fallback itu
-    // mengaktifkan target secara prematur (LEAK) sebelum pencairan nyata.
+    // ✅ MIRROR Android d9457f5 (audit forensik pimpinan 08 Jun 2026):
+    // BRANCH A (pencairan ada) + BRANCH B (legacy fallback). calculateTargetHariIni
+    // HANYA dipanggil utk nasabah kategori 'aktif' (getEffectiveCategory) →
+    // "Disetujui"/"Menunggu Approval" sudah dikecualikan di level kategori,
+    // sehingga Scenario 4 (reject approved-belum-cair) TETAP TERJAGA.
     const tanggalPencairan = (pelanggan.tanggalPencairan || '').trim();
-    if (!tanggalPencairan) return 0;
+    const target = Math.floor((pelanggan.besarPinjaman || 0) * 3 / 100);
 
-    // Exclude nasabah cair hari ini (Android: baru mulai besok)
-    if (tanggalPencairan === today) return 0;
+    // ── BRANCH A: tanggalPencairan ADA (jalur Scenario 4/5 asli) ──
+    if (tanggalPencairan) {
+        if (tanggalPencairan === today) return 0;            // cair hari ini → mulai besok
+        if (isOverThreeMonths(tanggalPencairan)) return 0;   // macet > 3 bulan (Option A)
+        return target;
+    }
 
-    // Exclude nasabah macet (> 3 bulan) — acuan = tanggalPencairan (Option A,
-    // tidak berubah: untuk nasabah yang sudah cair, acuan dulu memang pencairan).
-    if (isOverThreeMonths(tanggalPencairan)) return 0;
-
-    // Flat 3% dari besarPinjaman — SAMA dengan Android
-    return Math.floor((pelanggan.besarPinjaman || 0) * 3 / 100);
+    // ── BRANCH B: tanggalPencairan KOSONG — legacy aktif (fallback) ──
+    // Fallback acuan ke tanggalPengajuan → tanggalDaftar HANYA utk 3-bulan macet.
+    // Tidak ada gate "cair hari ini" (tidak ada tanggal pencairan utk dicek).
+    const tglAcuanLegacy = (pelanggan.tanggalPengajuan || '').trim()
+        || (pelanggan.tanggalDaftar || '').trim();
+    if (!tglAcuanLegacy) return target;             // legacy aktif tanpa tanggal apa pun
+    if (isOverThreeMonths(tglAcuanLegacy)) return 0; // macet > 3 bulan (acuan pengajuan/daftar)
+    return target;
 }
 
 // =========================================================================
@@ -935,13 +942,24 @@ async function fullRecalculateAdminSummary(adminUid) {
                         }
 
                         if (!isHariLibur) {
-                            // ✅ Scenario 4 (koreksi pimpinan 07 Jun 2026): target HANYA
-                            // mulai H+1 setelah Cairkan. tanggalPencairan WAJIB ada &
-                            // bukan hari ini. Tanpa pencairan (approved-belum-cair) → 0;
-                            // TIDAK ada fallback ke pengajuan/daftar (LEAK target prematur).
-                            // 3-month macet pakai acuan = tanggalPencairan (Option A).
+                            // ✅ MIRROR Android d9457f5 (audit forensik pimpinan 08 Jun 2026):
+                            // BRANCH A (pencairan ada) + BRANCH B (legacy fallback).
+                            // Blok ini di dalam switch case 'aktif' & cabang non-lunas
+                            // non-MP → status "Disetujui"/"Menunggu Approval" sudah di
+                            // case lain (tidak menambah target) → Scenario 4 tetap terjaga.
                             const tglCair2 = (p.tanggalPencairan || '').trim();
-                            if (tglCair2 && tglCair2 !== today && !isOverThreeMonths(tglCair2)) {
+                            let masukTarget;
+                            if (tglCair2) {
+                                // BRANCH A: cair hari ini → besok; macet > 3 bln → 0.
+                                masukTarget = (tglCair2 !== today && !isOverThreeMonths(tglCair2));
+                            } else {
+                                // BRANCH B: legacy aktif tglPencairan kosong. Fallback acuan
+                                // pengajuan/daftar utk 3-bulan macet (kosong → tetap hitung).
+                                const tglAcuanLegacy = (p.tanggalPengajuan || '').trim()
+                                    || (p.tanggalDaftar || '').trim();
+                                masukTarget = (!tglAcuanLegacy || !isOverThreeMonths(tglAcuanLegacy));
+                            }
+                            if (masukTarget) {
                                 // Flat 3% — konsisten dengan Android
                                 targetHariIni += Math.floor((p.besarPinjaman || 0) * 3 / 100);
                             }
