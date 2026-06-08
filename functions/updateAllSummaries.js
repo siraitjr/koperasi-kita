@@ -11,7 +11,7 @@
 
 const { onCall } = require("firebase-functions/v2/https");
 const admin = require("firebase-admin");
-const { fullRecalculateAdminSummary, getTodayIndonesia, isHoliday, isOverThreeMonths, calculateTotalDibayar, aggregateCabangSummary, aggregateGlobalSummary } = require('./summaryHelpers');
+const { fullRecalculateAdminSummary, getTodayIndonesia, isHoliday, isOverThreeMonths, calculateTotalDibayar, calculateTargetHariIni, aggregateCabangSummary, aggregateGlobalSummary } = require('./summaryHelpers');
 const functions = require('firebase-functions');
 
 const db = admin.database();
@@ -253,34 +253,23 @@ exports.triggerTargetRecalc = onCall({ region: 'asia-southeast1' }, async (reque
             pelangganSnap.forEach(child => {
                 const p = child.val();
                 if (!p) return;
-                
-                // ===== FILTER: SAMA PERSIS DENGAN Android RingkasanDashboardScreen.kt =====
-                
-                // 1. Hanya status Aktif/Active
-                const status = (p.status || '').toLowerCase();
-                if (status !== 'aktif' && status !== 'active') return;
-                
-                // 2. Exclude MENUNGGU_PENCAIRAN
-                const statusKhusus = (p.statusKhusus || '').toUpperCase().replace(/ /g, '_');
-                if (statusKhusus === 'MENUNGGU_PENCAIRAN') return;
-                
-                // 3. Exclude nasabah > 3 bulan
-                const tglAcuan = (p.tanggalPencairan || '').trim()
-                    || (p.tanggalPengajuan || '').trim()
-                    || (p.tanggalDaftar || '').trim();
-                if (isOverThreeMonths(tglAcuan)) return;
-                
-                // 4. Exclude nasabah cair hari ini
-                const tglCair = (p.tanggalPencairan || '').trim();
-                if (tglCair === today) return;
-                
-                // 5. Belum lunas
-                const totalDibayar = calculateTotalDibayar(p);
-                const totalPelunasan = p.totalPelunasan || 0;
-                if (totalPelunasan > 0 && totalDibayar >= totalPelunasan) return;
-                
-                // ===== HITUNG TARGET: Flat 3% dari besarPinjaman =====
-                adminTarget += Math.floor((p.besarPinjaman || 0) * 3 / 100);
+
+                // ✅ UNIFY SINGLE SOURCE OF TRUTH (pimpinan 08 Jun 2026):
+                // Sebelumnya fungsi ini punya filter target inline SENDIRI yang
+                // DIVERGEN dari calculateTargetHariIni (helper):
+                //   - meng-EXCLUDE SEMUA MENUNGGU_PENCAIRAN (helper: MP-hari-ini
+                //     tetap masuk, H+1),
+                //   - meng-EXCLUDE lunas (helper: lunas-hari-ini tetap masuk, H+1),
+                //   - meng-EXCLUDE cair-hari-ini (helper: top-up cair-hari-ini
+                //     di-anchor ke besarPinjaman LAMA, bukan 0),
+                //   - 3-bulan pakai tglAcuan fallback (sudah cocok dgn Branch B).
+                // Pada data tertentu kebetulan sama, tapi pada hari dgn nasabah
+                // MP-hari-ini/lunas-hari-ini/top-up-hari-ini → SALAH & menulis
+                // summary.targetHariIni keliru (lalu di-freeze 23:59).
+                // Sekarang delegasi PENUH ke calculateTargetHariIni → identik
+                // dengan calculateDelta, fullRecalculateAdminSummary, Web
+                // target.js, dan Android TargetHarianHelper.kt.
+                adminTarget += calculateTargetHariIni(p);
             });
             
             // Update admin summary
