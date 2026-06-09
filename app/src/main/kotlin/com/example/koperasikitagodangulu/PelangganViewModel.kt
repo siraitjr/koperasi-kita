@@ -5270,7 +5270,8 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                 }
 
                 // 5) Enqueue Storage upload + cleanse + notif via Room → WorkManager.
-                val besarPinjaman = pelanggan.besarPinjaman.toLong()
+                // besarPinjaman dipertahankan Int — sesuai param queueSerahTerima(besarPinjaman: Int).
+                val besarPinjaman = pelanggan.besarPinjaman
                 val tenor = pelanggan.tenor
                 val adminName = try {
                     database.child("metadata/admins/$adminUid/name").get().await()
