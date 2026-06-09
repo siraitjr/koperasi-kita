@@ -2919,6 +2919,20 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                         tanggalDaftar == summaryToday
                     }
 
+                    // ✅ FIX TARGET HARIAN (audit pimpinan 08 Jun 2026): builder lokal
+                    // ini sebelumnya TIDAK mengisi targetHariIni → AdminSummary
+                    // default 0L → PimpinanDashboard sum 0 per admin saat memakai
+                    // jalur calculateAdminSummary (fallback). Sekarang pakai single
+                    // source of truth calculateTargetContribution (TargetHarianHelper.kt)
+                    // — cermin 1:1 Web lib/target.js & CF summaryHelpers.js (POIN 1-5:
+                    // Lunas H+1, MP H+1, 3-bulan Option A, Cairkan H+1, Top-up anchor,
+                    // BRANCH A/B legacy fallback). Identik dgn jalur server
+                    // (SmartFirebaseLoader.loadSingleAdminSummary) + sibling builder
+                    // calculateAdminSummaryFromRawData (PVM:14122).
+                    val targetHariIniAdmin: Long = pelangganList.sumOf { pelanggan ->
+                        calculateTargetContribution(pelanggan, summaryToday)
+                    }
+
                     AdminSummary(
                         adminId = adminId,
                         adminEmail = adminEmail,
@@ -2929,6 +2943,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                         nasabahLunas = nasabahLunas,
                         nasabahMenungguPencairan = nasabahMenungguPencairan, // ✅ v4: Tambah field baru
                         nasabahBaruHariIni = nasabahBaruHariIniAdmin, // ✅ FIX drop count (08 Jun 2026)
+                        targetHariIni = targetHariIniAdmin, // ✅ FIX target Android↔Web (08 Jun 2026)
                         totalPiutang = totalPiutang,
                         pembayaranHariIni = pembayaranHariIniAdmin
                     )
