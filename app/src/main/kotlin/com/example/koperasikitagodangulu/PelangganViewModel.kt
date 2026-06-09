@@ -5164,6 +5164,181 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     // =========================================================================
+    // ✅ CAIRKAN OFFLINE-GUARANTEED (pimpinan 08 Jun 2026)
+    // -------------------------------------------------------------------------
+    // Pipeline 100% via background WorkManager. Aman bila app force-close, layar
+    // terkunci, atau session di-kick. Dijamin tidak ada upload langsung di
+    // coroutine UI.
+    //
+    // ARSITEKTUR:
+    //   1. Foto Serah Terima dari Camera URI di-COMPRESS + DI-SALIN ke
+    //      filesDir/serah_terima_pending/{ts}.jpg (PRIVATE app storage, BUKAN
+    //      cacheDir yang bisa dihapus OS). File survives kill-app & reboot.
+    //   2. Field Pelanggan (status="Aktif", tanggalPencairan, hasilSimulasiCicilan,
+    //      pendingFotoSerahTerimaUri="file://...", statusSerahTerima="Pending",
+    //      tanggalSerahTerima) DITULIS via FIREBASE RTDB SDK setValue tanpa await
+    //      → Firebase NATIVE PERSISTENCE (setPersistenceEnabled di MyApp) men-queue
+    //      write on-disk; replay otomatis saat online ATAU saat user login ulang.
+    //   3. Operasi SERAH_TERIMA (upload Storage + write fotoSerahTerimaUrl ke RTDB
+    //      + data cleanse + notif Pimpinan/Pengawas/Koordinator) DI-ENQUEUE ke
+    //      Room PendingOperationDatabase via offlineRepo.queueSerahTerima.
+    //      SyncManager.handleSerahTerimaSync sudah idempotent dan handle dari
+    //      pendingUri lokal.
+    //   4. SyncWorker.triggerImmediateSync di-trigger → WorkManager OneTime job
+    //      dgn NetworkType.CONNECTED + EXPONENTIAL backoff. Jalan di latar
+    //      walau app DIBUNUH.
+    //
+    // SESSION-KICK INTERACTION:
+    //   Saat single-device kick (sessionKicked=true): clearLocalData() membersih-
+    //   kan cache memory & file LocalStorage, tapi TIDAK menyentuh Room
+    //   PendingOperationDatabase. Pending operations tetap utuh dengan adminUid
+    //   ASLI (yang lama). SyncManager memproses by record adminUid → tidak
+    //   ter-leak ke akun baru. Saat admin lama login kembali di device lain,
+    //   data RTDB sudah tertulis via Firebase persistence native + upload foto
+    //   akan complete via Room queue di device lama saat online berikutnya.
+    // =========================================================================
+    fun cairkanPinjamanWithFotoOffline(
+        pelangganId: String,
+        fotoUri: Uri,
+        onQueued: (() -> Unit)? = null,
+        onError: ((Exception) -> Unit)? = null
+    ) {
+        viewModelScope.launch {
+            try {
+                val pelanggan = daftarPelanggan.find { it.id == pelangganId }
+                if (pelanggan == null) {
+                    onError?.invoke(Exception("Pelanggan tidak ditemukan"))
+                    return@launch
+                }
+                if (pelanggan.status != "Disetujui") {
+                    onError?.invoke(Exception("Status bukan Disetujui"))
+                    return@launch
+                }
+                val adminUid = pelanggan.adminUid.ifBlank { Firebase.auth.currentUser?.uid }
+                if (adminUid.isNullOrBlank()) {
+                    onError?.invoke(Exception("Admin UID tidak valid"))
+                    return@launch
+                }
+                val cabangId = currentUserCabang.value
+                if (cabangId.isNullOrBlank()) {
+                    onError?.invoke(Exception("CabangId tidak valid"))
+                    return@launch
+                }
+
+                // 1) Compress + persist foto ke filesDir (BUKAN cacheDir).
+                val localFilePath = withContext(Dispatchers.IO) {
+                    persistFotoSerahTerimaToFilesDir(fotoUri, pelangganId)
+                } ?: run {
+                    onError?.invoke(Exception("Gagal menyimpan foto ke storage lokal"))
+                    return@launch
+                }
+                val pendingUriString = "file://$localFilePath"
+
+                // 2) Compute deterministically NOW (sebelum sync).
+                val dateFmt = SimpleDateFormat("dd MMM yyyy", Locale("in", "ID"))
+                val tanggalPencairan = dateFmt.format(Date())
+                val tanggalSerahTerimaUi = SimpleDateFormat("dd MMM yyyy, HH:mm", Locale("in", "ID")).format(Date())
+                val cicilanBaru = generateCicilanKonsisten(
+                    tanggalPencairan, pelanggan.tenor, pelanggan.totalPelunasan
+                )
+                val now = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
+
+                val updatedPelanggan = pelanggan.copy(
+                    status = "Aktif",
+                    tanggalPencairan = tanggalPencairan,
+                    hasilSimulasiCicilan = cicilanBaru,
+                    pendingFotoSerahTerimaUri = pendingUriString,
+                    statusSerahTerima = "Pending",
+                    tanggalSerahTerima = tanggalSerahTerimaUi,
+                    lastUpdated = now
+                )
+
+                // 3) Update local state immediately — UI reflects "sudah cair".
+                val idx = daftarPelanggan.indexOfFirst { it.id == pelangganId }
+                if (idx != -1) daftarPelanggan[idx] = updatedPelanggan
+                simpanKeLokal()
+
+                // 4) RTDB write via Firebase NATIVE PERSISTENCE — tanpa await/listener.
+                //    Bila offline / app dibunuh, SDK men-queue di disk & replay saat online.
+                try {
+                    database.child("pelanggan").child(adminUid).child(pelangganId)
+                        .setValue(updatedPelanggan)
+                    Log.d("CairkanOffline", "✅ RTDB setValue scheduled (Firebase persistence handle offline)")
+                } catch (e: Exception) {
+                    // Hampir tak pernah throw; persistence native menelan offline gracefully.
+                    Log.w("CairkanOffline", "setValue threw (non-fatal): ${e.message}")
+                }
+
+                // 5) Enqueue Storage upload + cleanse + notif via Room → WorkManager.
+                val besarPinjaman = pelanggan.besarPinjaman.toLong()
+                val tenor = pelanggan.tenor
+                val adminName = try {
+                    database.child("metadata/admins/$adminUid/name").get().await()
+                        .getValue(String::class.java) ?: ""
+                } catch (_: Exception) { "" }
+
+                offlineRepo.queueSerahTerima(
+                    adminUid = adminUid,
+                    pelangganId = pelangganId,
+                    cabangId = cabangId,
+                    pendingUri = pendingUriString,
+                    namaPanggilan = pelanggan.namaPanggilan,
+                    adminName = adminName,
+                    besarPinjaman = besarPinjaman,
+                    tenor = tenor,
+                    tanggalSerahTerima = tanggalSerahTerimaUi
+                )
+
+                // 6) Picu immediate sync (NetworkType.CONNECTED → tunggu online).
+                SyncWorker.triggerImmediateSync(context)
+
+                // 7) Done. UI bisa langsung tutup dialog — admin tidak menunggu upload.
+                Log.d("CairkanOffline", "📥 Cairkan + Serah Terima ter-antre untuk $pelangganId (foto: $localFilePath)")
+                loadDashboardData()
+                sendCairkanBatalNotification(pelanggan, isCairkan = true)
+                onQueued?.invoke()
+            } catch (e: Exception) {
+                Log.e("CairkanOffline", "❌ Error queue cairkan offline: ${e.message}")
+                onError?.invoke(e)
+            }
+        }
+    }
+
+    /**
+     * Compress foto serah terima dari URI camera, salin ke filesDir PRIVATE
+     * (persistent, tahan app kill + reboot). Return absolute path bila sukses.
+     */
+    private fun persistFotoSerahTerimaToFilesDir(uri: Uri, pelangganId: String): String? {
+        return try {
+            val dir = java.io.File(getApplication<Application>().filesDir, "serah_terima_pending").apply {
+                if (!exists()) mkdirs()
+            }
+            val outFile = java.io.File(dir, "${pelangganId}_${System.currentTimeMillis()}.jpg")
+            // Compress via downscale + JPEG 80% — paritas dgn compressImageForKtp tapi
+            // streaming langsung ke file (hemat memory).
+            val cr = getApplication<Application>().contentResolver
+            val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            cr.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, opts) }
+            val targetW = 1024
+            var sample = 1
+            while (opts.outWidth / sample > targetW * 2) sample *= 2
+            val loadOpts = BitmapFactory.Options().apply { inSampleSize = sample }
+            val bitmap = cr.openInputStream(uri)?.use {
+                BitmapFactory.decodeStream(it, null, loadOpts)
+            } ?: return null
+            java.io.FileOutputStream(outFile).use { fos ->
+                bitmap.compress(Bitmap.CompressFormat.JPEG, 80, fos)
+                fos.flush()
+            }
+            bitmap.recycle()
+            outFile.absolutePath
+        } catch (e: Exception) {
+            Log.e("CairkanOffline", "❌ persistFotoSerahTerima: ${e.message}")
+            null
+        }
+    }
+
+    // =========================================================================
     // FUNGSI: Batalkan Pinjaman (Disetujui → Tidak Aktif)
     // =========================================================================
     fun batalkanPinjaman(

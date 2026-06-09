@@ -1065,41 +1065,32 @@ private fun ModernCustomerCard(
                                         onClick = {
                                             val foto = capturedSerahTerimaUri ?: return@Button
                                             isProcessing = true
-                                            // Upload foto → setelah sukses chain ke cairkanPinjaman.
-                                            viewModel.uploadFotoSerahTerima(
+                                            // ✅ OFFLINE-GUARANTEED (pimpinan 08 Jun 2026):
+                                            // jalur tunggal cairkanPinjamanWithFotoOffline →
+                                            // Compress+persist foto ke filesDir → Firebase
+                                            // persistence write RTDB → Room queue Storage upload
+                                            // → SyncWorker.triggerImmediateSync. Tidak ada upload
+                                            // langsung di UI coroutine; tahan app-kill & offline.
+                                            viewModel.cairkanPinjamanWithFotoOffline(
                                                 pelangganId = pelanggan.id,
                                                 fotoUri = foto,
-                                                onSuccess = {
-                                                    viewModel.cairkanPinjaman(
-                                                        pelangganId = pelanggan.id,
-                                                        onSuccess = {
-                                                            isProcessing = false
-                                                            showReviewDialog = false
-                                                            capturedSerahTerimaUri = null
-                                                            tempSerahTerimaUri = null
-                                                            Toast.makeText(
-                                                                context,
-                                                                "✅ Pinjaman berhasil dicairkan",
-                                                                Toast.LENGTH_SHORT
-                                                            ).show()
-                                                        },
-                                                        onFailure = { e ->
-                                                            isProcessing = false
-                                                            showReviewDialog = false
-                                                            Toast.makeText(
-                                                                context,
-                                                                "❌ Gagal mencairkan: ${e.message}",
-                                                                Toast.LENGTH_LONG
-                                                            ).show()
-                                                        }
-                                                    )
-                                                },
-                                                onFailure = { e ->
+                                                onQueued = {
                                                     isProcessing = false
-                                                    // Pertahankan dialog agar admin bisa coba lagi.
+                                                    showReviewDialog = false
+                                                    capturedSerahTerimaUri = null
+                                                    tempSerahTerimaUri = null
                                                     Toast.makeText(
                                                         context,
-                                                        "❌ Gagal upload foto: ${e.message}",
+                                                        "✅ Pinjaman dicairkan — foto akan ter-upload otomatis di latar",
+                                                        Toast.LENGTH_SHORT
+                                                    ).show()
+                                                },
+                                                onError = { e ->
+                                                    isProcessing = false
+                                                    showReviewDialog = false
+                                                    Toast.makeText(
+                                                        context,
+                                                        "❌ Gagal antrekan Cairkan: ${e.message}",
                                                         Toast.LENGTH_LONG
                                                     ).show()
                                                 }
