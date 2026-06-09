@@ -176,6 +176,15 @@ class MainActivity : ComponentActivity() {
                         Log.e(TAG, "❌ Error fetching token: ${e.message}")
                     }
 
+                    // ✅ SINGLE-DEVICE LOGIN: re-attach listener saat app restart
+                    // (auth masih ada). REUSE sessionId tersimpan — tidak men-takeover
+                    // device lain. Berlaku SEMUA role.
+                    try {
+                        vm.resumeSessionLockListener()
+                    } catch (e: Exception) {
+                        Log.e(TAG, "❌ Error resume session lock: ${e.message}")
+                    }
+
                     try {
                         withContext(Dispatchers.IO) {
                             val uid = Firebase.auth.currentUser?.uid
@@ -325,6 +334,33 @@ class MainActivity : ComponentActivity() {
                         pendingNavigationRoute = null
                         pendingPelangganId = null
                         pendingTab = 0
+                    }
+                }
+
+                // ✅ SINGLE-DEVICE LOGIN: handle kick-out saat akun login di device lain.
+                // Wipe data lokal + signOut + navigasi ke login (instan & paksa).
+                val sessionKicked by vm.sessionKicked.collectAsState()
+                LaunchedEffect(sessionKicked) {
+                    if (sessionKicked) {
+                        Log.w(TAG, "🔒🔒 SINGLE-DEVICE KICK — akun login di device lain, keluar paksa 🔒🔒")
+                        try {
+                            com.example.koperasikitagodangulu.services.LocationTrackingMonitor.stopMonitoring()
+                            com.example.koperasikitagodangulu.services.LocationCheckWorker.cancel(this@MainActivity.applicationContext)
+                        } catch (_: Exception) {}
+                        try { vm.stopForceLogoutListener() } catch (_: Exception) {}
+                        try { vm.clearLocalData() } catch (_: Exception) {}
+                        Firebase.auth.signOut()
+                        android.widget.Toast.makeText(
+                            this@MainActivity,
+                            "Akun Anda baru saja login di perangkat lain. Anda keluar otomatis.",
+                            android.widget.Toast.LENGTH_LONG
+                        ).show()
+                        try {
+                            navController.navigate("auth") { popUpTo(0) { inclusive = true } }
+                        } catch (e: Exception) {
+                            Log.e(TAG, "❌ Nav to auth failed (session kick): ${e.message}")
+                        }
+                        vm.consumeSessionKicked()
                     }
                 }
 

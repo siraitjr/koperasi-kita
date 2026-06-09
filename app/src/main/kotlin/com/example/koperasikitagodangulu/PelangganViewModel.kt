@@ -713,6 +713,22 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
     private var forceLogoutListener: ValueEventListener? = null
     private var forceLogoutRef: DatabaseReference? = null
     private var loginTimestamp: Long = 0L
+
+    // =====================================================================
+    // ✅ SINGLE-DEVICE LOGIN (pimpinan 08 Jun 2026) — berlaku SEMUA ROLE.
+    // Firebase Auth default mengizinkan login konkuren di banyak device.
+    // Mekanisme custom: tiap login generate sessionId unik → disimpan lokal
+    // (SharedPreferences) + ditulis ke active_sessions/{uid}/sessionId di RTDB.
+    // Listener memantau node itu; bila sessionId RTDB ≠ sessionId lokal berarti
+    // device LAIN login → _sessionKicked=true → MainActivity wipe+signOut+ke login.
+    // =====================================================================
+    private var sessionLockListener: ValueEventListener? = null
+    private var sessionLockRef: DatabaseReference? = null
+    private val _sessionKicked = MutableStateFlow(false)
+    val sessionKicked: StateFlow<Boolean> = _sessionKicked
+    private val _activeSessionDeviceName = MutableStateFlow<String?>(null)
+    val activeSessionDeviceName: StateFlow<String?> = _activeSessionDeviceName
+
     private val _takeoverStatus = MutableStateFlow<TakeoverStatus>(TakeoverStatus.Idle)
     val takeoverStatus: StateFlow<TakeoverStatus> = _takeoverStatus
     private val _isTakeoverMode = MutableStateFlow(false)
@@ -7053,6 +7069,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                 clearAllCaches()
                 cleanupRoleListeners()
                 stopForceLogoutListener()
+                stopSessionLockListener() // ✅ single-device: stop listener sesi pimpinan sebelum takeover
 
                 // Sign out pimpinan
                 Firebase.auth.signOut()
@@ -15969,6 +15986,98 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
         }
         forceLogoutListener = null
         forceLogoutRef = null
+    }
+
+    // =====================================================================
+    // ✅ SINGLE-DEVICE LOGIN — implementasi (pimpinan 08 Jun 2026, SEMUA ROLE)
+    // =====================================================================
+
+    /** Reset flag kick (dipanggil MainActivity setelah menavigasi ke login). */
+    fun consumeSessionKicked() { _sessionKicked.value = false }
+
+    /**
+     * Dipanggil saat LOGIN BARU sukses (AuthScreen.proceedWithLogin) untuk SEMUA
+     * role. Generate sessionId UNIK, simpan lokal, tulis ke RTDB, lalu pasang
+     * listener kick-out. Login berikutnya di device lain akan menimpa
+     * active_sessions/{uid}/sessionId → device ini ter-kick.
+     */
+    fun startSingleDeviceSession() {
+        val uid = Firebase.auth.currentUser?.uid ?: return
+        val sessionId = UUID.randomUUID().toString()
+        // Simpan LOKAL dulu (synchronous) supaya listener tidak salah kick diri sendiri.
+        sharedPrefs.edit().putString("current_session_id", sessionId).apply()
+        _sessionKicked.value = false
+
+        val deviceModel = "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}".trim()
+        val data = mapOf(
+            "sessionId" to sessionId,
+            "deviceModel" to deviceModel,
+            "timestamp" to ServerValue.TIMESTAMP
+        )
+        // setValue dengan Firebase persistence aktif → local cache LANGSUNG mencerminkan
+        // sessionId baru (latency compensation), jadi aman memasang listener segera.
+        database.child("active_sessions").child(uid).setValue(data)
+        attachSessionLockListener(uid)
+        Log.d("SessionLock", "✅ Single-device session dimulai: $sessionId ($deviceModel)")
+    }
+
+    /**
+     * Dipanggil saat APP RESTART dengan auth yang masih ada (MainActivity role-init).
+     * TIDAK generate sessionId baru — REUSE yang tersimpan lokal supaya tidak
+     * salah men-takeover device lain. Bila lokal kosong (mis. login lama sebelum
+     * fitur ini), generate sekali & klaim. Lalu pasang listener.
+     */
+    fun resumeSessionLockListener() {
+        val uid = Firebase.auth.currentUser?.uid ?: return
+        var sessionId = sharedPrefs.getString("current_session_id", null)
+        if (sessionId.isNullOrBlank()) {
+            // Sesi lama tanpa sessionId → klaim device ini sebagai pemegang sesi.
+            sessionId = UUID.randomUUID().toString()
+            sharedPrefs.edit().putString("current_session_id", sessionId).apply()
+            val deviceModel = "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}".trim()
+            database.child("active_sessions").child(uid).setValue(
+                mapOf(
+                    "sessionId" to sessionId,
+                    "deviceModel" to deviceModel,
+                    "timestamp" to ServerValue.TIMESTAMP
+                )
+            )
+            Log.d("SessionLock", "🔑 Resume: klaim sesi baru utk sesi lama ($sessionId)")
+        }
+        _sessionKicked.value = false
+        attachSessionLockListener(uid)
+        Log.d("SessionLock", "👀 Resume session lock listener: $uid")
+    }
+
+    private fun attachSessionLockListener(uid: String) {
+        stopSessionLockListener()
+        val ref = database.child("active_sessions").child(uid)
+        sessionLockRef = ref
+        sessionLockListener = object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                if (!snapshot.exists()) return  // node belum ada / dihapus → abaikan
+                val remoteSessionId = snapshot.child("sessionId").getValue(String::class.java) ?: return
+                val localSessionId = sharedPrefs.getString("current_session_id", null) ?: return
+                if (remoteSessionId != localSessionId) {
+                    val deviceLain = snapshot.child("deviceModel").getValue(String::class.java)
+                    Log.w("SessionLock", "⚠️ Sesi diambil alih device lain ($deviceLain). remote=$remoteSessionId local=$localSessionId → KICK")
+                    _activeSessionDeviceName.value = deviceLain
+                    stopSessionLockListener()
+                    _sessionKicked.value = true
+                }
+            }
+            override fun onCancelled(error: DatabaseError) {
+                Log.e("SessionLock", "Error session lock listener: ${error.message}")
+            }
+        }
+        ref.addValueEventListener(sessionLockListener!!)
+    }
+
+    /** Stop listener single-device (dipanggil saat kick / logout). */
+    fun stopSessionLockListener() {
+        sessionLockListener?.let { sessionLockRef?.removeEventListener(it) }
+        sessionLockListener = null
+        sessionLockRef = null
     }
 
     /**

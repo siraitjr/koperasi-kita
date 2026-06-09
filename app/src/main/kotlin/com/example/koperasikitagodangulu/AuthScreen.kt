@@ -655,6 +655,13 @@ private fun proceedWithLogin(
         }
     }
 
+    // ✅ SINGLE-DEVICE LOGIN (pimpinan 08 Jun 2026) — WAJIB SEMUA ROLE.
+    // Generate sessionId unik + tulis ke active_sessions/{uid} + pasang listener
+    // kick-out. Login akun yang sama di device lain akan memaksa device ini keluar
+    // (ditangani MainActivity via vm.sessionKicked). Berlaku untuk Admin Lapangan,
+    // Pimpinan, Koordinator, DAN Pengawas.
+    viewModel?.startSingleDeviceSession()
+
     viewModel?.startRoleDetectionAndInit()
 
     android.widget.Toast.makeText(
