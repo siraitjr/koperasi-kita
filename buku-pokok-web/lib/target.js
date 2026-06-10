@@ -40,6 +40,37 @@ export function parseTanggalIndo(s) {
   return new Date(year, m, day);
 }
 
+// =========================================================================
+// ✅ isTanggalHistoris — gate date-aware utk snapshot rekap_harian_final
+// (pimpinan 09 Jun 2026, fix "Buku Rekap baru update di 00:01").
+// -------------------------------------------------------------------------
+// Snapshot beku = OTORITAS hanya utk tanggal yang SUDAH LEWAT (kalender
+// strictly < hari ini). Hari BERJALAN wajib live-calc agar storting/target
+// real-time — entri snapshot hari-ini (mis. ditulis refreezeRekapHarian
+// siang hari, atau freeze 23:59) TIDAK boleh membekukan tampilan live.
+//
+// Kenapa komparasi PARSED DATE `<`, bukan string equality `!== data.today`
+// (gate lama yang dihapus 11bd5df): equality string rapuh terhadap semantik
+// "hari Minggu disembunyikan" (tanggal tampil bisa dianggap == today →
+// snapshot ter-bypass utk tanggal historis). Komparasi kalender tegas:
+//   - tanggal lampau selalu < today → snapshot menang (Rule 3 utuh:
+//     dilihat 10 tahun lagi tetap beku, imun mutasi retroaktif).
+//   - hari ini tidak pernah < today → live calc → real-time.
+//
+// serverToday = data.today dari getBukuPokok (WIB server). Bila absen/
+// invalid → fallback hitung today WIB dari clock client.
+// =========================================================================
+export function isTanggalHistoris(dateStr, serverToday) {
+  const d = parseTanggalIndo(dateStr);
+  if (!d) return false;
+  let todayRef = parseTanggalIndo((serverToday || '').trim());
+  if (!todayRef) {
+    const nowWib = new Date(Date.now() + 7 * 60 * 60 * 1000);
+    todayRef = new Date(nowWib.getUTCFullYear(), nowWib.getUTCMonth(), nowWib.getUTCDate());
+  }
+  return d < todayRef;
+}
+
 // Total pembayaran (map per-tanggal) yang jatuh STRICTLY sebelum `cur`.
 function sumPembayaranSebelum(pembayaran, cur) {
   if (!pembayaran) return 0;

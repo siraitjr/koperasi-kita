@@ -12,7 +12,7 @@ import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage
 import { ref as dbRef, update } from 'firebase/database';
 import { getKasirSummary, getKasirEntries, addKasirEntry, deleteKasirEntry, getBukuPokok, syncOperasionalTransport, getJurnalTransaksi } from '../../lib/api';
 import { formatRp, formatRpFull } from '../../lib/format';
-import { isEligibleForTarget } from '../../lib/target';
+import { isEligibleForTarget, isTanggalHistoris } from '../../lib/target';
 
 // =========================================================================
 // HELPER: Compress image for upload (max 1024px, JPEG quality 0.6)
@@ -1951,19 +1951,23 @@ function BukuRekapScreen({ user, cabang, cabangList, onBack, onLogout, onNavigat
       // tersebut sehingga internal logic bisa menyamakan tanggal yang dilihat
       // dengan data.today → snapshot dilewati → live calc → target menyusut.
       //
-      // Aturan baru — TANPA SYARAT:
-      //   • Bila rekap_harian_final punya entri (adm.uid, dateStr) → PAKAI.
-      //     Snapshot ditulis freezeRekapHarian CF setiap 23:59 WIB
-      //     (target + storting tepat akhir hari). Permanen, imun terhadap
-      //     mutasi retroaktif manapun.
-      //   • Bila tidak ada entri (hari yang masih berjalan / belum sempat
-      //     ter-freeze sebelum CF di-deploy) → fallback ke live calc di atas
-      //     (yang sudah immutable via lib/target.js POIN 4, fix 6aa8cd3).
+      // ✅ REVISI pimpinan 09 Jun 2026 (fix "Buku Rekap baru update di 00:01"):
+      //   • Tanggal HISTORIS (kalender < hari ini) → snapshot OTORITAS ABSOLUT
+      //     (Rule 3 utuh: imun mutasi retroaktif, dilihat 10 tahun lagi tetap).
+      //   • Tanggal HARI BERJALAN → SELALU live calc, walau entri snapshot
+      //     hari-ini ADA (mis. ditulis refreezeRekapHarian siang hari, atau
+      //     freeze 23:59 — keduanya tidak boleh membekukan tampilan live).
+      //     Tanpa gate ini: storting baru tidak tampil sampai tanggal berganti
+      //     00:01 — persis gejala yang pimpinan laporkan.
+      //   Gate pakai isTanggalHistoris (komparasi PARSED DATE `<` terhadap
+      //   data.today server-WIB) — BUKAN string equality `!== data.today`
+      //   yang dulu cacat pada kasus Minggu-tersembunyi (lihat lib/target.js).
       //
-      // Live calc TIDAK pernah "mengoreksi" snapshot — itulah inti benteng.
+      // Live calc TIDAK pernah "mengoreksi" snapshot historis — inti benteng.
       // UI/layout TIDAK berubah — hanya sumber nilai numerik Target & Storting.
       // =====================================================================
-      const bekuEntry = (data.rekapBeku && data.rekapBeku[adm.uid])
+      const bekuEntry = (isTanggalHistoris(todayStr, data.today)
+          && data.rekapBeku && data.rekapBeku[adm.uid])
         ? data.rekapBeku[adm.uid][todayStr]
         : null;
       if (bekuEntry) {

@@ -10,7 +10,7 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signOut, signInWithCust
 import { auth } from '../../lib/firebase';
 import { getSummary, getBukuPokok, getKasirSummary, getJurnalTransaksi, getKoreksiStorting, setKoreksiStorting } from '../../lib/api';
 import { formatRp, formatRpFull, formatRpShort } from '../../lib/format';
-import { isEligibleForTarget } from '../../lib/target';
+import { isEligibleForTarget, isTanggalHistoris } from '../../lib/target';
 
 const KASIR_VIEW_ROLES = ['pimpinan', 'koordinator', 'pengawas', 'kasir_wilayah', 'sekretaris'];
 const GLOBAL_VIEW_ROLES = ['koordinator', 'pengawas', 'kasir_wilayah', 'sekretaris'];
@@ -1378,7 +1378,11 @@ function getKategoriNasabah(nasabah, refDateStr) {
       //     ada koreksi retroaktif, sum breakdown bisa beda dgn stortingKini
       //     snapshot. Total = snapshot otoritas; breakdown = visibility live.
       // =====================================================================
-      if (data.rekapBeku) {
+      // ✅ REVISI pimpinan 09 Jun 2026: snapshot HANYA utk tanggal historis
+      // (kalender < hari ini). Hari berjalan SELALU live calc agar Storting
+      // real-time — entri snapshot hari-ini (refreeze siang / freeze 23:59)
+      // tidak boleh membekukan kolom hari berjalan (paritas dgn Buku Rekap).
+      if (data.rekapBeku && isTanggalHistoris(dateStr, data.today)) {
         let bekuTargetSum = 0;
         let bekuStortingSum = 0;
         let adaBeku = false;
@@ -2404,19 +2408,22 @@ function DetailModal({ nasabah, onClose }) {
         </div>
 
         <div className="modal-body">
-          {/* Foto KTP & Foto Nasabah — setelah soft-removal: fotoSerahTerimaUrl
-              jadi fallback "Foto Nasabah" untuk nasabah baru yg tak punya foto registrasi. */}
+          {/* ✅ REVISI pimpinan 09 Jun 2026 — prioritas DIBALIK: fotoSerahTerimaUrl
+              (foto serah-terima uang dari transaksi pinjaman aktif TERAKHIR — diambil
+              hari Cairkan, termasuk top-up) tampil UTAMA. fotoNasabahUrl (foto profil
+              lama/arsip) HANYA fallback bila foto serah-terima kosong. Sebelumnya
+              terbalik → nasabah lama yang baru top-up tampil foto profil lama. */}
           {(nasabah.fotoKtpUrl || nasabah.fotoKtpSuamiUrl || nasabah.fotoKtpIstriUrl || nasabah.fotoNasabahUrl || nasabah.fotoSerahTerimaUrl) && (
             <div className="detail-photos">
-              {nasabah.fotoNasabahUrl ? (
-                <div className="detail-photo-card" onClick={() => setZoomImage(nasabah.fotoNasabahUrl)}>
-                  <img src={nasabah.fotoNasabahUrl} alt="Foto Nasabah" loading="lazy" />
-                  <span className="detail-photo-label">Foto Nasabah</span>
-                </div>
-              ) : nasabah.fotoSerahTerimaUrl && (
+              {nasabah.fotoSerahTerimaUrl ? (
                 <div className="detail-photo-card" onClick={() => setZoomImage(nasabah.fotoSerahTerimaUrl)}>
                   <img src={nasabah.fotoSerahTerimaUrl} alt="Foto Serah Terima" loading="lazy" />
                   <span className="detail-photo-label">Foto Serah Terima</span>
+                </div>
+              ) : nasabah.fotoNasabahUrl && (
+                <div className="detail-photo-card" onClick={() => setZoomImage(nasabah.fotoNasabahUrl)}>
+                  <img src={nasabah.fotoNasabahUrl} alt="Foto Nasabah" loading="lazy" />
+                  <span className="detail-photo-label">Foto Nasabah</span>
                 </div>
               )}
               {nasabah.fotoKtpUrl && (
