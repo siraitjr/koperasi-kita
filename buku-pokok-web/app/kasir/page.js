@@ -226,6 +226,15 @@ function computeTunaiKasPerDate(dateStr, nasabahByAdmin, admins, pencairanByAdmi
     resortNasabah.forEach(n => {
       const pay = n.pembayaran?.[dateStr];
       if (pay) totalStorting += pay.total || 0;
+      // Parity Buku Rekap (pimpinan 11 Jun 2026): pembayaran yang direlokasi CF
+      // ke baris pinjaman lama tinggal di n.riwayatPinjaman[].pembayaran (lihat
+      // computeRekapRows storting & bukuPokokApi.js L565-595). Helper ini WAJIB
+      // cocok rupiah-per-rupiah dgn "Total Hari Ini" Buku Rekap (L202), jadi
+      // storting di sini harus meng-sum jalur riwayat yang sama.
+      (n.riwayatPinjaman || []).forEach(r => {
+        const rPay = r.pembayaran?.[dateStr];
+        if (rPay) totalStorting += rPay.total || 0;
+      });
       if ((n.tanggalPencairan || '').trim() === dateStr) totalDrop += n.besarPinjaman || 0;
     });
     const adminFee = Math.round(totalDrop * 0.05);
@@ -1913,6 +1922,20 @@ function BukuRekapScreen({ user, cabang, cabangList, onBack, onLogout, onNavigat
         if (pay) {
           storting += pay.total || 0;
         }
+        // ✅ ROOT CAUSE FIX "Buku Rekap 1jt vs Buku Pokok 2jt hari berjalan"
+        // (pimpinan 11 Jun 2026). Pembayaran yang DIRELOKASI CF ke baris
+        // pinjaman LAMA tinggal di n.riwayatPinjaman[].pembayaran, BUKAN di
+        // n.pembayaran pinjaman baru — yaitu pelunasan sisa utang lama top-up
+        // dan cicilan pinjaman lama (lihat bukuPokokApi.js relokasi L565-595:
+        // amount ditulis ke lastRiwayat.pembayaran[tglPelunasan]). Buku Pokok
+        // sudah meng-sum jalur ini (pembukuan/page.js:1320-1332); Buku Rekap
+        // SEBELUMNYA tidak pernah meng-iterasi riwayatPinjaman → storting hari
+        // berjalan under-count persis sebesar nominal yang berpindah ke riwayat.
+        // Loop ini = mirror 1:1 Buku Pokok agar kedua menu match real-time.
+        (n.riwayatPinjaman || []).forEach(r => {
+          const rPay = r.pembayaran?.[todayStr];
+          if (rPay) storting += rPay.total || 0;
+        });
       });
       // Tambahkan orphan storting (pembayaran dari nasabah yang sudah dihapus
       // — mis. setelah cairkanSimpanan). Sumber: pembayaran_harian via CF.
@@ -1924,21 +1947,16 @@ function BukuRekapScreen({ user, cabang, cabangList, onBack, onLogout, onNavigat
         : (orphanArr?.[adm.uid] || 0); // back-compat shape lama bila CF belum di-deploy
       storting += orphanStortingAdm;
 
-      // ✅ RULE 2 komponen #2 (pimpinan 08 Jun 2026 final): pelunasan utang lama
-      // top-up (sisaUtangLamaSebelumTopUp) — uang masuk dari nasabah saat top-up
-      // dicairkan, TIDAK ter-record di n.pembayaran pinjaman baru. Sebelum patch
-      // ini Web Buku Rekap (live) MELEWATKAN komponen ini → divergensi dgn
-      // Android RingkasanDashboardScreen.kt:179-181, Web Buku Pokok (riwayat),
-      // dan CF summary.pembayaranHariIni (calculateDelta:644-678).
-      // Filter identik dgn Android: pinjamanKe>1 & sisaUtang>0 &
-      // tanggalPencairan==todayStr & status==Aktif (top-up baru hari ini).
-      const pelunasanTopUpAdm = resortNasabah
-        .filter(n => (n.pinjamanKe || 1) > 1
-          && (n.sisaUtangLamaSebelumTopUp || 0) > 0
-          && (n.tanggalPencairan || '').trim() === todayStr
-          && (n.status || '') === 'Aktif')
-        .reduce((s, n) => s + (n.sisaUtangLamaSebelumTopUp || 0), 0);
-      storting += pelunasanTopUpAdm;
+      // ✅ CATATAN (pimpinan 11 Jun 2026): blok lama `pelunasanTopUpAdm` —
+      // yang menambah `sisaUtangLamaSebelumTopUp` secara manual — DIHAPUS,
+      // digantikan loop riwayatPinjaman di atas yang mirror Buku Pokok 1:1.
+      // Mempertahankannya = DOUBLE-COUNT: CF sudah menulis nominal pelunasan
+      // top-up itu ke riwayat[last].pembayaran[tglPelunasan] (bukuPokokApi.js
+      // L582-590), atau ke n.pembayaran[tglPencairan] pada cabang fallback
+      // (L600-609). Kedua jalur kini SUDAH tertangkap loop di atas, sehingga
+      // penjumlahan terpisah hanya akan menggandakan nilai pada kolom yang
+      // tglPelunasan-nya == hari ini, dan menggeser nilai pada kolom yang
+      // tglPelunasan-nya tanggal lampau (divergensi vs Buku Pokok).
 
       // =====================================================================
       // ✅ BENTENG ANTI-SHRINK: snapshot rekap_harian_final ADALAH OTORITAS.
