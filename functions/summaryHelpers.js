@@ -960,7 +960,30 @@ async function fullRecalculateAdminSummary(adminUid) {
         if (sisaUtangLamaSebelumTopUp > 0 && pinjamanKeP > 1 && tanggalPencairan === today) {
             pembayaranHariIni += sisaUtangLamaSebelumTopUp;
         }
-        
+
+        // ✅ V6 FIX (audit forensik pimpinan 11 Jun 2026, NURDAINI): H+1 LUNAS
+        // target dihoist KELUAR dari case 'aktif' agar nasabah yg status-nya
+        // di-stamp 'Lunas' tepat di hari yg sama dgn tanggalLunasCicilan tetap
+        // dapat target "hari terakhir billing".
+        //
+        // Paritas live helpers — gate-nya tanggalLunasCicilan === today,
+        // STATUS-AGNOSTIC, bukan status === 'aktif':
+        //   - lib/target.js:197-198   (Web Buku Pokok & Buku Rekap)
+        //   - TargetHarianHelper.kt:138 (Android Admin App)
+        //
+        // Sebelum fix ini, jalur H+1 lunas tertanam di case 'aktif' L976-980 →
+        // begitu admin men-set status='Lunas' di hari yg sama, nasabah masuk
+        // case 'lunas' (cuma nasabahLunas++; tanpa target add) → frozen
+        // snapshot kehilangan 3% × besarPinjaman. Audit 11 Jun 2026: NURDAINI
+        // (admin A, besarPinjaman 500.000) → CF=0, Android/Web live=15.000.
+        //
+        // 'ditolak' sudah di-return di L908 sebelum titik ini → aman tanpa
+        // guard tambahan. Tidak men-double-count: blok ekuivalen di case
+        // 'aktif' DIHAPUS oleh patch ini (lihat edit terkait di bawah).
+        if (!isHariLibur && (p.tanggalLunasCicilan || '').trim() === today) {
+            targetHariIni += Math.floor((p.besarPinjaman || 0) * 3 / 100);
+        }
+
         switch (status) {
             case 'aktif':
             case 'active':
@@ -973,11 +996,11 @@ async function fullRecalculateAdminSummary(adminUid) {
                     if (statusPencairanSimpanan === 'Dicairkan') {
                         nasabahLunas++;
                     }
-                    // ✅ FIX: Nasabah lunas cicilan HARI INI tetap masuk target sampai besok
-                    const tanggalLunasCicilan = (p.tanggalLunasCicilan || '').trim();
-                    if (!isHariLibur && tanggalLunasCicilan === today) {
-                        targetHariIni += Math.floor((p.besarPinjaman || 0) * 3 / 100);
-                    }
+                    // ✅ V6 FIX: H+1 LUNAS target dipindah ke blok hoisted di atas
+                    // switch (status) — gate STATUS-AGNOSTIC (tanggalLunasCicilan ===
+                    // today) supaya nasabah status='Lunas' di hari yg sama tidak
+                    // kehilangan target. Sengaja DIHAPUS dari sini agar tidak
+                    // double-count utk kasus aktif+lunasHariIni.
                 } else {
                     // ✅ FIX: Nasabah ditandai MENUNGGU_PENCAIRAN HARI INI tetap masuk target sampai besok
                     const tanggalStatusKhusus = (p.tanggalStatusKhusus || '').trim();
@@ -1009,21 +1032,44 @@ async function fullRecalculateAdminSummary(adminUid) {
                             // Blok ini di dalam switch case 'aktif' & cabang non-lunas
                             // non-MP → status "Disetujui"/"Menunggu Approval" sudah di
                             // case lain (tidak menambah target) → Scenario 4 tetap terjaga.
+                            //
+                            // ✅ V2 FIX (audit forensik pimpinan 11 Jun 2026): anchor
+                            // TOP-UP pada hari Cairkan. Paritas live helpers:
+                            //   - lib/target.js:253-256   (Web Buku Pokok & Rekap)
+                            //   - TargetHarianHelper.kt:205-209 (Android)
+                            // Aturan:
+                            //   tglCair === today + pinjamanKe>1 + besarLama>0 →
+                            //     target = 3% × besarPinjamanLamaSebelumTopUp (anchor
+                            //     pinjaman LAMA = hari terakhir billing-nya).
+                            //   tglCair === today + pinjaman pertama → 0 (mulai H+1).
+                            //   tglCair !== today + ≤3 bulan → 3% × besarPinjaman.
+                            //   tglCair kosong → BRANCH B legacy fallback (tak berubah).
+                            // Sebelum fix: jalur tglCair===today → masukTarget=false
+                            // → kehilangan 3% × besarLama pada hari top-up. Audit
+                            //   11 Jun 2026: 6 nasabah, total Rp 138.000 hilang.
                             const tglCair2 = (p.tanggalPencairan || '').trim();
-                            let masukTarget;
-                            if (tglCair2) {
-                                // BRANCH A: cair hari ini → besok; macet > 3 bln → 0.
-                                masukTarget = (tglCair2 !== today && !isOverThreeMonths(tglCair2));
+                            if (tglCair2 === today) {
+                                // BRANCH A — TOP-UP CAIRKAN TODAY → anchor pinjaman LAMA.
+                                if ((p.pinjamanKe || 1) > 1 && (p.besarPinjamanLamaSebelumTopUp || 0) > 0) {
+                                    targetHariIni += Math.floor((p.besarPinjamanLamaSebelumTopUp || 0) * 3 / 100);
+                                }
+                                // Pinjaman pertama cair hari ini → 0 (target dimulai H+1).
                             } else {
-                                // BRANCH B: legacy aktif tglPencairan kosong. Fallback acuan
-                                // pengajuan/daftar utk 3-bulan macet (kosong → tetap hitung).
-                                const tglAcuanLegacy = (p.tanggalPengajuan || '').trim()
-                                    || (p.tanggalDaftar || '').trim();
-                                masukTarget = (!tglAcuanLegacy || !isOverThreeMonths(tglAcuanLegacy));
-                            }
-                            if (masukTarget) {
-                                // Flat 3% — konsisten dengan Android
-                                targetHariIni += Math.floor((p.besarPinjaman || 0) * 3 / 100);
+                                let masukTarget;
+                                if (tglCair2) {
+                                    // BRANCH A — sudah cair sebelumnya; macet > 3 bln → 0.
+                                    masukTarget = !isOverThreeMonths(tglCair2);
+                                } else {
+                                    // BRANCH B — legacy aktif tglPencairan kosong. Fallback acuan
+                                    // pengajuan/daftar utk 3-bulan macet (kosong → tetap hitung).
+                                    const tglAcuanLegacy = (p.tanggalPengajuan || '').trim()
+                                        || (p.tanggalDaftar || '').trim();
+                                    masukTarget = (!tglAcuanLegacy || !isOverThreeMonths(tglAcuanLegacy));
+                                }
+                                if (masukTarget) {
+                                    // Flat 3% — konsisten dengan Android
+                                    targetHariIni += Math.floor((p.besarPinjaman || 0) * 3 / 100);
+                                }
                             }
                         }
                     }
