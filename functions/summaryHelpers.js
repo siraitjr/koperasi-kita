@@ -125,14 +125,14 @@ function calculateTotalDibayar(pelanggan) {
 // =========================================================================
 function adaPembayaranPadaTanggal(pelanggan, tanggal) {
     if (!pelanggan || !pelanggan.pembayaranList) return false;
-    
+
     const pembayaranList = Array.isArray(pelanggan.pembayaranList)
         ? pelanggan.pembayaranList
         : Object.values(pelanggan.pembayaranList || {});
-    
+
     for (const p of pembayaranList) {
         if (p.tanggal === tanggal) return true;
-        
+
         if (p.subPembayaran) {
             const subList = Array.isArray(p.subPembayaran)
                 ? p.subPembayaran
@@ -142,8 +142,58 @@ function adaPembayaranPadaTanggal(pelanggan, tanggal) {
             }
         }
     }
-    
+
     return false;
+}
+
+// =========================================================================
+// ✅ HELPER PARITAS: cermin RingkasanDashboardScreen.kt (audit pimpinan
+// 11 Jun 2026 "Drop & Lunas parity Android-Leadership").
+// -------------------------------------------------------------------------
+// isDropHariIni — cermin RingkasanDashboardScreen.kt:197-205
+//   tanggalPencairan ADA → strict: tanggalPencairan === today
+//                                  && status === "Aktif".
+//   tanggalPencairan KOSONG → legacy fallback: tanggalDaftar/Pengajuan == today.
+//   Tujuan: pinjaman ≥3jt yang multi-stage approval baru terhitung "Drop"
+//   pada hari uang fisik dicairkan (bukan saat tanggalDaftar/Pengajuan).
+//
+// SEBELUMNYA CF memakai `tanggalDaftar === today || tanggalPengajuan === today`
+// → loan yang sudah register/approved hari ini tapi BELUM cair sudah
+// terhitung Drop → dashboard pimpinan/koordinator/pengawas berbeda dgn
+// dashboard admin lapangan. Helper ini menutup divergensi tsb.
+// =========================================================================
+function isDropHariIni(data, today) {
+    if (!data) return false;
+    const tanggalPencairan = (data.tanggalPencairan || '').trim();
+    if (tanggalPencairan !== '') {
+        const status = (data.status || '').toLowerCase();
+        return tanggalPencairan === today && (status === 'aktif' || status === 'active');
+    }
+    const tanggalDaftar = (data.tanggalDaftar || '').trim();
+    const tanggalPengajuan = (data.tanggalPengajuan || '').trim();
+    return tanggalDaftar === today || tanggalPengajuan === today;
+}
+
+// =========================================================================
+// isLunasHariIni — cermin RingkasanDashboardScreen.kt:207-219
+//   fully-paid (totalDibayar excl. "Bunga…" >= totalPelunasan && >0)
+//   + minimal 1 pembayaran ber-tanggal today.
+//   TIDAK menunggu statusPencairanSimpanan === 'Dicairkan' — nasabah
+//   officially lunas pada hari pelunasan cicilan, tidak peduli simpanan
+//   sudah dicairkan atau belum (itu metrik berbeda: nasabahLunas kumulatif).
+//
+// SEBELUMNYA CF menambah gate statusPencairanSimpanan === 'Dicairkan'
+// → nasabah yang lunas cicilan tapi simpanan belum dicairkan TIDAK terhitung
+// di leadership reports padahal di admin lapangan terhitung. Helper ini
+// menutup divergensi tsb.
+// =========================================================================
+function isLunasHariIni(data, today) {
+    if (!data) return false;
+    const totalPelunasan = data.totalPelunasan || 0;
+    if (totalPelunasan <= 0) return false;
+    const totalDibayar = calculateTotalDibayar(data); // sudah skip "Bunga…"
+    if (totalDibayar < totalPelunasan) return false;
+    return adaPembayaranPadaTanggal(data, today);
 }
 
 // =========================================================================
@@ -486,25 +536,18 @@ function calculateDelta(before, after) {
     if (!before && after) {
         const category = getEffectiveCategory(after);
         if (category === 'ditolak') return delta;
-        
+
         delta.nasabahChange = 1;
-        const tanggalDaftar = after.tanggalDaftar || after.tanggalPengajuan || '';
         const totalPelunasan = after.totalPelunasan || 0;
         const totalDibayar = calculateTotalDibayar(after);
-        
+
         if (category === 'aktif') {
             delta.aktifChange = 1;
             delta.pinjamanAktifChange = totalPelunasan;
             delta.piutangChange = Math.max(0, totalPelunasan - totalDibayar);
             delta.targetHariIniChange = calculateTargetHariIni(after);
-            if (tanggalDaftar === today) delta.nasabahBaruHariIniChange = 1;
-                    } else if (category === 'cairHariIni' || category === 'nonAktifMacet') {
+        } else if (category === 'cairHariIni' || category === 'nonAktifMacet') {
             // Tidak menambah aktifChange, tapi tetap hitung totalNasabah (sudah di atas)
-            // Untuk cairHariIni: nasabahBaruHariIni tetap dihitung
-            if (category === 'cairHariIni') {
-                const tanggalDaftar = after.tanggalDaftar || after.tanggalPengajuan || '';
-                if (tanggalDaftar === today) delta.nasabahBaruHariIniChange = 1;
-            }
         } else if (category === 'lunas') {
             delta.lunasChange = 1;
         } else if (category === 'menungguPencairan') {
@@ -512,9 +555,17 @@ function calculateDelta(before, after) {
         } else if (category === 'menunggu') {
             delta.menungguChange = 1;
         }
-        
+
+        // ✅ Drop & Lunas Hari Ini — single source of truth helpers (cermin
+        // RingkasanDashboardScreen.kt). Diletakkan satu kali di sini, bukan
+        // tersebar per cabang category — menggantikan beberapa assignment lama
+        // (`if (tanggalDaftar === today) delta.nasabahBaruHariIniChange = 1` di
+        // cabang aktif/cairHariIni) yang TIDAK 1:1 dgn RingkasanDashboard.
+        if (isDropHariIni(after, today)) delta.nasabahBaruHariIniChange = 1;
+        if (isLunasHariIni(after, today)) delta.nasabahLunasHariIniChange = 1;
+
         // ✅ v8: TIDAK hitung pembayaranHariIni di sini!
-        
+
         console.log(`📊 New nasabah: category=${category}`);
         return delta;
     }
@@ -523,11 +574,11 @@ function calculateDelta(before, after) {
     if (before && !after) {
         const category = getEffectiveCategory(before);
         if (category === 'ditolak') return delta;
-        
+
         delta.nasabahChange = -1;
         const totalPelunasan = before.totalPelunasan || 0;
         const totalDibayar = calculateTotalDibayar(before);
-        
+
         if (category === 'aktif') {
             delta.aktifChange = -1;
             delta.pinjamanAktifChange = -totalPelunasan;
@@ -542,9 +593,15 @@ function calculateDelta(before, after) {
         } else if (category === 'menunggu') {
             delta.menungguChange = -1;
         }
-        
+
+        // ✅ Drop & Lunas Hari Ini — decrement bila state SEBELUM hapus memang
+        // termasuk drop/lunas hari ini. Versi lama TIDAK pernah men-decrement
+        // nasabahBaruHariIni di Case 2 (pre-existing bug terkait konsistensi).
+        if (isDropHariIni(before, today)) delta.nasabahBaruHariIniChange = -1;
+        if (isLunasHariIni(before, today)) delta.nasabahLunasHariIniChange = -1;
+
         // ✅ v8: TIDAK hitung pembayaranHariIni di sini!
-        
+
         console.log(`📊 Deleted nasabah: category=${category}`);
         return delta;
     }
@@ -601,37 +658,22 @@ function calculateDelta(before, after) {
             } else if (beforeCategory === 'menunggu') {
                 delta.menungguChange -= 1;
             }            
-            // Tambah ke kategori sesudahnya
+            // Tambah ke kategori sesudahnya.
+            // CATATAN: Drop hari ini (nasabahBaruHariIniChange) & Lunas hari ini
+            // (nasabahLunasHariIniChange) TIDAK lagi di-set per-cabang di sini —
+            // di-compute sekali via formula `after − before` (helpers
+            // isDropHariIni/isLunasHariIni) di bawah, lihat blok "✅ Drop/Lunas".
             if (afterCategory === 'aktif') {
                 delta.aktifChange += 1;
                 delta.pinjamanAktifChange += afterPelunasan;
                 delta.piutangChange += Math.max(0, afterPelunasan - afterDibayar);
                 delta.targetHariIniChange += calculateTargetHariIni(after);
-
-                // Drop hari ini: cek tanggalPencairan untuk flow baru, fallback ke tanggalDaftar
-                const tanggalPencairan = after.tanggalPencairan || '';
-                if (beforeCategory === 'disetujui' && tanggalPencairan === today) {
-                    delta.nasabahBaruHariIniChange = 1;
-                } else if (beforeCategory === 'menunggu' && tanggalDaftar === today) {
-                    // Backward compatibility: flow lama tanpa pencairan
-                    delta.nasabahBaruHariIniChange = 1;
-                }
-                            } else if (afterCategory === 'cairHariIni' || afterCategory === 'nonAktifMacet') {
+            } else if (afterCategory === 'cairHariIni' || afterCategory === 'nonAktifMacet') {
                 // Tidak menambah aktifChange
-                if (afterCategory === 'cairHariIni') {
-                    const tanggalPencairan = after.tanggalPencairan || '';
-                    if (beforeCategory === 'disetujui' && tanggalPencairan === today) {
-                        delta.nasabahBaruHariIniChange = 1;
-                    }
-                }
-
             } else if (afterCategory === 'lunas') {
                 delta.lunasChange += 1;
             } else if (afterCategory === 'menungguPencairan') {
                 delta.nasabahMenungguPencairanChange += 1;
-                if (beforeCategory === 'aktif' && adaPembayaranPadaTanggal(after, today)) {
-                    delta.nasabahLunasHariIniChange = 1;
-                }
             } else if (afterCategory === 'menunggu') {
                 delta.menungguChange += 1;
             }
@@ -661,6 +703,20 @@ function calculateDelta(before, after) {
         // - onPembayaranAdded.onCreate() → processPembayaranBaru()
         // - onSubPembayaranAdded.onCreate() → processPembayaranBaru()
         // =========================================================================
+
+        // ✅ Drop & Lunas Hari Ini — single source of truth via helpers
+        // (cermin RingkasanDashboardScreen.kt). Formula `after − before`
+        // benar untuk SEMUA transisi (termasuk same-category dan delete bug
+        // yang dulu tidak men-decrement). Menggantikan beberapa assignment
+        // lama yang tersebar per cabang category & cuma menangkap subset
+        // transisi (mis. aktif→menungguPencairan saja utk lunas).
+        const afterIsDrop = isDropHariIni(after, today) ? 1 : 0;
+        const beforeIsDrop = isDropHariIni(before, today) ? 1 : 0;
+        delta.nasabahBaruHariIniChange = afterIsDrop - beforeIsDrop;
+
+        const afterIsLunasH = isLunasHariIni(after, today) ? 1 : 0;
+        const beforeIsLunasH = isLunasHariIni(before, today) ? 1 : 0;
+        delta.nasabahLunasHariIniChange = afterIsLunasH - beforeIsLunasH;
     }
 
     // =========================================================================
@@ -852,10 +908,16 @@ async function fullRecalculateAdminSummary(adminUid) {
         if (status === 'ditolak') return;
         
         totalNasabah++;
-        
-        const tanggalDaftar = p.tanggalDaftar || '';
-        const tanggalPengajuan = p.tanggalPengajuan || '';
-        const isBaruAtauTopUpHariIni = tanggalDaftar === today || tanggalPengajuan === today;
+
+        // ✅ Drop & Lunas Hari Ini — single source of truth helpers (cermin
+        // RingkasanDashboardScreen.kt 1:1). Hoisted ke atas loop agar SEMUA
+        // jalur status (aktif / menunggu approval / lunas / dst.) dievaluasi
+        // dgn aturan yang sama, dan tidak bergantung pada branch switch
+        // (yang dulu meng-gate dgn statusPencairanSimpanan === 'Dicairkan' utk
+        // Lunas dan dgn tglDaftar/Pengajuan === today utk Drop).
+        if (isDropHariIni(p, today)) nasabahBaruHariIni++;
+        if (isLunasHariIni(p, today)) nasabahLunasHariIni++;
+
         const totalDibayar = calculateTotalDibayar(p);
         const totalPelunasan = p.totalPelunasan || 0;
         const isSudahLunas = totalPelunasan > 0 && totalDibayar >= totalPelunasan;
@@ -902,14 +964,14 @@ async function fullRecalculateAdminSummary(adminUid) {
         switch (status) {
             case 'aktif':
             case 'active':
-                // ✅ PERBAIKAN: Hitung nasabahBaruHariIni di LUAR kondisi isSudahLunas
-                // Agar nasabah top up yang tanggalDaftar = today tetap terhitung
-                if (isBaruAtauTopUpHariIni) nasabahBaruHariIni++;
-                
+                // Drop hari ini di-handle di atas (hoisted via isDropHariIni helper).
+
                 if (isSudahLunas) {
+                    // nasabahLunas (kumulatif lunas+simpanan-dicairkan) tetap di-gate
+                    // statusPencairanSimpanan === 'Dicairkan' — itu metrik berbeda
+                    // dari nasabahLunasHariIni (yang dihoist di atas).
                     if (statusPencairanSimpanan === 'Dicairkan') {
                         nasabahLunas++;
-                        if (adaPembayaranPadaTanggal(p, today)) nasabahLunasHariIni++;
                     }
                     // ✅ FIX: Nasabah lunas cicilan HARI INI tetap masuk target sampai besok
                     const tanggalLunasCicilan = (p.tanggalLunasCicilan || '').trim();
@@ -969,15 +1031,16 @@ async function fullRecalculateAdminSummary(adminUid) {
                 break;
                 
             case 'lunas':
+                // nasabahLunas (kumulatif) tetap di-gate Dicairkan.
+                // nasabahLunasHariIni di-hoist via isLunasHariIni di atas.
                 if (statusPencairanSimpanan === 'Dicairkan') {
                     nasabahLunas++;
-                    if (adaPembayaranPadaTanggal(p, today)) nasabahLunasHariIni++;
                 }
                 break;
-                
+
             case 'menunggu approval':
                 nasabahMenunggu++;
-                if (isBaruAtauTopUpHariIni) nasabahBaruHariIni++;
+                // Drop hari ini di-handle di atas (hoisted via isDropHariIni).
                 break;
 
             case 'disetujui':
@@ -1112,6 +1175,8 @@ module.exports = {
     isHoliday,
     calculateTotalDibayar,
     adaPembayaranPadaTanggal,
+    isDropHariIni,
+    isLunasHariIni,
     hitungPembayaranPadaTanggal,
     calculateTargetHariIni,
     isOverThreeMonths,
