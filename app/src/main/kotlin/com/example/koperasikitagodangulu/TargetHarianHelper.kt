@@ -68,6 +68,27 @@ private fun parseTanggalIndo(s: String): Date? {
 fun todayIndo(): String = dateFormatWIB().format(Calendar.getInstance(WIB).time)
 
 /**
+ * Total cicilan yang jatuh STRICTLY sebelum `cur`. Cermin lib/target.js
+ * `sumPembayaranSebelum` (L74-83): dipakai fallback deteksi lunas ketika
+ * `tanggalLunasCicilan` kosong/invalid. Entry "Bunga…" di-skip (parity
+ * `calculateTotalDibayar` bukuPokokApi.js:152); entry tanpa tanggal yang
+ * parseable otomatis tidak dihitung (bukan pembayaran berkalender).
+ */
+private fun sumPembayaranSebelum(list: List<Pembayaran>, cur: Date): Long {
+    var total = 0L
+    for (pay in list) {
+        if (pay.tanggal.startsWith("Bunga")) continue
+        val payDate = parseTanggalIndo(pay.tanggal)
+        if (payDate != null && payDate.before(cur)) total += pay.jumlah.toLong()
+        for (sub in pay.subPembayaran) {
+            val subDate = parseTanggalIndo(sub.tanggal)
+            if (subDate != null && subDate.before(cur)) total += sub.jumlah.toLong()
+        }
+    }
+    return total
+}
+
+/**
  * Kontribusi target harian dari satu nasabah pada `today`. 0 bila tidak eligible.
  *
  * Aturan lengkap di header file. Aman dipanggil dari hot path (Compose recomposition
@@ -94,8 +115,20 @@ fun calculateTargetContribution(p: Pelanggan, today: String): Long {
         && !masihAktifPadaTanggal && !belumMPPadaTanggal) return 0L
 
     val targetFlat = p.besarPinjaman.toLong() * 3L / 100L
+    // ✅ FIX PARITAS TARGET Android↔Web (gap dilaporkan admin lapangan, 11 Jun 2026).
+    // totalDibayar untuk deteksi `isSudahLunas` WAJIB meng-EXCLUDE entry "Bunga…"
+    // (pembayaran bunga-only, BUKAN cicilan pokok). Itu persis yang dilakukan Web
+    // `calculateTotalDibayar` (bukuPokokApi.js:152) yang mengisi `n.totalDibayar`
+    // dipakai isEligibleForTarget (lib/target.js:193), DAN konsisten dgn seluruh
+    // kode Android lain (RingkasanDashboardScreen.kt:210, PelangganViewModel.kt:
+    // 14491/17970, DaftarPelangganLunasScreen.kt:106, dst). Helper ini SEBELUMNYA
+    // menjumlah SEMUA entry termasuk "Bunga…" → totalDibayar over-count →
+    // `isSudahLunas` bisa keliru true / lunas-detection bergeser → target Android
+    // divergen dari Web rupiah-per-rupiah. SATU-SATUNYA tempat di Android yang
+    // belum di-align — inilah sumber gap-nya.
     val totalDibayar = p.pembayaranList.sumOf { pay ->
-        pay.jumlah.toLong() + pay.subPembayaran.sumOf { sub -> sub.jumlah.toLong() }
+        if (pay.tanggal.startsWith("Bunga")) 0L
+        else pay.jumlah.toLong() + pay.subPembayaran.sumOf { sub -> sub.jumlah.toLong() }
     }
     val totalPelunasanL = p.totalPelunasan.toLong()
     val isSudahLunas = totalPelunasanL > 0L && totalDibayar >= totalPelunasanL
@@ -103,8 +136,20 @@ fun calculateTargetContribution(p: Pelanggan, today: String): Long {
     // ── POIN 1: Cabang LUNAS ───────────────────────────────────────────────
     if (isSudahLunas) {
         if (p.tanggalLunasCicilan == today) return targetFlat
-        if (lunasDateGuard != null && lunasDateGuard.before(curDate)) return 0L
-        // lunasDate > cur → fall through (masih aktif pada kolom historis)
+        if (lunasDateGuard != null) {
+            if (lunasDateGuard.before(curDate)) return 0L
+            // lunasDate > cur → fall through (masih aktif pada kolom historis)
+        } else {
+            // ✅ FIX PARITAS Web lib/target.js:201-205: tanggalLunasCicilan kosong/
+            // invalid → fallback date-aware. Bila pembayaran yang jatuh STRICTLY
+            // sebelum `today` sudah menutup totalPelunasan, nasabah sudah lunas di
+            // hari LAMPAU → 0 (jangan hitung target lagi). Bila pelunasan baru
+            // tercapai HARI INI (sum-sebelum < pelunasan) → fall through → target
+            // tetap dihitung (H+1, hari terakhir aktif). Tanpa cabang ini Android
+            // OVER-count target untuk nasabah lunas yang tanggalLunasCicilan-nya
+            // belum/ gagal di-stamp — sumber divergensi kedua vs Web.
+            if (sumPembayaranSebelum(p.pembayaranList, curDate) >= totalPelunasanL) return 0L
+        }
     }
 
     // ── POIN 2: Cabang MENUNGGU_PENCAIRAN ──────────────────────────────────
