@@ -218,7 +218,19 @@ function generateBulanOptions() {
 // KREDIT (uang keluar) → mengurangi tunaiPasar, sama persis dengan rumus
 // BukuRekap (kredit = totalDrop + pencairanTabungan). Bila tidak diberikan,
 // pencairan dianggap 0 (perilaku lama).
-function computeTunaiKasPerDate(dateStr, nasabahByAdmin, admins, pencairanByAdminDate) {
+//
+// orphanByDate (opsional): bukuData.orphanPaymentsByDate dari getBukuPokok.
+// Pembayaran "orphan" = pembayaran_harian yang pelangganId-nya sudah tidak ada
+// di pelanggan/ (mis. setelah cairkanSimpanan). BukuRekap menambahkannya ke
+// storting (kasir/page.js:1944-1949) → masuk debitAsli → mempengaruhi
+// kasPakai/tunaiPasar. Sebelum patch ini helper TIDAK meng-akumulasi orphan
+// → divergensi vs BukuRekap di hari yang punya nasabah dihapus
+// (audit pimpinan 11 Jun 2026 "Buku Tunai vs Buku Rekap"). Dengan dipass,
+// helper kini cocok rupiah-per-rupiah dgn baris per-resort BukuRekap.
+// Shape: { [tanggal]: Array<{adminUid, jumlah, ...}> } (baru) atau
+// { [tanggal]: { [adminUid]: jumlah } } (lama, back-compat).
+// =========================================================================
+function computeTunaiKasPerDate(dateStr, nasabahByAdmin, admins, pencairanByAdminDate, orphanByDate) {
   let totalTunaiPasar = 0, totalKasPakai = 0;
   for (const adm of (admins || [])) {
     const resortNasabah = (nasabahByAdmin && nasabahByAdmin[adm.uid]) || [];
@@ -237,6 +249,22 @@ function computeTunaiKasPerDate(dateStr, nasabahByAdmin, admins, pencairanByAdmi
       });
       if ((n.tanggalPencairan || '').trim() === dateStr) totalDrop += n.besarPinjaman || 0;
     });
+    // ✅ Orphan storting (pimpinan 11 Jun 2026 "Buku Tunai vs Buku Rekap"):
+    // pembayaran dari nasabah yang sudah dihapus (mis. via cairkanSimpanan).
+    // BukuRekap menambahkannya ke storting per resort (lihat L1944-1949) → ikut
+    // ke debitAsli & kasPakai/tunaiPasar. Helper ini sebelumnya TIDAK meng-
+    // akumulasi orphan → BukuTunai/KasPenuntun/BukuEkspedisi (yang lewat helper)
+    // beda dgn BukuRekap di hari ber-orphan. Patch ini mirror jalur BukuRekap
+    // persis, termasuk back-compat shape lama { adminUid: total }.
+    if (orphanByDate) {
+      const orphanArr = orphanByDate[dateStr];
+      if (orphanArr) {
+        const orphanStortingAdm = Array.isArray(orphanArr)
+          ? orphanArr.reduce((s, e) => (e && e.adminUid === adm.uid ? s + (e.jumlah || 0) : s), 0)
+          : (orphanArr?.[adm.uid] || 0);
+        totalStorting += orphanStortingAdm;
+      }
+    }
     const adminFee = Math.round(totalDrop * 0.05);
     const tabungan = Math.round(totalDrop * 0.05);
     const debitAsli = totalStorting + adminFee + tabungan;
@@ -2490,8 +2518,10 @@ function KasPenuntunScreen({ user, cabang, cabangList, onBack, onLogout, onNavig
     // (sumber kebenaran: Buku Rekap "Total Hari Ini").
     const tunaiPasarPerDate = {};
     const kasPakaiPerDate = {};
+    // Orphan dilewatkan agar storting helper match BukuRekap (pimpinan 11 Jun 2026).
+    const orphanByDate = bukuData?.orphanPaymentsByDate || {};
     sortedDates.forEach(dateStr => {
-      const { tunaiPasar, kasPakai } = computeTunaiKasPerDate(dateStr, nasabahByAdmin, admins, pencairanByAdminDate);
+      const { tunaiPasar, kasPakai } = computeTunaiKasPerDate(dateStr, nasabahByAdmin, admins, pencairanByAdminDate, orphanByDate);
       tunaiPasarPerDate[dateStr] = tunaiPasar;
       kasPakaiPerDate[dateStr] = kasPakai;
     });
@@ -2859,6 +2889,9 @@ function BukuTunaiScreen({ user, cabang, cabangList, onBack, onLogout, onNavigat
     // Pencairan tabungan per (tanggal, admin) — kredit tambahan untuk tunaiPasar
     // (parity dengan BukuRekap / KasPenuntun / BukuEkspedisi).
     const pencairanByAdminDate = buildPencairanByAdminDate(jurnalEntries);
+    // Orphan storting per tanggal — wajib di-pass agar helper match BukuRekap
+    // (pimpinan 11 Jun 2026 "Buku Tunai vs Buku Rekap").
+    const orphanByDate = bukuData?.orphanPaymentsByDate || {};
 
     const rows = [];
     for (const adm of admins) {
@@ -2867,14 +2900,29 @@ function BukuTunaiScreen({ user, cabang, cabangList, onBack, onLogout, onNavigat
 
       // Tunai Pasar & Kas Pakai per resort — via helper top-level
       // computeTunaiKasPerDate (Source of Truth: Buku Rekap baris per resort).
-      const { tunaiPasar, kasPakai } = computeTunaiKasPerDate(dateStr, nasabahByAdmin, [adm], pencairanByAdminDate);
+      const { tunaiPasar, kasPakai } = computeTunaiKasPerDate(dateStr, nasabahByAdmin, [adm], pencairanByAdminDate, orphanByDate);
 
-      // Dekomposisi kembaliKasbon & titipan via helper bersama (Source of Truth).
-      const { kembaliKasbon, titipan, totalFisik } =
+      // Titipan & +/- (totalFisik) dari helper bersama (kembaliKasbon helper di-ignore;
+      // diganti rumus strict pimpinan di bawah).
+      const { titipan, totalFisik } =
         decomposeKembaliKasbonTitipan(kasbonPagi, tunaiPasar, kasPakai);
 
-      // +/- = totalFisik (= kembaliKasbon + titipan). Jangan dihitung dari
-      // kembaliKasbon + tunaiPasar + titipan (double-count tunaiPasar).
+      // ✅ Kembali Kasbon — rumus STRICT pimpinan 11 Jun 2026:
+      //   kembaliKasbon = kasbonPagi - kasPakai
+      // Sebelumnya helper memakai "waterfall" (kembaliKasbon=kasbonPagi bila
+      // totalFisik mencukupi, else 0) yang tidak sesuai aturan pimpinan baru.
+      // Override hanya di kolom BukuTunai (per scope pimpinan); helper tetap
+      // dipakai BukuEkspedisi & saldoKasBulanLalu apa adanya.
+      // CATATAN: bila kasPakai > kasbonPagi, hasil bisa negatif (Kas Pakai
+      // melebihi kasbon → admin "berhutang" ke kas). Mengikuti instruksi
+      // "strictly" pimpinan — tidak di-clamp ke 0.
+      const kembaliKasbon = kasbonPagi - kasPakai;
+
+      // +/- tetap totalFisik (fisik dibawa pulang admin = kasbonPagi + tunaiPasar - kasPakai).
+      // CATATAN setelah perubahan Kembali Kasbon strict: kembaliKasbon + titipan
+      // tidak lagi selalu == +/- (karena titipan masih dari rumus helper waterfall).
+      // Pimpinan eksplisit minta Titipan tidak diubah pada batch ini (point #4 =
+      // EXPLAIN, bukan FIX); +/- tetap menampilkan total fisik aktual.
       const plusMinus = totalFisik;
 
       rows.push({ resortName: adm.name, kasbonPagi, kasPakai, kembaliKasbon, tunaiPasar, titipan, plusMinus });
@@ -3177,6 +3225,9 @@ function BukuEkspedisiScreen({ user, cabang, cabangList, onBack, onLogout, onNav
     // Pencairan tabungan per (tanggal, admin) — kredit tambahan untuk tunaiPasar
     // (parity dengan BukuRekap & KasPenuntun).
     const pencairanByAdminDate = buildPencairanByAdminDate(jurnalEntries);
+    // Orphan storting per tanggal — wajib di-pass agar helper match BukuRekap
+    // (pimpinan 11 Jun 2026 "Buku Tunai vs Buku Rekap").
+    const orphanByDate = bukuData?.orphanPaymentsByDate || {};
     // Kasbon per (tanggal, admin) — untuk dekomposisi per-admin kembaliKasbon.
     // Filter sama persis dengan BukuTunai: uang_kas keluar yang punya targetAdminUid.
     const kasbonByAdminPerDate = {};
@@ -3201,7 +3252,7 @@ function BukuEkspedisiScreen({ user, cabang, cabangList, onBack, onLogout, onNav
       let dayTunaiPasar = 0, dayKembali = 0;
       for (const adm of admins) {
         const kasbonPagiAdm = kasbonByAdminPerDate[dateStr]?.[adm.uid] || 0;
-        const { tunaiPasar, kasPakai } = computeTunaiKasPerDate(dateStr, nasabahByAdmin, [adm], pencairanByAdminDate);
+        const { tunaiPasar, kasPakai } = computeTunaiKasPerDate(dateStr, nasabahByAdmin, [adm], pencairanByAdminDate, orphanByDate);
         const { kembaliKasbon } = decomposeKembaliKasbonTitipan(kasbonPagiAdm, tunaiPasar, kasPakai);
         dayTunaiPasar += tunaiPasar;
         dayKembali += kembaliKasbon;
