@@ -1249,6 +1249,10 @@ private fun KoordinatorDetailPengajuanSheet(
 //            DetailRow(label = "Simpanan", value = "Rp ${formatRupiah(pelanggan.simpanan)}")
             DetailRow(isDark = isDark, label = "Total Pelunasan", value = "Rp ${formatRupiah(pelanggan.totalPelunasan)}")
             DetailRow(isDark = isDark, label = "Total Diterima", value = "Rp ${formatRupiah(pelanggan.totalDiterima)}")
+            // Catatan OPSIONAL dari admin lapangan — tampil hanya bila diisi.
+            if (pelanggan.catatan.isNotBlank()) {
+                DetailRow(isDark = isDark, label = "Catatan Admin", value = pelanggan.catatan, valueColor = Color(0xFFE65100))
+            }
         }
 
         Spacer(modifier = Modifier.height(16.dp))

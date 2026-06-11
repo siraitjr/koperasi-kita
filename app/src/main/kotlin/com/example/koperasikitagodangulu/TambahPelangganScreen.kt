@@ -214,6 +214,8 @@ fun TambahPelangganScreen(
     var expandedTenor by remember { mutableStateOf(false) }
     val pilihanTenor = listOf(24, 28, 30, 36, 40)
     var totalPelunasan by remember { mutableStateOf("") }
+    // Catatan OPSIONAL dari admin lapangan (ditampilkan ke atasan saat approval).
+    var catatan by remember { mutableStateOf("") }
     var showScanner by remember { mutableStateOf(false) }
     var ktpDataState by remember { mutableStateOf(KtpData()) }
     var scanResult by remember { mutableStateOf<KtpData?>(null) }
@@ -1439,6 +1441,34 @@ fun TambahPelangganScreen(
                                     txtColor = txtColor,
                                     subtitleColor = subtitleColor
                                 )
+
+                                // Catatan OPSIONAL dari admin lapangan — tampil ke
+                                // Pimpinan/Koordinator/Pengawas saat approval. Posisi:
+                                // tepat di antara "Total Pelunasan" & tombol "Simpan Data".
+                                OutlinedTextField(
+                                    value = catatan,
+                                    onValueChange = { catatan = it },
+                                    label = { Text("Catatan (Opsional)", color = subtitleColor) },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    minLines = 2,
+                                    maxLines = 4,
+                                    shape = RoundedCornerShape(12.dp),
+                                    colors = OutlinedTextFieldDefaults.colors(
+                                        focusedContainerColor = cardColor,
+                                        unfocusedContainerColor = cardColor,
+                                        focusedBorderColor = TambahPelangganColors.primary,
+                                        unfocusedBorderColor = borderColor,
+                                        focusedLabelColor = TambahPelangganColors.primary,
+                                        unfocusedLabelColor = subtitleColor,
+                                        cursorColor = TambahPelangganColors.primary,
+                                        focusedTextColor = txtColor,
+                                        unfocusedTextColor = txtColor
+                                    ),
+                                    keyboardOptions = KeyboardOptions(
+                                        keyboardType = KeyboardType.Text,
+                                        imeAction = ImeAction.Done
+                                    )
+                                )
                             }
                         }
                     }
@@ -1651,6 +1681,7 @@ fun TambahPelangganScreen(
                                                     adminEmail = auth.currentUser?.email ?: "",
                                                     adminUid = auth.currentUser?.uid ?: "",
                                                     adminName = auth.currentUser?.displayName ?: "",
+                                                    catatan = catatan.trim(),
                                                     isSynced = false
                                                 )
 
@@ -1690,6 +1721,7 @@ fun TambahPelangganScreen(
                                                     adminEmail = auth.currentUser?.email ?: "",
                                                     adminUid = auth.currentUser?.uid ?: "",
                                                     adminName = auth.currentUser?.displayName ?: "",
+                                                    catatan = catatan.trim(),
                                                     isSynced = false
                                                 )
 

@@ -251,7 +251,12 @@ data class Pelanggan(
     // Dipakai saat pengajuan top-up ditolak agar rollback lengkap,
     // tidak bergantung pada parsing string `catatanPerubahanPinjaman`.
     val backupSebelumTopUp: BackupTopUpData? = null,
-    val isSynced: Boolean = true
+    val isSynced: Boolean = true,
+    // ✅ Catatan OPSIONAL dari admin lapangan saat pengajuan pinjaman (mis.
+    // "nasabah lama, tarik tabungannya 50.000"). Ditampilkan ke Pimpinan/
+    // Koordinator/Pengawas di layar approval agar atasan paham konteks sebelum
+    // menyetujui. BERBEDA dari `catatanApproval` (catatan dari pihak approver).
+    val catatan: String = ""
 )
 
 /**
@@ -484,6 +489,7 @@ fun parsePelangganFromSnapshot(child: DataSnapshot): Pelanggan? {
             tanggalPencairan = str("tanggalPencairan"),
             dualApprovalInfo = dualApprovalInfo,
             backupSebelumTopUp = backupSebelumTopUp,
+            catatan = str("catatan"),
             isSynced = bool("synced", true)
         )
         Log.d("DEBUG_PARSE", "Berhasil muat: ${pelanggan.namaKtp}")
@@ -2273,6 +2279,8 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
             "totalPelunasanLamaSebelumTopUp" to pelanggan.totalPelunasanLamaSebelumTopUp,
             "besarPinjamanLamaSebelumTopUp" to pelanggan.besarPinjamanLamaSebelumTopUp,
             "tanggalPencairan" to pelanggan.tanggalPencairan,
+            // ✅ Catatan opsional admin lapangan (ditampilkan di layar approval).
+            "catatan" to pelanggan.catatan,
             "isSynced" to pelanggan.isSynced
         )
     }

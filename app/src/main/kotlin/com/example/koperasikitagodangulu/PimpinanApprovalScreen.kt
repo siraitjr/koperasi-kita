@@ -1653,6 +1653,13 @@ fun DetailPengajuanSheet(
         }
         DetailItem(Icons.Default.AccountBalanceWallet, "Jumlah Diberikan", formatRupiah(pelanggan.totalDiterima))
 
+        // Catatan OPSIONAL dari admin lapangan — tampil hanya bila diisi, agar
+        // Pimpinan membaca konteks sebelum approve (mis. "nasabah lama, tarik
+        // tabungannya 50.000"). Berbeda dari "Catatan Approval" (catatan approver).
+        if (pelanggan.catatan.isNotBlank()) {
+            DetailItem(Icons.Default.Note, "Catatan Admin", pelanggan.catatan)
+        }
+
         Spacer(modifier = Modifier.height(24.dp))
 
         // Section: Info Approval (jika sudah ada)

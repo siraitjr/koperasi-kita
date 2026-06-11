@@ -1105,6 +1105,10 @@ private fun PengawasDetailPengajuanSheet(
 //            DetailRow(label = "Simpanan", value = "Rp ${formatRupiah(pelanggan.simpanan)}")
             DetailRow(label = "Total Pelunasan", value = "Rp ${formatRupiah(pelanggan.totalPelunasan)}")
             DetailRow(label = "Total Diterima", value = "Rp ${formatRupiah(pelanggan.totalDiterima)}")
+            // Catatan OPSIONAL dari admin lapangan — tampil hanya bila diisi.
+            if (pelanggan.catatan.isNotBlank()) {
+                DetailRow(label = "Catatan Admin", value = pelanggan.catatan, valueColor = Color(0xFFE65100))
+            }
         }
 
         Spacer(modifier = Modifier.height(16.dp))
