@@ -1163,6 +1163,16 @@ function getKategoriNasabah(nasabah, refDateStr) {
 
   // ==================== FILTER ====================
   const filtered = (nasabahExpanded.filter((n) => {
+    // ✅ Defensive: drop ghost rows yang tidak punya identitas inti (namaKtp kosong).
+    // Sumber: orphan synthetic row dibentuk dari pembayaran_harian entry yang
+    // server-side tidak berhasil di-resolve identitasnya (pelangganId tidak
+    // ditemukan di pelanggan/, pelanggan_arsip/, maupun riwayat_pinjaman/).
+    // Row tanpa namaKtp tidak punya tanggalPencairan, jatuh ke 'ML' (L962),
+    // dan tampil sebagai baris kosong (KE=1, dashes everywhere) yang
+    // mengotori tabel + result-count. Karena semua field numeriknya 0,
+    // mem-filter di sini TIDAK mengubah footer reduce sums.
+    if (!n.namaKtp || n.namaKtp.trim() === '') return false;
+
     // ✅ FIX cross-admin leak: bila pimpinan sudah pilih admin spesifik,
     // SEMUA tab kategori (Semua/PB/L1/CM/MB/ML) HARUS strict-scoped ke admin
     // tersebut. Sebelumnya tab kategori mengandalkan CF filter via param
