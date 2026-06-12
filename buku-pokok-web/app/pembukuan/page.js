@@ -2192,11 +2192,21 @@ function getKategoriNasabah(nasabah, refDateStr) {
                             {n.status === 'Lunas' ? (
                               <span className="lunas-badge">LUNAS</span>
                             ) : isTabelMode ? (
-                              <span style={{ fontFamily: "'DM Mono', monospace" }}>{formatRp(saldoAwalTabel)}</span>
+                              <>
+                                <span style={{ fontFamily: "'DM Mono', monospace" }}>{formatRp(saldoAwalTabel)}</span>
+                                {isSisaTabungan && tabelFilter !== 'PB' && (
+                                  <div style={{ fontSize: '11px', color: '#f59e0b', fontWeight: 'bold', marginTop: '2px' }}>Sisa Tabungan</div>
+                                )}
+                              </>
                             ) : (
-                              <span className={`saldo-amount ${n.sisaUtang > 0 ? 'saldo-utang' : 'saldo-lunas'}`}>
-                                {formatRp(n.sisaUtang)}
-                              </span>
+                              <>
+                                <span className={`saldo-amount ${n.sisaUtang > 0 ? 'saldo-utang' : 'saldo-lunas'}`}>
+                                  {formatRp(n.sisaUtang)}
+                                </span>
+                                {isSisaTabungan && (
+                                  <div style={{ fontSize: '11px', color: '#f59e0b', fontWeight: 'bold', marginTop: '2px' }}>Sisa Tabungan</div>
+                                )}
+                              </>
                             )}
                           </td>
                           {displayDates.map((d) => {
