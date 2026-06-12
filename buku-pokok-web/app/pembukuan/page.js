@@ -2211,12 +2211,18 @@ function getKategoriNasabah(nasabah, refDateStr) {
                           </td>
                           {displayDates.map((d) => {
                             const pay = n.pembayaran?.[d];
+                            const isLunasCell = (n.tanggalLunasCicilan || '').trim() === d;
                             return (
                               <td key={d} className={`date-col ${d === todayStr ? 'today' : ''}`}>
                                 {pay ? (
                                   <span className="pay-amount">{formatRp(pay.total)}</span>
-                                ) : (
+                                ) : !isLunasCell ? (
                                   <span className="pay-empty">-</span>
+                                ) : null}
+                                {isLunasCell && (
+                                  <div style={{ fontSize: '10px', color: '#10b981', fontWeight: 'bold', marginTop: '2px', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '2px' }}>
+                                    LUNAS <span style={{ fontSize: '12px' }}>✓</span>
+                                  </div>
                                 )}
                               </td>
                             );
