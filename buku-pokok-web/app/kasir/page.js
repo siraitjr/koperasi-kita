@@ -2106,19 +2106,20 @@ function BukuRekapScreen({ user, cabang, cabangList, onBack, onLogout, onNavigat
   const totalPersen = totals.target > 0 ? Math.round(totals.storting / totals.target * 100) : 0;
 
   // ==================== TOTAL KEMARIN & GABUNGAN ====================
-  // previousDate = tanggal sebelumnya di daftar, hanya jika bulan sama (awal bulan = tidak ada kemarin)
+  // ✅ FIX (pimpinan 13 Jun 2026): "Total Kemarin" = SALDO BERJALAN month-to-date.
+  // Sebelumnya hanya menghitung 1 hari sebelumnya, sehingga ledger reset tiap hari
+  // dan "Total" (Hari Ini + Kemarin) cuma mewakili 2 hari. Semantik benar: Kemarin
+  // = akumulasi SEMUA hari kerja sebelum currentDate di bulan yg sama; Total =
+  // month-to-date inklusif currentDate. `dates` sudah descending dan sudah difilter
+  // ke bulan terpilih (lihat L1862-1871), jadi semua hari kerja sebelum currentDate
+  // = dates.slice(idx+1). showKemarin = ada minimal 1 hari kerja sebelumnya.
   const currentDateIdx = dates.indexOf(currentDate);
-  const previousDate = (currentDateIdx >= 0 && currentDateIdx < dates.length - 1)
-    ? dates[currentDateIdx + 1]
-    : null;
-  const showKemarin = (() => {
-    if (!previousDate || !currentDate) return false;
-    const p1 = currentDate.split(' ');   // ["04", "Apr", "2026"]
-    const p2 = previousDate.split(' ');  // ["03", "Apr", "2026"]
-    return p1.length === 3 && p2.length === 3 && p1[1] === p2[1] && p1[2] === p2[2];
-  })();
+  const priorDates = (currentDateIdx >= 0 && currentDateIdx < dates.length - 1)
+    ? dates.slice(currentDateIdx + 1)
+    : [];
+  const showKemarin = priorDates.length > 0;
 
-  const rekapRowsKemarin = showKemarin ? computeRekapRows(previousDate) : [];
+  const rekapRowsKemarin = priorDates.flatMap(d => computeRekapRows(d));
   const totalsKemarin = rekapRowsKemarin.reduce((acc, r) => ({
     dropBaru: acc.dropBaru + r.dropBaru,
     dropLama: acc.dropLama + r.dropLama,
