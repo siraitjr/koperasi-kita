@@ -15,6 +15,7 @@ import com.google.firebase.auth.ktx.auth
 import com.google.firebase.database.ktx.database
 import com.google.firebase.ktx.Firebase
 import com.google.firebase.messaging.FirebaseMessaging
+import kotlinx.coroutines.tasks.await
 
 /**
  * =========================================================================
@@ -107,7 +108,7 @@ object NotificationHelper {
     /**
      * Dapatkan FCM token dan simpan ke database
      */
-    fun fetchAndSaveToken() {
+    fun fetchAndSaveToken(retry: Int = 1) {
         FirebaseMessaging.getInstance().token
             .addOnSuccessListener { token ->
                 Log.d(TAG, "🔑 FCM Token: $token")
@@ -115,6 +116,15 @@ object NotificationHelper {
             }
             .addOnFailureListener { e ->
                 Log.e(TAG, "❌ Failed to get FCM token: ${e.message}")
+                // ✅ Fix 3C: deleteToken() saat logout sebelumnya bisa masih in-flight,
+                // membuat getToken() transient-fail. Retry sekali setelah jeda agar
+                // user yang baru login tetap dapat token segar (cegah notifikasi mati).
+                if (retry > 0) {
+                    android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                        Log.d(TAG, "🔁 Retry fetchAndSaveToken (sisa: ${retry - 1})")
+                        fetchAndSaveToken(retry - 1)
+                    }, 3000)
+                }
             }
     }
 
@@ -146,25 +156,35 @@ object NotificationHelper {
     }
 
     /**
-     * Hapus token saat logout
+     * Hapus token saat logout.
+     *
+     * ✅ Fix 3A: SUSPEND + AWAIT. Sebelumnya removeValue() & deleteToken()
+     * di-fire-and-forget, sehingga saat user berikutnya login, getToken()
+     * bisa resolve SEBELUM deleteToken() selesai → mengembalikan token lama
+     * yang segera di-invalidate FCM → notifikasi mati (terutama saat
+     * switch akun / takeover). Dengan await, urutan dijamin: token lama
+     * benar-benar dihapus dulu sebelum login berikutnya fetch token baru.
      */
-    fun clearTokenOnLogout() {
+    suspend fun clearTokenOnLogout() {
         val currentUser = Firebase.auth.currentUser
         if (currentUser != null) {
             val uid = currentUser.uid
             val database = Firebase.database("https://koperasikitagodangulu-default-rtdb.asia-southeast1.firebasedatabase.app").reference
-
-            database.child("fcm_tokens").child(uid).removeValue()
-                .addOnSuccessListener {
-                    Log.d(TAG, "✅ FCM token cleared for user: $uid")
-                }
+            try {
+                database.child("fcm_tokens").child(uid).removeValue().await()
+                Log.d(TAG, "✅ FCM token cleared for user: $uid")
+            } catch (e: Exception) {
+                Log.w(TAG, "⚠️ Gagal hapus token DB untuk $uid: ${e.message}")
+            }
         }
 
-        // Juga hapus instance ID untuk generate token baru saat login berikutnya
-        FirebaseMessaging.getInstance().deleteToken()
-            .addOnSuccessListener {
-                Log.d(TAG, "✅ FCM token deleted")
-            }
+        // Juga hapus instance ID untuk generate token baru saat login berikutnya.
+        try {
+            FirebaseMessaging.getInstance().deleteToken().await()
+            Log.d(TAG, "✅ FCM token deleted (instance id)")
+        } catch (e: Exception) {
+            Log.w(TAG, "⚠️ Gagal deleteToken instance: ${e.message}")
+        }
     }
 
     /**

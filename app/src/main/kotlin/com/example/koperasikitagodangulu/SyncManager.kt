@@ -940,6 +940,9 @@ class SyncManager private constructor(private val context: Context) {
         val besarPinjaman = (payload["besarPinjaman"] as? Number)?.toInt() ?: 0
         val tenor = (payload["tenor"] as? Number)?.toInt() ?: 0
         val tanggalSerahTerima = payload["tanggalSerahTerima"] as? String ?: ""
+        // ✅ FIX SPLIT-STATE (Issue 2): transisi cairkan yang harus ikut ditulis.
+        val tanggalPencairan = payload["tanggalPencairan"] as? String ?: ""
+        val hasilSimulasiCicilanJson = payload["hasilSimulasiCicilanJson"] as? String ?: ""
 
         val pelangganRef = firebase.getReference("pelanggan/$adminUid/$pelangganId")
 
@@ -999,6 +1002,41 @@ class SyncManager private constructor(private val context: Context) {
             "pendingFotoSerahTerimaUri" to ""
         )
         applyCairkanCleanseTo(finalUpdates, uploadedUrl)
+
+        // ✅ FIX SPLIT-STATE (Issue 2): kopel transisi cairkan ke worker robust.
+        // Sebelumnya status→Aktif + tanggalPencairan + jadwal cicilan HANYA ditulis
+        // via setValue native-persistence di ViewModel — yang tertahan saat app
+        // di-kill, sehingga foto ter-upload tapi status macet di "Disetujui" dan
+        // tombol "Cairkan" muncul lagi. Kini ditulis ATOMIK bersama foto.
+        // Guard: hanya bila payload membawa data cairkan DAN status server masih
+        // "Disetujui" (jangan menimpa pembatalan/Tidak Aktif yang terjadi belakangan).
+        if (tanggalPencairan.isNotBlank()) {
+            val currentStatus = try {
+                pelangganRef.child("status").get().await().getValue(String::class.java) ?: ""
+            } catch (e: Exception) { "" }
+            if (currentStatus == "Disetujui") {
+                finalUpdates["status"] = "Aktif"
+                finalUpdates["tanggalPencairan"] = tanggalPencairan
+                if (hasilSimulasiCicilanJson.isNotBlank()) {
+                    try {
+                        val cicilan = gson.fromJson(
+                            hasilSimulasiCicilanJson,
+                            Array<com.example.koperasikitagodangulu.SimulasiCicilan>::class.java
+                        ).toList()
+                        finalUpdates["hasilSimulasiCicilan"] = cicilan
+                    } catch (e: Exception) {
+                        Log.w(TAG, "⚠️ SERAH_TERIMA: gagal parse cicilan: ${e.message}")
+                    }
+                }
+                finalUpdates["lastUpdated"] = java.text.SimpleDateFormat(
+                    "yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault()
+                ).format(java.util.Date())
+                Log.d(TAG, "✅ SERAH_TERIMA: coupling cairkan diterapkan (Disetujui→Aktif)")
+            } else {
+                Log.d(TAG, "ℹ️ SERAH_TERIMA: status server='$currentStatus' (bukan Disetujui) — skip flip status")
+            }
+        }
+
         pelangganRef.updateChildren(finalUpdates).await()
         Log.d(TAG, "✅ SERAH_TERIMA: foto uploaded + data cleanse & RTDB updated → $uploadedUrl")
 

@@ -238,18 +238,22 @@ fun AdminHomeScreen(
             viewModel.startRemoteTakeoverListener {
                 LocationTrackingMonitor.stopMonitoring()
                 LocationCheckWorker.cancel(context)
-                auth.signOut()
-                Toast.makeText(
-                    context,
-                    "Pimpinan mengambil alih akun Anda. Anda akan logout otomatis.",
-                    Toast.LENGTH_LONG
-                ).show()
-                try {
-                    navController.navigate("auth") {
-                        popUpTo(0) { inclusive = true }
+                // ✅ Fix 3B: bersihkan FCM token akun admin (await) sebelum signOut,
+                // supaya token lama tak menyangkut saat pimpinan login balik ke akunnya.
+                viewModel.logoutWithCleanup {
+                    auth.signOut()
+                    Toast.makeText(
+                        context,
+                        "Pimpinan mengambil alih akun Anda. Anda akan logout otomatis.",
+                        Toast.LENGTH_LONG
+                    ).show()
+                    try {
+                        navController.navigate("auth") {
+                            popUpTo(0) { inclusive = true }
+                        }
+                    } catch (e: Exception) {
+                        Log.e("AdminHome", "Navigation error on takeover: ${e.message}")
                     }
-                } catch (e: Exception) {
-                    Log.e("AdminHome", "Navigation error on takeover: ${e.message}")
                 }
             }
         } catch (e: Exception) {
@@ -489,10 +493,13 @@ fun AdminHomeScreen(
                         showLogoutAbsensiDialog = false
                         LocationTrackingMonitor.stopMonitoring()
                         LocationCheckWorker.cancel(context)
-                        auth.signOut()
-                        Toast.makeText(context, "Logout sukses", Toast.LENGTH_SHORT).show()
-                        navController.navigate("auth") {
-                            popUpTo("dashboard") { inclusive = true }
+                        // ✅ Fix 3B: hapus FCM token (await) sebelum signOut.
+                        viewModel.logoutWithCleanup {
+                            auth.signOut()
+                            Toast.makeText(context, "Logout sukses", Toast.LENGTH_SHORT).show()
+                            navController.navigate("auth") {
+                                popUpTo("dashboard") { inclusive = true }
+                            }
                         }
                     }
                 ) {

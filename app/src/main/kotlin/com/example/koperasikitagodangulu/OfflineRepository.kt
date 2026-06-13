@@ -286,7 +286,12 @@ class OfflineRepository private constructor(context: Context) {
         adminName: String,
         besarPinjaman: Int,
         tenor: Int,
-        tanggalSerahTerima: String
+        tanggalSerahTerima: String,
+        // ✅ FIX SPLIT-STATE (Issue 2): data transisi cairkan agar worker robust
+        // ikut menulis status→Aktif. Default kosong → caller lama (serah terima
+        // non-cairkan) tetap kompatibel & worker tidak menyentuh status.
+        tanggalPencairan: String = "",
+        hasilSimulasiCicilanJson: String = ""
     ): Long {
         val firebasePath = "pelanggan/$adminUid/$pelangganId"
         val payload = mapOf(
@@ -296,7 +301,9 @@ class OfflineRepository private constructor(context: Context) {
             "adminName" to adminName,
             "besarPinjaman" to besarPinjaman,
             "tenor" to tenor,
-            "tanggalSerahTerima" to tanggalSerahTerima
+            "tanggalSerahTerima" to tanggalSerahTerima,
+            "tanggalPencairan" to tanggalPencairan,
+            "hasilSimulasiCicilanJson" to hasilSimulasiCicilanJson
         )
         Log.d(TAG, "🚀 queueSerahTerima() → $firebasePath")
         return syncManager.queueOperation(

@@ -97,9 +97,12 @@ fun PimpinanDashboardScreen(
         try {
             val shouldLogout = viewModel.checkForceLogoutOnStartup()
             if (shouldLogout) {
-                Firebase.auth.signOut()
-                navController.navigate("auth") {
-                    popUpTo(0) { inclusive = true }
+                // ✅ Fix 3B: hapus FCM token pimpinan (await) sebelum signOut.
+                viewModel.logoutWithCleanup {
+                    Firebase.auth.signOut()
+                    navController.navigate("auth") {
+                        popUpTo(0) { inclusive = true }
+                    }
                 }
                 return@LaunchedEffect
             }

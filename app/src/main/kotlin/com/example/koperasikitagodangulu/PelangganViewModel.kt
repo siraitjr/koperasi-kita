@@ -5295,7 +5295,13 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     adminName = adminName,
                     besarPinjaman = besarPinjaman,
                     tenor = tenor,
-                    tanggalSerahTerima = tanggalSerahTerimaUi
+                    tanggalSerahTerima = tanggalSerahTerimaUi,
+                    // ✅ FIX SPLIT-STATE (Issue 2): titipkan transisi cairkan ke worker
+                    // ROBUST. Foto serah terima sudah dijamin worker; status→Aktif +
+                    // tanggalPencairan + jadwal cicilan dulu HANYA lewat setValue native
+                    // persistence (rapuh saat app di-kill). Kini ikut di-flush worker.
+                    tanggalPencairan = tanggalPencairan,
+                    hasilSimulasiCicilanJson = com.google.gson.Gson().toJson(cicilanBaru)
                 )
 
                 // 6) Picu immediate sync (NetworkType.CONNECTED → tunggu online).
@@ -10633,23 +10639,53 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
+    // Pembersihan cache lokal (tanpa FCM). Dipakai bersama oleh clearAllCaches()
+    // dan logoutWithCleanup() agar tidak ada duplikasi.
+    private suspend fun clearCachesInternal() {
+        cacheManager.clearAllCache()
+        daftarPelanggan.clear()
+        pelangganPerAdmin.clear()
+        _pendingApprovals.clear()
+        _adminSummary.value = emptyList()
+        _isDataLoaded.value = false
+        Log.d("Cache", "✅ All caches cleared")
+    }
+
     fun clearAllCaches() {
         viewModelScope.launch {
-            // ✅ TAMBAHAN: Hapus FCM token saat logout/clear cache
+            // ✅ TAMBAHAN: Hapus FCM token saat logout/clear cache.
+            // clearTokenOnLogout kini suspend (Fix 3A) → benar-benar ter-await.
             try {
                 NotificationHelper.clearTokenOnLogout()
                 Log.d("FCM", "✅ FCM token cleared")
             } catch (e: Exception) {
                 Log.e("FCM", "❌ Error clearing FCM token: ${e.message}")
             }
+            clearCachesInternal()
+        }
+    }
 
-            cacheManager.clearAllCache()
-            daftarPelanggan.clear()
-            pelangganPerAdmin.clear()
-            _pendingApprovals.clear()
-            _adminSummary.value = emptyList()
-            _isDataLoaded.value = false
-            Log.d("Cache", "✅ All caches cleared")
+    /**
+     * ✅ Fix 3B: Logout cleanup terpusat yang MENJAMIN penghapusan FCM token
+     * (await) SEBELUM caller memanggil signOut(). Dipakai di titik-titik logout
+     * yang sebelumnya melewatkan pembersihan token (AdminHome, dashboard force
+     * logout, dll). onComplete dijalankan di Main thread setelah token & cache
+     * bersih — di sanalah caller melakukan auth.signOut() + navigate.
+     */
+    fun logoutWithCleanup(onComplete: () -> Unit) {
+        viewModelScope.launch {
+            try {
+                NotificationHelper.clearTokenOnLogout()
+                Log.d("FCM", "✅ FCM token cleared (logoutWithCleanup)")
+            } catch (e: Exception) {
+                Log.e("FCM", "❌ Error clearing FCM token: ${e.message}")
+            }
+            try {
+                clearCachesInternal()
+            } catch (e: Exception) {
+                Log.e("Cache", "❌ Error clearing caches: ${e.message}")
+            }
+            withContext(Dispatchers.Main) { onComplete() }
         }
     }
 
