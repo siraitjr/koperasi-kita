@@ -212,6 +212,31 @@ exports.onPimpinanReviewed = functions
             const pimpinanNote = dualInfo?.pimpinanApproval?.note || '';
             const pimpinanBy = dualInfo?.pimpinanApproval?.by || 'Pimpinan';
 
+            // =====================================================================
+            // 🛡️ GUARD (GAP-1): Konsistensi data sebelum fan-out notifikasi.
+            // ---------------------------------------------------------------------
+            // Trigger ini dipicu perubahan approvalPhase → AWAITING_KOORDINATOR.
+            // Pada alur normal, client (PelangganViewModel) MENULIS approvalPhase
+            // dan pimpinanApproval.status dalam SATU setValue atomik pada node
+            // dualApprovalInfo (lihat PelangganViewModel.kt ~4424-4436 / 4576-4610),
+            // jadi saat once('value') di atas dibaca, status pimpinan PASTI sudah
+            // 'approved' atau 'rejected'.
+            //
+            // Bila status MASIH 'pending' di titik ini, berarti phase berpindah
+            // TANPA keputusan pimpinan ter-commit (partial write, edit manual di
+            // Console, atau penulisan phase langsung tanpa status). Fan-out di
+            // kondisi ini akan mengirim notifikasi keputusan PALSU ke Koordinator,
+            // maka kita abort dengan aman. Catatan: blok ini TIDAK menulis apa pun
+            // ke approvalPhase, sehingga tidak mungkin memicu loop/re-trigger.
+            // 'rejected' sengaja LOLOS guard (alur tolak tetap diteruskan).
+            // =====================================================================
+            if (pimpinanStatus === 'pending') {
+                console.error('🚫 GAP-1 ABORT [onPimpinanReviewed]: approvalPhase=AWAITING_KOORDINATOR ' +
+                    'tetapi pimpinanApproval.status masih "pending". Fan-out dibatalkan demi mencegah ' +
+                    'notifikasi keputusan palsu.', { cabangId, pengajuanId });
+                return null;
+            }
+
             // ✅ UPDATED: Dapatkan semua KOORDINATOR (bukan Pengawas)
             const koordinatorSnap = await db.ref('metadata/roles/koordinator').once('value');
             
@@ -305,6 +330,24 @@ exports.onKoordinatorReviewed = functions
             const koordinatorBy = dualInfo?.koordinatorApproval?.by || 'Koordinator';
             const pimpinanStatus = dualInfo?.pimpinanApproval?.status || 'pending';
             const pimpinanBy = dualInfo?.pimpinanApproval?.by || 'Pimpinan';
+
+            // =====================================================================
+            // 🛡️ GUARD (GAP-1): Konsistensi data sebelum fan-out ke Pengawas.
+            // ---------------------------------------------------------------------
+            // Phase berpindah → AWAITING_PENGAWAS hanya saat Koordinator menulis
+            // keputusannya. approvalPhase + koordinatorApproval.status ditulis
+            // atomik oleh client, jadi status di sini PASTI sudah final.
+            // Bila masih 'pending', phase maju tanpa keputusan Koordinator ter-
+            // commit → abort agar Pengawas tidak menerima notifikasi palsu.
+            // (read-only, tidak menulis approvalPhase → tidak ada risiko loop.)
+            // 'rejected' sengaja LOLOS guard (alur tolak tetap diteruskan).
+            // =====================================================================
+            if (koordinatorStatus === 'pending') {
+                console.error('🚫 GAP-1 ABORT [onKoordinatorReviewed]: approvalPhase=AWAITING_PENGAWAS ' +
+                    'tetapi koordinatorApproval.status masih "pending". Fan-out dibatalkan demi mencegah ' +
+                    'notifikasi keputusan palsu.', { cabangId, pengajuanId });
+                return null;
+            }
 
             // Dapatkan semua Pengawas
             const pengawasSnap = await db.ref('metadata/roles/pengawas').once('value');
@@ -402,6 +445,23 @@ exports.onPengawasReviewed = functions
             const pengawasNote = dualInfo?.pengawasApproval?.note || '';
             const pengawasBy = dualInfo?.pengawasApproval?.by || 'Pengawas';
             const adjustedAmount = dualInfo?.pengawasApproval?.adjustedAmount || 0;
+
+            // =====================================================================
+            // 🛡️ GUARD (GAP-1): Konsistensi data sebelum fan-out ke Koordinator
+            // (finalisasi). Pengawas = pengambil keputusan utama, jadi guard ini
+            // penting: jangan teruskan ke tahap finalisasi sebelum keputusan
+            // Pengawas benar-benar ter-commit. approvalPhase + pengawasApproval.
+            // status ditulis atomik oleh client; bila status di sini masih
+            // 'pending', berarti phase maju tanpa keputusan Pengawas → abort.
+            // (read-only, tidak menulis approvalPhase → tidak ada risiko loop.)
+            // 'rejected' sengaja LOLOS guard (alur tolak tetap diteruskan).
+            // =====================================================================
+            if (pengawasStatus === 'pending') {
+                console.error('🚫 GAP-1 ABORT [onPengawasReviewed]: approvalPhase=AWAITING_KOORDINATOR_FINAL ' +
+                    'tetapi pengawasApproval.status masih "pending". Fan-out dibatalkan demi mencegah ' +
+                    'notifikasi keputusan palsu.', { cabangId, pengajuanId });
+                return null;
+            }
 
             // ✅ UPDATED: Dapatkan semua KOORDINATOR
             const koordinatorSnap = await db.ref('metadata/roles/koordinator').once('value');
@@ -506,6 +566,28 @@ exports.onKoordinatorFinalReviewed = functions
             const pengawasBy = dualInfo?.pengawasApproval?.by || 'Pengawas';
             const koordinatorBy = dualInfo?.koordinatorApproval?.by || 'Koordinator';
             const adjustedAmount = dualInfo?.pengawasApproval?.adjustedAmount || 0;
+
+            // =====================================================================
+            // 🛡️ GUARD (GAP-1): Konsistensi data sebelum fan-out finalisasi ke
+            // Pimpinan. CATATAN MODEL: tahap 4 (konfirmasi Koordinator Final)
+            // BELUM punya field status sendiri (koordinatorFinalApproval = GAP-2,
+            // belum diimplementasi). Sinyal "Koordinator sudah bertindak" untuk
+            // tahap ini adalah boolean `koordinatorFinalConfirmed`, yang ditulis
+            // atomik bersama approvalPhase=AWAITING_PIMPINAN_FINAL oleh client
+            // (lihat PelangganViewModel.finalizeKoordinatorApproval ~13566-13617).
+            //
+            // Maka analog "status masih pending" di sini = koordinatorFinalConfirmed
+            // belum true. Bila phase maju ke AWAITING_PIMPINAN_FINAL tanpa flag itu
+            // true, berarti konfirmasi Koordinator belum ter-commit → abort agar
+            // Pimpinan tidak menerima notifikasi finalisasi palsu.
+            // (read-only, tidak menulis approvalPhase → tidak ada risiko loop.)
+            // =====================================================================
+            if (dualInfo?.koordinatorFinalConfirmed !== true) {
+                console.error('🚫 GAP-1 ABORT [onKoordinatorFinalReviewed]: approvalPhase=AWAITING_PIMPINAN_FINAL ' +
+                    'tetapi koordinatorFinalConfirmed belum true. Fan-out dibatalkan demi mencegah ' +
+                    'notifikasi finalisasi palsu.', { cabangId, pengajuanId });
+                return null;
+            }
 
             // Dapatkan Pimpinan UID
             const cabangSnap = await db.ref(`metadata/cabang/${cabangId}`).once('value');
@@ -626,6 +708,42 @@ exports.onDualApprovalComplete = functions
             const isApproved = pengawasStatus === 'approved';
             const pengawasBy = dualInfo?.pengawasApproval?.by || 'Pengawas';
             const rejectionReason = dualInfo?.pengawasApproval?.note || dualInfo?.rejectionReason || '';
+
+            // =====================================================================
+            // 🛡️ GUARD (GAP-3): Cross-check rantai approval sebelum commit FINAL.
+            // ---------------------------------------------------------------------
+            // Phase COMPLETED dipakai untuk DUA hasil: DISETUJUI maupun DITOLAK
+            // (client menulis approvalPhase=COMPLETED pada kedua jalur — lihat
+            // PelangganViewModel.kt ~4678 utk approve & ~6076 utk reject). Karena
+            // itu cross-check "semua approver = approved" HANYA boleh menggtarget
+            // jalur DISETUJUI; bila dipaksakan ke jalur DITOLAK, notifikasi
+            // penolakan ke admin akan ikut terblokir (regresi perilaku existing).
+            //
+            // PRINSIP: cegah "unauthorized loan approval" — sebuah pengajuan tidak
+            // boleh sampai ke admin sebagai DISETUJUI kecuali SELURUH rantai benar-
+            // benar approve dan Pimpinan sudah finalisasi. Jika salah satu syarat
+            // tidak terpenuhi (mis. phase di-set COMPLETED via partial write / edit
+            // manual sementara salah satu approver masih pending), abort commit dan
+            // log error. (read-only, tidak menulis approvalPhase → tidak ada loop.)
+            // =====================================================================
+            if (isApproved) {
+                const pimpinanOk = dualInfo?.pimpinanApproval?.status === 'approved';
+                const koordinatorOk = dualInfo?.koordinatorApproval?.status === 'approved';
+                const pengawasOk = dualInfo?.pengawasApproval?.status === 'approved';
+                const pimpinanFinalOk = dualInfo?.pimpinanFinalConfirmed === true;
+
+                if (!(pimpinanOk && koordinatorOk && pengawasOk && pimpinanFinalOk)) {
+                    console.error('🚫 GAP-3 ABORT [onDualApprovalComplete]: commit DISETUJUI diblokir — ' +
+                        'rantai approval tidak lengkap. Mencegah persetujuan pinjaman tidak sah.', {
+                            cabangId, pengajuanId,
+                            pimpinanStatus: dualInfo?.pimpinanApproval?.status || '',
+                            koordinatorStatus: dualInfo?.koordinatorApproval?.status || '',
+                            pengawasStatus,
+                            pimpinanFinalConfirmed: dualInfo?.pimpinanFinalConfirmed === true
+                        });
+                    return null;
+                }
+            }
 
             const notifType = isApproved ? 'DUAL_APPROVAL_APPROVED' : 'DUAL_APPROVAL_REJECTED';
             
