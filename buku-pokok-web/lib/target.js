@@ -119,6 +119,22 @@ export function isEligibleForTarget(n, dateStr) {
   if (!cur) return 0;
 
   // =========================================================================
+  // POIN 0 — Hari Minggu = 0 (parity Cloud Functions, fix Drift #1 14 Jun 2026).
+  // -------------------------------------------------------------------------
+  // CF men-nol-kan target di hari Minggu via isHoliday() → getDay()===0
+  // (summaryHelpers.js:55-57, dipanggil calculateTargetHariIni:278). Helper
+  // ini SEBELUMNYA tidak mengecek Minggu — penyaringan Minggu hanya terjadi
+  // di level KOLOM yang ditampilkan (kasir/page.js isHariKerja). Akibatnya
+  // bila helper dipanggil untuk kolom Minggu (edge case), target numerik
+  // ikut terhitung padahal seharusnya 0 → divergen dari summary CF.
+  // `cur` = new Date(year, m, day) lokal (parseTanggalIndo:40), identik
+  // konstruksi tanggal CF, jadi getDay() konsisten lintas timezone runtime.
+  // Strictly additive: hanya menambah jalur return 0 untuk Minggu; tidak
+  // mengubah perilaku hari kerja mana pun di bawahnya.
+  // =========================================================================
+  if (cur.getDay() === 0) return 0;
+
+  // =========================================================================
   // POIN 4 — Cutoff arsip date-aware (fix shrinking-target historis).
   // -------------------------------------------------------------------------
   // Entry `dariArsip` adalah nasabah yang sudah DIHAPUS (cairkanSimpanan)
