@@ -10,6 +10,15 @@
 // karena nominal pembayaran tersebar di BANYAK node turunan yang TIDAK
 // otomatis ter-sinkron saat di-edit manual (lihat catatan di bawah).
 //
+// Script ini mendukung 2 mode aksi (per item di array `corrections`):
+//   (a) UPDATE nominal (default) — ubah `jumlah` dari nominalSalah ke
+//       nominalBenar di 3 node.
+//   (b) DELETE entry (action: 'delete') — hapus total satu baris pembayaran
+//       (mis. kasus double-tap yg menghasilkan 2 baris IDENTIK pd hari yg
+//       sama). Pakai `index` (WAJIB) utk memilih baris di pembayaranList,
+//       dan HANYA hapus 1 entri di node 2 & 3 agar duplikat sah-nya
+//       tetap utuh.
+//
 // Script ini menambal SEMUA node turunan sekaligus, idempotent & aman:
 //   1. pelanggan/{adminUid}/{pelangganId}/pembayaranList[idx].jumlah
 //   2. pembayaran_harian/{cabangId}/{tglRun}/{autoId}.jumlah
@@ -100,10 +109,17 @@ const db = admin.database();
 //                  ke "dd MMM yyyy" untuk matching).
 //   • nominalSalah = nominal LAMA yang SALAH (WAJIB — dipakai untuk
 //                  mengidentifikasi baris yang tepat secara aman).
-//   • nominalBenar = nominal BARU yang benar.
-//   • index      = (OPSIONAL) index array pembayaranList yang persis,
-//                  diisi HANYA bila pada tanggal+nominalSalah yang sama
-//                  ada >1 entri (script akan minta ini bila ambigu).
+//   • nominalBenar = nominal BARU yang benar (HANYA dipakai untuk action
+//                  default 'update'; DIABAIKAN bila action='delete').
+//   • index      = index array pembayaranList yang persis.
+//                  - action='update': OPSIONAL, isi bila ambigu.
+//                  - action='delete': WAJIB — script menolak menghapus
+//                    tanpa index agar tidak ambigu memilih duplikat mana.
+//   • action     = (OPSIONAL) 'update' (default) atau 'delete'.
+//                  'delete' menghapus 1 baris secara total: NODE1 di
+//                  index yang ditentukan (sparse hole, index lain tidak
+//                  bergeser); NODE2 & NODE3 hanya 1 entri pertama yang
+//                  cocok agar pasangan duplikat sah-nya tetap utuh.
 //
 const corrections = [
   {
@@ -114,7 +130,20 @@ const corrections = [
     nominalSalah: 200000,              // nilai LAMA yang salah (WAJIB)
     nominalBenar: 20000,               // nilai BARU yang benar
     index: null,                       // opsional, isi bila ambigu
+    // action: 'update',               // default; tidak perlu ditulis
   },
+  // Contoh DELETE — kasus double-tap menghasilkan baris IDENTIK pada
+  // tanggal+nominal yang sama. Cek dulu pembayaranList di RTDB Console
+  // untuk tahu index pasti baris yg mau dihapus.
+  // {
+  //   cabangId: 'panti',
+  //   adminUid: '5MPnLCgJ7SVpwvrpOFcUyWDUNuh1',
+  //   pelangganId: '-OfwF0O-7sRO3kV4-587',
+  //   tanggalPembayaran: '2026-06-11',
+  //   nominalSalah: 20000,            // nominal baris yg mau dihapus
+  //   index: 5,                       // WAJIB utk delete
+  //   action: 'delete',
+  // },
   // ... tambahkan koreksi lain di sini ...
 ];
 
@@ -198,14 +227,30 @@ async function applyUpdate(refPath, fieldUpdates, label) {
   await db.ref(refPath).update(payload);
 }
 
+// Pencatat DELETE: log path + isi yg dihapus, lalu remove() saat LIVE.
+// Digunakan oleh action='delete' di NODE1/2/3.
+async function applyDelete(refPath, label, oldValueDesc) {
+  console.log(`   ${DRY_RUN ? '🔎 [DRY] WOULD DELETE' : '🗑️  DELETE'} ${label}`);
+  console.log(`        path : ${refPath}`);
+  console.log(`        old  : ${oldValueDesc}`);
+  plannedWrites.push({ refPath, detail: `DELETE (${oldValueDesc})`, applied: !DRY_RUN });
+  if (DRY_RUN) return;
+  await db.ref(refPath).remove();
+}
+
 // =========================================================================
 // 🔧  PROSES SATU KOREKSI
 // =========================================================================
 async function processCorrection(c, i) {
   const tag = `[#${i + 1}]`;
+  const isDelete = c.action === 'delete';
   console.log(`\n${'='.repeat(70)}`);
   console.log(`${tag} pelangganId=${c.pelangganId} | cabang=${c.cabangId}`);
-  console.log(`     tanggal=${c.tanggalPembayaran} | ${c.nominalSalah} -> ${c.nominalBenar}`);
+  if (isDelete) {
+    console.log(`     ACTION=DELETE | tanggal=${c.tanggalPembayaran} | nominal=${c.nominalSalah} | index=${c.index}`);
+  } else {
+    console.log(`     ACTION=UPDATE | tanggal=${c.tanggalPembayaran} | ${c.nominalSalah} -> ${c.nominalBenar}`);
+  }
 
   // --- Validasi input dasar ---
   const tglIndo = isoToTanggalIndo(c.tanggalPembayaran);
@@ -220,6 +265,12 @@ async function processCorrection(c, i) {
   }
   if (c.nominalSalah == null) {
     console.warn(`${tag} ⚠️  SKIP: nominalSalah WAJIB diisi (untuk matching aman).`);
+    return { ok: false };
+  }
+  if (isDelete && c.index == null) {
+    console.warn(`${tag} ⛔ SKIP: action='delete' WAJIB menyertakan field "index" ` +
+      `yang pasti — script menolak menghapus tanpa index agar tidak ambigu ` +
+      `memilih duplikat mana.`);
     return { ok: false };
   }
   console.log(`     → match tanggal "${tglIndo}", jurnal bulan "${yearMonth}"`);
@@ -237,38 +288,71 @@ async function processCorrection(c, i) {
       console.warn(`${tag} ⚠️  NODE1 SKIP: pelanggan tidak ditemukan.`);
     } else {
       const listRaw = pelanggan.pembayaranList || [];
-      // Normalisasi ke pasangan [index, entry] (array numerik RTDB).
-      const entries = Array.isArray(listRaw)
-        ? listRaw.map((e, idx) => [idx, e])
-        : Object.entries(listRaw);
 
-      // Cari kandidat: tanggal cocok DAN jumlah == nominalSalah.
-      let candidates = entries.filter(
-        ([, e]) => e && e.tanggal === tglIndo && sameMoney(e.jumlah, c.nominalSalah)
-      );
-
-      // Disambiguasi via index eksplisit bila diberikan.
-      if (c.index != null) {
-        candidates = candidates.filter(([idx]) => String(idx) === String(c.index));
-      }
-
-      if (candidates.length === 0) {
-        console.warn(`${tag} ⚠️  NODE1: tidak ada entry pembayaranList ` +
-          `tanggal "${tglIndo}" senilai ${c.nominalSalah}. (sudah benar?)`);
-      } else if (candidates.length > 1) {
-        const idxs = candidates.map(([idx]) => idx).join(', ');
-        console.warn(`${tag} ⛔ NODE1 AMBIGU: ${candidates.length} entry cocok ` +
-          `(index: ${idxs}). Isi field "index" pada koreksi ini lalu ulangi. ` +
-          `TIDAK ada yang diubah untuk item ini demi keamanan.`);
-        return { ok: false, ambiguous: true };
-      } else {
-        const [idx, entry] = candidates[0];
-        await applyUpdate(
-          `pelanggan/${c.adminUid}/${c.pelangganId}/pembayaranList/${idx}`,
-          { jumlah: { old: entry.jumlah, new: c.nominalBenar } },
-          'NODE1 pelanggan.pembayaranList'
+      if (isDelete) {
+        // DELETE: ambil entry persis di index yg ditentukan, validasi
+        // tanggal+jumlah cocok ekspektasi, lalu set null.
+        // Tidak melakukan reindex/compact — hole disengaja agar index
+        // entri lain tidak bergeser (referensi historis tetap stabil).
+        const idxKey = String(c.index);
+        const entryAtIdx = Array.isArray(listRaw)
+          ? listRaw[Number(c.index)]
+          : listRaw[idxKey];
+        if (!entryAtIdx) {
+          console.warn(`${tag} ⛔ NODE1 DELETE BATAL: tidak ada entry di ` +
+            `pembayaranList[${idxKey}] (mungkin sudah dihapus / index salah). ` +
+            `TIDAK ada yang diubah utk item ini demi keamanan.`);
+          return { ok: false };
+        }
+        const tanggalMatch = entryAtIdx.tanggal === tglIndo;
+        const jumlahMatch = sameMoney(entryAtIdx.jumlah, c.nominalSalah);
+        if (!tanggalMatch || !jumlahMatch) {
+          console.warn(`${tag} ⛔ NODE1 DELETE BATAL: entry di index ${idxKey} ` +
+            `TIDAK cocok ekspektasi — script menolak agar tidak menghapus baris yg salah.`);
+          console.warn(`        ekspektasi : tanggal="${tglIndo}" jumlah=${c.nominalSalah}`);
+          console.warn(`        aktual     : tanggal="${entryAtIdx.tanggal}" jumlah=${entryAtIdx.jumlah}`);
+          return { ok: false };
+        }
+        await applyDelete(
+          `pelanggan/${c.adminUid}/${c.pelangganId}/pembayaranList/${idxKey}`,
+          'NODE1 pelanggan.pembayaranList',
+          `tanggal=${entryAtIdx.tanggal} jumlah=${entryAtIdx.jumlah}`
         );
         touched++;
+      } else {
+        // Normalisasi ke pasangan [index, entry] (array numerik RTDB).
+        const entries = Array.isArray(listRaw)
+          ? listRaw.map((e, idx) => [idx, e])
+          : Object.entries(listRaw);
+
+        // Cari kandidat: tanggal cocok DAN jumlah == nominalSalah.
+        let candidates = entries.filter(
+          ([, e]) => e && e.tanggal === tglIndo && sameMoney(e.jumlah, c.nominalSalah)
+        );
+
+        // Disambiguasi via index eksplisit bila diberikan.
+        if (c.index != null) {
+          candidates = candidates.filter(([idx]) => String(idx) === String(c.index));
+        }
+
+        if (candidates.length === 0) {
+          console.warn(`${tag} ⚠️  NODE1: tidak ada entry pembayaranList ` +
+            `tanggal "${tglIndo}" senilai ${c.nominalSalah}. (sudah benar?)`);
+        } else if (candidates.length > 1) {
+          const idxs = candidates.map(([idx]) => idx).join(', ');
+          console.warn(`${tag} ⛔ NODE1 AMBIGU: ${candidates.length} entry cocok ` +
+            `(index: ${idxs}). Isi field "index" pada koreksi ini lalu ulangi. ` +
+            `TIDAK ada yang diubah untuk item ini demi keamanan.`);
+          return { ok: false, ambiguous: true };
+        } else {
+          const [idx, entry] = candidates[0];
+          await applyUpdate(
+            `pelanggan/${c.adminUid}/${c.pelangganId}/pembayaranList/${idx}`,
+            { jumlah: { old: entry.jumlah, new: c.nominalBenar } },
+            'NODE1 pelanggan.pembayaranList'
+          );
+          touched++;
+        }
       }
     }
   } catch (e) {
@@ -298,6 +382,21 @@ async function processCorrection(c, i) {
     if (hits.length === 0) {
       console.warn(`${tag} ⚠️  NODE2: tidak ada entry pembayaran_harian cocok ` +
         `(pelangganId+tanggal "${tglIndo}"+${c.nominalSalah}).`);
+    } else if (isDelete) {
+      // Hapus PERSIS 1 entri (yg pertama cocok). Sisa entri identik
+      // dipertahankan — diasumsikan itu pembayaran sah yg benar-benar
+      // masuk hari itu (kasus double-tap → 2 baris kembar).
+      if (hits.length === 1) {
+        console.warn(`${tag} ⚠️  NODE2: hanya 1 entri cocok — pastikan ini ` +
+          `memang duplikat (pasangan sah mungkin tidak ter-index di pembayaran_harian).`);
+      }
+      const [dateKey, autoId, entry] = hits[0];
+      await applyDelete(
+        `pembayaran_harian/${c.cabangId}/${dateKey}/${autoId}`,
+        `NODE2 pembayaran_harian (1 dari ${hits.length} dihapus, ${hits.length - 1} dipertahankan)`,
+        `tanggal=${entry.tanggal} jumlah=${entry.jumlah}`
+      );
+      touched++;
     } else {
       for (const [dateKey, autoId, entry] of hits) {
         await applyUpdate(
@@ -332,6 +431,20 @@ async function processCorrection(c, i) {
     if (jHits.length === 0) {
       console.warn(`${tag} ⚠️  NODE3: tidak ada entry jurnal_transaksi cocok ` +
         `di bulan ${yearMonth} (pelangganId+tanggal+${c.nominalSalah}).`);
+    } else if (isDelete) {
+      // Hapus PERSIS 1 entri (yg pertama cocok). Sisa entri identik
+      // dipertahankan agar jejak pembayaran sah-nya tetap utuh.
+      if (jHits.length === 1) {
+        console.warn(`${tag} ⚠️  NODE3: hanya 1 entri jurnal cocok — pastikan ` +
+          `ini memang duplikat (pasangan sah mungkin tidak ter-catat di jurnal).`);
+      }
+      const [autoId, entry] = jHits[0];
+      await applyDelete(
+        `jurnal_transaksi/${c.cabangId}/${yearMonth}/${autoId}`,
+        `NODE3 jurnal_transaksi (1 dari ${jHits.length} dihapus, ${jHits.length - 1} dipertahankan)`,
+        `tanggal=${entry.tanggal} jumlah=${entry.jumlah} tipe=${entry.tipe}`
+      );
+      touched++;
     } else {
       for (const [autoId, entry] of jHits) {
         await applyUpdate(
@@ -357,7 +470,11 @@ async function processCorrection(c, i) {
       // (Di DRY_RUN node belum berubah, jadi kita simulasikan delta.)
       let totalDibayar = calculateTotalDibayar(pelanggan.pembayaranList);
       if (DRY_RUN) {
-        totalDibayar += (c.nominalBenar - c.nominalSalah);
+        if (isDelete) {
+          totalDibayar -= c.nominalSalah;
+        } else {
+          totalDibayar += (c.nominalBenar - c.nominalSalah);
+        }
       }
       const totalPelunasan = pelanggan.totalPelunasan || 0;
       const seharusnyaLunas = totalPelunasan > 0 && totalDibayar >= totalPelunasan;
