@@ -167,6 +167,14 @@ exports.dailyTargetRecalc = functions
                 targetUpdates[`summary/perCabang/${cabangId}/targetHariIni`] = target;
             }
 
+            // ✅ FIX BUG-B (audit pimpinan 15 Jun 2026): tulis juga targetHariIni
+            // GLOBAL. Sebelumnya globalTarget hanya di-LOG (L175) tapi tidak pernah
+            // ditulis ke summary/global/targetHariIni. Setelah dailySummaryReset
+            // 00:00 men-nol-kan global, recalc 05:00 ini hanya menulis perCabang →
+            // summary/global/targetHariIni hanya pulih lewat delta inkremental +
+            // weeklyFullRecalc (drift antar-Minggu) → dashboard Pengawas global keliru.
+            targetUpdates['summary/global/targetHariIni'] = globalTarget;
+
             // OPTIMASI: Single batch write untuk agregasi cabang + global
             if (Object.keys(targetUpdates).length > 0) {
                 await db.ref().update(targetUpdates);

@@ -667,7 +667,21 @@ function calculateDelta(before, after) {
                 delta.aktifChange += 1;
                 delta.pinjamanAktifChange += afterPelunasan;
                 delta.piutangChange += Math.max(0, afterPelunasan - afterDibayar);
-                delta.targetHariIniChange += calculateTargetHariIni(after);
+                // ✅ FIX BUG-A (guard simetris H+1, audit pimpinan 15 Jun 2026):
+                // Jika nasabah HARI INI sempat bertransisi aktif→MP/Lunas (di mana
+                // target SENGAJA TIDAK dikurangi karena aturan H+1, lihat L633-650)
+                // lalu DI-REVERT balik ke aktif pada hari yang sama, target hari ini
+                // SUDAH terhitung dan tidak boleh ditambah lagi — kalau ditambah jadi
+                // double-count (+3% ekstra) sampai dailyTargetRecalc 05:00 menormalkan.
+                // Symmetric dengan retensi di add-side: deteksi via state `before` yang
+                // masih MP-hari-ini / Lunas-hari-ini. Formula target TIDAK diubah.
+                const beforeStillCountedToday =
+                    (beforeCategory === 'menungguPencairan' || beforeCategory === 'lunas')
+                    && ((before.tanggalLunasCicilan || '').trim() === today
+                     || (before.tanggalStatusKhusus || '').trim() === today);
+                if (!beforeStillCountedToday) {
+                    delta.targetHariIniChange += calculateTargetHariIni(after);
+                }
             } else if (afterCategory === 'cairHariIni' || afterCategory === 'nonAktifMacet') {
                 // Tidak menambah aktifChange
             } else if (afterCategory === 'lunas') {
