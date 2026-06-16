@@ -1589,6 +1589,12 @@ a {
   .top-bar-nav {
     gap: 2px;
     padding: 0 8px;
+    /* Mobile/tablet swipe: defeat flexbox center-overflow trap (item kiri jadi
+       tak terjangkau saat overflow) + aktifkan momentum & gesture horizontal.
+       Hanya di media query → desktop (rule dasar justify-content:center) utuh. */
+    justify-content: flex-start;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-x;
   }
 
   .top-bar-nav-item {
@@ -1606,6 +1612,11 @@ a {
   .top-bar-nav {
     padding: 0 4px;
     gap: 2px;
+    /* Mobile swipe: lihat catatan di media query 1024px — flex-start mencegah
+       item kiri tak terjangkau saat menu overflow di layar HP. */
+    justify-content: flex-start;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-x;
   }
 
   .top-bar-nav-item {
