@@ -502,7 +502,11 @@ function computeSaldoKasBulanLalu({ bukuData, currentMonthEntries, prevMonthEntr
       // storting beku dipakai bila ada. orphanByDate dibiarkan undefined agar
       // perilaku seed lama TIDAK berubah (scope additive — hanya tambah snapshot).
       const { tunaiPasar, kasPakai } = computeTunaiKasPerDate(dateStr, nasabahByAdmin, [adm], prevPencairanByAdminDate, undefined, bukuData?.rekapBeku, bukuData?.today);
-      const { kembaliKasbon } = decomposeKembaliKasbonTitipan(kasbonPagiAdm, tunaiPasar, kasPakai);
+      // ✅ STRICT (parity Buku Tunai L2947): kembaliKasbon = kasbonPagi − kasPakai,
+      // tanpa clamping. Seed carry-forward bulan-lalu kini full strict end-to-end
+      // (pimpinan 16 Jun 2026) agar replay running-balance konsisten dgn kolom
+      // strict bulan berjalan (BukuEkspedisi/KasPenuntun), tidak lagi waterfall.
+      const kembaliKasbon = kasbonPagiAdm - kasPakai;
       dayTunaiPasar += tunaiPasar;
       dayKembali += kembaliKasbon;
     }
@@ -3271,9 +3275,12 @@ function BukuEkspedisiScreen({ user, cabang, cabangList, onBack, onLogout, onNav
     });
 
     // Per tanggal: hitung tunaiPasar + kembaliKasbon PER ADMIN lalu dijumlah.
-    // WAJIB per-admin (bukan dari grand total harian): dekomposisi memakai threshold
-    // (totalFisik >= kasbonPagi) yang TIDAK distributif terhadap penjumlahan —
-    // sum-of-decompose != decompose-of-sum bila ada admin surplus & admin defisit.
+    // kembaliKasbon kini STRICT (kasbonPagi − kasPakai, parity Buku Tunai L2947).
+    // Rumus strict bersifat DISTRIBUTIF (Σ(a−b) = Σa − Σb) → total harian di sini
+    // == Σ kasbonPagi − Σ kasPakai = total kolom Kembali Kasbon Buku Tunai untuk
+    // tanggal itu (aturan pimpinan 16 Jun 2026). Catatan non-distributif waterfall
+    // lama tidak berlaku lagi; loop per-admin dipertahankan untuk keterbacaan &
+    // parity tunaiPasar per resort.
     const tunaiPasarPerDate = {};
     const kembaliKasbonPerDate = {};
     sortedDates.forEach(dateStr => {
@@ -3283,7 +3290,12 @@ function BukuEkspedisiScreen({ user, cabang, cabangList, onBack, onLogout, onNav
         // Parity Buku Rekap (Rule 3): snapshot otoritas utk tanggal historis;
         // hari berjalan tetap live (isTanggalHistoris false).
         const { tunaiPasar, kasPakai } = computeTunaiKasPerDate(dateStr, nasabahByAdmin, [adm], pencairanByAdminDate, orphanByDate, bukuData?.rekapBeku, bukuData?.today);
-        const { kembaliKasbon } = decomposeKembaliKasbonTitipan(kasbonPagiAdm, tunaiPasar, kasPakai);
+        // ✅ STRICT (parity Buku Tunai L2947): kembaliKasbon = kasbonPagi − kasPakai,
+        // tanpa clamping (pimpinan 16 Jun 2026). Menggantikan waterfall helper yang
+        // mengembalikan kasbonPagi PENUH (tanpa kurangi kasPakai) → bikin total Buku
+        // Ekspedisi membengkak vs Buku Tunai. Strict = distributif → Σ per-admin =
+        // Σ kasbonPagi − Σ kasPakai = total kolom Buku Tunai untuk tanggal ini.
+        const kembaliKasbon = kasbonPagiAdm - kasPakai;
         dayTunaiPasar += tunaiPasar;
         dayKembali += kembaliKasbon;
       }
@@ -3458,8 +3470,8 @@ function BukuEkspedisiScreen({ user, cabang, cabangList, onBack, onLogout, onNav
                     <td style={{ padding: '6px 10px', fontWeight: 700, fontSize: 12, borderRight: '1px solid var(--border)', borderBottom: '1px solid var(--border-light)', whiteSpace: 'nowrap', background: '#fafafa' }}>
                       {row.tanggal.slice(0, 6)}
                     </td>
-                    <td style={{ ...tdR, background: '#f0fdf4', color: '#166534' }}>
-                      {row.kembaliKasbon > 0 ? formatRp(row.kembaliKasbon) : '-'}
+                    <td style={{ ...tdR, background: '#f0fdf4', color: row.kembaliKasbon >= 0 ? '#166534' : 'var(--danger)' }}>
+                      {row.kembaliKasbon !== 0 ? formatRp(row.kembaliKasbon) : '-'}
                     </td>
                     <td style={{ ...tdR, background: '#f0fdf4', color: row.tunaiPasar >= 0 ? '#166534' : 'var(--danger)', fontWeight: 600 }}>
                       {row.tunaiPasar !== 0 ? formatRp(row.tunaiPasar) : '-'}
