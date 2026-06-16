@@ -497,7 +497,11 @@ function computeSaldoKasBulanLalu({ bukuData, currentMonthEntries, prevMonthEntr
     let dayTunaiPasar = 0, dayKembali = 0;
     for (const adm of admins) {
       const kasbonPagiAdm = kasbonByAdminPerDate[dateStr]?.[adm.uid] || 0;
-      const { tunaiPasar, kasPakai } = computeTunaiKasPerDate(dateStr, nasabahByAdmin, [adm], prevPencairanByAdminDate);
+      // Parity Buku Rekap (Rule 3): snapshot rekap_harian_final = otoritas utk
+      // tanggal historis. Seed bulan-lalu seluruhnya historis (< serverToday) →
+      // storting beku dipakai bila ada. orphanByDate dibiarkan undefined agar
+      // perilaku seed lama TIDAK berubah (scope additive — hanya tambah snapshot).
+      const { tunaiPasar, kasPakai } = computeTunaiKasPerDate(dateStr, nasabahByAdmin, [adm], prevPencairanByAdminDate, undefined, bukuData?.rekapBeku, bukuData?.today);
       const { kembaliKasbon } = decomposeKembaliKasbonTitipan(kasbonPagiAdm, tunaiPasar, kasPakai);
       dayTunaiPasar += tunaiPasar;
       dayKembali += kembaliKasbon;
@@ -3276,7 +3280,9 @@ function BukuEkspedisiScreen({ user, cabang, cabangList, onBack, onLogout, onNav
       let dayTunaiPasar = 0, dayKembali = 0;
       for (const adm of admins) {
         const kasbonPagiAdm = kasbonByAdminPerDate[dateStr]?.[adm.uid] || 0;
-        const { tunaiPasar, kasPakai } = computeTunaiKasPerDate(dateStr, nasabahByAdmin, [adm], pencairanByAdminDate, orphanByDate);
+        // Parity Buku Rekap (Rule 3): snapshot otoritas utk tanggal historis;
+        // hari berjalan tetap live (isTanggalHistoris false).
+        const { tunaiPasar, kasPakai } = computeTunaiKasPerDate(dateStr, nasabahByAdmin, [adm], pencairanByAdminDate, orphanByDate, bukuData?.rekapBeku, bukuData?.today);
         const { kembaliKasbon } = decomposeKembaliKasbonTitipan(kasbonPagiAdm, tunaiPasar, kasPakai);
         dayTunaiPasar += tunaiPasar;
         dayKembali += kembaliKasbon;
