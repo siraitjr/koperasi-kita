@@ -265,11 +265,24 @@ export function isEligibleForTarget(n, dateStr) {
 
   // ── BRANCH A: tanggalPencairan ADA ──
   if (tglPencairan) {
-    // Fix C (Scenario 5): hari Cairkan TOP-UP = hari terakhir pinjaman LAMA.
+    // =====================================================================
+    // POIN 5 — CAIR HARI INI = TARGET 0 (aturan pimpinan 16 Jun 2026, final).
+    // ---------------------------------------------------------------------
+    // BAIK pinjaman baru MAUPUN top-up: pada hari pencairan, kontribusi target
+    // kolom hari itu WAJIB 0 — penagihan baru mulai H+1. Parity 1:1 dengan
+    // engine summary calculateTargetHariIni (summaryHelpers.js:291,
+    // `tanggalPencairan === today → return 0`) & Android.
+    //
+    // Branch lama "Fix C (Scenario 5)" mengembalikan
+    // floor(besarPinjamanLamaSebelumTopUp × 3%) untuk top-up (pinjamanKe>1).
+    // Itu menyimpang dari aturan ini DAN menjadi sumber fluktuasi target hari
+    // berjalan: nilai anchor bergantung pada besarPinjamanLamaSebelumTopUp yang
+    // baru terisi setelah arsip riwayat_pinjaman selesai (onPelangganWrite).
+    // Selama race "arsip vs cache 10-menit CF", kontribusi nasabah top-up
+    // melompat 0 ↔ anchor → target intra-day naik/turun. Strict `return 0`
+    // menutup kebocoran itu untuk SEMUA admin sekaligus, tanpa pengecualian.
+    // =====================================================================
     if (tglPencairan === dateStr) {
-      if ((n.pinjamanKe || 1) > 1 && (n.besarPinjamanLamaSebelumTopUp || 0) > 0) {
-        return Math.floor(n.besarPinjamanLamaSebelumTopUp * 3 / 100);
-      }
       return 0;
     }
     const acuan = parseTanggalIndo(tglPencairan);
