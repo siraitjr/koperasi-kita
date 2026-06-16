@@ -231,7 +231,7 @@ function generateBulanOptions() {
 // Shape: { [tanggal]: Array<{adminUid, jumlah, ...}> } (baru) atau
 // { [tanggal]: { [adminUid]: jumlah } } (lama, back-compat).
 // =========================================================================
-function computeTunaiKasPerDate(dateStr, nasabahByAdmin, admins, pencairanByAdminDate, orphanByDate) {
+function computeTunaiKasPerDate(dateStr, nasabahByAdmin, admins, pencairanByAdminDate, orphanByDate, rekapBeku, serverToday) {
   let totalTunaiPasar = 0, totalKasPakai = 0;
   for (const adm of (admins || [])) {
     const resortNasabah = (nasabahByAdmin && nasabahByAdmin[adm.uid]) || [];
@@ -265,6 +265,25 @@ function computeTunaiKasPerDate(dateStr, nasabahByAdmin, admins, pencairanByAdmi
           : (orphanArr?.[adm.uid] || 0);
         totalStorting += orphanStortingAdm;
       }
+    }
+    // =====================================================================
+    // ✅ PARITY BUKU REKAP (Rule 3) — snapshot rekap_harian_final = OTORITAS
+    // untuk tanggal HISTORIS. Mirror PERSIS computeRekapRows L2016-2023:
+    //   • Tanggal historis (kalender < serverToday) → storting di-override
+    //     dari snapshot per-admin → debitAsli/kasPakai/tunaiPasar imun mutasi
+    //     retroaktif, sama persis dengan baris Buku Rekap.
+    //   • Hari berjalan → isTanggalHistoris false → tetap live recompute.
+    //   • Snapshot tidak ada utk (adm,dateStr) → fallback ke live totalStorting
+    //     (identik fallback Buku Rekap).
+    // Strictly additive: caller lama yang TIDAK mengirim rekapBeku/serverToday
+    // (mis. Kas Penuntun saldoKasBulanLalu) → blok ini dilewati → perilaku
+    // 100% sama seperti sebelumnya.
+    // =====================================================================
+    if (rekapBeku && serverToday) {
+      const bekuEntry = isTanggalHistoris(dateStr, serverToday) && rekapBeku[adm.uid]
+        ? rekapBeku[adm.uid][dateStr]
+        : null;
+      if (bekuEntry) totalStorting = bekuEntry.storting || 0;
     }
     const adminFee = Math.round(totalDrop * 0.05);
     const tabungan = Math.round(totalDrop * 0.05);
@@ -2523,7 +2542,9 @@ function KasPenuntunScreen({ user, cabang, cabangList, onBack, onLogout, onNavig
     // Orphan dilewatkan agar storting helper match BukuRekap (pimpinan 11 Jun 2026).
     const orphanByDate = bukuData?.orphanPaymentsByDate || {};
     sortedDates.forEach(dateStr => {
-      const { tunaiPasar, kasPakai } = computeTunaiKasPerDate(dateStr, nasabahByAdmin, admins, pencairanByAdminDate, orphanByDate);
+      // rekapBeku + serverToday → parity Buku Rekap utk Kas Pakai/Tunai Pasar
+      // tanggal historis (snapshot otoritas; hari berjalan tetap live).
+      const { tunaiPasar, kasPakai } = computeTunaiKasPerDate(dateStr, nasabahByAdmin, admins, pencairanByAdminDate, orphanByDate, bukuData?.rekapBeku, bukuData?.today);
       tunaiPasarPerDate[dateStr] = tunaiPasar;
       kasPakaiPerDate[dateStr] = kasPakai;
     });
@@ -2902,7 +2923,8 @@ function BukuTunaiScreen({ user, cabang, cabangList, onBack, onLogout, onNavigat
 
       // Tunai Pasar & Kas Pakai per resort — via helper top-level
       // computeTunaiKasPerDate (Source of Truth: Buku Rekap baris per resort).
-      const { tunaiPasar, kasPakai } = computeTunaiKasPerDate(dateStr, nasabahByAdmin, [adm], pencairanByAdminDate, orphanByDate);
+      // rekapBeku + serverToday → parity Buku Rekap utk tanggal historis.
+      const { tunaiPasar, kasPakai } = computeTunaiKasPerDate(dateStr, nasabahByAdmin, [adm], pencairanByAdminDate, orphanByDate, bukuData?.rekapBeku, bukuData?.today);
 
       // Titipan & +/- (totalFisik) dari helper bersama (kembaliKasbon helper di-ignore;
       // diganti rumus strict pimpinan di bawah).
