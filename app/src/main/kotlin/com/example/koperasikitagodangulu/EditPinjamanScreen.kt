@@ -160,7 +160,22 @@ fun EditPinjamanScreen(
                                 namaPanggilan = pelanggan?.namaPanggilan ?: "",
                                 onSuccess = {
                                     isLoading = false
-                                    Toast.makeText(context, "Pengajuan perubahan pinjaman berhasil dikirim", Toast.LENGTH_SHORT).show()
+                                    // ✅ P1 (16 Jun 2026): Toast eksplisit "Terkirim ke Pimpinan"
+                                    // — admin tahu pengajuan SUDAH sampai server, bukan masih di antrean.
+                                    Toast.makeText(context, "✅ Pengajuan perubahan pinjaman terkirim ke Pimpinan", Toast.LENGTH_SHORT).show()
+                                    navController.popBackStack()
+                                },
+                                onQueued = {
+                                    isLoading = false
+                                    // ✅ P1: Offline / Firebase sementara unreachable. Data SUDAH aman di
+                                    // antrean Room (SyncWorker/NetworkChangeWorker akan flush otomatis
+                                    // saat online — tidak ada yang hilang). Toast lebih lama (LONG)
+                                    // agar admin sempat membaca konteksnya.
+                                    Toast.makeText(
+                                        context,
+                                        "📵 Tersimpan di antrean, menunggu jaringan. Pengajuan akan otomatis terkirim saat online.",
+                                        Toast.LENGTH_LONG
+                                    ).show()
                                     navController.popBackStack()
                                 },
                                 onFailure = { e ->

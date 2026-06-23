@@ -2013,6 +2013,14 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
         pelanggan: Pelanggan,
         onSuccess: (() -> Unit)? = null,
         onFailure: ((Exception) -> Unit)? = null,
+        // ✅ P1 (16 Jun 2026): callback opsional — dipanggil saat data BERHASIL
+        // masuk antrean offline (Room) tapi BELUM ter-sync ke server (offline,
+        // atau Firebase setValue gagal sementara). UI WAJIB membedakan
+        // "Terkirim ke Pimpinan" (onSuccess = synced) vs "Tersimpan, menunggu
+        // jaringan" (onQueued). Backward-compatible: kalau caller tidak
+        // menyediakan onQueued → fallback ke onSuccess (perilaku lama dijaga
+        // utk semua caller existing; offline-first sync queue TIDAK berubah).
+        onQueued: (() -> Unit)? = null,
     ) {
         val currentUid = Firebase.auth.currentUser?.uid
         val targetAdminUid = if (pelanggan.adminUid.isNotBlank()) pelanggan.adminUid else currentUid
@@ -2090,6 +2098,18 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     toSave // tetap isSynced = false, akan diprioritaskan saat merge
                 }
 
+                // ✅ P1: Hard error dari SyncManager (Room insert gagal) BUKAN sukses.
+                // Sebelumnya jatuh ke onSuccess dgn isSynced=false → admin tidak tahu
+                // datanya benar2 hilang. Sekarang route ke onFailure dgn error message.
+                // Background sync queue (Room/SyncWorker/NetworkChangeWorker) tetap
+                // utuh — yang berubah hanya pelaporan ke caller pada kasus hard error.
+                if (saveResult is SaveResult.Error) {
+                    _offlineSyncStatus.value = SyncStatus.ERROR
+                    Log.e("FirebaseSave", "❌ Hard error simpan: ${saveResult.message} — ${toSave.namaPanggilan}")
+                    onFailure?.invoke(Exception("Gagal menyimpan data: ${saveResult.message}"))
+                    return@launch
+                }
+
                 // Update local list
                 val existingIndex =
                     daftarPelanggan.indexOfFirst { it.id == id || it.id == pelanggan.id }
@@ -2102,8 +2122,13 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                 // Simpan ke local storage untuk offline read
                 simpanKeLokal()
 
-                _offlineSyncStatus.value = SyncStatus.SUCCESS
-                Log.d("FirebaseSave", "✅ Data ${if (finalSave.isSynced) "synced" else "queued"}: ${toSave.namaPanggilan}")
+                // ✅ P1: Status sync sekarang akurat — SUCCESS hanya bila benar2 ter-
+                // sync ke Firebase; PARTIAL bila masih di antrean offline (akan
+                // di-flush oleh SyncWorker/NetworkChangeWorker — antrean TIDAK
+                // tersentuh, hanya pelaporan ke UI yang dirapikan).
+                val syncedToServer = saveResult is SaveResult.Success
+                _offlineSyncStatus.value = if (syncedToServer) SyncStatus.SUCCESS else SyncStatus.PARTIAL
+                Log.d("FirebaseSave", "✅ Data ${if (syncedToServer) "synced" else "queued"}: ${toSave.namaPanggilan}")
 
                 // Handle pengajuan approval jika diperlukan
                 if (toSave.status == "Menunggu Approval") {
@@ -2158,7 +2183,18 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
 
                 }
 
-                onSuccess?.invoke()
+                // ✅ P1: dispatch callback berdasarkan outcome sebenarnya.
+                // syncedToServer = saveResult is SaveResult.Success (sudah dihitung
+                // di atas). Kalau true → onSuccess (Terkirim ke Pimpinan). Kalau
+                // false → onQueued bila caller menyediakan, fallback ke onSuccess
+                // utk backward-compat (caller existing tetap berfungsi seperti
+                // sebelumnya, tidak ada regresi). Hard error sudah di-route ke
+                // onFailure jauh di atas + return@launch.
+                if (saveResult is SaveResult.Success) {
+                    onSuccess?.invoke()
+                } else {
+                    (onQueued ?: onSuccess)?.invoke()
+                }
 
             } catch (e: Exception) {
                 _offlineSyncStatus.value = SyncStatus.ERROR
@@ -7847,7 +7883,12 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
         alamatKtp: String,
         namaPanggilan: String,
         onSuccess: (() -> Unit)? = null,
-        onFailure: ((Exception) -> Unit)? = null
+        onFailure: ((Exception) -> Unit)? = null,
+        // ✅ P1 (16 Jun 2026): callback opsional — meneruskan onQueued dari
+        // simpanPelangganKeFirebase agar EditPinjamanScreen bisa menampilkan
+        // toast yang akurat utk kasus offline ("Tersimpan, menunggu jaringan"
+        // vs "Terkirim ke Pimpinan"). Backward-compatible (null default).
+        onQueued: (() -> Unit)? = null
     ) {
         viewModelScope.launch {
             try {
@@ -8035,7 +8076,10 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     },
                     onFailure = { exception ->
                         onFailure?.invoke(exception)
-                    }
+                    },
+                    onQueued = if (onQueued != null) {
+                        { onQueued.invoke() }
+                    } else null
                 )
 
             } catch (e: Exception) {
@@ -9555,22 +9599,42 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     }
 
                     // ================================================================
-                    // ENTRY LAMA ADA (Phase 1 atau tanpa phase) → HAPUS, lalu buat baru
-                    // Ini MENJAMIN onCreate trigger → notifikasi PASTI terkirim
+                    // ✅ P2a (16 Jun 2026) — IDEMPOTENT UPSERT (anti delete-recreate window)
+                    // ----------------------------------------------------------------
+                    // SEBELUMNYA: delete SEMUA entry Phase 1 → recreate. Bila koneksi
+                    // drop di antara delete & recreate, pengajuan hilang sama sekali
+                    // (sumber "silently missing submissions"). Recreate juga
+                    // membutuhkan onCreate trigger CF agar notifikasi terkirim ulang.
+                    //
+                    // SEKARANG: updateChildren di entry Phase 1 yang sudah ada (refresh
+                    // data: besarPinjaman/tenor/timestamp/dualApprovalInfo). TIDAK ada
+                    // window kehilangan data — entry tetap eksis sepanjang operasi.
+                    //
+                    // Notifikasi awal sudah terkirim dari onCreate pertama (saat entry
+                    // pertama kali dibuat). Untuk resubmit yang berniat memicu ulang
+                    // notifikasi, mekanismenya tetap aman via CF safety net
+                    // (ensurePengajuanApprovalExists) — bila entry hilang karena sebab
+                    // apa pun, CF tetap me-rebuild dari node pelanggan/.
+                    //
+                    // Duplikat: bila ada >1 entry Phase 1 (sisa bug lama), update
+                    // entry PERTAMA dan biarkan sisanya — tidak menghapus apa pun.
+                    // CF safety net (state machine) memilih entry valid.
                     // ================================================================
-                    Log.d("Pengajuan", "🗑️ Hapus ${snapshot.childrenCount} entry lama untuk ${pelanggan.namaPanggilan}")
-
-                    var deletedCount = 0
-                    val totalToDelete = snapshot.childrenCount.toInt()
-
-                    snapshot.children.forEach { child ->
-                        child.ref.removeValue().addOnCompleteListener {
-                            deletedCount++
-                            // Step 3: Setelah SEMUA entry lama terhapus, baru buat entry baru
-                            if (deletedCount >= totalToDelete) {
-                                createNewPengajuanEntry(approvalRef, pengajuanData, cabangId)
+                    val firstPhase1 = snapshot.children.firstOrNull()
+                    if (firstPhase1 != null) {
+                        Log.d("Pengajuan", "🔁 P2a upsert: refresh entry Phase 1 yang ada untuk ${pelanggan.namaPanggilan} (tanpa delete-recreate)")
+                        firstPhase1.ref.updateChildren(pengajuanData)
+                            .addOnSuccessListener {
+                                Log.d("Pengajuan", "✅ P2a: entry pengajuan_approval ter-refresh, tidak ada window data-loss")
                             }
-                        }
+                            .addOnFailureListener { e ->
+                                // Update gagal: entry asli MASIH UTUH karena tidak ada
+                                // delete sebelumnya. CF safety net menjaga konsistensi.
+                                Log.w("Pengajuan", "⚠️ P2a upsert gagal (${e.message}); entry lama tetap utuh — CF safety net akan menjaga")
+                            }
+                    } else {
+                        // Defensive (snapshot.exists tapi tidak ada children — seharusnya tidak terjadi).
+                        createNewPengajuanEntry(approvalRef, pengajuanData, cabangId)
                     }
                 } else {
                     // BELUM ADA → langsung buat baru
