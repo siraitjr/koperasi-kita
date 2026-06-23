@@ -221,6 +221,13 @@ exports.hapusDataSampah = auditDataSampah.hapusDataSampah;
 exports.restoreDataSampah = auditDataSampah.restoreDataSampah;
 
 // =========================================================================
+// SWEEP RIWAYAT ORPHAN - one-off cleanup arsip riwayat_pinjaman "hantu"
+// (sisa bug rollback reject top-up sebelum fix onPelangganWrite). DRY-RUN
+// default; perlu ?confirm=true untuk hapus. Lihat ./sweepRiwayatOrphan.js
+// =========================================================================
+exports.sweepRiwayatOrphan = require('./sweepRiwayatOrphan').sweepRiwayatOrphan;
+
+// =========================================================================
 // AUTO-LOGIN TOKEN (Android App → Buku Pokok Web)
 // =========================================================================
 const autoLogin = require('./generateAutoLoginToken');

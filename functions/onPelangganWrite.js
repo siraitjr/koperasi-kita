@@ -66,6 +66,22 @@ exports.onPelangganWrite = functions
                 (afterData.pinjamanKe || 1) > (beforeData.pinjamanKe || 1)) {
                 await archiveRiwayatPinjaman(adminUid, pelangganId, beforeData);
             }
+            // =========================================================
+            // ✅ ROLLBACK CLEANUP: pinjamanKe TURUN = pengajuan top-up
+            // DITOLAK lalu di-rollback (loan lama kembali AKTIF). Arsip
+            // riwayat_pinjaman yang dibuat saat submit (waktu pinjamanKe
+            // naik) HARUS dihapus — kalau tertinggal, Buku Pokok akan
+            // menampilkannya sebagai baris "pinjaman ke-N" historis
+            // duplikat di samping loan aktif (gejala: dua loan#N, satu
+            // seakan Lunas tanpa riwayat). Invarian: nomor pinjaman yang
+            // sedang AKTIF tidak boleh ada di riwayat_pinjaman.
+            // (pinjamanKe hanya turun pada rollback reject top-up — tidak
+            // ada flow lain yang menurunkannya.)
+            // =========================================================
+            else if (beforeData && afterData &&
+                (afterData.pinjamanKe || 1) < (beforeData.pinjamanKe || 1)) {
+                await removeRiwayatArsipSaatRollback(adminUid, pelangganId, afterData.pinjamanKe || 1);
+            }
 
             // =========================================================
             // SAFETY NET: Auto-create pengajuan_approval jika belum ada
@@ -294,5 +310,38 @@ async function archiveRiwayatPinjaman(adminUid, pelangganId, beforeData) {
 
     } catch (error) {
         console.error(`❌ Gagal arsip riwayat pinjaman: ${error.message}`);
+    }
+}
+
+// =========================================================================
+// ROLLBACK CLEANUP: hapus arsip riwayat_pinjaman saat top-up DITOLAK.
+// =========================================================================
+// Dipanggil saat pinjamanKe TURUN (rollback reject top-up). Loan yang
+// dikembalikan ke status aktif tidak boleh tersisa di riwayat_pinjaman,
+// karena arsip itu dibaca Buku Pokok sebagai pinjaman historis → tampil
+// sebagai DUPLIKAT loan di samping loan aktif.
+//
+// Aman & idempoten:
+//   - Hanya menghapus key yang == pinjamanKe AKTIF setelah rollback
+//     (= loan yang baru saja dikembalikan). Arsip pinjaman lama yang SAH
+//     (ke-1 .. N-1) TIDAK tersentuh — invarian: nomor pinjaman yang aktif
+//     tidak boleh punya arsip.
+//   - Kalau arsip tidak ada (mis. submit & reject terjadi sangat cepat
+//     sebelum arsip sempat ditulis), cukup skip tanpa error.
+// =========================================================================
+async function removeRiwayatArsipSaatRollback(adminUid, pelangganId, restoredPinjamanKe) {
+    try {
+        const ref = db.ref(
+            `riwayat_pinjaman/${adminUid}/${pelangganId}/${restoredPinjamanKe}`
+        );
+        const snap = await ref.once('value');
+        if (snap.exists()) {
+            await ref.remove();
+            console.log(`🧹 Rollback top-up: arsip riwayat_pinjaman ke-${restoredPinjamanKe} dihapus (loan kembali aktif) untuk ${pelangganId}`);
+        } else {
+            console.log(`ℹ️ Rollback top-up: tidak ada arsip riwayat_pinjaman ke-${restoredPinjamanKe} untuk ${pelangganId}, skip`);
+        }
+    } catch (error) {
+        console.error(`❌ Gagal hapus arsip riwayat saat rollback: ${error.message}`);
     }
 }
