@@ -1591,8 +1591,10 @@ a {
     padding: 0 8px;
     /* Mobile/tablet swipe: defeat flexbox center-overflow trap (item kiri jadi
        tak terjangkau saat overflow) + aktifkan momentum & gesture horizontal.
-       Hanya di media query → desktop (rule dasar justify-content:center) utuh. */
-    justify-content: flex-start;
+       Hanya di media query → desktop (rule dasar justify-content:center) utuh.
+       !important: paksa menang cascade — di produksi tampak base center masih
+       aktif (kemungkinan CDN/CSS-split order), guard explicit utk keselamatan. */
+    justify-content: flex-start !important;
     -webkit-overflow-scrolling: touch;
     touch-action: pan-x;
   }
@@ -1616,8 +1618,10 @@ a {
   .top-bar-nav {
     gap: 2px;
     /* Mobile swipe: lihat catatan di media query 1024px — flex-start mencegah
-       item kiri tak terjangkau saat menu overflow di layar HP. */
-    justify-content: flex-start;
+       item kiri tak terjangkau saat menu overflow di layar HP.
+       !important: paksa override base center yang masih lolos cascade di build
+       produksi (gejala: item pertama "Buku Pokok" tetap tak terjangkau). */
+    justify-content: flex-start !important;
     -webkit-overflow-scrolling: touch;
     touch-action: pan-x;
     /* Stack ke baris sendiri (order:2 → setelah top-bar-right) dgn lebar penuh,
