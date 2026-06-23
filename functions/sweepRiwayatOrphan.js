@@ -24,6 +24,9 @@
 //
 // Endpoint: GET /sweepRiwayatOrphan
 // Query params:
+//   ?secret=xxx     → WAJIB (auth). Salah/absen → HTTP 403, berlaku utk
+//                     dry-run MAUPUN confirm. Default 'SapuBersih123',
+//                     bisa dioverride via env var SWEEP_SECRET (disarankan).
 //   ?confirm=true   → benar-benar hapus (tanpa ini = dry-run, aman)
 //   ?adminUid=xxx   → batasi ke 1 admin
 //   ?cabang=panti   → batasi ke 1 cabang
@@ -36,10 +39,28 @@ const admin = require('firebase-admin');
 
 const db = admin.database();
 
+// =========================================================================
+// AUTH: secret WAJIB di query param `?secret=...` (berlaku utk dry-run
+// MAUPUN confirm). Endpoint maintenance destruktif → jangan dibiarkan
+// terbuka. Default bisa dioverride TANPA ubah kode via env var SWEEP_SECRET
+// (disarankan untuk rotasi & agar secret tidak permanen di repo).
+// =========================================================================
+const EXPECTED_SECRET = process.env.SWEEP_SECRET || 'SapuBersih123';
+
 exports.sweepRiwayatOrphan = functions
     .region('asia-southeast1')
     .runWith({ timeoutSeconds: 540, memory: '1GB' })
     .https.onRequest(async (req, res) => {
+
+        // 🔒 GATE: tolak bila secret salah/absen — SEBELUM baca DB apa pun.
+        // Berlaku untuk dry-run MAUPUN confirm.
+        if ((req.query.secret || '') !== EXPECTED_SECRET) {
+            console.warn('🚫 sweepRiwayatOrphan: akses ditolak (secret salah/absen)');
+            return res.status(403).json({
+                success: false,
+                error: 'Forbidden: secret tidak valid'
+            });
+        }
 
         const dryRun = req.query.confirm !== 'true';
         const filterAdminUid = req.query.adminUid || null;
