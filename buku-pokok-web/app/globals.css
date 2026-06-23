@@ -1607,16 +1607,25 @@ a {
 @media (max-width: 640px) {
   .top-bar {
     padding: 10px 12px;
+    /* Mobile: izinkan nav turun ke baris sendiri agar dapat lebar penuh
+       (fix width-starvation — judul + user-badge tak lagi mencuri lebar nav). */
+    flex-wrap: wrap;
+    row-gap: 8px;
   }
 
   .top-bar-nav {
-    padding: 0 4px;
     gap: 2px;
     /* Mobile swipe: lihat catatan di media query 1024px — flex-start mencegah
        item kiri tak terjangkau saat menu overflow di layar HP. */
     justify-content: flex-start;
     -webkit-overflow-scrolling: touch;
     touch-action: pan-x;
+    /* Stack ke baris sendiri (order:2 → setelah top-bar-right) dgn lebar penuh,
+       sehingga item pertama "Buku Pokok" tampil utuh di scroll-origin. */
+    flex-basis: 100%;
+    order: 2;
+    padding: 0 12px;
+    min-width: 0;
   }
 
   .top-bar-nav-item {
