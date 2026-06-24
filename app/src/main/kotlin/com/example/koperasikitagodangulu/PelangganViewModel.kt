@@ -4788,8 +4788,11 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                             val pengawasAlasan = currentDualInfo.pengawasApproval.note.ifBlank { "Ditolak oleh Pengawas" }
 
                             if (isTopUp) {
+                                // ✅ V2 (16 Jun 2026): hidrasi backup dari arsip riwayat_pinjaman
+                                // sebelum rollback — menjaga history & status saat backup absen/kosong.
+                                val existingHydrated = hydrateBackupFromRiwayat(existing)
                                 val rollback = buildRollbackTopUpFromBackup(
-                                    pelanggan = existing,
+                                    pelanggan = existingHydrated,
                                     updatedDualInfo = updatedDualInfo,
                                     catatanApproval = "Pengajuan top-up ditolak oleh Pengawas: $pengawasAlasan",
                                     tanggalSekarang = tanggalSekarang,
@@ -5174,6 +5177,16 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     status = "Aktif",
                     tanggalPencairan = tanggalPencairan,
                     hasilSimulasiCicilan = cicilanBaru,
+                    // ✅ SAFETY CHECK (16 Jun 2026): Bersihkan backupSebelumTopUp
+                    // setelah pencairan loan berhasil. Backup hanya relevan utk rollback
+                    // sebelum pinjaman direalisasikan; setelah cairkanPinjaman sukses,
+                    // loan baru sudah resmi aktif → backup TIDAK BOLEH lagi dipakai
+                    // (kalau di-rollback dari titik ini, akan mengembalikan loan ke
+                    // state "pre-submit" walaupun sudah dicairkan = korupsi data).
+                    // Aman: kalau loan baru perlu dibatalkan SETELAH cair, itu lewat
+                    // mekanisme lain (deletion_requests / proses pelunasan), bukan
+                    // buildRollbackTopUpFromBackup.
+                    backupSebelumTopUp = null,
                     lastUpdated = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
                 )
 
@@ -5415,31 +5428,118 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     return@launch
                 }
 
-                val updatedPelanggan = pelanggan.copy(
-                    status = "Tidak Aktif",
-                    lastUpdated = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
-                )
+                val tanggalSekarang = SimpleDateFormat("dd MMM yyyy", Locale("in", "ID")).format(Date())
+                val nowTs = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
+                val isTopUp = pelanggan.pinjamanKe > 1
 
-                database.child("pelanggan").child(adminUid).child(pelangganId)
-                    .setValue(updatedPelanggan)
-                    .addOnSuccessListener {
-                        val index = daftarPelanggan.indexOfFirst { it.id == pelangganId }
-                        if (index != -1) {
-                            daftarPelanggan[index] = updatedPelanggan
+                // =====================================================================
+                // ✅ V1+V3 FIX (16 Jun 2026): batalkanPinjaman utk TOP-UP harus rollback
+                // ke pinjaman lama via buildRollbackTopUpFromBackup + updateChildren
+                // (BUKAN setValue full-object dari cache lokal). Sebelumnya hanya menulis
+                // status="Tidak Aktif" pada record top-up baru → loan lama tidak pulih,
+                // pinjamanKe tetap di N+1, arsip riwayat_pinjaman/{pId}/N jadi hantu di
+                // Buku Pokok. Sekarang:
+                //   - Top-up (pinjamanKe>1): hidrasi backup dari arsip, rollback dgn
+                //     updateChildren → loan lama pulih, pinjamanKe N+1→N, CF
+                //     onPelangganWrite menangkap penurunan & menghapus arsip.
+                //   - Pinjaman pertama (pinjamanKe<=1): perilaku lama dipertahankan
+                //     (status="Tidak Aktif") tapi via updateChildren utk hindari
+                //     full-overwrite dari cache lokal yang bisa stale (V3).
+                // =====================================================================
+                if (isTopUp) {
+                    val pelangganHydrated = hydrateBackupFromRiwayat(pelanggan)
+                    // Buat dualApprovalInfo terminal yg mencatat pembatalan oleh admin.
+                    val cancelDualInfo = (pelangganHydrated.dualApprovalInfo
+                        ?: DualApprovalInfo(
+                            requiresDualApproval = DualApprovalThreshold.requiresDualApproval(pelangganHydrated.besarPinjaman)
+                        )).copy(
+                        finalDecision = "cancelled_by_admin",
+                        finalDecisionTimestamp = System.currentTimeMillis(),
+                        rejectionReason = "Dibatalkan oleh admin sebelum pencairan"
+                    )
+                    val rollback = buildRollbackTopUpFromBackup(
+                        pelanggan = pelangganHydrated,
+                        updatedDualInfo = cancelDualInfo,
+                        catatanApproval = "Top-up dibatalkan oleh admin sebelum pencairan",
+                        tanggalSekarang = tanggalSekarang,
+                        by = pelangganHydrated.adminUid
+                    )
+                    val rollbackMap: Map<String, Any?>
+                    val updatedPelanggan: Pelanggan
+                    if (rollback != null) {
+                        rollbackMap = rollback.first
+                        updatedPelanggan = rollback.second
+                    } else {
+                        // Fallback konservatif: minimal pulihkan pinjamanKe & status
+                        // (CF akan menangkap penurunan pinjamanKe dan menghapus arsip).
+                        Log.e("Pencairan", "⚠️ Rollback fallback batalkanPinjaman: backup invalid utk ${pelangganHydrated.namaPanggilan} ($pelangganId)")
+                        rollbackMap = hashMapOf(
+                            "status" to "Aktif",
+                            "dualApprovalInfo" to cancelDualInfo,
+                            "pinjamanKe" to (pelangganHydrated.pinjamanKe - 1),
+                            "catatanApproval" to "Top-up dibatalkan oleh admin sebelum pencairan",
+                            "tanggalApproval" to tanggalSekarang,
+                            "disetujuiOleh" to pelangganHydrated.adminUid,
+                            "sisaUtangLamaSebelumTopUp" to 0,
+                            "totalPelunasanLamaSebelumTopUp" to 0,
+                            "backupSebelumTopUp" to null,
+                            "lastUpdated" to nowTs
+                        )
+                        updatedPelanggan = pelangganHydrated.copy(
+                            status = "Aktif",
+                            dualApprovalInfo = cancelDualInfo,
+                            pinjamanKe = pelangganHydrated.pinjamanKe - 1,
+                            catatanApproval = "Top-up dibatalkan oleh admin sebelum pencairan",
+                            tanggalApproval = tanggalSekarang,
+                            disetujuiOleh = pelangganHydrated.adminUid,
+                            sisaUtangLamaSebelumTopUp = 0,
+                            totalPelunasanLamaSebelumTopUp = 0,
+                            backupSebelumTopUp = null,
+                            lastUpdated = nowTs
+                        )
+                    }
+                    database.child("pelanggan").child(adminUid).child(pelangganId)
+                        .updateChildren(rollbackMap)
+                        .addOnSuccessListener {
+                            val idx = daftarPelanggan.indexOfFirst { it.id == pelangganId }
+                            if (idx != -1) daftarPelanggan[idx] = updatedPelanggan
+                            simpanKeLokal()
+                            loadDashboardData()
+                            sendCairkanBatalNotification(pelanggan, isCairkan = false)
+                            Log.d("Pencairan", "✅ Top-up dibatalkan & rollback ke pinjaman lama: ${pelanggan.namaPanggilan} (pinjamanKe ${pelanggan.pinjamanKe}→${updatedPelanggan.pinjamanKe})")
+                            onSuccess?.invoke()
                         }
-                        simpanKeLokal()
-                        loadDashboardData()
-
-                        // ✅ BARU: Kirim notifikasi ke atasan
-                        sendCairkanBatalNotification(pelanggan, isCairkan = false)
-
-                        Log.d("Pencairan", "✅ Pinjaman dibatalkan: ${pelanggan.namaPanggilan}")
-                        onSuccess?.invoke()
-                    }
-                    .addOnFailureListener { e ->
-                        Log.e("Pencairan", "❌ Gagal batalkan: ${e.message}")
-                        onFailure?.invoke(e)
-                    }
+                        .addOnFailureListener { e ->
+                            Log.e("Pencairan", "❌ Gagal batalkan (rollback): ${e.message}")
+                            onFailure?.invoke(e)
+                        }
+                } else {
+                    // ✅ V3: updateChildren field-specific (bukan setValue full-object) — anti
+                    // overwrite field tak terkait yg mungkin sudah ditulis trigger server.
+                    val flatMap: Map<String, Any?> = hashMapOf(
+                        "status" to "Tidak Aktif",
+                        "lastUpdated" to nowTs
+                    )
+                    val updatedPelanggan = pelanggan.copy(
+                        status = "Tidak Aktif",
+                        lastUpdated = nowTs
+                    )
+                    database.child("pelanggan").child(adminUid).child(pelangganId)
+                        .updateChildren(flatMap)
+                        .addOnSuccessListener {
+                            val idx = daftarPelanggan.indexOfFirst { it.id == pelangganId }
+                            if (idx != -1) daftarPelanggan[idx] = updatedPelanggan
+                            simpanKeLokal()
+                            loadDashboardData()
+                            sendCairkanBatalNotification(pelanggan, isCairkan = false)
+                            Log.d("Pencairan", "✅ Pinjaman pertama dibatalkan (Tidak Aktif): ${pelanggan.namaPanggilan}")
+                            onSuccess?.invoke()
+                        }
+                        .addOnFailureListener { e ->
+                            Log.e("Pencairan", "❌ Gagal batalkan: ${e.message}")
+                            onFailure?.invoke(e)
+                        }
+                }
             } catch (e: Exception) {
                 Log.e("Pencairan", "❌ Error batalkan pinjaman: ${e.message}")
                 onFailure?.invoke(e)
@@ -6007,8 +6107,10 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                         if (isTopUp) {
                             // TOP-UP DITOLAK: kembalikan ke data pinjaman sebelumnya
                             // ✅ FIX #2: updateChildren field-specific (bukan setValue full-object)
+                            // ✅ V2 (16 Jun 2026): hidrasi backup dari arsip riwayat_pinjaman dulu.
+                            val pelangganHydrated = hydrateBackupFromRiwayat(pelanggan)
                             val rollback = buildRollbackTopUpFromBackup(
-                                pelanggan = pelanggan,
+                                pelanggan = pelangganHydrated,
                                 updatedDualInfo = updatedDualInfo,
                                 catatanApproval = "Pengajuan top-up ditolak oleh Pimpinan: $alasan",
                                 tanggalSekarang = tanggalSekarang,
@@ -6179,8 +6281,10 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                             val pengawasAlasan = currentDualInfo.pengawasApproval.note.ifBlank { alasan }
 
                             if (isTopUp) {
+                                // ✅ V2 (16 Jun 2026): hidrasi backup dari arsip riwayat_pinjaman dulu.
+                                val pelangganHydrated = hydrateBackupFromRiwayat(pelanggan)
                                 val rollback = buildRollbackTopUpFromBackup(
-                                    pelanggan = pelanggan,
+                                    pelanggan = pelangganHydrated,
                                     updatedDualInfo = updatedDualInfo,
                                     catatanApproval = "Pengajuan top-up ditolak oleh Pengawas: $pengawasAlasan",
                                     tanggalSekarang = tanggalSekarang,
@@ -6408,8 +6512,10 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
 
                     // ✅ FIX #2: updateChildren field-specific (bukan setValue full-object)
                     // agar pembayaran & index turunan tidak ter-overwrite.
+                    // ✅ V2 (16 Jun 2026): hidrasi backup dari arsip riwayat_pinjaman dulu.
+                    val pelangganHydrated = hydrateBackupFromRiwayat(pelanggan)
                     val rollback = buildRollbackTopUpFromBackup(
-                        pelanggan = pelanggan,
+                        pelanggan = pelangganHydrated,
                         updatedDualInfo = updatedDualInfo,
                         catatanApproval = "Pengajuan top-up ditolak: $alasan",
                         tanggalSekarang = tanggalSekarang,
@@ -6730,6 +6836,86 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
      * Return null jika data backup tidak valid → caller harus fallback
      * konservatif (mis. hanya update status + dualApprovalInfo).
      */
+    // =========================================================================
+    // ✅ V2 FIX (16 Jun 2026): Hidrasi backup dari arsip riwayat_pinjaman.
+    // -------------------------------------------------------------------------
+    // Bila `backupSebelumTopUp` HILANG atau KOSONG (record legacy, atau gagal
+    // tersimpan saat submit), rollback sebelumnya jatuh ke fallback yang BOLONG:
+    //   - statusAwal default ke "Aktif" (bisa salah utk nasabah Lunas /
+    //     Menunggu Pencairan / status khusus lain).
+    //   - pembayaranList di-recover dari live data yang sudah di-reset kosong
+    //     pada submit jika nasabah sudahLunas → riwayat pembayaran HILANG.
+    //
+    // Solusi: baca arsip `riwayat_pinjaman/{adminUid}/{pelangganId}/{N-1}`
+    // yang ditulis CF saat submit top-up (onPelangganWrite.archiveRiwayatPinjaman).
+    // Arsip ini memuat snapshot LENGKAP loan lama termasuk pembayaranList →
+    // synthesize jadi BackupTopUpData dan inject ke pelanggan SEBELUM rollback.
+    //
+    // Idempoten & aman:
+    //   - Bila backup yang ada SUDAH valid (totalPelunasan>0 atau pembayaranList
+    //     tidak kosong) → return as-is tanpa baca RTDB (zero overhead).
+    //   - Bila pinjamanKe <= 1 → tidak ada arsip yang relevan, return as-is.
+    //   - Bila arsip tidak ada / gagal dibaca → return as-is (rollback tetap
+    //     jalan dgn fallback lama; tidak memperburuk situasi).
+    // =========================================================================
+    private suspend fun hydrateBackupFromRiwayat(pelanggan: Pelanggan): Pelanggan {
+        val existing = pelanggan.backupSebelumTopUp
+        val needsHydration = existing == null
+            || (existing.totalPelunasan == 0 && existing.pembayaranList.isEmpty())
+        if (!needsHydration) return pelanggan
+
+        val prevPinjamanKe = pelanggan.pinjamanKe - 1
+        if (prevPinjamanKe < 1 || pelanggan.adminUid.isBlank() || pelanggan.id.isBlank()) {
+            return pelanggan
+        }
+
+        return try {
+            val snap = database.child("riwayat_pinjaman")
+                .child(pelanggan.adminUid)
+                .child(pelanggan.id)
+                .child(prevPinjamanKe.toString())
+                .get().await()
+            if (!snap.exists()) {
+                Log.w("V2-Hydrate", "Arsip riwayat_pinjaman/${pelanggan.adminUid}/${pelanggan.id}/$prevPinjamanKe tidak ditemukan; rollback pakai fallback lama")
+                return pelanggan
+            }
+
+            val pembayaranListFromArsip: List<Pembayaran> = run {
+                val raw = snap.child("pembayaranList")
+                if (!raw.exists()) emptyList()
+                else raw.children.mapNotNull {
+                    try { it.getValue(Pembayaran::class.java) } catch (_: Exception) { null }
+                }
+            }
+
+            val synth = BackupTopUpData(
+                pinjamanKe = snap.child("pinjamanKe").getValue(Int::class.java) ?: prevPinjamanKe,
+                besarPinjaman = snap.child("besarPinjaman").getValue(Int::class.java) ?: 0,
+                admin = snap.child("admin").getValue(Int::class.java) ?: 0,
+                simpanan = snap.child("simpanan").getValue(Int::class.java) ?: 0,
+                totalDiterima = snap.child("totalDiterima").getValue(Int::class.java) ?: 0,
+                totalPelunasan = snap.child("totalPelunasan").getValue(Int::class.java) ?: 0,
+                tenor = snap.child("tenor").getValue(Int::class.java) ?: 0,
+                tanggalPengajuan = snap.child("tanggalPengajuan").getValue(String::class.java) ?: "",
+                status = snap.child("status").getValue(String::class.java) ?: "",
+                statusKhusus = snap.child("statusKhusus").getValue(String::class.java) ?: "",
+                tanggalLunasCicilan = snap.child("tanggalLunasCicilan").getValue(String::class.java) ?: "",
+                tanggalPencairan = snap.child("tanggalPencairan").getValue(String::class.java) ?: "",
+                jasaPinjaman = snap.child("jasaPinjaman").getValue(Int::class.java) ?: 0,
+                pembayaranList = pembayaranListFromArsip
+                // Field lain (besarPinjamanDiajukan, tipePinjaman, hasilSimulasiCicilan,
+                // dll) tidak ada di arsip → pakai default; rollback function akan
+                // jatuh ke fallback yang sudah aman utk field-field tsb.
+            )
+
+            Log.d("V2-Hydrate", "✅ Backup di-hidrasi dari arsip utk ${pelanggan.namaPanggilan} (pinjamanKe=$prevPinjamanKe, ${pembayaranListFromArsip.size} entri pembayaran)")
+            pelanggan.copy(backupSebelumTopUp = synth)
+        } catch (e: Exception) {
+            Log.w("V2-Hydrate", "Gagal baca arsip riwayat: ${e.message} — rollback pakai fallback lama")
+            pelanggan
+        }
+    }
+
     private fun buildRollbackTopUpFromBackup(
         pelanggan: Pelanggan,
         updatedDualInfo: DualApprovalInfo,
@@ -13439,8 +13625,10 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     // TOP-UP DITOLAK: kembalikan ke data pinjaman sebelumnya
                     // ✅ FIX #2: updateChildren dengan field-specific map (bukan setValue full-object)
                     // agar data turunan yang ditulis trigger server tidak ter-overwrite.
+                    // ✅ V2 (16 Jun 2026): hidrasi backup dari arsip riwayat_pinjaman dulu.
+                    val pelangganHydrated = hydrateBackupFromRiwayat(pelanggan)
                     val rollback = buildRollbackTopUpFromBackup(
-                        pelanggan = pelanggan,
+                        pelanggan = pelangganHydrated,
                         updatedDualInfo = updatedDualInfo,
                         catatanApproval = "Pengajuan top-up ditolak oleh Koordinator: $alasan",
                         tanggalSekarang = tanggalSekarang,
