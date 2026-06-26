@@ -218,9 +218,6 @@ export default function Home() {
   const handleSelectBook = (book) => {
     const isGlobal = GLOBAL_VIEW_ROLES.includes(userData?.role);
     if (book === 'bukuPokok') {
-      // ✅ Reset initial-mode signal agar buka Buku Pokok lewat pill bukuPokok
-      // selalu mulai dari tabelFilter default ('semua'), bukan sisa pill bukuPerkembangan.
-      try { sessionStorage.removeItem('bukuPokok_initialMode'); } catch (e) {}
       if (isGlobal && selectedCabang) {
         setScreen('bukuPokok');
         saveNav('bukuPokok', selectedCabang, null);
@@ -229,16 +226,14 @@ export default function Home() {
         saveNav('dashboard', null, null);
       }
     } else if (book === 'bukuPerkembangan') {
-      // ✅ Buku Perkembangan = sub-view bukuPokok dgn tabelFilter='bukuPerkembangan'.
-      // Pakai sessionStorage sebagai signal one-shot agar BukuPokokScreen consume saat mount.
-      try { sessionStorage.setItem('bukuPokok_initialMode', 'bukuPerkembangan'); } catch (e) {}
-      if (isGlobal && selectedCabang) {
-        setScreen('bukuPokok');
-        saveNav('bukuPokok', selectedCabang, null);
-      } else {
-        setScreen('dashboard');
-        saveNav('dashboard', null, null);
-      }
+      // ✅ Buku Perkembangan = halaman STANDALONE (/buku-perkembangan).
+      // Navigasi via window.location (full route, bukan state Buku Pokok),
+      // membawa cabang aktif sbg query param. Halaman tujuan juga punya
+      // fallback resolve cabang via ksp_active_cabang_id + picker.
+      const cabId = selectedCabang?.id || '';
+      window.location.href = cabId
+        ? `/buku-perkembangan?cabang=${encodeURIComponent(cabId)}`
+        : '/buku-perkembangan';
     } else if (book === 'jurnalTransaksi') {
       if (isGlobal && selectedCabang) {
         setScreen('jurnalTransaksi');
@@ -654,6 +649,18 @@ function HomeScreen({ user, kasirCabangList, selectedCabang, onSelectBook, onBac
       ready: true,
     },
     {
+      id: 'bukuPerkembangan',
+      name: 'Buku Perkembangan',
+      desc: 'Perkembangan saldo & storting agregat per resort',
+      icon: (
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+          <path d="M3 3v18h18"/>
+          <path d="m19 9-5 5-4-4-3 3"/>
+        </svg>
+      ),
+      ready: true,
+    },
+    {
       id: 'jurnalTransaksi',
       name: 'Jurnal Transaksi',
       desc: 'Catatan permanen setiap pembayaran & pencairan',
@@ -931,30 +938,7 @@ function BukuPokokScreen({ user, cabang, selectedAdmin, onSelectAdmin, onBack, o
   const [statusFilter, setStatusFilter] = useState('semua');
   const [showDetail, setShowDetail] = useState(null);
   const [visibleDateCount, setVisibleDateCount] = useState(7);
-  const [tabelFilter, setTabelFilter] = useState(() => {
-    // ✅ One-shot signal dari TopBarNav pill "Buku Perkembangan" — handleSelectBook
-    // menulis 'bukuPokok_initialMode' di sessionStorage, BukuPokokScreen consume
-    // sekali saat mount lalu menghapusnya. Default 'semua' kalau tidak ada signal.
-    try {
-      const sig = typeof window !== 'undefined' ? sessionStorage.getItem('bukuPokok_initialMode') : null;
-      if (sig === 'bukuPerkembangan') {
-        sessionStorage.removeItem('bukuPokok_initialMode');
-        return 'bukuPerkembangan';
-      }
-    } catch (e) { /* ignore */ }
-    return 'semua';
-  });
-  // ✅ Auto-init stortingMonth bila masuk via pill Buku Perkembangan (sebelum user
-  // klik dropdown). Sama pattern dgn dropdown change handler.
-  useEffect(() => {
-    if ((tabelFilter === 'bukuPerkembangan' || tabelFilter === 'stortingGlobal') && !stortingMonth) {
-      const now = new Date();
-      const wibOff = 7 * 60 * 60 * 1000;
-      const wib = new Date(now.getTime() + (now.getTimezoneOffset() * 60000) + wibOff);
-      setStortingMonth(`${wib.getFullYear()}-${String(wib.getMonth() + 1).padStart(2, '0')}`);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tabelFilter]);
+  const [tabelFilter, setTabelFilter] = useState('semua');
   const [stortingMonth, setStortingMonth] = useState(null); // format: '2026-02' (auto-set saat pilih stortingGlobal)
   const [koreksiSGMap, setKoreksiSGMap] = useState({}); // { adminUid: { l1, cm, mb, ml } } untuk bulan lalu
   const [showKoreksiModal, setShowKoreksiModal] = useState(false);
@@ -1224,8 +1208,8 @@ function getKategoriNasabah(nasabah, refDateStr) {
     // pass-through → tidak mengubah perilaku tampilan agregat.
     if (selectedAdmin && n.adminUid !== selectedAdmin.uid) return false;
 
-    // Filter tabel (PB/L1/CM/MB/ML) — skip for stortingGlobal & bukuPerkembangan
-    if (tabelFilter !== 'semua' && tabelFilter !== 'stortingGlobal' && tabelFilter !== 'bukuPerkembangan') {
+    // Filter tabel (PB/L1/CM/MB/ML) — skip for stortingGlobal
+    if (tabelFilter !== 'semua' && tabelFilter !== 'stortingGlobal') {
       if (getKategoriNasabah(n) !== tabelFilter) return false;
     }
     // Filter pencarian
@@ -1261,12 +1245,8 @@ function getKategoriNasabah(nasabah, refDateStr) {
   const admins = cabang.admins || [];
 
   // ==================== TABEL MODE (PB/L1/CM/MB/ML) ====================
-  // bukuPerkembangan = sub-view aggregat per-resort (13 kolom Development Ledger);
-  // di-treat seperti stortingGlobal: BUKAN tabel kategori PB/L1/CM/MB/ML, dan
-  // bukan tabel "Semua" yang per-nasabah. Render block sendiri.
-  const isTabelMode = tabelFilter !== 'semua' && tabelFilter !== 'stortingGlobal' && tabelFilter !== 'bukuPerkembangan';
+  const isTabelMode = tabelFilter !== 'semua' && tabelFilter !== 'stortingGlobal';
   const isStortingGlobalMode = tabelFilter === 'stortingGlobal';
-  const isBukuPerkembanganMode = tabelFilter === 'bukuPerkembangan';
 
   // Reset jendela tampilan saat dataset / filter berubah
   useEffect(() => {
@@ -1475,126 +1455,6 @@ function getKategoriNasabah(nasabah, refDateStr) {
       });
     }
     return rows;
-  })();
-
-  // =========================================================================
-  // ✅ BUKU PERKEMBANGAN (16 Jun 2026) — agregasi per resort utk Development Ledger
-  // -------------------------------------------------------------------------
-  // 13 kolom per resort, semua dihitung dari bukuData.nasabah yang SUDAH ter-load
-  // (zero RTDB read tambahan). Acuan bulan = stortingMonth (parity Storting Global).
-  //
-  // Aturan (sudah dikonfirmasi pimpinan 16 Jun 2026 — Q1..Q6):
-  //   Saldo Awal    = Σ sisaUtang di AWAL bulan (loan cair < monthStart)
-  //                   = Σ max(totalPelunasan − Σ pembayaran sebelum monthStart, 0)
-  //   Drop          = Σ besarPinjaman utk loan yg cair di bulan target
-  //   Jasa          = Drop × 0.2  (CONFIRMED: bukan ×1.2)
-  //   Mutasi Masuk  = 0 (placeholder; akan di-wire kemudian)
-  //   Jumlah        = Saldo Awal + Drop + Jasa
-  //   Storting      = Σ semua pembayaran di bulan target (incl. riwayatPinjaman.pembayaran)
-  //   Mutasi Keluar = 0 (placeholder)
-  //   Saldo Akhir   = Jumlah − Storting   (Mutasi Masuk/Keluar TIDAK masuk formula
-  //                   per spec literal; akan ditinjau bila mutasi diaktifkan)
-  //   Saldo ML/MB   = snapshot Σ sisaUtang_endOfMonth utk nasabah yg kategorinya
-  //                   ML/MB di akhir bulan target (refDate = last day of month)
-  //   Saldo Lancar  = Saldo Akhir − Saldo ML − Saldo MB
-  //
-  // isHistorical/isOrphan rows di-skip (sama dgn rule rekapRows L1362).
-  // =========================================================================
-  const bukuPerkembanganRows = (() => {
-    if (!isBukuPerkembanganMode || !data?.nasabah || !stortingMonth) return [];
-
-    const [bpY, bpM] = stortingMonth.split('-').map(Number);
-    const monthStart = new Date(bpY, bpM - 1, 1);
-    const monthEnd = new Date(bpY, bpM, 0); // hari terakhir bulan target
-
-    const BULAN_INDO_BP = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
-    const refDateEndOfMonth = `${String(monthEnd.getDate()).padStart(2, '0')} ${BULAN_INDO_BP[monthEnd.getMonth()]} ${monthEnd.getFullYear()}`;
-
-    // Sum pembayaran (incl. riwayatPinjaman) yang jatuh di dalam window [from, to].
-    // from = null → dari awal; to = null → tanpa batas atas.
-    const sumPaymentsInWindow = (n, from, to) => {
-      let s = 0;
-      const accumulate = (paymap) => {
-        if (!paymap) return;
-        Object.entries(paymap).forEach(([tgl, v]) => {
-          const d = parseTanggalIndo(tgl);
-          if (!d) return;
-          if (from && d < from) return;
-          if (to && d > to) return;
-          s += (v && v.total) || 0;
-        });
-      };
-      accumulate(n.pembayaran);
-      (n.riwayatPinjaman || []).forEach(r => accumulate(r.pembayaran));
-      return s;
-    };
-
-    return admins.map((adm, idx) => {
-      const resortNasabah = (data.nasabah || []).filter(
-        n => n.adminUid === adm.uid && !n.isHistorical && !n.isOrphan
-      );
-
-      // ---- Saldo Awal: Σ sisaUtang utk loan yg cair SEBELUM monthStart ----
-      let saldoAwal = 0;
-      resortNasabah.forEach(n => {
-        const tglCair = parseTanggalIndo((n.tanggalPencairan || '').trim());
-        if (!tglCair || tglCair >= monthStart) return; // exclude this-month / undated
-        const bayarSebelumBulan = sumPaymentsInWindow(n, null, new Date(monthStart.getTime() - 1));
-        const sisaAwal = Math.max((n.totalPelunasan || 0) - bayarSebelumBulan, 0);
-        saldoAwal += sisaAwal;
-      });
-
-      // ---- Drop: Σ besarPinjaman utk loan cair DI bulan target ----
-      const drop = resortNasabah.reduce((s, n) => {
-        const tglCair = parseTanggalIndo((n.tanggalPencairan || '').trim());
-        const inMonth = tglCair && tglCair >= monthStart && tglCair <= monthEnd;
-        return s + (inMonth ? (n.besarPinjaman || 0) : 0);
-      }, 0);
-
-      // ---- Jasa = Drop × 0.2 (CONFIRMED) ----
-      const jasa = Math.round(drop * 0.2);
-
-      // ---- Mutasi Masuk: placeholder 0 (Q3) ----
-      const mutasiMasuk = 0;
-
-      // ---- Jumlah = Saldo Awal + Drop + Jasa ----
-      const jumlah = saldoAwal + drop + jasa;
-
-      // ---- Storting: Σ semua pembayaran di bulan target ----
-      const storting = resortNasabah.reduce(
-        (s, n) => s + sumPaymentsInWindow(n, monthStart, monthEnd), 0
-      );
-
-      // ---- Mutasi Keluar: placeholder 0 (Q3) ----
-      const mutasiKeluar = 0;
-
-      // ---- Saldo Akhir = Jumlah − Storting ----
-      const saldoAkhir = jumlah - storting;
-
-      // ---- Saldo ML / Saldo MB: snapshot end-of-month per kategori ----
-      let saldoML = 0;
-      let saldoMB = 0;
-      resortNasabah.forEach(n => {
-        const tglCair = parseTanggalIndo((n.tanggalPencairan || '').trim());
-        if (!tglCair || tglCair > monthEnd) return; // belum cair sampai akhir bulan
-        const bayarSampaiAkhirBulan = sumPaymentsInWindow(n, null, monthEnd);
-        const sisaAkhir = Math.max((n.totalPelunasan || 0) - bayarSampaiAkhirBulan, 0);
-        const kat = getKategoriNasabah(n, refDateEndOfMonth);
-        if (kat === 'ML') saldoML += sisaAkhir;
-        else if (kat === 'MB') saldoMB += sisaAkhir;
-      });
-
-      // ---- Saldo Lancar = Saldo Akhir − Saldo ML − Saldo MB ----
-      const saldoLancar = saldoAkhir - saldoML - saldoMB;
-
-      return {
-        nomor: idx + 1,
-        resortName: adm.name,
-        saldoAwal, drop, jasa, mutasiMasuk,
-        jumlah, storting, mutasiKeluar,
-        saldoAkhir, saldoML, saldoMB, saldoLancar,
-      };
-    });
   })();
 
   // Total storting (PB/L1/CM/MB/ML) dari bulan sebelumnya
@@ -2003,7 +1863,7 @@ function getKategoriNasabah(nasabah, refDateStr) {
               onChange={(e) => {
                 const val = e.target.value;
                 setTabelFilter(val);
-                if ((val === 'stortingGlobal' || val === 'bukuPerkembangan') && !stortingMonth) {
+                if (val === 'stortingGlobal' && !stortingMonth) {
                   // Auto-set ke bulan ini saat pertama kali pilih
                   const now = new Date();
                   const wibOff = 7 * 60 * 60 * 1000;
@@ -2031,7 +1891,6 @@ function getKategoriNasabah(nasabah, refDateStr) {
               <option value="MB">MB</option>
               <option value="ML">ML</option>
               <option value="stortingGlobal">Storting Global</option>
-              <option value="bukuPerkembangan">Buku Perkembangan</option>
             </select>
             <div style={{ width: 1, height: 20, background: 'var(--border)', flexShrink: 0 }} />
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
@@ -2264,137 +2123,6 @@ function getKategoriNasabah(nasabah, refDateStr) {
                       })
                     )}
                   </tbody>
-                </table>
-              </div>
-              </>
-            ) : isBukuPerkembanganMode ? (
-              <>
-              {/* ==================== BUKU PERKEMBANGAN TABLE (13 kolom per resort) ==================== */}
-              {/* Month Selector — mirror Storting Global pattern */}
-              <div className="sg-month-selector">
-                <button
-                  className="sg-month-nav"
-                  onClick={() => {
-                    if (!stortingMonth) return;
-                    const [y, m] = stortingMonth.split('-').map(Number);
-                    const prev = new Date(y, m - 2, 1);
-                    const now = new Date();
-                    const wibOff = 7 * 60 * 60 * 1000;
-                    const wib = new Date(now.getTime() + (now.getTimezoneOffset() * 60000) + wibOff);
-                    const minDate = new Date(wib.getFullYear(), wib.getMonth() - 3, 1);
-                    if (prev >= minDate) {
-                      setStortingMonth(`${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, '0')}`);
-                    }
-                  }}
-                  title="Bulan sebelumnya"
-                >
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="m15 18-6-6 6-6"/></svg>
-                </button>
-                <span className="sg-month-label">
-                  {(() => {
-                    if (!stortingMonth) return '';
-                    const BULAN_FULL = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
-                    const [y, m] = stortingMonth.split('-').map(Number);
-                    return `Buku Perkembangan — ${BULAN_FULL[m - 1]} ${y}`;
-                  })()}
-                </span>
-                <button
-                  className="sg-month-nav"
-                  onClick={() => {
-                    if (!stortingMonth) return;
-                    const [y, m] = stortingMonth.split('-').map(Number);
-                    const next = new Date(y, m, 1);
-                    const now = new Date();
-                    const wibOff = 7 * 60 * 60 * 1000;
-                    const wib = new Date(now.getTime() + (now.getTimezoneOffset() * 60000) + wibOff);
-                    const maxDate = new Date(wib.getFullYear(), wib.getMonth(), 1);
-                    if (next <= maxDate) {
-                      setStortingMonth(`${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}`);
-                    }
-                  }}
-                  title="Bulan berikutnya"
-                >
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="m9 18 6-6-6-6"/></svg>
-                </button>
-              </div>
-              <div className="table-wrapper">
-                <table className="buku-table">
-                  <thead>
-                    <tr>
-                      <th style={{ minWidth: 50, textAlign: 'center' }}>No</th>
-                      <th style={{ minWidth: 140, textAlign: 'left' }}>Nama Resort</th>
-                      <th style={{ minWidth: 110, textAlign: 'right' }}>Saldo Awal</th>
-                      <th style={{ minWidth: 110, textAlign: 'right', color: '#2d7dd2' }}>Drop</th>
-                      <th style={{ minWidth: 100, textAlign: 'right', color: '#7c3aed' }}>Jasa 20%</th>
-                      <th style={{ minWidth: 100, textAlign: 'right' }}>Mutasi Masuk</th>
-                      <th style={{ minWidth: 120, textAlign: 'right', background: '#f3f4f6', fontWeight: 800 }}>Jumlah</th>
-                      <th style={{ minWidth: 110, textAlign: 'right', color: '#0f6b54' }}>Storting</th>
-                      <th style={{ minWidth: 100, textAlign: 'right' }}>Mutasi Keluar</th>
-                      <th style={{ minWidth: 120, textAlign: 'right', background: '#fef9c3', fontWeight: 800 }}>Saldo Akhir</th>
-                      <th style={{ minWidth: 100, textAlign: 'right', color: '#dc2626' }}>Saldo ML</th>
-                      <th style={{ minWidth: 100, textAlign: 'right', color: '#ea580c' }}>Saldo MB</th>
-                      <th style={{ minWidth: 110, textAlign: 'right', color: '#0f6b54', fontWeight: 800 }}>Saldo Lancar</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {bukuPerkembanganRows.length === 0 ? (
-                      <tr>
-                        <td colSpan={13} className="empty-cell">Tidak ada data resort untuk bulan ini</td>
-                      </tr>
-                    ) : (
-                      bukuPerkembanganRows.map((r) => (
-                        <tr key={r.resortName}>
-                          <td style={{ textAlign: 'center', fontWeight: 700 }}>{r.nomor}</td>
-                          <td style={{ fontWeight: 600 }}>{r.resortName}</td>
-                          <td style={{ textAlign: 'right', fontFamily: "'DM Mono', monospace" }}>{r.saldoAwal > 0 ? formatRp(r.saldoAwal) : '-'}</td>
-                          <td style={{ textAlign: 'right', fontFamily: "'DM Mono', monospace", color: '#2d7dd2' }}>{r.drop > 0 ? formatRp(r.drop) : '-'}</td>
-                          <td style={{ textAlign: 'right', fontFamily: "'DM Mono', monospace", color: '#7c3aed' }}>{r.jasa > 0 ? formatRp(r.jasa) : '-'}</td>
-                          <td style={{ textAlign: 'right', fontFamily: "'DM Mono', monospace" }}>{r.mutasiMasuk > 0 ? formatRp(r.mutasiMasuk) : '-'}</td>
-                          <td style={{ textAlign: 'right', fontFamily: "'DM Mono', monospace", background: '#f3f4f6', fontWeight: 700 }}>{r.jumlah > 0 ? formatRp(r.jumlah) : '-'}</td>
-                          <td style={{ textAlign: 'right', fontFamily: "'DM Mono', monospace", color: '#0f6b54' }}>{r.storting > 0 ? formatRp(r.storting) : '-'}</td>
-                          <td style={{ textAlign: 'right', fontFamily: "'DM Mono', monospace" }}>{r.mutasiKeluar > 0 ? formatRp(r.mutasiKeluar) : '-'}</td>
-                          <td style={{ textAlign: 'right', fontFamily: "'DM Mono', monospace", background: '#fef9c3', fontWeight: 700 }}>{r.saldoAkhir !== 0 ? formatRp(r.saldoAkhir) : '-'}</td>
-                          <td style={{ textAlign: 'right', fontFamily: "'DM Mono', monospace", color: '#dc2626' }}>{r.saldoML > 0 ? formatRp(r.saldoML) : '-'}</td>
-                          <td style={{ textAlign: 'right', fontFamily: "'DM Mono', monospace", color: '#ea580c' }}>{r.saldoMB > 0 ? formatRp(r.saldoMB) : '-'}</td>
-                          <td style={{ textAlign: 'right', fontFamily: "'DM Mono', monospace", color: '#0f6b54', fontWeight: 700 }}>{r.saldoLancar !== 0 ? formatRp(r.saldoLancar) : '-'}</td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                  {bukuPerkembanganRows.length > 0 && (() => {
-                    // ✅ TOTAL row — sum across all resorts (kolom Saldo Akhir/Lancar bisa negatif → != 0 check)
-                    const t = bukuPerkembanganRows.reduce((a, r) => ({
-                      saldoAwal: a.saldoAwal + r.saldoAwal,
-                      drop: a.drop + r.drop,
-                      jasa: a.jasa + r.jasa,
-                      mutasiMasuk: a.mutasiMasuk + r.mutasiMasuk,
-                      jumlah: a.jumlah + r.jumlah,
-                      storting: a.storting + r.storting,
-                      mutasiKeluar: a.mutasiKeluar + r.mutasiKeluar,
-                      saldoAkhir: a.saldoAkhir + r.saldoAkhir,
-                      saldoML: a.saldoML + r.saldoML,
-                      saldoMB: a.saldoMB + r.saldoMB,
-                      saldoLancar: a.saldoLancar + r.saldoLancar,
-                    }), { saldoAwal:0, drop:0, jasa:0, mutasiMasuk:0, jumlah:0, storting:0, mutasiKeluar:0, saldoAkhir:0, saldoML:0, saldoMB:0, saldoLancar:0 });
-                    return (
-                      <tfoot>
-                        <tr style={{ borderTop: '2px solid #7c3aed', background: '#f8f9fa' }}>
-                          <td colSpan={2} style={{ textAlign: 'right', fontWeight: 800, padding: '10px 12px' }}>TOTAL</td>
-                          <td style={{ textAlign: 'right', fontFamily: "'DM Mono', monospace", fontWeight: 800, padding: '10px 12px' }}>{formatRp(t.saldoAwal)}</td>
-                          <td style={{ textAlign: 'right', fontFamily: "'DM Mono', monospace", fontWeight: 800, color: '#2d7dd2', padding: '10px 12px' }}>{formatRp(t.drop)}</td>
-                          <td style={{ textAlign: 'right', fontFamily: "'DM Mono', monospace", fontWeight: 800, color: '#7c3aed', padding: '10px 12px' }}>{formatRp(t.jasa)}</td>
-                          <td style={{ textAlign: 'right', fontFamily: "'DM Mono', monospace", fontWeight: 800, padding: '10px 12px' }}>{formatRp(t.mutasiMasuk)}</td>
-                          <td style={{ textAlign: 'right', fontFamily: "'DM Mono', monospace", fontWeight: 800, background: '#e5e7eb', padding: '10px 12px' }}>{formatRp(t.jumlah)}</td>
-                          <td style={{ textAlign: 'right', fontFamily: "'DM Mono', monospace", fontWeight: 800, color: '#0f6b54', padding: '10px 12px' }}>{formatRp(t.storting)}</td>
-                          <td style={{ textAlign: 'right', fontFamily: "'DM Mono', monospace", fontWeight: 800, padding: '10px 12px' }}>{formatRp(t.mutasiKeluar)}</td>
-                          <td style={{ textAlign: 'right', fontFamily: "'DM Mono', monospace", fontWeight: 800, background: '#fde68a', padding: '10px 12px' }}>{formatRp(t.saldoAkhir)}</td>
-                          <td style={{ textAlign: 'right', fontFamily: "'DM Mono', monospace", fontWeight: 800, color: '#dc2626', padding: '10px 12px' }}>{formatRp(t.saldoML)}</td>
-                          <td style={{ textAlign: 'right', fontFamily: "'DM Mono', monospace", fontWeight: 800, color: '#ea580c', padding: '10px 12px' }}>{formatRp(t.saldoMB)}</td>
-                          <td style={{ textAlign: 'right', fontFamily: "'DM Mono', monospace", fontWeight: 800, color: '#0f6b54', padding: '10px 12px' }}>{formatRp(t.saldoLancar)}</td>
-                        </tr>
-                      </tfoot>
-                    );
-                  })()}
                 </table>
               </div>
               </>
