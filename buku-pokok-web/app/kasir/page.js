@@ -641,6 +641,18 @@ export default function KasirPage() {
     const kasirScreens = ['jurnal', 'bukuRekap', 'kasPenuntun', 'bukuTunai', 'bukuEkspedisi', 'ringkasan', 'absensi'];
     if (kasirScreens.includes(screenId)) {
       setScreen(screenId);
+    } else if (screenId === 'bukuPerkembangan') {
+      // ✅ Buku Perkembangan = halaman STANDALONE (/buku-perkembangan).
+      // Bawa cabang aktif sbg query param agar halaman tujuan langsung resolve
+      // tanpa picker. Prioritas: selectedCabang lokal → sessionStorage shared
+      // (ACTIVE_CABANG_KEY) yang juga dibaca halaman tujuan sbg fallback.
+      let cabId = selectedCabang?.id || '';
+      if (!cabId) {
+        try { cabId = sessionStorage.getItem(ACTIVE_CABANG_KEY) || ''; } catch (e) { /* ignore */ }
+      }
+      window.location.href = cabId
+        ? `/buku-perkembangan?cabang=${encodeURIComponent(cabId)}`
+        : '/buku-perkembangan';
     } else {
       // bukuPokok dan jurnalTransaksi ada di /pembukuan
       window.location.href = '/pembukuan';
@@ -840,6 +852,7 @@ function LogoutAbsensiModal({ onAbsen, onLogout, onClose }) {
 function KasirTopBarNav({ currentScreen, onNavigate }) {
   const menus = [
     { id: 'bukuPokok', label: 'Buku Pokok' },
+    { id: 'bukuPerkembangan', label: 'Buku Perkembangan' },
     { id: 'jurnalTransaksi', label: 'Jurnal Transaksi' },
     { id: 'jurnal', label: 'Jurnal Kasir' },
     { id: 'bukuRekap', label: 'Buku Rekap' },
