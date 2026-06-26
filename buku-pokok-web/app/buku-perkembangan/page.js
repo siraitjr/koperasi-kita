@@ -24,8 +24,11 @@
 import { useState, useEffect } from 'react';
 import { onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
 import { auth } from '../../lib/firebase';
-import { getSummary, getBukuPokok } from '../../lib/api';
+import { getSummary, getBukuPokok, getKasirSummary } from '../../lib/api';
 import { formatRp } from '../../lib/format';
+
+// Role yang boleh melihat menu kasir di nav (parity pembukuan/page.js).
+const KASIR_VIEW_ROLES = ['pimpinan', 'koordinator', 'pengawas', 'kasir_wilayah', 'sekretaris'];
 
 const BULAN_INDO = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
 const BULAN_FULL = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
@@ -170,12 +173,55 @@ function currentMonthWIB() {
 }
 
 // =========================================================================
+// TOP BAR NAVIGATION — copy lokal (parity pembukuan/page.js TopBarNav).
+// -------------------------------------------------------------------------
+// Mengikuti konvensi project: tiap halaman punya copy nav sendiri (lihat
+// KasirTopBarNav di kasir/page.js) — TopBarNav di pembukuan tidak di-export.
+// Struktur menu & id IDENTIK dgn pembukuan agar konsisten visual & routing.
+// =========================================================================
+function TopBarNav({ currentScreen, onSelectBook, showKasirMenus }) {
+  const menus = [
+    { id: 'bukuPokok', label: 'Buku Pokok' },
+    { id: 'bukuPerkembangan', label: 'Buku Perkembangan' },
+    { id: 'jurnalTransaksi', label: 'Jurnal Transaksi' },
+  ];
+
+  const kasirMenus = showKasirMenus ? [
+    { id: 'jurnalKasir', label: 'Jurnal Kasir' },
+    { id: 'bukuRekap', label: 'Buku Rekap' },
+    { id: 'bukuTunai', label: 'Buku Tunai' },
+    { id: 'kasPenuntun', label: 'Kas Penuntun' },
+    { id: 'bukuEkspedisi', label: 'Buku Ekspedisi' },
+    { id: 'ringkasanKas', label: 'Ringkasan Kas' },
+    { id: 'absensiKaryawan', label: 'Absensi' },
+  ] : [];
+
+  const allMenus = [...menus, ...kasirMenus];
+
+  return (
+    <nav className="top-bar-nav">
+      {allMenus.map((m) => (
+        <button
+          key={m.id}
+          className={`top-bar-nav-item${currentScreen === m.id ? ' active' : ''}`}
+          onClick={() => onSelectBook(m.id)}
+          disabled={currentScreen === m.id}
+        >
+          {m.label}
+        </button>
+      ))}
+    </nav>
+  );
+}
+
+// =========================================================================
 // PAGE COMPONENT
 // =========================================================================
 export default function BukuPerkembanganPage() {
   const [screen, setScreen] = useState('loading'); // loading | login | picker | ledger
   const [userData, setUserData] = useState(null);
   const [cabangList, setCabangList] = useState([]);
+  const [kasirCabangList, setKasirCabangList] = useState([]);
   const [activeCabang, setActiveCabang] = useState(null);
   const [bukuData, setBukuData] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -212,6 +258,15 @@ export default function BukuPerkembanganPage() {
         setUserData(result.data.user);
         const list = result.data.cabangList || [];
         setCabangList(list);
+
+        // ✅ Kasir cabang list utk showKasirMenus (parity pembukuan TopBarNav).
+        // Optional & non-blocking — gagal fetch tidak menghentikan halaman.
+        if (KASIR_VIEW_ROLES.includes(result.data.user?.role)) {
+          try {
+            const kasirResult = await getKasirSummary();
+            if (kasirResult.success) setKasirCabangList(kasirResult.data.cabangList || []);
+          } catch (e) { /* optional */ }
+        }
 
         // Resolve active cabang: URL ?cabang= > shared sessionStorage > single auto.
         const urlParams = new URLSearchParams(window.location.search);
@@ -290,6 +345,33 @@ export default function BukuPerkembanganPage() {
     saldoMB: a.saldoMB + r.saldoMB, saldoLancar: a.saldoLancar + r.saldoLancar,
   }), { saldoAwal: 0, drop: 0, jasa: 0, mutasiMasuk: 0, jumlah: 0, storting: 0, mutasiKeluar: 0, saldoAkhir: 0, saldoML: 0, saldoMB: 0, saldoLancar: 0 });
 
+  // ✅ showKasirMenus identik kondisi pembukuan/page.js (role + ada kasir cabang).
+  const showKasirMenus = KASIR_VIEW_ROLES.includes(userData?.role) && kasirCabangList.length > 0;
+
+  // ✅ Cross-page nav dari TopBarNav. Pola sama dgn kasir handleKasirNavigate:
+  // halaman lain di-route via window.location (full route), halaman ini = active.
+  const handleSelectBook = (book) => {
+    if (book === 'bukuPerkembangan') return; // halaman saat ini (pill active/disabled)
+    if (book === 'bukuPokok' || book === 'jurnalTransaksi') {
+      // Keduanya berada di /pembukuan (sama dgn kasir handleKasirNavigate).
+      window.location.href = '/pembukuan';
+      return;
+    }
+    // Menu kasir → /kasir?screen=<mapped> (mapping identik handleSelectBook pembukuan).
+    const kasirScreenMap = {
+      jurnalKasir: 'jurnal',
+      bukuRekap: 'bukuRekap',
+      kasPenuntun: 'kasPenuntun',
+      bukuTunai: 'bukuTunai',
+      bukuEkspedisi: 'bukuEkspedisi',
+      ringkasanKas: 'ringkasan',
+      absensiKaryawan: 'absensi',
+    };
+    if (kasirScreenMap[book]) {
+      window.location.href = `/kasir?screen=${kasirScreenMap[book]}`;
+    }
+  };
+
   const shiftMonth = (dir) => {
     const [y, m] = stortingMonth.split('-').map(Number);
     const target = new Date(y, m - 1 + dir, 1);
@@ -334,6 +416,7 @@ export default function BukuPerkembanganPage() {
             <p>Perkembangan per Resort</p>
           </div>
         </div>
+        <TopBarNav currentScreen="bukuPerkembangan" onSelectBook={handleSelectBook} showKasirMenus={showKasirMenus} />
         <div className="top-bar-right">
           {userData && (
             <div className="user-badge">
