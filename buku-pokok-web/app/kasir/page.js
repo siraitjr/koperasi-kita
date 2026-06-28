@@ -322,24 +322,13 @@ function buildPencairanByAdminDate(jurnalEntries) {
 }
 
 // =========================================================================
-// Tarik tabungan per (tanggal, admin) dari jurnal_transaksi.
-// Hanya tipe 'tarik_tabungan' (kas fisik dikembalikan ke customer pada
-// cairkanSimpanan, ketika simpanan > sisaUtang). Dipakai khusus untuk
-// MENAMBAH kolom "Tarik Tab." Buku Rekap (yang sebelumnya hanya berisi
-// n.tarikTabungan dari pinjaman baru). Output: { [tanggal]: { [adminUid]: total } }.
+// CATATAN (16 Jun 2026): helper buildTarikTabunganByAdminDate DIHAPUS.
+// Dulu menyuplai jurnal tipe 'tarik_tabungan' ke kolom "Tarik Tab." Buku Rekap.
+// Itu KELIRU per aturan bisnis: 'tarik_tabungan' (kelebihan kas saat likuidasi)
+// adalah event "Cair Tabungan", bukan "Tarik Tabungan" (penahanan dari pinjaman
+// baru). Kolom "Tarik Tab." kini HANYA dari n.tarikTabungan pinjaman baru;
+// 'tarik_tabungan' tetap masuk "Cair Tab." via buildPencairanByAdminDate.
 // =========================================================================
-function buildTarikTabunganByAdminDate(jurnalEntries) {
-  const map = {};
-  (jurnalEntries || []).forEach(e => {
-    if (e.tipe !== 'tarik_tabungan') return;
-    const tgl = e.tanggal;
-    if (!tgl) return;
-    const uid = e.adminUid || '';
-    if (!map[tgl]) map[tgl] = {};
-    map[tgl][uid] = (map[tgl][uid] || 0) + (e.jumlah || 0);
-  });
-  return map;
-}
 
 // =========================================================================
 // Dekomposisi physical cash per resort/admin (Source of Truth: BukuTunai).
@@ -1917,11 +1906,6 @@ function BukuRekapScreen({ user, cabang, cabangList, onBack, onLogout, onNavigat
   // → semua dipakai sebagai kredit di Tunai Pasar (lihat helper definition).
   const pencairanByAdminDate = buildPencairanByAdminDate(jurnalEntries);
 
-  // Tarik tabungan (display kolom "Tarik Tab.") per (tanggal, admin) — hanya
-  // tipe 'tarik_tabungan' (kas fisik dikembalikan via cairkanSimpanan), terpisah
-  // dari pelunasan_tabungan (yang merepresentasikan debt-clearance, bukan tarikan).
-  const tarikTabunganByAdminDate = buildTarikTabunganByAdminDate(jurnalEntries);
-
   // Orphan payments dari CF (pembayaran_harian entry yang pelangganId-nya tidak
   // ada lagi di pelanggan/, mis. setelah cairkanSimpanan). Per SOP, ini tetap
   // masuk Storting agar Web match Android (LaporanHarian/RingkasanDashboard).
@@ -2071,12 +2055,15 @@ function BukuRekapScreen({ user, cabang, cabangList, onBack, onLogout, onNavigat
       // Tabungan = 5% dari total besar pinjaman hari ini
       const tabungan = Math.round(totalDrop * 0.05);
 
-      // Tarik Tabungan = (a) pinjaman baru hari ini (n.tarikTabungan dari pimpinan/
-      // koordinator approval) + (b) jurnal tipe 'tarik_tabungan' (kelebihan kas
-      // fisik dikembalikan via cairkanSimpanan ketika simpanan > sisaUtang).
-      const tarikDariPinjamanBaru = droppedToday.reduce((s, n) => s + (n.tarikTabungan || 0), 0);
-      const tarikDariCairkan = tarikTabunganByAdminDate[todayStr]?.[adm.uid] || 0;
-      const tarikTabunganTotal = tarikDariPinjamanBaru + tarikDariCairkan;
+      // ✅ FIX (16 Jun 2026 — aturan bisnis pimpinan): "Tarik Tabungan" = HANYA
+      // nominal yang ditahan dari pinjaman BARU saat approval (Pimpinan <3jt /
+      // Koordinator >=3jt) lalu disetor ke simpanan. Ini event approval-pinjaman,
+      // BUKAN likuidasi tabungan. Sebelumnya kolom ini KELIRU menambahkan jurnal
+      // tipe 'tarik_tabungan' (kelebihan kas saat cairkanSimpanan) — itu adalah
+      // event "Cair Tabungan", bukan "Tarik Tabungan". 'tarik_tabungan' tetap
+      // masuk kolom "Cair Tab." via pencairanByAdminDate (lihat di bawah), jadi
+      // tidak ada data yang hilang — hanya tidak lagi double-masuk ke Tarik Tab.
+      const tarikTabunganTotal = droppedToday.reduce((s, n) => s + (n.tarikTabungan || 0), 0);
 
       // Debit asli = Storting + Admin + Tabungan
       const debitAsli = storting + adminFee + tabungan;
