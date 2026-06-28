@@ -14779,7 +14779,18 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     return@launch
                 }
 
-                val cabangId = _currentUserCabang.value ?: ""
+                // ✅ FAIL-SAFE (16 Jun 2026): resolve cabangId dgn fallback ke
+                // pelanggan.cabangId, lalu ABORT KERAS bila tetap kosong. Sebelumnya
+                // `?: ""` membuat semua write jurnal ter-skip diam-diam (gate
+                // `&& cabangId.isNotBlank()`) TAPI nasabah tetap di-arsip & dihapus →
+                // silent data-loss (Cair Tabungan kosong, nasabah hilang). Kini bila
+                // konteks cabang tak tersedia, proses DIHENTIKAN sebelum hapus apa pun.
+                val cabangId = _currentUserCabang.value ?: pelanggan.cabangId.ifBlank { null }
+                if (cabangId.isNullOrBlank()) {
+                    Log.e("Pencairan", "❌ cabangId kosong (currentUserCabang & pelanggan.cabangId) — abort cairkanSimpanan tanpa hapus data")
+                    onFailure?.invoke(Exception("Gagal mendapatkan konteks cabang. Silakan coba lagi."))
+                    return@launch
+                }
                 val currentEmail = Firebase.auth.currentUser?.email ?: ""
 
                 // Hitung sisa utang — exclude entry "Bunga..." (konsisten dengan Cloud Functions)
@@ -14815,7 +14826,12 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                 //   5. removePelangganStatusKhusus
                 // =========================================================
 
-                if (sisaUtang > 0 && cabangId.isNotBlank()) {
+                // ✅ FAIL-SAFE: catat finansial (pembayaran + jurnal) DULU, di dalam
+                // try khusus. Bila ada yang gagal di-queue → onFailure + return SEBELUM
+                // arsip/hapus, sehingga nasabah TIDAK pernah terhapus tanpa ledger.
+                // cabangId sudah dijamin non-blank di atas → gate cabangId dihapus.
+                try {
+                if (sisaUtang > 0) {
                     val dateFormat = SimpleDateFormat("dd MMM yyyy", Locale("in", "ID"))
                     val today = dateFormat.format(Date())
                     val yearMonthFormat = SimpleDateFormat("yyyy-MM", Locale.getDefault())
@@ -14885,7 +14901,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                 //   - simpanan > sisaUtang (sisa kas dikembalikan tunai), atau
                 //   - sisaUtang == 0 & simpanan > 0 (seluruh tabungan tunai).
                 // =========================================================
-                if (kelebihanSimpanan > 0 && cabangId.isNotBlank()) {
+                if (kelebihanSimpanan > 0) {
                     val dateFormat = SimpleDateFormat("dd MMM yyyy", Locale("in", "ID"))
                     val today = dateFormat.format(Date())
                     val yearMonthFormat = SimpleDateFormat("yyyy-MM", Locale.getDefault())
@@ -14920,6 +14936,12 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     )
 
                     Log.d("Pencairan", "📥 Antri tarik tabungan Rp $kelebihanSimpanan (kelebihan setelah pelunasan)")
+                }
+                } catch (jurnalErr: Exception) {
+                    // ✅ FAIL-SAFE: gagal queue pembayaran/jurnal → JANGAN arsip/hapus.
+                    Log.e("Pencairan", "❌ Gagal queue jurnal/pembayaran pencairan: ${jurnalErr.message}")
+                    onFailure?.invoke(Exception("Gagal mencatat jurnal pencairan tabungan. Data nasabah TIDAK dihapus — silakan coba lagi."))
+                    return@launch
                 }
 
                 // =========================================================
