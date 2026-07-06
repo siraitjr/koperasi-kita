@@ -1792,14 +1792,28 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                 } catch (_: Exception) { currentEmail }
 
                 // 1. Update di data pelanggan utama
-                val pelangganRef = database.child("pelanggan").child(targetAdminUid).child(pelangganId)
+                // ✅ P2 FIX (audit sync-vector 03 Jul 2026): sebelumnya updateChildren
+                // DIRECT via SDK — offline ter-queue tanpa guard generasi; replay bisa
+                // men-stempel statusKhusus="MENUNGGU_PENCAIRAN" ke pinjaman BARU bila
+                // top-up terjadi di antara queue & flush (nasabah keluar dari target
+                // harian + salah layar). Kini via offlineRepo + _guardPinjamanKe —
+                // rail replay-guard Fix A (strip sebelum write; mismatch → SKIP).
                 val updates = mapOf(
                     "statusKhusus" to statusKhusus,
                     "catatanStatusKhusus" to catatan,
                     "tanggalStatusKhusus" to tanggalSekarang,
-                    "diberiTandaOleh" to adminName
+                    "diberiTandaOleh" to adminName,
+                    "_guardPinjamanKe" to pelanggan.pinjamanKe
                 )
-                pelangganRef.updateChildren(updates).await()
+                val updateResult = offlineRepo.updatePelanggan(
+                    adminUid = targetAdminUid,
+                    pelangganId = pelangganId,
+                    updateData = updates
+                )
+                if (updateResult is SaveResult.Error) {
+                    onFailure(Exception("Gagal menyimpan status khusus: ${updateResult.message}"))
+                    return@launch
+                }
 
                 // 2. ✅ TAMBAHAN: Update/simpan ke node terpisah untuk Pimpinan
                 val cabangId = _currentUserCabang.value ?: ""
@@ -15095,24 +15109,40 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     val dateFormat = SimpleDateFormat("dd MMM yyyy", Locale("in", "ID"))
                     val tanggalSekarang = dateFormat.format(Date())
 
+                    // ✅ P1 FIX (audit sync-vector 03 Jul 2026): sebelumnya updateChildren
+                    // DIRECT via SDK — offline ter-queue di persistence Firebase TANPA
+                    // guard generasi, bisa replay men-stempel tanggalLunasCicilan +
+                    // statusPencairanSimpanan="Menunggu Pencairan" ke pinjaman BARU bila
+                    // top-up terjadi di antara queue & flush (sibling insiden Fitri/Witri).
+                    // Sekarang lewat offlineRepo (Room) dgn stempel _guardPinjamanKe —
+                    // menaiki rail replay-guard Fix A yang sama (di-strip sebelum write;
+                    // mismatch generasi di-SKIP oleh SyncManager).
                     val updates = mapOf(
                         "statusPencairanSimpanan" to "Menunggu Pencairan",
                         "tanggalLunasCicilan" to tanggalSekarang,
-                        "lastUpdated" to SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
+                        "lastUpdated" to SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date()),
+                        "_guardPinjamanKe" to pelanggan.pinjamanKe
                     )
 
-                    database.child("pelanggan").child(adminUid).child(pelangganId)
-                        .updateChildren(updates)
-                        .addOnSuccessListener {
-                            val index = daftarPelanggan.indexOfFirst { it.id == pelangganId }
-                            if (index != -1) {
-                                daftarPelanggan[index] = daftarPelanggan[index].copy(
-                                    statusPencairanSimpanan = "Menunggu Pencairan",
-                                    tanggalLunasCicilan = tanggalSekarang
-                                )
-                            }
-                            Log.d("Pencairan", "✅ Status diupdate ke Menunggu Pencairan: ${pelanggan.namaPanggilan}")
-                        }
+                    val result = offlineRepo.updatePelanggan(
+                        adminUid = adminUid,
+                        pelangganId = pelangganId,
+                        updateData = updates
+                    )
+                    if (result is SaveResult.Error) {
+                        Log.e("Pencairan", "❌ Gagal queue update Menunggu Pencairan: ${result.message}")
+                        return@launch
+                    }
+                    // Success ATAU Queued → durable (Room + SyncWorker); optimistic local
+                    // update konsisten dgn pola offline-first flow lain.
+                    val index = daftarPelanggan.indexOfFirst { it.id == pelangganId }
+                    if (index != -1) {
+                        daftarPelanggan[index] = daftarPelanggan[index].copy(
+                            statusPencairanSimpanan = "Menunggu Pencairan",
+                            tanggalLunasCicilan = tanggalSekarang
+                        )
+                    }
+                    Log.d("Pencairan", "✅ Status diupdate ke Menunggu Pencairan: ${pelanggan.namaPanggilan} (${if (result is SaveResult.Success) "synced" else "queued"})")
                 }
             } catch (e: Exception) {
                 Log.e("Pencairan", "❌ Error update status: ${e.message}")
