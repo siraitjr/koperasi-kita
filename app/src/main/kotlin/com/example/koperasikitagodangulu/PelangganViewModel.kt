@@ -2674,7 +2674,12 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     "jumlah" to jumlah,
                     "tanggal" to tanggal,
                     "subPembayaran" to emptyList<Map<String, Any>>(),
-                    "clientOpId" to opId
+                    "clientOpId" to opId,
+                    // ✅ FIX A: stempel generasi pinjaman. Di-strip SyncManager sebelum
+                    // write RTDB; dipakai replay-guard agar cicilan pinjaman ini tidak
+                    // ter-append ke pinjaman generasi berikutnya bila top-up terjadi
+                    // di antara queue & flush (insiden Fitri/Witri 02 Jul 2026).
+                    "_guardPinjamanKe" to pelanggan.pinjamanKe
                 )
 
                 val result = offlineRepo.addPembayaran(
@@ -2723,7 +2728,13 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     offlineRepo.updatePelanggan(
                         adminUid = adminUid,
                         pelangganId = pelanggan.id,
-                        updateData = mapOf("status" to status)
+                        // ✅ FIX A: stempel generasi — auto-lunas milik pinjaman INI tidak
+                        // boleh replay meng-clobber status pinjaman generasi berikutnya
+                        // (di-strip SyncManager sebelum write; lihat replay-guard).
+                        updateData = mapOf(
+                            "status" to status,
+                            "_guardPinjamanKe" to pelanggan.pinjamanKe
+                        )
                     )
                 }
             }
@@ -4151,7 +4162,9 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
         val subMap = mapOf(
             "jumlah" to jumlah,
             "tanggal" to tanggal,
-            "keterangan" to keterangan
+            "keterangan" to keterangan,
+            // ✅ FIX A: stempel generasi pinjaman (di-strip SyncManager; replay-guard).
+            "_guardPinjamanKe" to pelanggan.pinjamanKe
         )
 
         viewModelScope.launch {
@@ -4197,7 +4210,11 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                 offlineRepo.updatePelanggan(
                     adminUid = adminUid,
                     pelangganId = pelangganId,
-                    updateData = mapOf("status" to status)
+                    // ✅ FIX A: stempel generasi (di-strip SyncManager; replay-guard).
+                    updateData = mapOf(
+                        "status" to status,
+                        "_guardPinjamanKe" to pelanggan.pinjamanKe
+                    )
                 )
             }
         }
@@ -8939,7 +8956,9 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                         "jumlah" to jumlahCicilanIni,
                         "tanggal" to tanggalAwal,
                         "subPembayaran" to emptyList<Map<String, Any>>(),
-                        "clientOpId" to opIds[i]
+                        "clientOpId" to opIds[i],
+                        // ✅ FIX A: stempel generasi pinjaman (di-strip SyncManager; replay-guard).
+                        "_guardPinjamanKe" to pelanggan.pinjamanKe
                     )
 
                     val result = offlineRepo.addPembayaran(
@@ -8956,7 +8975,13 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     offlineRepo.updatePelanggan(
                         adminUid = adminUid,
                         pelangganId = pelanggan.id,
-                        updateData = mapOf("status" to status)
+                        // ✅ FIX A: stempel generasi — auto-lunas milik pinjaman INI tidak
+                        // boleh replay meng-clobber status pinjaman generasi berikutnya
+                        // (di-strip SyncManager sebelum write; lihat replay-guard).
+                        updateData = mapOf(
+                            "status" to status,
+                            "_guardPinjamanKe" to pelanggan.pinjamanKe
+                        )
                     )
                 }
 

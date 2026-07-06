@@ -196,7 +196,13 @@ class SyncManager private constructor(private val context: Context) {
             if (isOnline()) {
                 try {
                     dao.updateStatus(operationId, "SYNCING")
-                    appendToArrayTransactional(parentPath, enrichedData)
+                    // ✅ FIX A: strip _guardPinjamanKe sebelum write (kunci guard hanya
+                    // untuk replay-check; tidak boleh bocor ke RTDB). Jalur online-
+                    // immediate tidak perlu cek generasi — pelanggan di memori = generasi
+                    // saat ini by construction. dataJson di Room TETAP menyimpan kunci
+                    // agar replay (bila jalur ini gagal) tetap ter-guard.
+                    val (cleanPembayaranData, _) = stripGuardPinjamanKe(enrichedData)
+                    appendToArrayTransactional(parentPath, cleanPembayaranData)
                     dao.updateStatus(operationId, "SUCCESS")
                     Log.d(TAG, "✅ PEMBAYARAN SYNCED TO FIREBASE (transactional append)!")
                     SaveResult.Success
@@ -258,7 +264,10 @@ class SyncManager private constructor(private val context: Context) {
             if (isOnline()) {
                 try {
                     dao.updateStatus(operationId, "SYNCING")
-                    appendToArrayTransactional(parentPath, enrichedData)
+                    // ✅ FIX A: strip _guardPinjamanKe sebelum write (lihat catatan
+                    // savePembayaranDirect — kontrak sama).
+                    val (cleanSubData, _) = stripGuardPinjamanKe(enrichedData)
+                    appendToArrayTransactional(parentPath, cleanSubData)
                     dao.updateStatus(operationId, "SUCCESS")
                     Log.d(TAG, "✅ SUB-PEMBAYARAN SYNCED (transactional append)!")
                     SaveResult.Success
@@ -356,7 +365,10 @@ class SyncManager private constructor(private val context: Context) {
             if (isOnline()) {
                 try {
                     dao.updateStatus(operationId, "SYNCING")
-                    firebase.getReference(path).updateChildren(updateData).await()
+                    // ✅ FIX A: strip _guardPinjamanKe sebelum updateChildren (kunci guard
+                    // tidak boleh jadi field di node pelanggan). dataJson Room tetap utuh.
+                    val (cleanUpdateData, _) = stripGuardPinjamanKe(updateData)
+                    firebase.getReference(path).updateChildren(cleanUpdateData).await()
                     dao.updateStatus(operationId, "SUCCESS")
                     Log.d(TAG, "✅ UPDATE SYNCED!")
                     SaveResult.Success
@@ -846,12 +858,43 @@ class SyncManager private constructor(private val context: Context) {
                         // replay berulang atau sync konkuren dari device lain.
                         val parentPath = operation.firebasePath.substringBeforeLast("/")
                         @Suppress("UNCHECKED_CAST")
-                        val payload = data as? Map<String, Any?>
+                        val rawPayload = data as? Map<String, Any?>
                             ?: throw IllegalStateException("Payload bukan Map untuk ${operation.operationType}")
+                        // ✅ FIX A: guard generasi pinjaman. Bila op distempel
+                        // _guardPinjamanKe dan server sudah pindah generasi (top-up
+                        // terjadi antara queue & replay) → SKIP, jangan append cicilan
+                        // pinjaman LAMA ke list pinjaman BARU (insiden Fitri/Witri).
+                        val (payload, guardPk) = stripGuardPinjamanKe(rawPayload)
+                        if (guardPk != null) {
+                            val pelangganPath = parentPath.substringBefore("/pembayaranList")
+                            val serverPk = firebase.getReference("$pelangganPath/pinjamanKe")
+                                .get().await().getValue(Int::class.java) ?: 1
+                            if (serverPk != guardPk) {
+                                Log.w(TAG, "⏭️ SKIP ${operation.operationType} basi: queued utk pinjamanKe=$guardPk, server=$serverPk (${operation.firebasePath})")
+                                dao.updateStatus(operation.id, "SUCCESS", "SKIPPED_STALE_PINJAMAN_GENERATION")
+                                return@withContext true
+                            }
+                        }
                         appendToArrayTransactional(parentPath, payload)
                     }
                     "UPDATE_PELANGGAN" -> {
-                        ref.updateChildren(data as Map<String, Any?>).await()
+                        @Suppress("UNCHECKED_CAST")
+                        val rawUpdate = data as Map<String, Any?>
+                        // ✅ FIX A: guard generasi utk update ber-stempel (mis. auto-lunas
+                        // status="Lunas" dari input pembayaran). Bila server pinjamanKe
+                        // sudah berubah → status Lunas pinjaman LAMA tidak boleh
+                        // meng-clobber "Disetujui"/"Aktif" pinjaman BARU.
+                        val (updatePayload, guardPkUpd) = stripGuardPinjamanKe(rawUpdate)
+                        if (guardPkUpd != null) {
+                            val serverPk = firebase.getReference("${operation.firebasePath}/pinjamanKe")
+                                .get().await().getValue(Int::class.java) ?: 1
+                            if (serverPk != guardPkUpd) {
+                                Log.w(TAG, "⏭️ SKIP UPDATE_PELANGGAN basi: queued utk pinjamanKe=$guardPkUpd, server=$serverPk (${operation.firebasePath})")
+                                dao.updateStatus(operation.id, "SUCCESS", "SKIPPED_STALE_PINJAMAN_GENERATION")
+                                return@withContext true
+                            }
+                        }
+                        ref.updateChildren(updatePayload).await()
                     }
                     "REMOVE_STATUS_KHUSUS",
                     "REMOVE_PELANGGAN",
@@ -1073,6 +1116,28 @@ class SyncManager private constructor(private val context: Context) {
      * Throw: DatabaseError exception kalau transaction gagal total (network/rule) —
      * caller tangkap & re-queue.
      */
+    // =========================================================================
+    // ✅ FIX A (03 Jul 2026): Guard generasi pinjaman untuk operasi offline.
+    // -------------------------------------------------------------------------
+    // Kunci reservasi "_guardPinjamanKe" distempel PelangganViewModel pada
+    // payment-map & update auto-lunas (tambahPembayaran / tambahSubPembayaran /
+    // tambahMultiplePembayaran). Kontrak:
+    //   - Kunci ini TIDAK BOLEH pernah tertulis ke RTDB → selalu strip di semua
+    //     jalur write (online-immediate di *Direct maupun replay trySyncOperation).
+    //   - Saat REPLAY: bila server pinjamanKe != nilai stempel → op basi (top-up
+    //     terjadi di antara queue & flush) → SKIP (op dikonsumsi, tidak retry).
+    //     Ini mencegah: (a) cicilan pinjaman lama ter-append ke list pinjaman
+    //     baru yang sudah di-reset, (b) status "Lunas" pinjaman lama meng-
+    //     clobber "Disetujui"/"Aktif" pinjaman baru (insiden Fitri/Witri 02 Jul).
+    //   - Payload TANPA kunci (op lama di antrean / APK lama) → perilaku 100%
+    //     identik sebelumnya (backward compatible, tanpa migrasi Room).
+    // =========================================================================
+    private fun stripGuardPinjamanKe(data: Map<String, Any?>): Pair<Map<String, Any?>, Int?> {
+        if (!data.containsKey("_guardPinjamanKe")) return data to null
+        val guard = (data["_guardPinjamanKe"] as? Number)?.toInt()
+        return data.filterKeys { it != "_guardPinjamanKe" } to guard
+    }
+
     private suspend fun appendToArrayTransactional(
         parentPath: String,
         data: Map<String, Any?>
