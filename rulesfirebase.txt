@@ -17,6 +17,7 @@
           ".validate": "root.child('metadata/admins').child(auth.uid).child('role').val() !== 'admin' ||
                   ((data.exists() || newData.child('status').val() === 'Menunggu Approval') &&
                    (newData.child('status').val() !== 'Lunas' ||
+                    data.child('status').val() === 'Lunas' ||
                     newData.child('statusLunasUntukPinjamanKe').val() === newData.child('pinjamanKe').val()))",
           "_guardPinjamanKe": {
             ".validate": false
