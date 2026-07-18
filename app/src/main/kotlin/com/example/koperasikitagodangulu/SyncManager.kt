@@ -362,13 +362,22 @@ class SyncManager private constructor(private val context: Context) {
             val operationId = dao.insert(operation)
             Log.d(TAG, "📝 [STEP 1] ✅ UPDATE SAVED TO ROOM DB! opId=$operationId")
 
-            if (isOnline()) {
+            if (updateData.containsKey("_guardPinjamanKe")) {
+                // ✅ FIX B (04 Jul 2026): op BER-GUARD tidak boleh lewat fast-path
+                // updateChildren biasa. Root cause insiden flapping: await() yang
+                // gagal TETAP meninggalkan ghost-write (copy TANPA guard) di antrean
+                // internal SDK yang terkirim unconditional saat reconnect — men-
+                // clobber pinjaman generasi baru. Satu-satunya penulis op guarded
+                // sekarang = replay trySyncOperation via TRANSAKSI guarded (tidak
+                // dipersist SDK; guard dicek atomik server-side). trigger sync →
+                // latency hanya hitungan detik saat online.
+                Log.d(TAG, "🛡️ Guarded update → skip fast-path; serahkan ke replay transaksional")
+                SyncWorker.triggerImmediateSync(context)
+                SaveResult.Queued
+            } else if (isOnline()) {
                 try {
                     dao.updateStatus(operationId, "SYNCING")
-                    // ✅ FIX A: strip _guardPinjamanKe sebelum updateChildren (kunci guard
-                    // tidak boleh jadi field di node pelanggan). dataJson Room tetap utuh.
-                    val (cleanUpdateData, _) = stripGuardPinjamanKe(updateData)
-                    firebase.getReference(path).updateChildren(cleanUpdateData).await()
+                    firebase.getReference(path).updateChildren(updateData).await()
                     dao.updateStatus(operationId, "SUCCESS")
                     Log.d(TAG, "✅ UPDATE SYNCED!")
                     SaveResult.Success
@@ -866,35 +875,75 @@ class SyncManager private constructor(private val context: Context) {
                         // pinjaman LAMA ke list pinjaman BARU (insiden Fitri/Witri).
                         val (payload, guardPk) = stripGuardPinjamanKe(rawPayload)
                         if (guardPk != null) {
+                            // ✅ FIX B: append + cek generasi ATOMIK dalam SATU transaksi
+                            // whole-node pelanggan (menutup juga TOCTOU get-then-append
+                            // yang dulu didokumentasikan sbg residual risk). Dedup
+                            // clientOpId direplikasi (parity appendToArrayTransactional).
                             val pelangganPath = parentPath.substringBefore("/pembayaranList")
-                            val serverPk = firebase.getReference("$pelangganPath/pinjamanKe")
-                                .get().await().getValue(Int::class.java) ?: 1
-                            if (serverPk != guardPk) {
-                                Log.w(TAG, "⏭️ SKIP ${operation.operationType} basi: queued utk pinjamanKe=$guardPk, server=$serverPk (${operation.firebasePath})")
-                                dao.updateStatus(operation.id, "SUCCESS", "SKIPPED_STALE_PINJAMAN_GENERATION")
-                                return@withContext true
+                            val isSub = operation.operationType == "ADD_SUB_PEMBAYARAN"
+                            val parentIdx = if (isSub) {
+                                operation.firebasePath.substringAfter("/pembayaranList/")
+                                    .substringBefore("/").toIntOrNull()
+                                    ?: throw IllegalStateException("Index induk sub tidak valid: ${operation.firebasePath}")
+                            } else -1
+                            val opIdStr = payload["clientOpId"]?.toString()
+                            val txn = guardedPelangganTransaction(pelangganPath, guardPk) { m ->
+                                val list = normalizeRtdbList(m["pembayaranList"]) ?: return@guardedPelangganTransaction false
+                                if (!isSub) {
+                                    if (!containsClientOpId(list, opIdStr)) list.add(payload)
+                                } else {
+                                    // Parity struktur legacy: slot induk yang belum ada dibuat
+                                    // (list-level txn lama juga membentuk path sparse yang sama).
+                                    while (list.size <= parentIdx) list.add(mutableMapOf<String, Any?>())
+                                    @Suppress("UNCHECKED_CAST")
+                                    val pay = (list[parentIdx] as? Map<String, Any?>)?.toMutableMap()
+                                        ?: mutableMapOf()
+                                    val subs = normalizeRtdbList(pay["subPembayaran"]) ?: return@guardedPelangganTransaction false
+                                    if (!containsClientOpId(subs, opIdStr)) subs.add(payload)
+                                    pay["subPembayaran"] = subs
+                                    list[parentIdx] = pay
+                                }
+                                m["pembayaranList"] = list
+                                true
                             }
+                            when (txn) {
+                                is GuardTxn.Applied -> { /* sukses */ }
+                                is GuardTxn.SkippedStale, is GuardTxn.SkippedMissing -> {
+                                    Log.w(TAG, "⏭️ SKIP ${operation.operationType} basi (guard=$guardPk, ${if (txn is GuardTxn.SkippedMissing) "node hilang" else "generasi beda"}): ${operation.firebasePath}")
+                                    dao.updateStatus(operation.id, "SUCCESS", "SKIPPED_STALE_PINJAMAN_GENERATION")
+                                    return@withContext true
+                                }
+                                is GuardTxn.Retry -> throw Exception("Guarded txn perlu retry: ${txn.msg}")
+                            }
+                        } else {
+                            appendToArrayTransactional(parentPath, payload)
                         }
-                        appendToArrayTransactional(parentPath, payload)
                     }
                     "UPDATE_PELANGGAN" -> {
                         @Suppress("UNCHECKED_CAST")
                         val rawUpdate = data as Map<String, Any?>
-                        // ✅ FIX A: guard generasi utk update ber-stempel (mis. auto-lunas
-                        // status="Lunas" dari input pembayaran). Bila server pinjamanKe
-                        // sudah berubah → status Lunas pinjaman LAMA tidak boleh
-                        // meng-clobber "Disetujui"/"Aktif" pinjaman BARU.
                         val (updatePayload, guardPkUpd) = stripGuardPinjamanKe(rawUpdate)
                         if (guardPkUpd != null) {
-                            val serverPk = firebase.getReference("${operation.firebasePath}/pinjamanKe")
-                                .get().await().getValue(Int::class.java) ?: 1
-                            if (serverPk != guardPkUpd) {
-                                Log.w(TAG, "⏭️ SKIP UPDATE_PELANGGAN basi: queued utk pinjamanKe=$guardPkUpd, server=$serverPk (${operation.firebasePath})")
-                                dao.updateStatus(operation.id, "SUCCESS", "SKIPPED_STALE_PINJAMAN_GENERATION")
-                                return@withContext true
+                            // ✅ FIX B: guard dicek DI DALAM transaksi (bukan get()-then-
+                            // write yang bisa di-bypass ghost-write SDK saat flapping).
+                            val txn = guardedPelangganTransaction(operation.firebasePath, guardPkUpd) { m ->
+                                updatePayload.forEach { (k, v) ->
+                                    if (v == null) m.remove(k) else m[k] = v
+                                }
+                                true
                             }
+                            when (txn) {
+                                is GuardTxn.Applied -> { /* sukses — lanjut ke penandaan SUCCESS di bawah */ }
+                                is GuardTxn.SkippedStale, is GuardTxn.SkippedMissing -> {
+                                    Log.w(TAG, "⏭️ SKIP UPDATE_PELANGGAN basi (guard=$guardPkUpd, ${if (txn is GuardTxn.SkippedMissing) "node hilang" else "generasi beda"}): ${operation.firebasePath}")
+                                    dao.updateStatus(operation.id, "SUCCESS", "SKIPPED_STALE_PINJAMAN_GENERATION")
+                                    return@withContext true
+                                }
+                                is GuardTxn.Retry -> throw Exception("Guarded txn perlu retry: ${txn.msg}")
+                            }
+                        } else {
+                            ref.updateChildren(updatePayload).await()
                         }
-                        ref.updateChildren(updatePayload).await()
                     }
                     "REMOVE_STATUS_KHUSUS",
                     "REMOVE_PELANGGAN",
@@ -1136,6 +1185,95 @@ class SyncManager private constructor(private val context: Context) {
         if (!data.containsKey("_guardPinjamanKe")) return data to null
         val guard = (data["_guardPinjamanKe"] as? Number)?.toInt()
         return data.filterKeys { it != "_guardPinjamanKe" } to guard
+    }
+
+    // =========================================================================
+    // ✅ FIX B (04 Jul 2026): Guarded write = TRANSAKSI server-authoritative.
+    // -------------------------------------------------------------------------
+    // Pelajaran insiden network-flapping: write biasa (updateChildren/setValue)
+    // yang await()-nya GAGAL tetap sudah ter-queue di persistence internal SDK
+    // dan AKAN terkirim saat socket tersambung lagi — sebagai copy TANPA guard
+    // (ghost-write). Pola check-then-write karenanya bisa ter-bypass.
+    // TRANSAKSI RTDB tidak punya kelemahan itu: compare-and-set atomik yang
+    // re-run terhadap data server, dan TIDAK dipersist SDK saat disconnect.
+    // Semua op ber-stempel _guardPinjamanKe kini ditulis via transaksi ini.
+    // =========================================================================
+    private sealed class GuardTxn {
+        object Applied : GuardTxn()
+        object SkippedStale : GuardTxn()
+        object SkippedMissing : GuardTxn()
+        data class Retry(val msg: String) : GuardTxn()
+    }
+
+    /**
+     * Jalankan mutasi pada node pelanggan HANYA bila pinjamanKe server ==
+     * guardPk — dicek DI DALAM transaksi (atomik, server-authoritative).
+     * mutate mengembalikan false bila struktur data tidak bisa dimutasi
+     * (malformed) → abort → Retry (op tetap PENDING, tidak hilang senyap).
+     */
+    private suspend fun guardedPelangganTransaction(
+        pelangganPath: String,
+        guardPk: Int,
+        mutate: (MutableMap<String, Any?>) -> Boolean
+    ): GuardTxn = suspendCancellableCoroutine { cont ->
+        var abortReason = ""
+        val ref = firebase.getReference(pelangganPath)
+        ref.runTransaction(object : Transaction.Handler {
+            override fun doTransaction(currentData: MutableData): Transaction.Result {
+                val raw = currentData.value
+                    // Pola kanonik RTDB: run pertama bisa null (cache kosong) —
+                    // success tanpa modifikasi; SDK re-run dgn data server asli.
+                    ?: return Transaction.success(currentData)
+                @Suppress("UNCHECKED_CAST")
+                val map = (raw as? Map<String, Any?>)?.toMutableMap()
+                    ?: run { abortReason = "MALFORMED"; return Transaction.abort() }
+                val serverPk = (map["pinjamanKe"] as? Number)?.toInt() ?: 1
+                if (serverPk != guardPk) {
+                    abortReason = "STALE"
+                    return Transaction.abort()
+                }
+                if (!mutate(map)) {
+                    abortReason = "MUTATE_FAILED"
+                    return Transaction.abort()
+                }
+                currentData.value = map
+                return Transaction.success(currentData)
+            }
+
+            override fun onComplete(error: DatabaseError?, committed: Boolean, snapshot: DataSnapshot?) {
+                val result = when {
+                    error != null -> GuardTxn.Retry(error.message)
+                    !committed && abortReason == "STALE" -> GuardTxn.SkippedStale
+                    !committed -> GuardTxn.Retry("aborted: ${abortReason.ifBlank { "unknown" }}")
+                    // committed tapi node null = pelanggan sudah tidak ada di server
+                    // (mis. cairkanSimpanan menghapusnya) → op basi, konsumsi.
+                    snapshot?.value == null -> GuardTxn.SkippedMissing
+                    else -> GuardTxn.Applied
+                }
+                if (cont.isActive) cont.resume(result)
+            }
+        })
+    }
+
+    // Normalisasi list RTDB (List / sparse-Map / null) → MutableList.
+    // Parity dgn normalisasi di appendToArrayTransactional.
+    private fun normalizeRtdbList(raw: Any?): MutableList<Any?>? = when (raw) {
+        is List<*> -> raw.toMutableList()
+        is Map<*, *> -> raw.entries
+            .mapNotNull { (k, v) -> (k?.toString()?.toIntOrNull() ?: return@mapNotNull null) to v }
+            .sortedBy { it.first }.map { it.second }.toMutableList()
+        null -> mutableListOf()
+        else -> null
+    }
+
+    // Dedup idempotency by clientOpId — parity dgn appendToArrayTransactional.
+    private fun containsClientOpId(list: List<Any?>, opId: String?): Boolean {
+        if (opId.isNullOrBlank()) return false
+        return list.any { item ->
+            val m = item as? Map<*, *> ?: return@any false
+            val existing = m["clientOpId"]?.toString()
+            !existing.isNullOrBlank() && existing == opId
+        }
     }
 
     private suspend fun appendToArrayTransactional(

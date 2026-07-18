@@ -2,17 +2,26 @@
   "rules": {
     "pelanggan": {
       "$adminUid": {
-        ".read": "auth != null && (auth.uid === $adminUid || 
-                  root.child('metadata/roles/pengawas').child(auth.uid).val() === true || 
-                  root.child('metadata/roles/koordinator').child(auth.uid).val() === true ||
-                  (root.child('metadata/admins').child($adminUid).child('cabang').exists() && 
-                   root.child('metadata/cabang').child(root.child('metadata/admins').child($adminUid).child('cabang').val()).child('pimpinanUid').val() === auth.uid))",
-        ".write": "auth != null && (auth.uid === $adminUid || 
+        ".read": "auth != null && (auth.uid === $adminUid ||
                   root.child('metadata/roles/pengawas').child(auth.uid).val() === true ||
                   root.child('metadata/roles/koordinator').child(auth.uid).val() === true ||
-                  (root.child('metadata/admins').child($adminUid).child('cabang').exists() && 
+                  (root.child('metadata/admins').child($adminUid).child('cabang').exists() &&
                    root.child('metadata/cabang').child(root.child('metadata/admins').child($adminUid).child('cabang').val()).child('pimpinanUid').val() === auth.uid))",
-        ".indexOn": ["nomorAnggota", "nik", "nikSuami", "nikIstri", "status", "pinjamanKe", "adminUid", "cabangId"]
+        ".write": "auth != null && (auth.uid === $adminUid ||
+                  root.child('metadata/roles/pengawas').child(auth.uid).val() === true ||
+                  root.child('metadata/roles/koordinator').child(auth.uid).val() === true ||
+                  (root.child('metadata/admins').child($adminUid).child('cabang').exists() &&
+                   root.child('metadata/cabang').child(root.child('metadata/admins').child($adminUid).child('cabang').val()).child('pimpinanUid').val() === auth.uid))",
+        ".indexOn": ["nomorAnggota", "nik", "nikSuami", "nikIstri", "status", "pinjamanKe", "adminUid", "cabangId"],
+        "$pelangganId": {
+          ".validate": "root.child('metadata/admins').child(auth.uid).child('role').val() !== 'admin' ||
+                  ((data.exists() || newData.child('status').val() === 'Menunggu Approval') &&
+                   (newData.child('status').val() !== 'Lunas' ||
+                    newData.child('statusLunasUntukPinjamanKe').val() === newData.child('pinjamanKe').val()))",
+          "_guardPinjamanKe": {
+            ".validate": false
+          }
+        }
       }
     },
       

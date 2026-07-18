@@ -2745,8 +2745,13 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                         // ✅ FIX A: stempel generasi — auto-lunas milik pinjaman INI tidak
                         // boleh replay meng-clobber status pinjaman generasi berikutnya
                         // (di-strip SyncManager sebelum write; lihat replay-guard).
+                        // "statusLunasUntukPinjamanKe" = marker generasi PERSISTED (bukan
+                        // di-strip): dipakai Security Rules utk MENOLAK write "Lunas" yang
+                        // generasinya tidak cocok — benteng server-side terhadap ghost-write
+                        // SDK yang lolos dari guard client (insiden flapping 04 Jul 2026).
                         updateData = mapOf(
                             "status" to status,
+                            "statusLunasUntukPinjamanKe" to pelanggan.pinjamanKe,
                             "_guardPinjamanKe" to pelanggan.pinjamanKe
                         )
                     )
@@ -4225,8 +4230,10 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     adminUid = adminUid,
                     pelangganId = pelangganId,
                     // ✅ FIX A: stempel generasi (di-strip SyncManager; replay-guard).
+                    // + marker persisted utk Security Rules (lihat tambahPembayaran).
                     updateData = mapOf(
                         "status" to status,
+                        "statusLunasUntukPinjamanKe" to pelanggan.pinjamanKe,
                         "_guardPinjamanKe" to pelanggan.pinjamanKe
                     )
                 )
@@ -8992,8 +8999,13 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                         // ✅ FIX A: stempel generasi — auto-lunas milik pinjaman INI tidak
                         // boleh replay meng-clobber status pinjaman generasi berikutnya
                         // (di-strip SyncManager sebelum write; lihat replay-guard).
+                        // "statusLunasUntukPinjamanKe" = marker generasi PERSISTED (bukan
+                        // di-strip): dipakai Security Rules utk MENOLAK write "Lunas" yang
+                        // generasinya tidak cocok — benteng server-side terhadap ghost-write
+                        // SDK yang lolos dari guard client (insiden flapping 04 Jul 2026).
                         updateData = mapOf(
                             "status" to status,
+                            "statusLunasUntukPinjamanKe" to pelanggan.pinjamanKe,
                             "_guardPinjamanKe" to pelanggan.pinjamanKe
                         )
                     )
