@@ -979,6 +979,28 @@ class SyncManager private constructor(private val context: Context) {
             } catch (e: Exception) {
                 Log.e(TAG, "❌ Sync failed: ${e.message}")
 
+                // =========================================================
+                // ✅ FIX C (25 Jul 2026): pisahkan gagal PERMANEN vs TRANSIENT.
+                // Setelah rules Layer-3 aktif, op warisan APK lama yang menulis
+                // status "Lunas" TANPA marker statusLunasUntukPinjamanKe ditolak
+                // server selamanya → retry buta 21x (keluhan lapangan).
+                //   1) Coba REPAIR SEMANTIK: putuskan dari KEBENARAN SERVER,
+                //      bukan dari intent basi di antrean.
+                //   2) Kalau tidak bisa direpair → REJECTED (terminal), supaya
+                //      "Coba Lagi" tidak menghidupkannya lagi & UI bisa jelas.
+                // =========================================================
+                if (isPermissionDenied(e)) {
+                    val repaired = tryRepairRejectedOperation(operation)
+                    if (repaired) {
+                        dao.updateStatus(operation.id, "SUCCESS", "REPAIRED_LEGACY_LUNAS_MARKER")
+                        Log.d(TAG, "🔧 Op diperbaiki & tersinkron (marker generasi ditambahkan dari data server)")
+                        return@withContext true
+                    }
+                    dao.updateStatus(operation.id, "REJECTED", "Ditolak server: ${e.message}")
+                    Log.e(TAG, "🚫 REJECTED permanen (tidak di-retry lagi): ${operation.operationType} ${operation.firebasePath}")
+                    return@withContext false
+                }
+
                 val newRetryCount = operation.retryCount + 1
                 if (newRetryCount >= MAX_RETRY) {
                     dao.updateStatus(operation.id, "FAILED", e.message)
@@ -1417,6 +1439,88 @@ class SyncManager private constructor(private val context: Context) {
             SyncForegroundService.startSync(context)
         }
         return resetCount
+    }
+
+    // =========================================================================
+    // ✅ FIX C (25 Jul 2026) — penanganan op DITOLAK PERMANEN oleh server.
+    // =========================================================================
+
+    /** Deteksi penolakan permanen server (rules `.write`/`.validate`). */
+    private fun isPermissionDenied(e: Exception): Boolean {
+        val msg = (e.message ?: "").lowercase()
+        return msg.contains("permission denied") || msg.contains("permission_denied")
+    }
+
+    suspend fun getRejectedOperations(): List<PendingOperation> = dao.getRejectedOperations()
+    fun getRejectedCountFlow(): Flow<Int> = dao.getRejectedCountFlow()
+
+    /** Buang permanen op REJECTED (aksi sadar user setelah diberi penjelasan). */
+    suspend fun discardRejectedOperations(): Int = withContext(Dispatchers.IO) {
+        val n = dao.discardRejected()
+        Log.d(TAG, "🗑️ Buang $n op REJECTED dari antrean")
+        n
+    }
+
+    /**
+     * REPAIR SEMANTIK untuk op warisan APK lama yang ditolak rules.
+     *
+     * Kasus yang ditangani: UPDATE_PELANGGAN dgn `status="Lunas"` TANPA marker
+     * `statusLunasUntukPinjamanKe` (ditulis APK pra-FIX B). Rules menolaknya
+     * karena tidak bisa dibuktikan milik generasi pinjaman mana.
+     *
+     * Kita TIDAK menambal marker secara buta (itu = membuka lagi lubang
+     * ghost-write). Sebaliknya kita PUTUSKAN DARI DATA SERVER:
+     *   - baca node pelanggan apa adanya di server,
+     *   - hitung ulang totalDibayar (exclude entri "Bunga...", konsisten CF),
+     *   - hanya bila nasabah MEMANG sudah lunas pada generasi yang SEKARANG
+     *     aktif → tulis "Lunas" + marker generasi server yang benar.
+     *   - bila belum lunas → op itu memang ghost basi → return false → REJECTED.
+     *
+     * Return true bila berhasil direpair & tertulis ke server.
+     */
+    private suspend fun tryRepairRejectedOperation(operation: PendingOperation): Boolean {
+        if (operation.operationType != "UPDATE_PELANGGAN") return false
+        return try {
+            @Suppress("UNCHECKED_CAST")
+            val payload = (gson.fromJson(operation.dataJson, Map::class.java) as? Map<String, Any?>)
+                ?: return false
+            if (payload["status"]?.toString() != "Lunas") return false
+            if (payload.containsKey("statusLunasUntukPinjamanKe")) return false // sudah ber-marker → penolakan bukan krn ini
+
+            val snap = firebase.getReference(operation.firebasePath).get().await()
+            if (!snap.exists()) {
+                Log.w(TAG, "🔧 Repair batal: node pelanggan tidak ada lagi (${operation.firebasePath})")
+                return false
+            }
+            val serverPinjamanKe = snap.child("pinjamanKe").getValue(Int::class.java) ?: 1
+            val totalPelunasan = snap.child("totalPelunasan").getValue(Long::class.java) ?: 0L
+            if (totalPelunasan <= 0L) return false
+
+            var totalDibayar = 0L
+            snap.child("pembayaranList").children.forEach { p ->
+                val tgl = p.child("tanggal").getValue(String::class.java) ?: ""
+                if (tgl.startsWith("Bunga")) return@forEach
+                totalDibayar += p.child("jumlah").getValue(Long::class.java) ?: 0L
+                p.child("subPembayaran").children.forEach { s ->
+                    totalDibayar += s.child("jumlah").getValue(Long::class.java) ?: 0L
+                }
+            }
+
+            if (totalDibayar < totalPelunasan) {
+                Log.w(TAG, "🚫 Repair ditolak: server BELUM lunas (dibayar=$totalDibayar < pelunasan=$totalPelunasan) → op basi/ghost")
+                return false
+            }
+
+            // Benar-benar lunas pada generasi server saat ini → tulis dgn marker sah.
+            val repaired = payload.filterKeys { it != "_guardPinjamanKe" } +
+                mapOf("statusLunasUntukPinjamanKe" to serverPinjamanKe)
+            firebase.getReference(operation.firebasePath).updateChildren(repaired).await()
+            Log.d(TAG, "🔧 Repair sukses: Lunas sah utk pinjamanKe=$serverPinjamanKe (${operation.firebasePath})")
+            true
+        } catch (ex: Exception) {
+            Log.e(TAG, "🔧 Repair gagal: ${ex.message}")
+            false
+        }
     }
 
     /**

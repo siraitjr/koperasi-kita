@@ -153,13 +153,18 @@ fun SyncStatusBar(
     // FAILED dipisah dari pending agar admin lapangan tahu ada entri yang habis
     // budget retry & butuh aksi manual "Coba Lagi". Default 0 untuk back-compat.
     failedCount: Int = 0,
+    // ✅ FIX C (25 Jul 2026): REJECTED = ditolak server permanen (Permission
+    // denied / .validate). BUKAN kandidat "Coba Lagi" — retry pasti gagal lagi.
+    // Ditampilkan terpisah dgn penjelasan + aksi "Buang". Default 0 = back-compat.
+    rejectedCount: Int = 0,
+    onDiscardRejectedClick: (() -> Unit)? = null,
     // Aksi manual user di project ini HANYA "Coba Lagi" (untuk FAILED). PENDING
     // diserahkan ke auto-sync (WorkManager + NetworkChangeWorker +
     // SyncForegroundService) — tidak ada parameter onSyncClick di sini.
     onRetryFailedClick: (() -> Unit)? = null
 ) {
-    // Tampilkan jika ada pending, failed, atau sedang sync.
-    if (pendingCount == 0 && failedCount == 0 && syncStatus == SyncStatus.IDLE) return
+    // Tampilkan jika ada pending, failed, rejected, atau sedang sync.
+    if (pendingCount == 0 && failedCount == 0 && rejectedCount == 0 && syncStatus == SyncStatus.IDLE) return
 
     // FAILED override warna jadi merah meski status enum-nya IDLE — visibilitas
     // tinggi untuk mendorong admin lapangan menekan "Coba Lagi".
@@ -235,6 +240,9 @@ fun SyncStatusBar(
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = when {
+                        // REJECTED diprioritaskan: ini yang bikin admin menekan
+                        // "Coba Lagi" berulang tanpa hasil (keluhan 21x retry).
+                        rejectedCount > 0 -> "🚫 $rejectedCount data DITOLAK server — tidak bisa dikirim ulang"
                         failedCount > 0 -> "❌ $failedCount data GAGAL sync — tekan Coba Lagi"
                         syncStatus == SyncStatus.SYNCING -> "🔄 Menyinkronkan data..."
                         syncStatus == SyncStatus.SUCCESS -> "✅ Semua data tersinkronisasi"
@@ -247,7 +255,14 @@ fun SyncStatusBar(
                     fontWeight = FontWeight.Medium
                 )
 
-                if (failedCount > 0 && pendingCount > 0) {
+                if (rejectedCount > 0) {
+                    Text(
+                        text = "Data lama tidak lolos aturan keamanan (versi aplikasi lama). " +
+                               "Perbarui aplikasi, lalu tekan Buang. Data nasabah di server tidak terpengaruh.",
+                        color = textColor.copy(alpha = 0.75f),
+                        fontSize = 11.sp
+                    )
+                } else if (failedCount > 0 && pendingCount > 0) {
                     Text(
                         text = "($pendingCount lagi menunggu sinkronisasi otomatis)",
                         color = textColor.copy(alpha = 0.7f),
@@ -265,7 +280,17 @@ fun SyncStatusBar(
             // Tombol satu-satunya: "Coba Lagi" untuk FAILED. PENDING tidak punya
             // tombol manual — auto-sync background yang menanganinya (kebijakan
             // project: tidak ada manual sync untuk tugas latar umum).
-            if (syncStatus != SyncStatus.SYNCING && failedCount > 0 && onRetryFailedClick != null) {
+            // REJECTED tidak punya "Coba Lagi" (server pasti menolak lagi) —
+            // hanya "Buang" agar antrean bersih & badge tidak merah selamanya.
+            if (rejectedCount > 0 && onDiscardRejectedClick != null) {
+                TextButton(onClick = onDiscardRejectedClick) {
+                    Text(
+                        text = "Buang",
+                        color = textColor,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            } else if (syncStatus != SyncStatus.SYNCING && failedCount > 0 && onRetryFailedClick != null) {
                 TextButton(onClick = onRetryFailedClick) {
                     Text(
                         text = "Coba Lagi",

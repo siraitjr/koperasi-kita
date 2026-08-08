@@ -17912,10 +17912,23 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                 val status = if (totalDibayar >= pelanggan.totalPelunasan) "Lunas" else "Aktif"
 
                 // Update pelanggan di Firebase
-                val updates = mapOf(
-                    "pembayaranList" to updatedPembayaranList,
-                    "status" to status
-                )
+                // ✅ FIX C (25 Jul 2026): sertakan marker generasi saat status
+                // berakhir "Lunas". Approver di sini Pimpinan (role != 'admin' →
+                // rules bypass), TAPI saat remote-takeover auth memakai uid admin
+                // sehingga tanpa marker write ini akan ditolak `.validate`.
+                // Marker diambil dari pinjamanKe pelanggan yang SEDANG dibaca.
+                val updates = if (status == "Lunas") {
+                    mapOf(
+                        "pembayaranList" to updatedPembayaranList,
+                        "status" to status,
+                        "statusLunasUntukPinjamanKe" to pelanggan.pinjamanKe
+                    )
+                } else {
+                    mapOf(
+                        "pembayaranList" to updatedPembayaranList,
+                        "status" to status
+                    )
+                }
                 database.child("pelanggan/$adminUid/$pelangganId").updateChildren(updates).await()
 
                 // ✅ FIX: Koreksi summary counters (piutang harus naik karena pembayaran dihapus)

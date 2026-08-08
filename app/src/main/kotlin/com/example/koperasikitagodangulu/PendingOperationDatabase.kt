@@ -97,6 +97,27 @@ interface PendingOperationDao {
     @Query("SELECT * FROM pending_operations WHERE status = 'FAILED' ORDER BY createdAt ASC")
     suspend fun getFailedOperations(): List<PendingOperation>
 
+    // =====================================================================
+    // ✅ REJECTED = status TERMINAL (25 Jul 2026). Op yang DITOLAK server
+    // secara permanen (Permission denied / .validate) — retry tidak akan
+    // pernah berhasil. Dipisah dari FAILED (yang transient: jaringan, timeout)
+    // supaya "Coba Lagi" tidak looping buta & admin dapat pesan yang jelas.
+    // TIDAK ada migrasi Room: kolom `status` sudah String bebas.
+    // resetFailedToRetry() hanya menyentuh 'FAILED' → REJECTED aman.
+    // =====================================================================
+    @Query("SELECT COUNT(*) FROM pending_operations WHERE status = 'REJECTED'")
+    suspend fun getRejectedCount(): Int
+
+    @Query("SELECT COUNT(*) FROM pending_operations WHERE status = 'REJECTED'")
+    fun getRejectedCountFlow(): Flow<Int>
+
+    @Query("SELECT * FROM pending_operations WHERE status = 'REJECTED' ORDER BY createdAt ASC")
+    suspend fun getRejectedOperations(): List<PendingOperation>
+
+    // Buang permanen op yang ditolak server (aksi sadar admin/pimpinan).
+    @Query("DELETE FROM pending_operations WHERE status = 'REJECTED'")
+    suspend fun discardRejected(): Int
+
     // Reset semua entry FAILED ke PENDING + retryCount=0 + errorMessage=null,
     // memberi budget retry segar saat user menekan "Coba Lagi". Berbeda dari
     // updateStatus() yang masih meng-increment retryCount via SQL CASE-WHEN.
