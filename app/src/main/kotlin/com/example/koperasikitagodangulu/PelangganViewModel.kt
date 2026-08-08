@@ -180,6 +180,17 @@ data class Pelanggan(
     val noHp: String = "",
     val jenisUsaha: String = "",
     val pinjamanKe: Int = 1,
+    // ✅ B-3 FIX (audit god-tier): marker generasi utk status "Lunas".
+    // Ditegakkan Security Rules: transisi status → "Lunas" oleh role 'admin'
+    // WAJIB menyertakan statusLunasUntukPinjamanKe == pinjamanKe. Sebelumnya
+    // field ini HANYA ditulis lewat map updateChildren dan tidak pernah jadi
+    // properti model, sehingga setiap full-node setValue dari model
+    // (approvePengajuan, cairkanPinjaman, batalkanPinjaman, rejectPengajuan,
+    // ADD_PELANGGAN) diam-diam MENGHAPUSNYA dari server. Dengan menjadi
+    // properti + terpetakan di parser & pelangganToMap, marker kini survive
+    // round-trip read→write. Default 0 = belum pernah lunas (aman: 0 tidak
+    // akan pernah sama dengan pinjamanKe yang minimal 1).
+    val statusLunasUntukPinjamanKe: Int = 0,
     val besarPinjaman: Int = 0,
     val jasaPinjaman: Int = 10,
     val admin: Int = 0,
@@ -426,6 +437,9 @@ fun parsePelangganFromSnapshot(child: DataSnapshot): Pelanggan? {
             noHp = str("noHp"),
             jenisUsaha = str("jenisUsaha"),
             pinjamanKe = int("pinjamanKe", 1),
+            // ✅ B-3: baca marker dari server agar tidak hilang saat model
+            // ditulis ulang penuh (setValue). Default 0 utk record lama.
+            statusLunasUntukPinjamanKe = int("statusLunasUntukPinjamanKe"),
             besarPinjaman = int("besarPinjaman"),
             jasaPinjaman = int("jasaPinjaman", 10),
             admin = int("admin"),
@@ -2247,6 +2261,10 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
             "noHp" to pelanggan.noHp,
             "jenisUsaha" to pelanggan.jenisUsaha,
             "pinjamanKe" to pelanggan.pinjamanKe,
+            // ✅ B-3: ikut ditulis pada whole-node write (ADD_PELANGGAN) supaya
+            // marker tidak terhapus. Nilai berasal dari model yang sudah membaca
+            // nilai server → round-trip aman.
+            "statusLunasUntukPinjamanKe" to pelanggan.statusLunasUntukPinjamanKe,
             "besarPinjaman" to pelanggan.besarPinjaman,
             "jasaPinjaman" to pelanggan.jasaPinjaman,
             "admin" to pelanggan.admin,
@@ -2671,6 +2689,11 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
             val updatedPelanggan = pelanggan.copy(
                 pembayaranList = updatedPembayaranList,
                 status = status,
+                // ✅ B-3: model lokal ikut menyimpan marker generasi yang ditulis
+                // ke server, supaya full-node setValue berikutnya (mis. hapus/edit
+                // pembayaran) tidak menuliskan 0 dan menghapus marker.
+                statusLunasUntukPinjamanKe = if (status == "Lunas") pelanggan.pinjamanKe
+                                             else pelanggan.statusLunasUntukPinjamanKe,
                 isSynced = false, // KRITIS: false agar lokal diprioritaskan saat merge
                 lastUpdated = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
             )
@@ -3736,6 +3759,10 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
             val updatedPelanggan = pelanggan.copy(
                 pembayaranList = updatedPembayaranList,
                 status = status,
+                // ✅ B-3: jalur ini menyimpan via full-node (pelangganToMap), jadi
+                // marker di model inilah yang menentukan nilai di server.
+                statusLunasUntukPinjamanKe = if (status == "Lunas") pelanggan.pinjamanKe
+                                             else pelanggan.statusLunasUntukPinjamanKe,
                 isSynced = false // ✅ FIX: Tandai belum sync agar tidak ditimpa Firebase
             )
 
@@ -3761,6 +3788,10 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
             val updatedPelanggan = pelanggan.copy(
                 pembayaranList = updatedPembayaranList,
                 status = status,
+                // ✅ B-3: jalur ini menyimpan via full-node (pelangganToMap), jadi
+                // marker di model inilah yang menentukan nilai di server.
+                statusLunasUntukPinjamanKe = if (status == "Lunas") pelanggan.pinjamanKe
+                                             else pelanggan.statusLunasUntukPinjamanKe,
                 isSynced = false // ✅ FIX: Tandai belum sync agar tidak ditimpa Firebase
             )
 
@@ -4166,6 +4197,9 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
         val updatedPelanggan = pelanggan.copy(
             pembayaranList = updatedPembayaranList,
             status = status,
+            // ✅ B-3: sinkronkan marker generasi di model lokal (lihat tambahPembayaran).
+            statusLunasUntukPinjamanKe = if (status == "Lunas") pelanggan.pinjamanKe
+                                         else pelanggan.statusLunasUntukPinjamanKe,
             isSynced = false,
             lastUpdated = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
         )
@@ -8953,6 +8987,9 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
             val updatedPelanggan = pelanggan.copy(
                 pembayaranList = updatedPembayaranList,
                 status = status,
+                // ✅ B-3: sinkronkan marker generasi di model lokal (lihat tambahPembayaran).
+                statusLunasUntukPinjamanKe = if (status == "Lunas") pelanggan.pinjamanKe
+                                             else pelanggan.statusLunasUntukPinjamanKe,
                 isSynced = false,
                 lastUpdated = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
             )
