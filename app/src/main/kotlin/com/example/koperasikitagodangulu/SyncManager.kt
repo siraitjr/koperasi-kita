@@ -90,6 +90,32 @@ class SyncManager private constructor(private val context: Context) {
         Log.d(TAG, "   dataSize: ${pelangganData.size} fields")
         Log.d(TAG, "========================================")
 
+        // =====================================================================
+        // ✅ FIX §3 (audit god-tier): ADD_PELANGGAN adalah whole-node setValue.
+        // Tanpa guard, replay antrean LAMA bisa MENIMPA state server yang sudah
+        // sah (mis. sudah "Disetujui"/"Aktif" + ada cicilan) kembali ke snapshot
+        // "Menunggu Approval" — pembayaranList ikut ter-reset. Rules tidak bisa
+        // menolaknya karena payload-nya sah secara sintaks.
+        //
+        // Stempel generasi + status disimpan di dataJson Room (BUKAN ke RTDB —
+        // selalu di-strip sebelum write). Saat replay/commit, transaksi
+        // membandingkan dengan kondisi server:
+        //   guardPk  > serverPk  → op MEMAJUKAN generasi (top-up baru) → tulis
+        //   guardPk  < serverPk  → server sudah generasi lebih baru   → SKIP
+        //   guardPk == serverPk  → tulis HANYA bila status server belum maju
+        //                          melewati status yang di-queue.
+        // Idempotency whole-node: setValue by nature idempoten; kunci anti-
+        // regresi di sini adalah guard generasi+status, bukan dedup. clientOpId
+        // disimpan di Room untuk korelasi audit/log antar percobaan.
+        // =====================================================================
+        val guardPkAdd = (pelangganData["pinjamanKe"] as? Number)?.toInt() ?: 1
+        val guardStatusAdd = pelangganData["status"]?.toString() ?: ""
+        val enrichedPelanggan = pelangganData + mapOf(
+            "_guardPinjamanKe" to guardPkAdd,
+            "_guardStatus" to guardStatusAdd,
+            "clientOpId" to UUID.randomUUID().toString()
+        )
+
         try {
             // ✅ STEP 1: SELALU simpan ke Room DB DULU!
             Log.d(TAG, "💾 [STEP 1] Preparing to save to Room DB...")
@@ -97,7 +123,7 @@ class SyncManager private constructor(private val context: Context) {
             val operation = PendingOperation(
                 operationType = "ADD_PELANGGAN",
                 firebasePath = path,
-                dataJson = gson.toJson(pelangganData),
+                dataJson = gson.toJson(enrichedPelanggan),
                 adminUid = adminUid,
                 pelangganId = pelangganId,
                 status = "PENDING"
@@ -119,10 +145,25 @@ class SyncManager private constructor(private val context: Context) {
                     // Upload foto dulu jika ada pending
                     val updatedData = uploadPendingPhotosForData(adminUid, pelangganId, pelangganData)
 
-                    firebase.getReference(path).setValue(updatedData).await()
-
-                    dao.updateStatus(operationId, "SUCCESS")
-                    Log.d(TAG, "✅ [STEP 3] SYNCED TO FIREBASE!")
+                    // ✅ FIX §3: TRANSAKSI guarded, bukan setValue biasa.
+                    // Dua manfaat: (a) guard generasi+status dievaluasi atomik di
+                    // server, (b) transaksi TIDAK di-persist SDK saat disconnect →
+                    // ghost-write (salinan tanpa guard yang terkirim saat reconnect)
+                    // tidak bisa lahir dari jalur ini. SaveResult tetap Success saat
+                    // commit, jadi semantik isSynced pemanggil TIDAK berubah.
+                    when (val txn = guardedAddPelangganWrite(path, updatedData, guardPkAdd, guardStatusAdd)) {
+                        is GuardTxn.Applied -> {
+                            dao.updateStatus(operationId, "SUCCESS")
+                            Log.d(TAG, "✅ [STEP 3] SYNCED TO FIREBASE (transaksi guarded)!")
+                        }
+                        is GuardTxn.SkippedStale, is GuardTxn.SkippedMissing -> {
+                            // Server sudah lebih baru → op ini memang tidak relevan lagi.
+                            // Ditandai SUCCESS agar tidak menyumbat antrean.
+                            dao.updateStatus(operationId, "SUCCESS", "SKIPPED_SERVER_LEBIH_BARU")
+                            Log.w(TAG, "⏭️ ADD_PELANGGAN dilewati: state server lebih baru dari payload")
+                        }
+                        is GuardTxn.Retry -> throw Exception("Transaksi ADD_PELANGGAN perlu retry: ${txn.msg}")
+                    }
 
                     SaveResult.Success
 
@@ -858,7 +899,32 @@ class SyncManager private constructor(private val context: Context) {
 
                 when (operation.operationType) {
                     "ADD_PELANGGAN" -> {
-                        ref.setValue(data).await()
+                        // ✅ FIX §3: jalur replay INILAH lubang terlama (antrean bisa
+                        // bertahan berhari-hari, jauh lebih lebar dari window ghost SDK).
+                        // Payload di-strip dari kunci guard, lalu ditulis via transaksi
+                        // yang menolak menimpa state server yang sudah lebih maju.
+                        @Suppress("UNCHECKED_CAST")
+                        val rawAdd = data as? Map<String, Any?>
+                            ?: throw IllegalStateException("Payload bukan Map untuk ADD_PELANGGAN")
+                        val (cleanAdd, guardPkAdd, guardStatusAdd) = stripAddPelangganGuards(rawAdd)
+                        if (guardPkAdd == null) {
+                            // Op warisan APK lama (tanpa stempel) — perilaku lama
+                            // dipertahankan agar tidak ada regresi pada antrean existing.
+                            ref.setValue(cleanAdd).await()
+                        } else {
+                            val txn = guardedAddPelangganWrite(
+                                operation.firebasePath, cleanAdd, guardPkAdd, guardStatusAdd ?: ""
+                            )
+                            when (txn) {
+                                is GuardTxn.Applied -> { /* sukses */ }
+                                is GuardTxn.SkippedStale, is GuardTxn.SkippedMissing -> {
+                                    Log.w(TAG, "⏭️ SKIP ADD_PELANGGAN basi (guard gen=$guardPkAdd status='$guardStatusAdd'): ${operation.firebasePath}")
+                                    dao.updateStatus(operation.id, "SUCCESS", "SKIPPED_SERVER_LEBIH_BARU")
+                                    return@withContext true
+                                }
+                                is GuardTxn.Retry -> throw Exception("Transaksi ADD_PELANGGAN perlu retry: ${txn.msg}")
+                            }
+                        }
                     }
                     "ADD_PEMBAYARAN", "ADD_SUB_PEMBAYARAN" -> {
                         // Replay via transaction append-only ke parent node agar tidak
@@ -1270,6 +1336,86 @@ class SyncManager private constructor(private val context: Context) {
                     // committed tapi node null = pelanggan sudah tidak ada di server
                     // (mis. cairkanSimpanan menghapusnya) → op basi, konsumsi.
                     snapshot?.value == null -> GuardTxn.SkippedMissing
+                    else -> GuardTxn.Applied
+                }
+                if (cont.isActive) cont.resume(result)
+            }
+        })
+    }
+
+    // =========================================================================
+    // ✅ FIX §3 — guard whole-node ADD_PELANGGAN.
+    // =========================================================================
+
+    /**
+     * Peringkat kemajuan siklus pinjaman. Dipakai HANYA untuk menjawab
+     * "apakah state server sudah lebih maju dari payload yang di-queue?".
+     * Bukan mesin state — tidak mengatur transisi apa pun.
+     */
+    private fun statusRank(s: String?): Int = when (s?.trim()) {
+        "Menunggu Approval" -> 0
+        "Disetujui" -> 1
+        "Aktif" -> 2
+        else -> 3 // Lunas / Ditolak / Tidak Aktif / lainnya = terminal
+    }
+
+    /** Buang kunci guard internal agar TIDAK pernah tertulis ke RTDB. */
+    private fun stripAddPelangganGuards(data: Map<String, Any?>): Triple<Map<String, Any?>, Int?, String?> {
+        val pk = (data["_guardPinjamanKe"] as? Number)?.toInt()
+        val st = data["_guardStatus"]?.toString()
+        val clean = data.filterKeys {
+            it != "_guardPinjamanKe" && it != "_guardStatus" && it != "clientOpId"
+        }
+        return Triple(clean, pk, st)
+    }
+
+    /**
+     * Tulis whole-node pelanggan HANYA bila server belum bergerak melewati
+     * payload yang di-queue. Semua keputusan diambil DI DALAM transaksi
+     * (atomik, server-authoritative, tidak di-persist SDK saat disconnect).
+     */
+    private suspend fun guardedAddPelangganWrite(
+        path: String,
+        payload: Map<String, Any?>,
+        guardPk: Int,
+        guardStatus: String
+    ): GuardTxn = suspendCancellableCoroutine { cont ->
+        var abortReason = ""
+        firebase.getReference(path).runTransaction(object : Transaction.Handler {
+            override fun doTransaction(currentData: MutableData): Transaction.Result {
+                val raw = currentData.value
+                if (raw == null) {
+                    // Node belum ada → pembuatan nasabah baru / sync pertama.
+                    // Pola kanonik "create if absent": tulis; bila ternyata data
+                    // memang ada, SDK me-run ulang dgn data server & guard berlaku.
+                    currentData.value = payload
+                    return Transaction.success(currentData)
+                }
+                @Suppress("UNCHECKED_CAST")
+                val server = raw as? Map<String, Any?>
+                    ?: run { abortReason = "MALFORMED"; return Transaction.abort() }
+
+                val serverPk = (server["pinjamanKe"] as? Number)?.toInt() ?: 1
+                val serverStatus = server["status"]?.toString()
+
+                // Server sudah di generasi lebih baru → payload ini basi.
+                if (guardPk < serverPk) { abortReason = "STALE_GEN"; return Transaction.abort() }
+                // Generasi sama, tapi siklus server sudah maju (Disetujui/Aktif/
+                // Lunas) → jangan tarik mundur ke "Menunggu Approval".
+                if (guardPk == serverPk && statusRank(serverStatus) > statusRank(guardStatus)) {
+                    abortReason = "STALE_STATUS"; return Transaction.abort()
+                }
+                // guardPk > serverPk = op ini MEMAJUKAN generasi (top-up sah) → tulis.
+                currentData.value = payload
+                return Transaction.success(currentData)
+            }
+
+            override fun onComplete(error: DatabaseError?, committed: Boolean, snapshot: DataSnapshot?) {
+                val result = when {
+                    error != null -> GuardTxn.Retry(error.message)
+                    !committed && (abortReason == "STALE_GEN" || abortReason == "STALE_STATUS") ->
+                        GuardTxn.SkippedStale
+                    !committed -> GuardTxn.Retry("aborted: ${abortReason.ifBlank { "unknown" }}")
                     else -> GuardTxn.Applied
                 }
                 if (cont.isActive) cont.resume(result)

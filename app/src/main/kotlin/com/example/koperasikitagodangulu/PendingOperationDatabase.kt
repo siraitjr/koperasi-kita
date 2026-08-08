@@ -2,6 +2,8 @@ package com.example.koperasikitagodangulu.offline
 
 import android.content.Context
 import androidx.room.*
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import kotlinx.coroutines.flow.Flow
 
 // =========================================================================
@@ -163,6 +165,36 @@ abstract class PendingOperationDatabase : RoomDatabase() {
         @Volatile
         private var INSTANCE: PendingOperationDatabase? = null
 
+        // =================================================================
+        // ✅ FIX B-1 (audit god-tier): fallbackToDestructiveMigration() DIHAPUS.
+        // -----------------------------------------------------------------
+        // Sebelumnya, SETIAP kenaikan `version` (mis. menambah kolom pada
+        // PendingOperation) membuat Room MENGHAPUS SELURUH TABEL tanpa
+        // peringatan. Yang hilang bukan cache — melainkan ANTREAN PEMBAYARAN
+        // NASABAH yang belum tersinkron (uang riil), tanpa jejak & tanpa
+        // notifikasi. Itu bom waktu yang meledak pada rilis rutin, bukan pada
+        // kondisi ekstrem.
+        //
+        // Sekarang: daftar migrasi eksplisit. Bila developer menaikkan
+        // `version` TANPA menambah Migration di sini, Room melempar
+        // IllegalStateException saat membuka DB — GAGAL KERAS di meja
+        // developer (langsung terlihat saat test pertama), bukan diam-diam
+        // menghapus data admin di lapangan. Fail-loud > silent data loss.
+        //
+        // Cara menambah migrasi nanti (contoh v1 → v2):
+        //   private val MIGRATION_1_2 = object : Migration(1, 2) {
+        //       override fun migrate(db: SupportSQLiteDatabase) {
+        //           db.execSQL("ALTER TABLE pending_operations ADD COLUMN foo TEXT")
+        //       }
+        //   }
+        // lalu daftarkan di MIGRATIONS di bawah.
+        //
+        // Catatan follow-up (belum dilakukan, butuh ubah build.gradle.kts):
+        // set exportSchema = true + room.schemaLocation agar skema ter-versioning
+        // dan migrasi bisa di-review lewat diff.
+        // =================================================================
+        private val MIGRATIONS: Array<Migration> = emptyArray()
+
         fun getInstance(context: Context): PendingOperationDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -170,7 +202,7 @@ abstract class PendingOperationDatabase : RoomDatabase() {
                     PendingOperationDatabase::class.java,
                     "pending_operations_db"
                 )
-                    .fallbackToDestructiveMigration()
+                    .addMigrations(*MIGRATIONS)
                     .build()
                 INSTANCE = instance
                 instance
