@@ -338,6 +338,14 @@ class OfflineRepository private constructor(context: Context) {
     fun observeFailedCount(): Flow<Int> = syncManager.observeFailedCount()
     suspend fun getFailedOperations(): List<PendingOperation> = syncManager.getFailedOperations()
 
+    // ✅ FIX C (25 Jul 2026): op DITOLAK server permanen (Permission denied /
+    // .validate). Bukan kandidat "Coba Lagi" — hanya bisa dibuang dari antrean
+    // lokal. TIDAK menyentuh data nasabah di server.
+    suspend fun getRejectedCount(): Int = syncManager.getRejectedCount()
+    fun observeRejectedCount(): Flow<Int> = syncManager.observeRejectedCount()
+    suspend fun getRejectedOperations(): List<PendingOperation> = syncManager.getRejectedOperations()
+    suspend fun discardRejectedOperations(): Int = syncManager.discardRejectedOperations()
+
     suspend fun syncNow(): SyncResult {
         Log.d(TAG, "🔄 syncNow() called")
         return syncManager.syncAllPending()

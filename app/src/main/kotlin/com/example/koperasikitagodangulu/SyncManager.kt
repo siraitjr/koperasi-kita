@@ -1453,6 +1453,10 @@ class SyncManager private constructor(private val context: Context) {
 
     suspend fun getRejectedOperations(): List<PendingOperation> = dao.getRejectedOperations()
     fun getRejectedCountFlow(): Flow<Int> = dao.getRejectedCountFlow()
+    // Alias penamaan konsisten dgn observePendingCount()/observeFailedCount()
+    // yang sudah dipakai OfflineRepository & SyncStatusBlock.
+    fun observeRejectedCount(): Flow<Int> = dao.getRejectedCountFlow()
+    suspend fun getRejectedCount(): Int = dao.getRejectedCount()
 
     /** Buang permanen op REJECTED (aksi sadar user setelah diberi penjelasan). */
     suspend fun discardRejectedOperations(): Int = withContext(Dispatchers.IO) {

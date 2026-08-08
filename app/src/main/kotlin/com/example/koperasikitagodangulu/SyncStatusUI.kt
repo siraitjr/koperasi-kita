@@ -18,6 +18,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
+import android.util.Log
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -320,7 +321,11 @@ fun SyncInfoCard(
     // gagal sync + pesan error-nya, lalu tekan "Coba Lagi" untuk reset budget
     // retry. Default kosong → back-compat untuk caller lama.
     failedCount: Int = 0,
-    failedOperations: List<PendingOperation> = emptyList()
+    failedOperations: List<PendingOperation> = emptyList(),
+    // ✅ FIX C: op DITOLAK server permanen — ditampilkan terpisah dgn penjelasan,
+    // TANPA ajakan "Coba Lagi". Default 0/kosong → back-compat caller lama.
+    rejectedCount: Int = 0,
+    rejectedOperations: List<PendingOperation> = emptyList()
 ) {
     // Kebijakan project: PENDING auto-sync (WorkManager + NetworkChangeWorker +
     // SyncForegroundService), manual user hanya untuk FAILED (Coba Lagi).
@@ -415,6 +420,55 @@ fun SyncInfoCard(
             }
 
             Spacer(modifier = Modifier.height(16.dp))
+
+            // ✅ FIX C: blok REJECTED — ditaruh PALING ATAS karena inilah yang
+            // bikin admin menekan "Coba Lagi" berulang tanpa hasil. Sengaja
+            // TIDAK memakai kata "Coba Lagi"; aksinya "Buang" di footer dialog.
+            if (rejectedOperations.isNotEmpty()) {
+                Text(
+                    text = "Ditolak server — tidak bisa dikirim ulang ($rejectedCount):",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFFB71C1C)
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "Dibuat oleh versi aplikasi lama. Perbarui aplikasi, " +
+                           "lalu tekan Buang. Data nasabah di server tidak terpengaruh.",
+                    fontSize = 11.sp,
+                    color = Color(0xFF7F1D1D)
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                LazyColumn(modifier = Modifier.heightIn(max = 160.dp)) {
+                    items(rejectedOperations) { op ->
+                        Surface(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp),
+                            color = Color(0xFFFFE4E6),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Column(modifier = Modifier.padding(10.dp)) {
+                                Text(
+                                    text = "🚫 ${op.operationType}",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFFB71C1C)
+                                )
+                                Text(
+                                    text = op.firebasePath,
+                                    fontSize = 10.sp,
+                                    color = Color(0xFF7F1D1D)
+                                )
+                                op.errorMessage?.let { msg ->
+                                    Text(text = msg, fontSize = 10.sp, color = Color(0xFFB71C1C))
+                                }
+                            }
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(12.dp))
+            }
 
             // Daftar entry FAILED dengan errorMessage — hanya muncul bila ada.
             // Memberi admin lapangan visibilitas EKSAK ke item apa yang gagal
@@ -564,9 +618,14 @@ fun SyncStatusBlock(modifier: Modifier = Modifier) {
 
     val pendingCount by offlineRepo.observePendingOnlyCount().collectAsState(initial = 0)
     val failedCount by offlineRepo.observeFailedCount().collectAsState(initial = 0)
+    // ✅ FIX C: op DITOLAK server permanen — dipisah dari FAILED agar "Coba Lagi"
+    // tidak dipakai untuk sesuatu yang pasti ditolak lagi (keluhan 21x retry).
+    val rejectedCount by offlineRepo.observeRejectedCount().collectAsState(initial = 0)
 
     var showDialog by remember { mutableStateOf(false) }
     var failedOps by remember { mutableStateOf<List<PendingOperation>>(emptyList()) }
+    var rejectedOps by remember { mutableStateOf<List<PendingOperation>>(emptyList()) }
+    var showDiscardConfirm by remember { mutableStateOf(false) }
 
     // Status sederhana: IDLE default → SyncStatusBar override warna ke merah
     // saat failedCount > 0; oranye saat pendingCount > 0; hilang saat semua nol.
@@ -575,17 +634,24 @@ fun SyncStatusBlock(modifier: Modifier = Modifier) {
     val openDialog: () -> Unit = {
         scope.launch {
             failedOps = offlineRepo.getFailedOperations()
+            rejectedOps = offlineRepo.getRejectedOperations()
             showDialog = true
         }
     }
 
+    // "Buang" tidak langsung menghapus — minta konfirmasi eksplisit dulu,
+    // konsisten dgn kebijakan project utk aksi yang tidak bisa dibatalkan.
+    val requestDiscard: () -> Unit = { showDiscardConfirm = true }
+
     SyncStatusBar(
         pendingCount = pendingCount,
         failedCount = failedCount,
+        rejectedCount = rejectedCount,
         syncStatus = syncStatus,
-        // Klik bar (di luar tombol "Coba Lagi") → buka dialog detail.
+        // Klik bar (di luar tombol aksi) → buka dialog detail.
         modifier = modifier.clickable { openDialog() },
-        onRetryFailedClick = openDialog
+        onRetryFailedClick = openDialog,
+        onDiscardRejectedClick = requestDiscard
     )
 
     if (showDialog) {
@@ -594,12 +660,22 @@ fun SyncStatusBlock(modifier: Modifier = Modifier) {
             confirmButton = {
                 TextButton(onClick = { showDialog = false }) { Text("Tutup") }
             },
+            // Aksi "Buang" hanya muncul saat memang ada op REJECTED.
+            dismissButton = if (rejectedCount > 0) {
+                {
+                    TextButton(onClick = requestDiscard) {
+                        Text("Buang ($rejectedCount)", color = Color(0xFFC62828), fontWeight = FontWeight.Bold)
+                    }
+                }
+            } else null,
             title = null,
             text = {
                 SyncInfoCard(
                     pendingCount = pendingCount,
                     failedCount = failedCount,
                     failedOperations = failedOps,
+                    rejectedCount = rejectedCount,
+                    rejectedOperations = rejectedOps,
                     syncStatus = syncStatus,
                     onRetryClick = {
                         scope.launch {
@@ -607,9 +683,39 @@ fun SyncStatusBlock(modifier: Modifier = Modifier) {
                             // Refresh daftar setelah reset retry — entri yang
                             // sukses langsung sync akan hilang dari list FAILED.
                             failedOps = offlineRepo.getFailedOperations()
+                            rejectedOps = offlineRepo.getRejectedOperations()
                         }
                     }
                 )
+            }
+        )
+    }
+
+    if (showDiscardConfirm) {
+        AlertDialog(
+            onDismissRequest = { showDiscardConfirm = false },
+            title = { Text("Buang $rejectedCount data ditolak?") },
+            text = {
+                Text(
+                    "Data ini dibuat oleh versi aplikasi lama dan DITOLAK server, " +
+                    "sehingga tidak akan pernah bisa terkirim.\n\n" +
+                    "Membuang hanya membersihkan antrean di HP ini. " +
+                    "Data nasabah di server TIDAK terpengaruh."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    scope.launch {
+                        val n = offlineRepo.discardRejectedOperations()
+                        Log.d("SyncStatusBlock", "🗑️ Dibuang $n op REJECTED")
+                        rejectedOps = offlineRepo.getRejectedOperations()
+                        failedOps = offlineRepo.getFailedOperations()
+                        showDiscardConfirm = false
+                    }
+                }) { Text("Ya, Buang", color = Color(0xFFC62828), fontWeight = FontWeight.Bold) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDiscardConfirm = false }) { Text("Batal") }
             }
         )
     }
