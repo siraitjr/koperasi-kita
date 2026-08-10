@@ -13,8 +13,8 @@ android {
         applicationId = "com.example.koperasikitagodangulu"
         minSdk = 21
         targetSdk = 34
-        versionCode = 70
-        versionName = "7.1"
+        versionCode = 71
+        versionName = "7.2"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
             useSupportLibrary = true
