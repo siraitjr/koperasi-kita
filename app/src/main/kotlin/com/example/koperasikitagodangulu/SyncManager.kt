@@ -403,29 +403,56 @@ class SyncManager private constructor(private val context: Context) {
             val operationId = dao.insert(operation)
             Log.d(TAG, "📝 [STEP 1] ✅ UPDATE SAVED TO ROOM DB! opId=$operationId")
 
-            if (updateData.containsKey("_guardPinjamanKe")) {
-                // ✅ FIX B (04 Jul 2026): op BER-GUARD tidak boleh lewat fast-path
-                // updateChildren biasa. Root cause insiden flapping: await() yang
-                // gagal TETAP meninggalkan ghost-write (copy TANPA guard) di antrean
-                // internal SDK yang terkirim unconditional saat reconnect — men-
-                // clobber pinjaman generasi baru. Satu-satunya penulis op guarded
-                // sekarang = replay trySyncOperation via TRANSAKSI guarded (tidak
-                // dipersist SDK; guard dicek atomik server-side). trigger sync →
-                // latency hanya hitungan detik saat online.
-                Log.d(TAG, "🛡️ Guarded update → skip fast-path; serahkan ke replay transaksional")
-                SyncWorker.triggerImmediateSync(context)
-                SaveResult.Queued
-            } else if (isOnline()) {
+            if (isOnline()) {
                 try {
                     dao.updateStatus(operationId, "SYNCING")
-                    firebase.getReference(path).updateChildren(updateData).await()
-                    dao.updateStatus(operationId, "SUCCESS")
-                    Log.d(TAG, "✅ UPDATE SYNCED!")
+                    // ✅ FIX REGRESI PILOT (25 Jul 2026).
+                    // Versi sebelumnya meng-AMPUTASI fast-path untuk op ber-guard
+                    // (langsung SaveResult.Queued) demi menutup ghost-write. Itu
+                    // MENIMBULKAN DUA REGRESI di perangkat pilot:
+                    //   (a) setiap auto-lunas/statusKhusus jadi queue-only → antrean
+                    //       menumpuk & bergantung penuh pada background worker;
+                    //   (b) `status` di server tetap "Aktif" sampai replay jalan →
+                    //       layar Nasabah Lunas KOSONG (filternya mengecualikan
+                    //       status "Aktif"/"Disetujui"), padahal count di Ringkasan
+                    //       memakai predikat berbasis pembayaran → tetap benar.
+                    // Perbaikan: jalur langsung DIKEMBALIKAN, tapi memakai TRANSAKSI
+                    // guarded — sama seperti savePelangganDirect/ADD_PELANGGAN.
+                    // Transaksi TIDAK di-persist SDK saat disconnect → ghost-write
+                    // tetap mustahil, sementara latensi & semantik SaveResult.Success
+                    // (dipakai isSynced pemanggil) pulih seperti semula.
+                    val (cleanUpdateData, guardPk) = stripGuardPinjamanKe(updateData)
+                    if (guardPk != null) {
+                        val txn = guardedPelangganTransaction(path, guardPk) { m ->
+                            cleanUpdateData.forEach { (k, v) ->
+                                if (v == null) m.remove(k) else m[k] = v
+                            }
+                            true
+                        }
+                        when (txn) {
+                            is GuardTxn.Applied -> {
+                                dao.updateStatus(operationId, "SUCCESS")
+                                Log.d(TAG, "✅ UPDATE SYNCED (transaksi guarded)!")
+                            }
+                            is GuardTxn.SkippedStale, is GuardTxn.SkippedMissing -> {
+                                dao.updateStatus(operationId, "SUCCESS", "SKIPPED_STALE_PINJAMAN_GENERATION")
+                                Log.w(TAG, "⏭️ UPDATE dilewati: generasi/nasabah server sudah berbeda")
+                            }
+                            is GuardTxn.Retry -> throw Exception("Transaksi UPDATE_PELANGGAN perlu retry: ${txn.msg}")
+                        }
+                    } else {
+                        firebase.getReference(path).updateChildren(cleanUpdateData).await()
+                        dao.updateStatus(operationId, "SUCCESS")
+                        Log.d(TAG, "✅ UPDATE SYNCED!")
+                    }
                     SaveResult.Success
                 } catch (e: Exception) {
                     Log.e(TAG, "❌ Firebase update failed: ${e.message}")
                     dao.updateStatus(operationId, "PENDING", e.message)
+                    // Dua pemicu sekaligus (pola sama dgn cabang offline): Worker saja
+                    // bisa tertahan constraint/battery-optimization di sebagian device.
                     SyncForegroundService.startSync(context)
+                    SyncWorker.triggerImmediateSync(context)
                     SaveResult.Queued
                 }
             } else {
