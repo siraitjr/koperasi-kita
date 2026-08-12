@@ -270,6 +270,15 @@ const nasabahAda = new Set();
  * SIAPA nasabahnya dan admin mana yang memegangnya. */
 const namaAdmin = new Map();
 
+/* Cabang tiap admin (uid → cabang_id), untuk kebijakan pewarisan cabang
+ * di bawah. */
+const cabangAdmin = new Map();
+
+/* Nasabah yang cabangnya DIWARISI dari admin pemiliknya. Dicatat lengkap,
+ * bukan sekadar dihitung: ini keputusan yang mengubah data, jadi harus bisa
+ * ditelusuri balik satu per satu bila kelak ada yang salah tempat. */
+const CABANG_DIWARISI = [];
+
 /* Nasabah yang cabangId-nya kosong. Dikumpulkan lengkap (bukan sekadar
  * dihitung) supaya bisa langsung dipakai memilih cabang tujuan. */
 const PERLU_CABANG = [];
@@ -336,6 +345,7 @@ function faseUser() {
   ROWS.app_user.forEach((u) => {
     userAda.add(u.id);
     namaAdmin.set(u._uid, u.nama || u.email || u._uid);
+    if (u.cabang_id) cabangAdmin.set(u._uid, u.cabang_id);
   });
   ROWS.cabang.forEach((c) => cabangAda.add(c.id));
   log(`  cabang=${ROWS.cabang.length} app_user=${ROWS.app_user.length}`);
@@ -512,8 +522,34 @@ function faseNasabahPinjaman() {
 
       if (!nasabahSeen.has(ID.nasabah(adminUid, pid))) {
         const n = nasabahDariRecord(adminUid, pid, p);
+        /* KEBIJAKAN PEWARISAN CABANG (keputusan pemilik, 12 Agu 2026)
+         * ---------------------------------------------------------------
+         * Nasabah tanpa cabangId mewarisi cabang admin pemiliknya. Dasarnya
+         * kuat: seorang admin lapangan hanya bekerja di satu cabang, jadi
+         * nasabah yang dipegangnya pasti berada di cabang itu — cabangId yang
+         * kosong adalah field yang tidak terisi, bukan nasabah tanpa cabang.
+         *
+         * Bila ADMIN-nya sendiri tanpa cabang, tidak ada yang bisa diwarisi
+         * dan nasabahnya tetap masuk daftar yang perlu diputuskan manual.
+         * Tidak ditebak ke cabang mana pun. */
         if (!n.cabang_id) {
-          issue('NASABAH_TANPA_CABANG', `${adminUid}/${pid} — ${n.nama_ktp}`);
+          const warisan = cabangAdmin.get(adminUid);
+          if (warisan) {
+            n.cabang_id = warisan;
+            CABANG_DIWARISI.push({
+              legacyPelangganId: pid,
+              legacyAdminUid: adminUid,
+              adminName: namaAdmin.get(adminUid) || '(admin tidak dikenal)',
+              namaKtp: n.nama_ktp,
+              namaPanggilan: n.nama_panggilan,
+              cabangDiwarisi: warisan,
+            });
+          }
+        }
+
+        if (!n.cabang_id) {
+          issue('NASABAH_TANPA_CABANG',
+            `${adminUid}/${pid} — ${n.nama_ktp} (admin juga tanpa cabang)`);
           PERLU_CABANG.push({
             legacyPelangganId: pid,
             legacyAdminUid: adminUid,
@@ -643,7 +679,7 @@ function faseJurnalKasir() {
    * enum koperasi.jurnal_tipe lewat 001a_schema_patch.sql — kalau hanya
    * ditambah di sini, impor akan gagal saat cast ke enum. */
   const TIPE_OK = ['pembayaran_cicilan', 'tambah_bayar', 'pencairan_pinjaman',
-    'pelunasan_sisa_utang', 'lunas', 'pelunasan_tabungan'];
+    'pelunasan_sisa_utang', 'lunas', 'pelunasan_tabungan', 'tarik_tabungan'];
   for (const cabRaw of realKeys(J)) {
     const cab = slugCabang(cabRaw);
     for (const bulan of realKeys(J[cabRaw])) {
@@ -910,6 +946,27 @@ async function writeTable(client, table, rows, conflictCols) {
     generatedAt: new Date().toISOString(),
     sourceFile: CFG.file, executed: CFG.execute,
     rows: summary, issueCounts: kindCount, issues: ISSUES.slice(0, 2000),
+
+    /* Kebijakan yang MENGUBAH data, ditulis eksplisit di laporan supaya
+     * keputusannya ikut terarsip bersama hasilnya — bukan hanya hidup di
+     * kepala orang yang menjalankan skrip. */
+    kebijakan: {
+      pewarisanCabang:
+        'Nasabah tanpa cabangId mewarisi cabang_id dari admin pemiliknya ' +
+        '(app_user.cabang_id). Dasarnya: satu admin lapangan bekerja di satu ' +
+        'cabang, jadi cabangId kosong berarti field tidak terisi, bukan ' +
+        'nasabah tanpa cabang. Bila admin juga tanpa cabang, nasabah TIDAK ' +
+        'ditebak dan masuk daftar perluCabang.',
+      pembayaranTanpaJumlah:
+        'Entri pembayaran tanpa jumlah yang sah DILEWATI (dianggap sampah).',
+      riwayatYatim:
+        'Entri pinjaman_history yang nasabah induknya tidak ada DILEWATI.',
+    },
+
+    /* Jejak audit pewarisan cabang: siapa mewarisi apa, dari admin mana. */
+    cabangDiwarisi: CABANG_DIWARISI.sort(
+      (x, y) => (x.adminName + x.namaKtp).localeCompare(y.adminName + y.namaKtp)
+    ),
     /* Daftar kerja untuk pemilik: nasabah yang perlu ditentukan cabangnya
      * sebelum impor. Diurutkan per admin supaya bisa ditanyakan sekaligus. */
     perluCabang: PERLU_CABANG.sort(
@@ -925,8 +982,18 @@ async function writeTable(client, table, rows, conflictCols) {
     for (const [k, v] of Object.entries(kindCount)) log(`   ${k.padEnd(30)} ${v}`);
   }
 
+  if (CABANG_DIWARISI.length) {
+    log(`\n▶ ${CABANG_DIWARISI.length} nasabah mewarisi cabang dari adminnya`);
+    const perCabang = CABANG_DIWARISI.reduce(
+      (m, r) => ((m[r.cabangDiwarisi] = (m[r.cabangDiwarisi] || 0) + 1), m), {}
+    );
+    for (const [cab, n] of Object.entries(perCabang)) log(`   ${cab.padEnd(28)} ${n}`);
+    log('   (rincian per nasabah di ' + CFG.report + ' → cabangDiwarisi)');
+  }
+
   if (PERLU_CABANG.length) {
-    log(`\n▶ ${PERLU_CABANG.length} nasabah TANPA cabang — tentukan cabang tujuannya`);
+    log(`\n▶ ${PERLU_CABANG.length} nasabah TANPA cabang DAN adminnya juga tanpa cabang`);
+    log('   → tidak bisa diwarisi; tentukan cabang tujuannya manual');
     log('   (daftar lengkap di ' + CFG.report + ' → perluCabang)');
     let adminSekarang = null;
     for (const r of report.perluCabang) {

@@ -20,12 +20,15 @@
 -- dengan pemakaian nilainya. Ditaruh terpisah di paling atas supaya urutan
 -- ini tidak bisa keliru.
 --
--- 'pelunasan_tabungan' ditemukan di dry run pertama (12 Agu 2026): 436 entri
--- jurnal memakainya, dan seluruhnya ditolak sebagai ENUM_TIDAK_DIKENAL.
--- Nilai ini TIDAK disebut di komentar functions/jurnalTransaksi.js:14-18 —
--- daftar tipe di sana ternyata tidak lengkap terhadap data yang benar-benar
--- ditulis. Sumber kebenarannya adalah data, bukan komentar.
+-- Dua nilai ini ditemukan dari dry run, bukan dari dokumentasi:
+--   'pelunasan_tabungan' — dry run ke-1, 436 entri
+--   'tarik_tabungan'     — dry run ke-2, 15 entri
+-- Keduanya TIDAK disebut di komentar functions/jurnalTransaksi.js:14-18.
+-- Daftar tipe di sana ternyata tidak lengkap terhadap data yang benar-benar
+-- ditulis; sumber kebenarannya adalah data, bukan komentar. Kalau kelak
+-- muncul ENUM_TIDAK_DIKENAL lagi, tambahkan di sini dengan pola yang sama.
 alter type koperasi.jurnal_tipe add value if not exists 'pelunasan_tabungan';
+alter type koperasi.jurnal_tipe add value if not exists 'tarik_tabungan';
 
 
 begin;
@@ -129,7 +132,7 @@ commit;
 --      select enumlabel from pg_enum e
 --        join pg_type t on t.oid = e.enumtypid
 --       where t.typname = 'jurnal_tipe' order by e.enumsortorder;
---      -- harus memuat 'pelunasan_tabungan'
+--      -- harus memuat 'pelunasan_tabungan' DAN 'tarik_tabungan'
 --
 -- 2) FK auth.users memang sedang LEPAS (wajib sebelum impor):
 --      select conname from pg_constraint where conname = 'app_user_id_fkey';
