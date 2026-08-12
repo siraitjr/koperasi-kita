@@ -1,7 +1,6 @@
 package com.example.koperasikitagodangulu.offline
 
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import java.util.Locale
@@ -234,7 +233,18 @@ object SupabaseMappers {
     fun patchTerpisah(update: Map<String, Any?>): Pair<JsonObject, JsonObject> {
         val nasabah = buildJsonObject {
             for ((rtdb, kolom) in KOLOM_NASABAH) if (update.containsKey(rtdb)) put(kolom, str(update[rtdb]))
-            if (update.containsKey("nik")) put("nik", nikAtauNull(update["nik"]) ?: JsonPrimitive(null as String?))
+            // `put(key, String?)` dari kotlinx-serialization sudah memetakan
+            // null → JsonNull, jadi elvis ke JsonPrimitive tidak diperlukan.
+            // Bentuk lama (`nikAtauNull(...) ?: JsonPrimitive(null)`) mencampur
+            // String dan JsonPrimitive, sehingga Kotlin melebarkan tipe hasilnya
+            // ke Any dan memilih overload put(String, JsonElement) → tidak cocok.
+            //
+            // Semantiknya tetap sama dan memang disengaja: NIK yang kosong atau
+            // tidak 16 digit menulis NULL, bukan string kosong. Itu yang membuat
+            // unique index parsial `where nik is not null` (001 §2) tetap benar
+            // saat alur cairkan-serah terima mengosongkan NIK
+            // (buildCairkanCleansePayload menulis "nik" to "").
+            if (update.containsKey("nik")) put("nik", nikAtauNull(update["nik"]))
             if (update.containsKey("tanggalStatusKhusus")) {
                 tanggal(update["tanggalStatusKhusus"])?.let { put("tanggal_status_khusus", it) }
             }
