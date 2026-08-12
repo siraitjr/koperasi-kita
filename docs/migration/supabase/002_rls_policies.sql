@@ -74,14 +74,15 @@ set search_path = ''
 as $$ select koperasi_priv.role() = 'pengawas' $$;
 
 -- Cabang yang boleh dilihat user saat ini.
---  * pengawas  → semua cabang
---  * koordinator → cabang yang ditugaskan (tabel koordinator_cabang).
---    CATATAN PENGETATAN: di RTDB koordinator punya akses GLOBAL
---    (rulesfirebase.txt:8 dan :12 mengecek metadata/roles/koordinator tanpa
---    filter cabang apa pun). Rancangan ini MEMPERSEMPIT itu. Perubahan
---    perilaku yang disengaja — lihat 005 R-06 sebelum diadopsi.
---  * pimpinan  → cabang tempat ia terdaftar sebagai pimpinan_id
---  * lainnya   → cabang sendiri
+--  * pengawas    → semua cabang
+--  * koordinator → SEMUA cabang (keputusan pemilik, 12 Agu 2026: "sesuai kode
+--    existing"). Ini memang cerminan RTDB: data/rulesfirebase.txt:7 dan :12
+--    mengecek metadata/roles/koordinator TANPA filter cabang apa pun.
+--    R-06 ditutup dengan mempertahankan perilaku lama, bukan mengetatkannya.
+--    Tabel koordinator_cabang tetap ada untuk pelaporan/penugasan, tetapi
+--    TIDAK lagi membatasi visibilitas.
+--  * pimpinan    → cabang tempat ia terdaftar sebagai pimpinan_id
+--  * lainnya     → cabang sendiri
 create or replace function koperasi_priv.cabang_terlihat()
 returns setof text
 language sql stable security definer parallel safe
@@ -89,9 +90,7 @@ set search_path = ''
 as $$
   select c.id from koperasi.cabang c
    where koperasi_priv.is_pengawas()
-  union
-  select kc.cabang_id from koperasi.koordinator_cabang kc
-   where kc.koordinator_id = auth.uid()
+      or koperasi_priv.role() = 'koordinator'
   union
   select c.id from koperasi.cabang c
    where c.pimpinan_id = auth.uid()
@@ -577,10 +576,12 @@ grant delete on koperasi.nasabah, koperasi.jadwal_cicilan to authenticated;
 --      ini tertutup DI LAPISAN TRIGGER, bukan di policy. Dicatat supaya
 --      penghapusan trigger itu kelak tidak membuka lubang tanpa disadari.
 --
--- L-3  `koperasi_priv.cabang_terlihat()` menaikkan hak baca kasir_unit dan
---      sekretaris ke seluruh cabangnya. Belum diverifikasi terhadap kebutuhan
---      nyata Kasir Wilayah (CLAUDE.md §8.1 menyebut scope "Wilayah = kumpulan
---      cabang", yang belum dimodelkan sama sekali). Lihat 005 R-03.
+-- L-3  `sekretaris` NYATA ADA di produksi (metadata/admins → role
+--      'sekretaris', TANPA cabang — terlihat di data/firebase_sample.json).
+--      Karena cabang_id-nya null, `boleh_lihat_cabang()` tidak pernah cocok
+--      dan sekretaris praktis tidak bisa membaca apa pun. Kalau peran itu
+--      memang perlu akses laporan, tambahkan cabangnya atau beri klausa
+--      khusus. Belum ditentukan — butuh keputusan Anda.
 --
 -- L-4  Belum ada padanan `session_lock` / `force_logout` / `remote_takeover`
 --      (rulesfirebase.txt:320, :367, :374). Ketiganya fitur sesi, bukan data,
