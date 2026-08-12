@@ -53,3 +53,6 @@ Thumbs.db
 
 # Firebase cache
 .firebase/
+
+# Jangan commit file data besar
+data/koperasikitagodangulu-default-rtdb-export.json
