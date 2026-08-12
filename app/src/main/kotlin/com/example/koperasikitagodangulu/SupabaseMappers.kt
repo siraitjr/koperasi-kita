@@ -34,11 +34,20 @@ object SupabaseMappers {
         "jan" to 1, "feb" to 2, "mar" to 3, "apr" to 4, "mei" to 5, "jun" to 6,
         "jul" to 7, "agu" to 8, "sep" to 9, "okt" to 10, "nov" to 11, "des" to 12,
         // toleransi data lama yang tertulis dengan locale Inggris
-        "may" to 5, "aug" to 8, "oct" to 10, "dec" to 12
+        "may" to 5, "aug" to 8, "oct" to 10, "dec" to 12,
+        // "Agt" — singkatan Agustus yang dipakai sebagian perangkat. Ditemukan
+        // di dry run migrasi (70 tanggal ditolak hanya karena ini). Harus ada
+        // di sini juga, bukan cuma di migrate.js: kalau tidak, tanggal yang
+        // berhasil diimpor justru gagal saat aplikasi menulisnya kembali.
+        "agt" to 8
     )
 
     private val RE_ISO = Regex("^(\\d{4})-(\\d{2})-(\\d{2})")
-    private val RE_LOKAL = Regex("^(\\d{1,2})\\s+([A-Za-z]{3,})\\s+(\\d{4})$")
+    /* Suffix jam OPSIONAL: "12 Nov 2025, 14:30". Dry run migrasi menemukan 252
+     * tanggal berbentuk ini yang dulu ditolak semata karena anchor `$`.
+     * Komponen jam dibuang — kolom tujuannya bertipe `date`. */
+    private val RE_LOKAL =
+        Regex("^(\\d{1,2})\\s+([A-Za-z]{3,})\\s+(\\d{4})(?:,?\\s+\\d{1,2}:\\d{2}(?::\\d{2})?)?$")
 
     /** "12 Nov 2025" / "2025-11-12" → "2025-11-12". null bila tak terbaca. */
     fun tanggal(v: Any?): String? {

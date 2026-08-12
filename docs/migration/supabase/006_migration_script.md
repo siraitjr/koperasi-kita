@@ -65,8 +65,13 @@ Tambahan yang tidak membatalkan tapi mengubah bentuk kolom:
 
 ### 1.3 Patch skema WAJIB
 
-Jalankan ini **setelah** `001` dan `002`, **sebelum** `migrate.js`.
-Simpan sebagai `001a_schema_patch.sql`.
+Sudah berdiri sendiri sebagai **`001a_schema_patch.sql`** — jalankan langsung
+di SQL Editor, setelah `001` dan sebelum `migrate.js --execute`.
+
+Berkas itu juga memuat penambahan nilai enum `pelunasan_tabungan` (temuan dry
+run: 436 entri jurnal memakainya). Blok di bawah adalah salinan isinya untuk
+pembacaan; **yang dijalankan adalah berkasnya**, karena `alter type … add
+value` di sana sengaja ditaruh DI LUAR transaksi.
 
 ```sql
 begin;

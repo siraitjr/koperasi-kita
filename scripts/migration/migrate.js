@@ -125,6 +125,9 @@ const BULAN = {
   jul: 7, agu: 8, sep: 9, okt: 10, nov: 11, des: 12,
   // toleransi data campuran yang ditulis perangkat ber-locale Inggris
   may: 5, aug: 8, oct: 10, dec: 12,
+  // "Agt" — singkatan Agustus yang dipakai sebagian perangkat. Ditemukan di
+  // dry run pertama: 70 entri TANGGAL_BULAN_TIDAK_DIKENAL, seluruhnya ini.
+  agt: 8,
 };
 
 function parseTanggal(v) {
@@ -132,7 +135,12 @@ function parseTanggal(v) {
   const s = String(v).trim();
   let m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s);          // "2026-01-19"
   if (m) return `${m[1]}-${m[2]}-${m[3]}`;
-  m = /^(\d{1,2})\s+([A-Za-z]{3,})\s+(\d{4})$/.exec(s); // "12 Nov 2025"
+  /* Suffix jam OPSIONAL: "12 Nov 2025, 14:30" / "12 Nov 2025 14:30:07".
+   * Dry run pertama melaporkan 252 TANGGAL_TIDAK_TERBACA — seluruhnya bentuk
+   * ini, yang dulu ditolak semata karena anchor `$` menuntut string berakhir
+   * tepat setelah tahun. Komponen jamnya memang DIBUANG: kolom tujuannya
+   * bertipe `date`, dan seluruh laporan koperasi berbasis hari, bukan jam. */
+  m = /^(\d{1,2})\s+([A-Za-z]{3,})\s+(\d{4})(?:,?\s+\d{1,2}:\d{2}(?::\d{2})?)?$/.exec(s);
   if (m) {
     const bln = BULAN[m[2].slice(0, 3).toLowerCase()];
     if (!bln) { issue('TANGGAL_BULAN_TIDAK_DIKENAL', s); return null; }
@@ -257,6 +265,15 @@ const userAda = new Set();
 const cabangAda = new Set();
 const nasabahAda = new Set();
 
+/* Nama admin (uid → nama) untuk memperkaya laporan. Sekadar "adminUid/pid"
+ * tidak cukup bagi pemilik untuk memutuskan cabang tujuan — ia perlu tahu
+ * SIAPA nasabahnya dan admin mana yang memegangnya. */
+const namaAdmin = new Map();
+
+/* Nasabah yang cabangId-nya kosong. Dikumpulkan lengkap (bukan sekadar
+ * dihitung) supaya bisa langsung dipakai memilih cabang tujuan. */
+const PERLU_CABANG = [];
+
 // ================================================== FASE 1: CABANG & USER ==
 function faseUser() {
   const admins = node('metadata').admins || {};
@@ -316,7 +333,10 @@ function faseUser() {
       'metadata/cabang tidak ada di export — pimpinan_id semua cabang NULL. ' +
       'Isi manual sesudah impor, kalau tidak RLS pimpinan tidak akan berfungsi.');
   }
-  ROWS.app_user.forEach((u) => userAda.add(u.id));
+  ROWS.app_user.forEach((u) => {
+    userAda.add(u.id);
+    namaAdmin.set(u._uid, u.nama || u.email || u._uid);
+  });
   ROWS.cabang.forEach((c) => cabangAda.add(c.id));
   log(`  cabang=${ROWS.cabang.length} app_user=${ROWS.app_user.length}`);
 }
@@ -428,7 +448,14 @@ function tarikPembayaran(adminUid, pid, ke, p) {
     const jml = rupiah(bayar.jumlah);
     const tgl = parseTanggal(bayar.tanggal);
     if (jml <= 0 || !tgl) {
-      issue('BAYAR_DILEWATI', `${pid}/${ke}[${i}] jumlah=${bayar.jumlah} tgl=${bayar.tanggal}`);
+      /* Tetap DILEWATI (keputusan pemilik, 12 Agu 2026): entri tanpa jumlah
+       * yang sah adalah sampah, bukan pembayaran. Alasannya dibedakan agar
+       * terlihat di laporan mana yang benar-benar kosong dan mana yang
+       * jumlahnya ada tetapi tanggalnya tidak terbaca — dua hal berbeda. */
+      const sebab = (bayar.jumlah == null || bayar.jumlah === '')
+        ? 'jumlah kosong/undefined (sampah)'
+        : (jml <= 0 ? `jumlah tidak sah (${bayar.jumlah})` : `tanggal tidak terbaca (${bayar.tanggal})`);
+      issue('BAYAR_DILEWATI', `${pid}/${ke}[${i}] — ${sebab}`);
       continue;
     }
     const cid = str(bayar.clientOpId);
@@ -485,7 +512,26 @@ function faseNasabahPinjaman() {
 
       if (!nasabahSeen.has(ID.nasabah(adminUid, pid))) {
         const n = nasabahDariRecord(adminUid, pid, p);
-        if (!n.cabang_id) issue('NASABAH_TANPA_CABANG', `${adminUid}/${pid}`);
+        if (!n.cabang_id) {
+          issue('NASABAH_TANPA_CABANG', `${adminUid}/${pid} — ${n.nama_ktp}`);
+          PERLU_CABANG.push({
+            legacyPelangganId: pid,
+            legacyAdminUid: adminUid,
+            adminName: namaAdmin.get(adminUid) || '(admin tidak dikenal)',
+            adminEmail: str(p.adminEmail),
+            namaKtp: n.nama_ktp,
+            namaPanggilan: n.nama_panggilan,
+            nik: n.nik || '',
+            wilayah: n.wilayah,
+            alamatRumah: n.alamat_rumah,
+            status: str(p.status),
+            pinjamanKe: int(p.pinjamanKe, 1),
+            besarPinjaman: rupiah(p.besarPinjaman),
+            // cabangId asli apa adanya — kadang berisi spasi/teks aneh yang
+            // justru menunjukkan cabang mana yang dimaksud.
+            cabangIdMentah: str(p.cabangId),
+          });
+        }
         ROWS.nasabah.push(n);
         nasabahSeen.add(n.id);
         nasabahAda.add(n.id);
@@ -592,8 +638,12 @@ function fasePengajuan() {
 // ============================================= FASE 4: JURNAL & KASIR ======
 function faseJurnalKasir() {
   const J = node('jurnal_transaksi');
+  /* 'pelunasan_tabungan' ditambahkan setelah dry run pertama: 436 entri
+   * ENUM_TIDAK_DIKENAL, seluruhnya tipe ini. Nilainya ikut ditambahkan ke
+   * enum koperasi.jurnal_tipe lewat 001a_schema_patch.sql — kalau hanya
+   * ditambah di sini, impor akan gagal saat cast ke enum. */
   const TIPE_OK = ['pembayaran_cicilan', 'tambah_bayar', 'pencairan_pinjaman',
-    'pelunasan_sisa_utang', 'lunas'];
+    'pelunasan_sisa_utang', 'lunas', 'pelunasan_tabungan'];
   for (const cabRaw of realKeys(J)) {
     const cab = slugCabang(cabRaw);
     for (const bulan of realKeys(J[cabRaw])) {
@@ -860,6 +910,11 @@ async function writeTable(client, table, rows, conflictCols) {
     generatedAt: new Date().toISOString(),
     sourceFile: CFG.file, executed: CFG.execute,
     rows: summary, issueCounts: kindCount, issues: ISSUES.slice(0, 2000),
+    /* Daftar kerja untuk pemilik: nasabah yang perlu ditentukan cabangnya
+     * sebelum impor. Diurutkan per admin supaya bisa ditanyakan sekaligus. */
+    perluCabang: PERLU_CABANG.sort(
+      (x, y) => (x.adminName + x.namaKtp).localeCompare(y.adminName + y.namaKtp)
+    ),
   };
   fs.writeFileSync(CFG.report, JSON.stringify(report, null, 2));
 
@@ -868,6 +923,21 @@ async function writeTable(client, table, rows, conflictCols) {
   if (ISSUES.length) {
     log('\n▶ Anomali (rincian di ' + CFG.report + ')');
     for (const [k, v] of Object.entries(kindCount)) log(`   ${k.padEnd(30)} ${v}`);
+  }
+
+  if (PERLU_CABANG.length) {
+    log(`\n▶ ${PERLU_CABANG.length} nasabah TANPA cabang — tentukan cabang tujuannya`);
+    log('   (daftar lengkap di ' + CFG.report + ' → perluCabang)');
+    let adminSekarang = null;
+    for (const r of report.perluCabang) {
+      if (r.adminName !== adminSekarang) {
+        adminSekarang = r.adminName;
+        log(`   ── ${adminSekarang}`);
+      }
+      log(`      ${r.namaKtp || '(tanpa nama)'}`.padEnd(38) +
+          `${r.namaPanggilan || '-'}`.padEnd(16) +
+          `wilayah=${r.wilayah || '-'}`);
+    }
   }
 
   if (!CFG.execute) {
