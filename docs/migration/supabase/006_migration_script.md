@@ -181,22 +181,83 @@ node --max-old-space-size=8192 validate.js \
      --file=~/export/koperasi-rtdb.json --dsn="postgresql://…"
 ```
 
+### 3a. ⚠ Alur reset password TIDAK berfungsi setelah cutover
+
+Rencana Anda — *Pengawas login dulu, lalu reset password user lain via
+aplikasi* — **tidak akan jalan apa adanya**, dan ini perlu diputuskan sebelum
+hari-H.
+
+Buktinya di `functions/resetUserPassword.js`:
+
+```js
+:67   const userRecord = await admin.auth().getUserByEmail(...)
+:94   await admin.auth().updateUser(targetUid, { password: ... })
+:99   await admin.auth().revokeRefreshTokens(targetUid)
+:37   const pengawasSnap = await db.ref(`metadata/roles/pengawas/${callerUid}`)…
+```
+
+`admin.auth()` adalah **Firebase Auth**, dan cek wewenangnya membaca
+**RTDB**. Setelah cutover, akun hidup di Supabase Auth — fungsi ini akan
+mengubah password di Firebase yang sudah tidak dipakai, lalu tampak
+"berhasil" di layar. Hasilnya: **hanya Pengawas yang bisa login, dan tidak ada
+cara memasukkan user lain.**
+
+Tiga pilihan, tanpa menyentuh kode Android:
+
+| Opsi | Cara | Catatan |
+|---|---|---|
+| **A. Tautan pemulihan** (paling cepat) | `create_auth_users.js --emit-reset-links=./reset.csv` | Menghasilkan CSV berisi tautan reset per user. Bagikan **per orang**. Berkasnya setara password — jangan di-commit, hapus setelah dipakai. |
+| **B. Edge Function pengganti** | Tulis Edge Function Supabase yang meniru `resetUserPassword`, dipanggil di endpoint yang sama | Perlu perubahan endpoint di klien → **melanggar batasan "jangan ubah kode Android"** pada fase ini |
+| **C. Set password sementara untuk semua** | Beri password awal ke semua user saat pembuatan akun | Menyimpang dari keputusan Anda; dan password seragam untuk 1 organisasi adalah risiko nyata |
+
+**Rekomendasi: A.** Sesuai keputusan Anda (hanya Pengawas yang punya
+password), tidak menyentuh kode Android, dan bisa dieksekusi pada hari-H.
+Opsi B tetap diperlukan sebagai perbaikan permanen di fase berikutnya.
+
 ### Membuat akun Supabase Auth (langkah manual, setelah impor)
 
-`migrate.js` mengisi `app_user` memakai UUID **deterministik** yang diturunkan
-dari UID Firebase (`uuidv5('user:'+uid)`). Akun Auth belum ada. Setelah impor:
+Dikerjakan `scripts/migration/create_auth_users.js`. Skrip itu **membaca
+`koperasi.app_user` dari Postgres**, bukan menghitung ulang id dari UID
+Firebase — jadi tidak ada dua implementasi turunan id yang bisa melenceng.
 
-1. Untuk tiap baris `app_user`, buat akun lewat Admin API dengan **id yang
-   sudah ditentukan** (`supabase.auth.admin.createUser({ id, email, … })`),
-   sehingga `app_user.id` dan `auth.users.id` cocok tanpa pemetaan.
-2. Pasang kembali FK:
-   ```sql
-   alter table koperasi.app_user
-     add constraint app_user_id_fkey foreign key (id) references auth.users(id);
-   ```
-3. Kirim undangan reset password. **Password lama tidak ikut** — hash Firebase
-   tidak dapat diimpor ke Supabase Auth. Semua staf harus set ulang password.
-   Ini konsekuensi cutover yang perlu diumumkan sebelum hari-H.
+Kebijakan sesuai keputusan Anda:
+
+| Peran | Password saat migrasi |
+|---|---|
+| Pengawas | **diberi**, lewat `PENGAWAS_PASSWORD` |
+| PDL, Pimpinan, Koordinator, Sekretaris, Kasir | **tidak diberi** — akun dibuat tanpa password |
+
+```bash
+export SUPABASE_URL="https://xxx.supabase.co"
+export SUPABASE_SERVICE_ROLE_KEY="eyJ…"        # service_role, BUKAN anon
+export SUPABASE_DSN="postgresql://…:5432/postgres"
+export PENGAWAS_PASSWORD='…'                   # password yang Anda tentukan
+
+node create_auth_users.js --dry-run
+node create_auth_users.js --execute --emit-reset-links=./reset_links.csv
+```
+
+Lalu pasang kembali FK dan verifikasi:
+
+```sql
+alter table koperasi.app_user
+  add constraint app_user_id_fkey foreign key (id) references auth.users(id);
+
+select count(*) from koperasi.app_user u
+ left join auth.users a on a.id = u.id where a.id is null;   -- harus 0
+```
+
+**Password tidak disimpan di repo — disengaja.** Skrip menolak jalan tanpa
+`PENGAWAS_PASSWORD` dan tidak memuat nilai default apa pun. Repo ini ada di
+GitHub; kredensial produksi yang ter-commit akan tetap ada di riwayat git
+selamanya walau berkasnya dihapus. Preseden yang sama sudah tercatat pada
+`SWEEP_SECRET` di `sweepRiwayatOrphan.js` (lihat checklist baseline §2A).
+
+Ganti password Pengawas setelah login pertama — nilai yang dipakai saat
+migrasi sudah melewati shell history dan berkas environment.
+
+**Password lama tidak ikut bermigrasi**: hash Firebase tidak dapat diimpor ke
+Supabase Auth. Umumkan ini sebelum hari-H.
 
 ---
 
@@ -262,28 +323,37 @@ sebagai gerbang otomatis.
 `pembayaran_harian`, `event_harian`, `nasabah_index`, `nik_registry`,
 `pelanggan_bermasalah`, `kasir_summary`.
 
-**Node di luar lingkup** — tidak ada tabel tujuannya di `001`:
+**Sudah ikut dimigrasikan** (keputusan pemilik 12 Agu 2026, tabel baru di
+`001` §10b): `pinjamanHistory` → `pinjaman_history`, `biaya_awal` →
+`biaya_awal`, `pelanggan_ditolak` → `pelanggan_ditolak`.
+
+Catatan bentuk untuk ketiganya:
+
+- `pinjaman_history` — `{berlakuSampai, besarPinjaman}` per push-id. Entri yang
+  nasabah induknya sudah tidak ada di `/pelanggan` **dilewati** dan dilaporkan
+  sebagai `PINJAMAN_HISTORY_YATIM`; dipaksa masuk berarti FK gagal dan seluruh
+  transaksi impor batal.
+- `biaya_awal` — PK `(admin_id, tanggal)`; key node RTDB-nya memang tanggal,
+  jadi tidak mungkin ada dua entri sehari.
+- `pelanggan_ditolak` — snapshot `pelanggan` (±70 field) disimpan **utuh
+  sebagai `jsonb`**, bukan dipecah ke kolom. Nasabahnya sering tidak pernah ada
+  di tabel `nasabah` (ditolak sebelum jadi nasabah), dan sebagai bukti audit
+  bentuknya harus tetap seperti saat ditolak. Kolom yang dicari (`nik`,
+  `nama_ktp`, `cabang_id`, `besar_pinjaman`) diekstrak agar bisa di-index.
+
+**Masih di luar lingkup** — tidak ada tabel tujuannya:
 `absensi`, `user_absensi_today`, `rekap_harian`, `rekap_harian_final`,
-`operasional_harian`, `biaya_awal`, `pinjamanHistory`, `koreksi_storting`,
-`deleted_sampah`, `pelanggan_ditolak`, `pelanggan_status_khusus`,
-`deletion_requests`, `payment_deletion_requests`,
+`operasional_harian`, `koreksi_storting`, `deleted_sampah`,
+`pelanggan_status_khusus`, `deletion_requests`, `payment_deletion_requests`,
 `pengajuan_pencairan_simpanan`, seluruh node notifikasi, `fcm_tokens`,
 `device_presence`, `force_logout`, `location_tracking`, `user_locations`,
 `password_reset_logs`, `user_management_logs`, `jurnal_transaksi_meta`.
 
-Ini **bukan** daftar yang bisa diabaikan. Tiga di antaranya berdampak bisnis
-langsung dan perlu keputusan Anda sebelum cutover:
-
-- **`pinjamanHistory`** — `{berlakuSampai, besarPinjaman}` per pelanggan.
-  Kalau Buku Pokok web memakainya untuk baris historis, laporan akan berubah
-  setelah cutover.
-- **`biaya_awal`** — rekap biaya administrasi harian per admin. Berpengaruh ke
-  pembukuan kasir.
-- **`pelanggan_ditolak`** — arsip pengajuan yang ditolak. Hilang berarti
-  kehilangan jejak audit penolakan.
-
-Saya tidak menambahkannya diam-diam ke skrip: memodelkannya butuh tabel baru di
-`001`, dan itu keputusan Anda, bukan asumsi saya.
+Dari sisa itu, dua yang paling mungkin terasa hilang: **`koreksi_storting`**
+(penyesuaian setoran — memengaruhi angka pembukuan) dan
+**`pelanggan_status_khusus`** (penanda nasabah bermasalah; sebagian sudah
+tertampung di kolom `nasabah.status_khusus`, tetapi node terpisahnya belum
+diperiksa). Belum saya modelkan — sebutkan bila ingin ikut.
 
 ---
 

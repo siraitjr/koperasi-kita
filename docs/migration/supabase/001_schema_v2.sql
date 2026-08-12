@@ -894,6 +894,111 @@ create index dokumen_pinjaman_idx on koperasi.dokumen (pinjaman_id);
 
 
 -- =========================================================================
+-- 10b. DATA HISTORIS (keputusan pemilik 12 Agu 2026: "pindah semua")
+-- =========================================================================
+-- Tiga node RTDB yang semula di luar lingkup kini ikut dimigrasikan. Bentuk
+-- kolom diturunkan dari record NYATA di data/firebase_sample.json, bukan dari
+-- dokumentasi.
+-- =========================================================================
+
+-- -------------------------------------------------------------------------
+-- 10b.1 pinjamanHistory/{adminUid}/{pelangganId}/{pushId}
+--       → {berlakuSampai: "14 Mar 2026", besarPinjaman: 1000000}
+-- -------------------------------------------------------------------------
+-- Riwayat besaran pinjaman ber-masa-berlaku. Dipakai Buku Pokok web untuk
+-- baris historis ("coretan merah" pinjaman lama). TIDAK dapat diturunkan dari
+-- tabel `pinjaman`: `berlakuSampai` adalah batas waktu tampil, bukan tanggal
+-- pelunasan, dan satu generasi bisa punya beberapa entri.
+create table koperasi.pinjaman_history (
+  id              uuid primary key default gen_random_uuid(),
+  nasabah_id      uuid not null references koperasi.nasabah(id) on delete cascade,
+
+  berlaku_sampai  date,
+  besar_pinjaman  bigint not null default 0,
+
+  legacy_push_id  text,
+  legacy_admin_uid text,
+  created_at      timestamptz not null default now(),
+
+  constraint pinjaman_history_unik unique (nasabah_id, legacy_push_id)
+);
+
+create index pinjaman_history_nasabah_idx
+  on koperasi.pinjaman_history (nasabah_id, berlaku_sampai desc);
+
+-- Append-only: riwayat tampilan pembukuan tidak boleh diubah belakangan.
+create trigger pinjaman_history_immutable
+  before update or delete on koperasi.pinjaman_history
+  for each row execute function koperasi.tg_tolak_mutasi();
+
+-- -------------------------------------------------------------------------
+-- 10b.2 biaya_awal/{adminUid}/{YYYY-MM-DD}
+--       → {adminUid, jumlah, tanggal, timestamp}
+-- -------------------------------------------------------------------------
+-- Rekap biaya administrasi awal per admin per HARI (satu entri per tanggal —
+-- key node-nya memang tanggal, jadi tidak mungkin ada dua entri sehari).
+-- Berpengaruh ke pembukuan kasir, sehingga ikut dipindah.
+create table koperasi.biaya_awal (
+  admin_id    uuid not null references koperasi.app_user(id),
+  tanggal     date not null,
+  jumlah      bigint not null default 0,
+  recorded_at timestamptz,
+
+  legacy_admin_uid text,
+
+  primary key (admin_id, tanggal)
+);
+
+create index biaya_awal_tanggal_idx on koperasi.biaya_awal (tanggal);
+
+-- -------------------------------------------------------------------------
+-- 10b.3 pelanggan_ditolak/{adminUid}/{pushId}
+--       → {alasanPenolakan, ditolakOleh, tanggalPenolakan, timestamp,
+--          pelanggan: { ...snapshot lengkap ±70 field... }}
+-- -------------------------------------------------------------------------
+-- Arsip pengajuan yang DITOLAK. Snapshot `pelanggan` disimpan sebagai `jsonb`
+-- apa adanya, BUKAN dipecah ke kolom. Alasannya:
+--   (a) nasabahnya sering tidak pernah ada di tabel `nasabah` — ditolak
+--       sebelum sempat jadi nasabah, jadi tidak ada baris induk untuk ditaut;
+--   (b) ini bukti audit: bentuknya harus persis seperti saat ditolak, tidak
+--       boleh ikut berubah kalau skema `nasabah` berkembang;
+--   (c) tidak ada query operasional yang menyaring isinya — hanya dibaca utuh.
+-- Kolom yang sering dicari tetap diekstrak agar bisa di-index.
+create table koperasi.pelanggan_ditolak (
+  id                uuid primary key default gen_random_uuid(),
+
+  alasan_penolakan  text not null default '',
+  ditolak_oleh      uuid references koperasi.app_user(id),
+  tanggal_penolakan date,
+  rejected_at       timestamptz,
+
+  -- Denormalisasi ringan untuk pencarian tanpa membongkar jsonb.
+  nama_ktp          text not null default '',
+  nama_panggilan    text not null default '',
+  nik               text,
+  besar_pinjaman    bigint not null default 0,
+  cabang_id         text references koperasi.cabang(id),
+  admin_id          uuid references koperasi.app_user(id),
+
+  snapshot          jsonb not null default '{}'::jsonb,
+
+  legacy_push_id    text,
+  legacy_admin_uid  text,
+  created_at        timestamptz not null default now(),
+
+  constraint pelanggan_ditolak_unik unique (legacy_admin_uid, legacy_push_id)
+);
+
+create index pelanggan_ditolak_cabang_idx on koperasi.pelanggan_ditolak (cabang_id, tanggal_penolakan desc);
+create index pelanggan_ditolak_nik_idx    on koperasi.pelanggan_ditolak (nik) where nik is not null;
+create index pelanggan_ditolak_snapshot_idx on koperasi.pelanggan_ditolak using gin (snapshot);
+
+create trigger pelanggan_ditolak_immutable
+  before update or delete on koperasi.pelanggan_ditolak
+  for each row execute function koperasi.tg_tolak_mutasi();
+
+
+-- =========================================================================
 -- 11. updated_at otomatis
 -- =========================================================================
 create or replace function koperasi.tg_touch_updated_at()

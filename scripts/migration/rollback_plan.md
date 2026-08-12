@@ -87,10 +87,17 @@ truncate table
   koperasi.jadwal_cicilan, koperasi.simpanan,
   koperasi.jurnal_transaksi, koperasi.kasir_entry,
   koperasi.permintaan, koperasi.dokumen, koperasi.sync_inbox,
+  koperasi.pinjaman_history, koperasi.biaya_awal, koperasi.pelanggan_ditolak,
   koperasi.pinjaman, koperasi.nasabah
   restart identity cascade;
 commit;
 ```
+
+`pinjaman_history` dan `pelanggan_ditolak` memakai trigger append-only, tetapi
+`TRUNCATE` **tidak** memicu trigger BEFORE DELETE — jadi perintah di atas
+tetap berjalan. Itu memang yang diinginkan di sini (mengulang impor), dan
+sekaligus pengingat bahwa append-only melindungi dari `DELETE`, bukan dari
+`TRUNCATE`. Hanya jalankan selama Firebase masih memegang kebenaran.
 
 `cabang` dan `app_user` sengaja **tidak** di-truncate: keduanya bertaut ke
 `auth.users`, dan menghapusnya memutus akun yang mungkin sudah dibuat.
@@ -174,9 +181,19 @@ mengubah `client_op_id` turunan (lihat `006` §4).
 
 - **Objek Firebase Storage.** Tidak ada yang dipindahkan, jadi tidak ada yang
   perlu di-rollback. Foto tetap di Firebase Storage.
-- **Password.** Tidak ikut migrasi; staf set ulang. Rollback ke Firebase
-  mengembalikan password lama — jadi bila sudah terlanjur set ulang di
-  Supabase, staf akan bingung. Sertakan ini dalam pengumuman.
+- **Password.** Tidak ikut migrasi. Hanya Pengawas yang diberi password saat
+  migrasi; sisanya dibuat tanpa password. Rollback ke Firebase mengembalikan
+  password lama semua orang — jadi bila sebagian staf sudah terlanjur set
+  ulang lewat Supabase, mereka akan memakai password yang salah. Sertakan ini
+  dalam pengumuman rollback.
+
+- **Akun Supabase Auth.** `create_auth_users.js` membuat akun, dan rollback
+  tidak menghapusnya. Itu disengaja: akun kosong tidak berbahaya, sedangkan
+  menghapusnya memutus FK `app_user.id` dan mempersulit percobaan berikutnya.
+  Hapus manual hanya kalau migrasi dibatalkan permanen.
+
+- **Berkas `reset_links.csv`** (bila memakai `--emit-reset-links`) setara
+  password. Hapus segera setelah dibagikan, dan jangan pernah di-commit.
 - **Cloud Functions.** Tetap hidup dan tetap menulis ke RTDB selama tidak
   dimatikan. Selama masa paralel, Firebase justru tetap konsisten dengan
   sendirinya — itu yang membuat rollback G3–G5 murah.

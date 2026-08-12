@@ -140,7 +140,8 @@ begin
     'cabang','app_user','koordinator_cabang','nasabah','pinjaman',
     'pembayaran','pembayaran_koreksi','simpanan','jadwal_cicilan',
     'pengajuan','approval_step','permintaan','jurnal_transaksi',
-    'kasir_entry','sync_inbox','dokumen'
+    'kasir_entry','sync_inbox','dokumen',
+    'pinjaman_history','biaya_awal','pelanggan_ditolak'
   ]
   loop
     execute format('alter table koperasi.%I enable row level security', t);
@@ -527,6 +528,46 @@ create policy dokumen_baca on koperasi.dokumen
 create policy dokumen_tulis on koperasi.dokumen
   for insert to authenticated
   with check (uploaded_by = auth.uid());
+
+
+-- =========================================================================
+-- 9b. DATA HISTORIS
+-- =========================================================================
+-- Ketiganya arsip: dibaca sesuai lingkup cabang, ditulis hanya oleh proses
+-- server (migrasi / RPC). Tidak ada GRANT tulis untuk `authenticated` (§10),
+-- jadi policy insert pun tidak diperlukan.
+
+create policy pinjaman_history_baca on koperasi.pinjaman_history
+  for select to authenticated
+  using (exists (
+    select 1 from koperasi.nasabah n
+     where n.id = pinjaman_history.nasabah_id
+       and (n.admin_id = auth.uid() or koperasi_priv.boleh_lihat_cabang(n.cabang_id))
+  ));
+
+-- Biaya awal = angka pembukuan admin. Admin melihat miliknya; atasan melihat
+-- se-cabang; kasir_unit perlu melihat untuk menyusun kas.
+create policy biaya_awal_baca on koperasi.biaya_awal
+  for select to authenticated
+  using (
+    admin_id = auth.uid()
+    or koperasi_priv.is_pengawas()
+    or exists (
+      select 1 from koperasi.app_user u
+       where u.id = biaya_awal.admin_id
+         and koperasi_priv.boleh_lihat_cabang(u.cabang_id)
+    )
+  );
+
+-- Arsip penolakan: hanya atasan + admin pengaju. Bukan konsumsi umum —
+-- isinya snapshot identitas lengkap orang yang ditolak.
+create policy pelanggan_ditolak_baca on koperasi.pelanggan_ditolak
+  for select to authenticated
+  using (
+    admin_id = auth.uid()
+    or koperasi_priv.is_pengawas()
+    or koperasi_priv.boleh_lihat_cabang(cabang_id)
+  );
 
 
 -- =========================================================================

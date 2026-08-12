@@ -103,6 +103,8 @@ const ID = {
   step: (cab, id, phase) => uuidv5(`step:${cab}/${id}/${phase}`),
   jurnal: (cab, bulan, id) => uuidv5(`jurnal:${cab}/${bulan}/${id}`),
   kasir: (cab, bulan, id) => uuidv5(`kasir:${cab}/${bulan}/${id}`),
+  histori: (adminUid, pid, hid) => uuidv5(`histori:${adminUid}/${pid}/${hid}`),
+  ditolak: (adminUid, rid) => uuidv5(`ditolak:${adminUid}/${rid}`),
 };
 
 /* cabangId RTDB adalah teks bebas dengan SPASI ("simpang empat unit 1",
@@ -242,8 +244,16 @@ const ROWS = {
   cabang: [], app_user: [], nasabah: [], pinjaman: [], pembayaran: [],
   jadwal_cicilan: [], pengajuan: [], approval_step: [], jurnal_transaksi: [],
   kasir_entry: [], dokumen: [],
+  pinjaman_history: [], biaya_awal: [], pelanggan_ditolak: [],
 };
 const seenBayarKey = new Map(); // untuk R-05: disambiguasi client_op_id
+
+/* Himpunan id yang BENAR-BENAR akan diinsert. Dipakai fase historis untuk
+ * memeriksa induk sebelum menaut — data arsip sering menunjuk nasabah/admin
+ * yang sudah tidak ada, dan FK akan menolak seluruh transaksi kalau dibiarkan. */
+const userAda = new Set();
+const cabangAda = new Set();
+const nasabahAda = new Set();
 
 // ================================================== FASE 1: CABANG & USER ==
 function faseUser() {
@@ -304,6 +314,8 @@ function faseUser() {
       'metadata/cabang tidak ada di export — pimpinan_id semua cabang NULL. ' +
       'Isi manual sesudah impor, kalau tidak RLS pimpinan tidak akan berfungsi.');
   }
+  ROWS.app_user.forEach((u) => userAda.add(u.id));
+  ROWS.cabang.forEach((c) => cabangAda.add(c.id));
   log(`  cabang=${ROWS.cabang.length} app_user=${ROWS.app_user.length}`);
 }
 
@@ -474,6 +486,7 @@ function faseNasabahPinjaman() {
         if (!n.cabang_id) issue('NASABAH_TANPA_CABANG', `${adminUid}/${pid}`);
         ROWS.nasabah.push(n);
         nasabahSeen.add(n.id);
+        nasabahAda.add(n.id);
       }
 
       // Generasi lama (arsip) + generasi berjalan, diurutkan menaik.
@@ -635,6 +648,93 @@ function faseJurnalKasir() {
   log(`  jurnal=${ROWS.jurnal_transaksi.length} kasir=${ROWS.kasir_entry.length}`);
 }
 
+// ======================================== FASE 5: DATA HISTORIS ===========
+/* Keputusan pemilik 12 Agu 2026: ketiganya ikut pindah.
+ * Bentuk diambil dari record nyata di data/firebase_sample.json. */
+function faseHistoris() {
+  // --- pinjamanHistory/{adminUid}/{pelangganId}/{pushId} -------------------
+  const PH = node('pinjamanHistory');
+  let phYatim = 0;
+  for (const adminUid of realKeys(PH)) {
+    for (const pid of realKeys(PH[adminUid])) {
+      for (const hid of realKeys(PH[adminUid][pid])) {
+        const h = PH[adminUid][pid][hid];
+        if (!h || typeof h !== 'object') continue;
+        /* FK ke nasabah: kalau nasabahnya sudah dihapus dari /pelanggan,
+         * baris ini tidak punya induk dan akan ditolak FK. Dilewati dengan
+         * laporan, BUKAN dipaksa masuk dengan nasabah_id palsu. */
+        if (!nasabahAda.has(ID.nasabah(adminUid, pid))) { phYatim++; continue; }
+        ROWS.pinjaman_history.push({
+          id: ID.histori(adminUid, pid, hid),
+          nasabah_id: ID.nasabah(adminUid, pid),
+          berlaku_sampai: parseTanggal(h.berlakuSampai),
+          besar_pinjaman: rupiah(h.besarPinjaman),
+          legacy_push_id: hid,
+          legacy_admin_uid: adminUid,
+        });
+      }
+    }
+  }
+  if (phYatim) issue('PINJAMAN_HISTORY_YATIM', `${phYatim} entri tanpa nasabah induk — dilewati`);
+
+  // --- biaya_awal/{adminUid}/{YYYY-MM-DD} ---------------------------------
+  const BA = node('biaya_awal');
+  for (const adminUid of realKeys(BA)) {
+    for (const tgl of realKeys(BA[adminUid])) {
+      const b = BA[adminUid][tgl];
+      if (!b || typeof b !== 'object') continue;
+      const tanggal = parseTanggal(b.tanggal) || parseTanggal(tgl);
+      if (!tanggal) { issue('BIAYA_AWAL_TANPA_TANGGAL', `${adminUid}/${tgl}`); continue; }
+      if (!userAda.has(ID.user(adminUid))) {
+        issue('BIAYA_AWAL_ADMIN_TIDAK_DIKENAL', `${adminUid} — dilewati`);
+        continue;
+      }
+      ROWS.biaya_awal.push({
+        admin_id: ID.user(adminUid),
+        tanggal,
+        jumlah: rupiah(b.jumlah),
+        recorded_at: ts(b.timestamp),
+        legacy_admin_uid: adminUid,
+      });
+    }
+  }
+
+  // --- pelanggan_ditolak/{adminUid}/{pushId} ------------------------------
+  const PD = node('pelanggan_ditolak');
+  for (const adminUid of realKeys(PD)) {
+    for (const rid of realKeys(PD[adminUid])) {
+      const r = PD[adminUid][rid];
+      if (!r || typeof r !== 'object') continue;
+      const snap = (r.pelanggan && typeof r.pelanggan === 'object') ? r.pelanggan : {};
+      const bersih = {};
+      for (const k of realKeys(snap)) bersih[k] = snap[k]; // buang '...' & kunci guard
+      const nik = str(snap.nik);
+      const by = str(r.ditolakOleh);
+      ROWS.pelanggan_ditolak.push({
+        id: ID.ditolak(adminUid, rid),
+        alasan_penolakan: str(r.alasanPenolakan),
+        ditolak_oleh: by && userAda.has(ID.user(by)) ? ID.user(by) : null,
+        tanggal_penolakan: parseTanggal(r.tanggalPenolakan),
+        rejected_at: ts(r.timestamp),
+        nama_ktp: str(snap.namaKtp),
+        nama_panggilan: str(snap.namaPanggilan),
+        nik: /^\d{16}$/.test(nik) ? nik : null,
+        besar_pinjaman: rupiah(snap.besarPinjaman),
+        cabang_id: cabangAda.has(slugCabang(snap.cabangId)) ? slugCabang(snap.cabangId) : null,
+        admin_id: userAda.has(ID.user(adminUid)) ? ID.user(adminUid) : null,
+        // Snapshot disimpan UTUH sebagai bukti audit — lihat 001 §10b.3.
+        snapshot: JSON.stringify(bersih),
+        legacy_push_id: rid,
+        legacy_admin_uid: adminUid,
+      });
+    }
+  }
+
+  log(`  pinjaman_history=${ROWS.pinjaman_history.length} ` +
+      `biaya_awal=${ROWS.biaya_awal.length} ` +
+      `pelanggan_ditolak=${ROWS.pelanggan_ditolak.length}`);
+}
+
 // ================================================================ WRITE ===
 function sqlInsert(table, rows, conflictCols) {
   const cols = [...new Set(rows.flatMap((r) => Object.keys(r)))]
@@ -671,6 +771,7 @@ async function writeTable(client, table, rows, conflictCols) {
     ['nasabah', faseNasabahPinjaman],
     ['pengajuan', fasePengajuan],
     ['jurnal', faseJurnalKasir],
+    ['historis', faseHistoris],   // butuh userAda/cabangAda/nasabahAda terisi
   ];
   log('\n▶ Transformasi');
   for (const [nama, fn] of FASE) {
@@ -726,6 +827,9 @@ async function writeTable(client, table, rows, conflictCols) {
     await writeTable(client, 'approval_step', ROWS.approval_step, 'id');
     await writeTable(client, 'jurnal_transaksi', ROWS.jurnal_transaksi, 'id');
     await writeTable(client, 'kasir_entry', ROWS.kasir_entry, 'id');
+    await writeTable(client, 'pinjaman_history', ROWS.pinjaman_history, 'id');
+    await writeTable(client, 'biaya_awal', ROWS.biaya_awal, 'admin_id,tanggal');
+    await writeTable(client, 'pelanggan_ditolak', ROWS.pelanggan_ditolak, 'id');
 
     await client.query('alter table koperasi.approval_step enable trigger approval_advance');
     await client.query('alter table koperasi.approval_step enable trigger approval_urutan');

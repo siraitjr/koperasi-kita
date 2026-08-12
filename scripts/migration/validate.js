@@ -67,6 +67,7 @@ const src = {
   admins: 0, cabang: new Set(), nasabah: 0, pinjaman: 0,
   bayar: 0, bayarSum: 0, jadwal: 0, pengajuan: 0, jurnal: 0, jurnalSum: 0,
   kasir: 0, kasirSum: 0, statusCount: {}, nikUnik: new Set(), nikDuplikat: [],
+  histori: 0, biayaAwal: 0, biayaAwalSum: 0, ditolak: 0,
 };
 
 for (const uid of keys(node('metadata').admins || {})) {
@@ -119,6 +120,27 @@ for (const a of keys(node('pelanggan'))) {
 }
 
 for (const c of keys(node('pengajuan_approval'))) src.pengajuan += keys(node('pengajuan_approval')[c]).length;
+
+// --- data historis -----------------------------------------------------------
+// pinjamanHistory dihitung HANYA untuk nasabah yang induknya ada, sama seperti
+// migrate.js — kalau tidak, selisihnya akan selalu dilaporkan sebagai gagal.
+const PH = node('pinjamanHistory');
+for (const a of keys(PH)) {
+  for (const pid of keys(PH[a])) {
+    const punyaInduk = !!((node('pelanggan')[a] || {})[pid]);
+    if (!punyaInduk) continue;
+    src.histori += keys(PH[a][pid]).length;
+  }
+}
+const BA = node('biaya_awal');
+for (const a of keys(BA)) {
+  for (const t of keys(BA[a])) {
+    src.biayaAwal++;
+    src.biayaAwalSum += rupiah((BA[a][t] || {}).jumlah);
+  }
+}
+for (const a of keys(node('pelanggan_ditolak'))) src.ditolak += keys(node('pelanggan_ditolak')[a]).length;
+
 for (const c of keys(node('jurnal_transaksi')))
   for (const b of keys(node('jurnal_transaksi')[c]))
     for (const id of keys(node('jurnal_transaksi')[c][b])) {
@@ -162,6 +184,9 @@ const cek = (nama, ok, detail) => {
     ['jurnal_transaksi', 'koperasi.jurnal_transaksi', src.jurnal],
     ['kasir_entry', 'koperasi.kasir_entry', src.kasir],
     ['app_user', 'koperasi.app_user', src.admins],
+    ['pinjaman_history', 'koperasi.pinjaman_history', src.histori],
+    ['biaya_awal', 'koperasi.biaya_awal', src.biayaAwal],
+    ['pelanggan_ditolak', 'koperasi.pelanggan_ditolak', src.ditolak],
   ];
   for (const [nama, tabel, expected] of pairs) {
     const { count } = await one(`select count(*)::int as count from ${tabel}`);
@@ -177,6 +202,15 @@ const cek = (nama, ok, detail) => {
   cek(`total jurnal: db=${j1.s} sumber=${src.jurnalSum}`, String(j1.s) === String(src.jurnalSum));
   const k1 = await one('select coalesce(sum(nominal),0)::bigint as s from koperasi.kasir_entry');
   cek(`total kasir: db=${k1.s} sumber=${src.kasirSum}`, String(k1.s) === String(src.kasirSum));
+  const ba = await one('select coalesce(sum(jumlah),0)::bigint as s from koperasi.biaya_awal');
+  cek(`total biaya_awal: db=${ba.s} sumber=${src.biayaAwalSum}`, String(ba.s) === String(src.biayaAwalSum));
+
+  // Snapshot penolakan wajib utuh — kalau kosong, bukti auditnya hilang.
+  const snapKosong = await one(
+    `select count(*)::int as n from koperasi.pelanggan_ditolak
+      where snapshot is null or snapshot = '{}'::jsonb`);
+  cek('snapshot pelanggan_ditolak terisi', snapKosong.n === 0,
+    snapKosong.n ? `${snapKosong.n} baris tanpa snapshot` : '');
 
   console.log('\n▶ C. Integritas referensial');
   const yatim = await all(`
