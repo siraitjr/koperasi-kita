@@ -3,6 +3,10 @@ plugins {
     id("org.jetbrains.kotlin.android")
     id("com.google.gms.google-services")
     id("kotlin-kapt")
+    // WAJIB untuk Supabase Kotlin SDK: seluruh model PostgREST/Realtime
+    // di-serialisasi lewat kotlinx.serialization. Versi HARUS sama dengan
+    // versi Kotlin (1.9.20, lihat gradle/libs.versions.toml).
+    id("org.jetbrains.kotlin.plugin.serialization") version "1.9.20"
 }
 
 android {
@@ -19,6 +23,31 @@ android {
         vectorDrawables {
             useSupportLibrary = true
         }
+
+        // =================================================================
+        // SUPABASE — konfigurasi endpoint.
+        // -----------------------------------------------------------------
+        // Nilainya dibaca dari gradle.properties / environment, BUKAN
+        // di-hardcode di sini. Repo ini ada di GitHub; URL project dan anon
+        // key yang ter-commit akan tetap ada di riwayat git selamanya.
+        //
+        // anon key memang dirancang untuk dipegang klien (ia hanya berguna
+        // bersama RLS), tetapi tetap mengungkap identitas project — jadi
+        // diperlakukan sebagai konfigurasi, bukan konstanta kode.
+        //
+        // Isi di ~/.gradle/gradle.properties (JANGAN di repo):
+        //   SUPABASE_URL=https://xxx.supabase.co
+        //   SUPABASE_ANON_KEY=eyJ...
+        // Default kosong supaya build tetap jalan sebelum Supabase dipakai.
+        // =================================================================
+        buildConfigField(
+            "String", "SUPABASE_URL",
+            "\"${project.findProperty("SUPABASE_URL") ?: System.getenv("SUPABASE_URL") ?: ""}\""
+        )
+        buildConfigField(
+            "String", "SUPABASE_ANON_KEY",
+            "\"${project.findProperty("SUPABASE_ANON_KEY") ?: System.getenv("SUPABASE_ANON_KEY") ?: ""}\""
+        )
     }
 
     buildTypes {
@@ -43,6 +72,9 @@ android {
 
     buildFeatures {
         compose = true
+        // Diperlukan agar SUPABASE_URL / SUPABASE_ANON_KEY di bawah tersedia
+        // sebagai BuildConfig. AGP 8 mematikan buildConfig secara default.
+        buildConfig = true
     }
 
     composeOptions {
@@ -150,4 +182,39 @@ dependencies {
     implementation("androidx.room:room-runtime:2.6.1")
     implementation("androidx.room:room-ktx:2.6.1")
     kapt("androidx.room:room-compiler:2.6.1")
+
+    // =====================================================================
+    // SUPABASE KOTLIN SDK (Milestone 2 — side-by-side dengan Firebase)
+    // ---------------------------------------------------------------------
+    // Firebase SENGAJA dibiarkan di atas. Selama transisi, dua SDK hidup
+    // berdampingan: Firebase masih melayani seluruh jalur produksi, Supabase
+    // baru dipakai lapisan data source baru yang belum di-wire ke SyncManager
+    // (itu Milestone 3).
+    //
+    // Dampak ukuran APK: menambah ±2-3 MB (Ktor + kotlinx-serialization).
+    // Sementara saja — Firebase dicabut setelah cutover.
+    //
+    // ⚠ Versi di bawah BELUM PERNAH DIRESOLUSI. Environment tempat kode ini
+    //   ditulis memblokir dl.google.com dan Maven (403 CONNECT), jadi Gradle
+    //   tidak bisa mengunduh apa pun. Verifikasi di mesin Anda.
+    // =====================================================================
+    implementation(platform("io.github.jan-tennert.supabase:bom:2.6.0"))
+    implementation("io.github.jan-tennert.supabase:postgrest-kt")
+    implementation("io.github.jan-tennert.supabase:storage-kt")
+    implementation("io.github.jan-tennert.supabase:realtime-kt")
+
+    // auth-kt TIDAK diminta eksplisit, tetapi WAJIB ada: seluruh tabel
+    // memakai RLS, dan tanpa JWT pengguna, setiap query PostgREST dieksekusi
+    // sebagai `anon` yang tidak punya policy apa pun (lihat 002 §0) — semua
+    // request akan balik kosong/403. Lapisan data source ini tidak akan
+    // berfungsi tanpanya.
+    // Catatan: modul ini bernama `gotrue-kt` sebelum supabase-kt 2.6.0.
+    implementation("io.github.jan-tennert.supabase:auth-kt")
+
+    // Engine HTTP untuk Ktor. Supabase SDK tidak membawa engine sendiri;
+    // tanpa baris ini SDK gagal saat runtime, bukan saat compile.
+    // OkHttp dipilih karena sudah ada di dependency tree (Firebase/Coil).
+    implementation("io.ktor:ktor-client-okhttp:2.3.12")
+
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.0")
 }

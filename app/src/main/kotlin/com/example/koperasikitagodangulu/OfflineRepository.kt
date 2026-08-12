@@ -201,9 +201,9 @@ class OfflineRepository private constructor(context: Context) {
         adminUid: String,
         jurnalData: Map<String, Any?>
     ): String {
-        val parentPath = "jurnal_transaksi/$cabangId/$yearMonth"
+        val parentPath = SyncTargets.jurnalTransaksiParent(cabangId, yearMonth)
         val pushKey = syncManager.generatePushKey(parentPath)
-        val firebasePath = "$parentPath/$pushKey"
+        val firebasePath = SyncTargets.jurnalTransaksi(cabangId, yearMonth, pushKey)
         Log.d(TAG, "🚀 addJurnalTransaksi() → $firebasePath")
         syncManager.queueOperation(
             operationType = "ADD_JURNAL_TRANSAKSI",
@@ -224,7 +224,7 @@ class OfflineRepository private constructor(context: Context) {
         pinjamanKe: Int,
         arsipData: Map<String, Any?>
     ) {
-        val firebasePath = "riwayat_pinjaman/$adminUid/$pelangganId/$pinjamanKe"
+        val firebasePath = SyncTargets.riwayatPinjaman(adminUid, pelangganId, pinjamanKe)
         Log.d(TAG, "🚀 addRiwayatPinjaman() → $firebasePath")
         syncManager.queueOperation(
             operationType = "ADD_RIWAYAT_PINJAMAN",
@@ -240,7 +240,7 @@ class OfflineRepository private constructor(context: Context) {
      * removeValue() idempoten — retry aman.
      */
     suspend fun removePelanggan(adminUid: String, pelangganId: String) {
-        val firebasePath = "pelanggan/$adminUid/$pelangganId"
+        val firebasePath = SyncTargets.pelanggan(adminUid, pelangganId)
         Log.d(TAG, "🚀 removePelanggan() → $firebasePath")
         syncManager.queueOperation(
             operationType = "REMOVE_PELANGGAN",
@@ -257,7 +257,7 @@ class OfflineRepository private constructor(context: Context) {
      * queue-only yang tidak mencoba tulis langsung).
      */
     suspend fun removePelangganStatusKhusus(cabangId: String, pelangganId: String, adminUid: String) {
-        val firebasePath = "pelanggan_status_khusus/$cabangId/$pelangganId"
+        val firebasePath = SyncTargets.pelangganStatusKhusus(cabangId, pelangganId)
         Log.d(TAG, "🚀 removePelangganStatusKhusus() → $firebasePath")
         syncManager.queueOperation(
             operationType = "REMOVE_PELANGGAN_STATUS_KHUSUS",
@@ -293,7 +293,7 @@ class OfflineRepository private constructor(context: Context) {
         tanggalPencairan: String = "",
         hasilSimulasiCicilanJson: String = ""
     ): Long {
-        val firebasePath = "pelanggan/$adminUid/$pelangganId"
+        val firebasePath = SyncTargets.pelanggan(adminUid, pelangganId)
         val payload = mapOf(
             "pendingUri" to pendingUri,
             "cabangId" to cabangId,
