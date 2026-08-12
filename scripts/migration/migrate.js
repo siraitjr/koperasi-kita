@@ -970,6 +970,97 @@ async function updatePimpinanCabang(client, rows) {
   return perlu.length;
 }
 
+/* =========================================================================
+ * PRE-CHECK ENUM — gagal cepat SEBELUM menulis apa pun
+ * =========================================================================
+ * Kelas masalah yang berulang: satu nilai enum yang belum terdaftar membuat
+ * seluruh impor 89 MB ter-rollback, dan barunya ketahuan SETELAH menulis
+ * ribuan baris. Yang lebih buruk, kegagalannya datang satu per satu — sekali
+ * jalan hanya menyingkap SATU nilai yang kurang, jadi perbaikannya jadi
+ * siklus coba-gagal yang panjang.
+ *
+ * Pemeriksaan ini membalik urutannya: kumpulkan SELURUH nilai enum yang
+ * benar-benar dihasilkan transformasi, bandingkan sekali dengan pg_enum, lalu
+ * laporkan SEMUA yang kurang beserta SQL siap tempel. Nol baris ditulis.
+ * ========================================================================= */
+const ENUM_SPEC = [
+  { rows: 'app_user',         kolom: 'role',                      tipe: 'user_role' },
+  { rows: 'approval_step',    kolom: 'approver_role',              tipe: 'user_role' },
+  { rows: 'pinjaman',         kolom: 'status',                     tipe: 'pinjaman_status' },
+  { rows: 'pinjaman',         kolom: 'status_serah_terima',        tipe: 'status_serah_terima' },
+  { rows: 'pinjaman',         kolom: 'status_pencairan_simpanan',  tipe: 'status_pencairan_simpanan' },
+  { rows: 'pengajuan',        kolom: 'phase',                      tipe: 'approval_phase' },
+  { rows: 'pengajuan',        kolom: 'final_decision',             tipe: 'approval_status' },
+  { rows: 'approval_step',    kolom: 'phase',                      tipe: 'approval_phase' },
+  { rows: 'approval_step',    kolom: 'status',                     tipe: 'approval_status' },
+  { rows: 'jurnal_transaksi', kolom: 'tipe',                       tipe: 'jurnal_tipe' },
+  { rows: 'pembayaran',       kolom: 'jenis',                      tipe: 'pembayaran_jenis' },
+];
+
+async function precheckEnum(client) {
+  const { rows: labels } = await client.query(
+    `select t.typname, e.enumlabel
+       from pg_enum e
+       join pg_type t on t.oid = e.enumtypid
+       join pg_namespace n on n.oid = t.typnamespace
+      where n.nspname = 'koperasi'`
+  );
+
+  const tersedia = new Map();
+  for (const r of labels) {
+    if (!tersedia.has(r.typname)) tersedia.set(r.typname, new Set());
+    tersedia.get(r.typname).add(r.enumlabel);
+  }
+
+  const kurang = new Map();
+  const tipeHilang = new Set();
+
+  for (const spec of ENUM_SPEC) {
+    const dipakai = new Set();
+    for (const row of ROWS[spec.rows] || []) {
+      const v = row[spec.kolom];
+      if (v !== null && v !== undefined && v !== '') dipakai.add(String(v));
+    }
+    if (!dipakai.size) continue;
+    if (!tersedia.has(spec.tipe)) { tipeHilang.add(spec.tipe); continue; }
+    for (const v of dipakai) {
+      if (!tersedia.get(spec.tipe).has(v)) {
+        if (!kurang.has(spec.tipe)) kurang.set(spec.tipe, new Set());
+        kurang.get(spec.tipe).add(v);
+      }
+    }
+  }
+
+  if (!kurang.size && !tipeHilang.size) {
+    log(`  ✓ pre-check enum lulus (${ENUM_SPEC.length} kolom diperiksa)`);
+    return true;
+  }
+
+  console.error('\n✗ PRE-CHECK ENUM GAGAL — tidak ada satu baris pun ditulis.\n');
+  if (tipeHilang.size) {
+    console.error('  Tipe enum tidak ditemukan di schema koperasi:');
+    for (const t of tipeHilang) console.error(`    - koperasi.${t}`);
+    console.error('  → 001_schema_v2.sql tampaknya belum dijalankan.\n');
+  }
+  if (kurang.size) {
+    console.error('  Nilai yang dipakai data tetapi belum ada di enum:');
+    for (const [tipe, nilai] of kurang) {
+      for (const v of nilai) console.error(`    - koperasi.${tipe}.${v}`);
+    }
+    console.error('\n  Jalankan SQL berikut (di LUAR transaksi), lalu ulangi:');
+    console.error('  ' + '-'.repeat(66));
+    for (const [tipe, nilai] of kurang) {
+      for (const v of nilai) {
+        console.error(`  alter type koperasi.${tipe} add value if not exists '${v}';`);
+      }
+    }
+    console.error('  ' + '-'.repeat(66));
+    console.error('\n  Tambahkan juga ke 001a_schema_patch.sql agar instalasi');
+    console.error('  berikutnya tidak mengulang kegagalan yang sama.');
+  }
+  return false;
+}
+
 // ================================================================= MAIN ===
 (async () => {
   const FASE = [
@@ -1072,6 +1163,15 @@ async function updatePimpinanCabang(client, rows) {
 
   const client = new Client({ connectionString: CFG.dsn });
   await client.connect();
+
+  // Gerbang: seluruh nilai enum diperiksa SEBELUM transaksi dibuka.
+  log('\n▶ Pre-check enum');
+  if (!(await precheckEnum(client))) {
+    await client.end();
+    process.exitCode = 5;
+    return;
+  }
+
   log('\n▶ Menulis ke Postgres (satu transaksi)');
   try {
     await client.query('begin');

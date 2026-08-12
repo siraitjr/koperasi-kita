@@ -30,6 +30,30 @@
 alter type koperasi.jurnal_tipe add value if not exists 'pelunasan_tabungan';
 alter type koperasi.jurnal_tipe add value if not exists 'tarik_tabungan';
 
+-- koperasi.user_role — peran nyata di metadata/admins (distinct dari export):
+--   admin, kasir_unit, kasir_wilayah, koordinator, pengawas, pimpinan, sekretaris
+-- 001 memuat enam yang pertama kecuali `kasir_wilayah`, yang baru muncul saat
+-- --execute ke-2. Hanya nilai ini yang benar-benar kurang.
+alter type koperasi.user_role add value if not exists 'kasir_wilayah';
+
+-- CATATAN — 'pdl' dan 'kasir' SENGAJA TIDAK ditambahkan di sini.
+-- ---------------------------------------------------------------------------
+-- migrate.js meneruskan role APA ADANYA (`role: str(a.role) || 'admin'`);
+-- tidak ada pemetaan admin→pdl maupun kasir_unit→kasir di mana pun. Jadi
+-- kedua nilai itu tidak akan pernah dipakai baris hasil impor.
+--
+-- Menambahkannya tidak merusak apa pun, tetapi MEMETAKAN ke sana akan:
+--   * mematahkan 7 policy di 002 yang mencocokkan role = 'admin', dan
+--   * mematahkan 4 pemeriksaan 'kasir_unit' di 002 + 1 di Edge Function
+--     user-management (daftar role yang boleh dibuat).
+-- Akibatnya admin lapangan kehilangan akses ke datanya sendiri — dan itu
+-- tidak akan tampak sebagai galat, hanya sebagai layar yang kosong.
+--
+-- Kalau penamaan `pdl`/`kasir` memang diinginkan, itu perubahan terkoordinasi
+-- (enum + 002 + Edge Function + CHECK app_user_cabang_wajib), bukan sekadar
+-- menambah nilai enum. Nilai 'pdl'/'kasir' yang sudah terlanjur ditambahkan
+-- manual boleh dibiarkan — tidak terpakai, tidak berbahaya.
+
 
 begin;
 
@@ -133,6 +157,18 @@ commit;
 --        join pg_type t on t.oid = e.enumtypid
 --       where t.typname = 'jurnal_tipe' order by e.enumsortorder;
 --      -- harus memuat 'pelunasan_tabungan' DAN 'tarik_tabungan'
+--
+-- 1b) Peran lengkap:
+--      select enumlabel from pg_enum e
+--        join pg_type t on t.oid = e.enumtypid
+--       where t.typname = 'user_role' order by e.enumsortorder;
+--      -- harus memuat ketujuh peran nyata, termasuk 'kasir_wilayah'
+--
+--   Cara tercepat memastikan TIDAK ADA yang kurang: jalankan migrate.js
+--   dengan --dsn tetapi TANPA --execute? Tidak — pre-check hanya berjalan
+--   pada jalur --execute. Jalankan --execute; bila ada enum yang kurang,
+--   skrip berhenti di pre-check dan mencetak SQL siap tempel SEBELUM
+--   menulis satu baris pun.
 --
 -- 2) FK auth.users memang sedang LEPAS (wajib sebelum impor):
 --      select conname from pg_constraint where conname = 'app_user_id_fkey';
