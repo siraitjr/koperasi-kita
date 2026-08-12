@@ -3,7 +3,10 @@ package com.example.koperasikitagodangulu.offline
 import android.util.Log
 import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.postgrest.query.Columns
+import io.github.jan.supabase.postgrest.rpc
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 
 /**
  * =========================================================================
@@ -152,16 +155,19 @@ class SupabaseDataSource private constructor() {
     }
 
     // =====================================================================
-    // ADD_JURNAL_TRANSAKSI
+    // ADD_JURNAL_TRANSAKSI → RPC (Milestone 3)
     // =====================================================================
-    // Catatan: 002_rls_policies.sql §9 TIDAK memberi GRANT INSERT pada
-    // jurnal_transaksi untuk `authenticated` — audit trail hanya boleh ditulis
-    // kode server. Jadi pemanggilan ini akan DITOLAK sampai ada RPC
-    // SECURITY DEFINER pendampingnya. Sengaja dibiarkan gagal-keras daripada
-    // diam-diam melonggarkan RLS.
-    suspend fun insertJurnal(baris: JsonObject): Hasil =
-        jalankan("insertJurnal") {
-            db.from(T_JURNAL).insert(baris)
+    // `jurnal_transaksi` tidak punya GRANT INSERT untuk `authenticated`
+    // (002 §10): audit trail hanya boleh ditulis kode server. Jalannya lewat
+    // koperasi.rpc_catat_jurnal (007), SECURITY DEFINER yang memvalidasi
+    // pemanggil sendiri — bukan dengan melonggarkan RLS.
+    //
+    // Idempotensi ada di sisi server: RPC mengembalikan id lama bila
+    // client_op_id sudah pernah tercatat, jadi replay antrean menerima sukses
+    // alih-alih duplicate-key error.
+    suspend fun catatJurnal(baris: JsonObject): Hasil =
+        jalankan("catatJurnal") {
+            SupabaseClientProvider.client().postgrest.rpc("rpc_catat_jurnal", baris)
             Hasil.Sukses
         }
 
@@ -177,21 +183,67 @@ class SupabaseDataSource private constructor() {
         }
 
     /**
-     * RTDB `removeValue()` pada node pelanggan tidak punya padanan langsung:
-     * 002 §5 sengaja TIDAK memberi policy DELETE pada `pinjaman` — riwayat
-     * kredit tidak boleh lenyap. Penghapusan nasabah pun hanya untuk Pengawas
-     * dan alurnya lewat tabel `permintaan`.
+     * Padanan RTDB `removeValue()` pada node pelanggan (alur cairkanSimpanan:
+     * nasabah lunas total) → SOFT DELETE lewat koperasi.rpc_arsipkan_nasabah.
      *
-     * Karena itu fungsi ini TIDAK menghapus apa pun. Ia sengaja mengembalikan
-     * Ditolak agar Milestone 3 memutuskan padanan yang benar secara sadar
-     * (kemungkinan besar: buat baris `permintaan` bertipe hapus_nasabah).
+     * Barisnya sengaja TIDAK dihapus: `pembayaran` dan `jurnal_transaksi`
+     * menunjuk ke sana, dan 002 §5 bahkan tidak memberi policy DELETE pada
+     * `pinjaman` — riwayat keuangan tidak boleh lenyap. Yang berubah hanya
+     * penanda `arsip_at`.
+     *
+     * RPC menolak mengarsipkan nasabah yang masih punya pinjaman hidup —
+     * pengaman yang di RTDB tidak ada sama sekali (removeValue() menghapus
+     * apa pun keadaannya). Idempoten: memutar ulang operasi ini tidak
+     * menggeser stempel waktu arsip aslinya.
      */
-    suspend fun hapusPelanggan(adminUid: String, pelangganId: String): Hasil {
-        Log.w(TAG, "⛔ hapusPelanggan($pelangganId) tidak didukung — lihat 002 §5")
-        return Hasil.Ditolak(
-            "DELETE pelanggan tidak diizinkan skema; gunakan alur permintaan " +
-                "hapus_nasabah (Pengawas). Diputuskan di Milestone 3."
+    suspend fun arsipkanNasabah(
+        adminUid: String,
+        pelangganId: String,
+        alasan: String = "Pencairan simpanan — nasabah lunas total"
+    ): Hasil = jalankan("arsipkanNasabah $pelangganId") {
+        val params = buildJsonObject {
+            put("p_nasabah_id", SupabaseIds.nasabah(adminUid, pelangganId))
+            put("p_alasan", alasan)
+        }
+        SupabaseClientProvider.client().postgrest.rpc("rpc_arsipkan_nasabah", params)
+        Hasil.Sukses
+    }
+
+    /**
+     * Generasi pinjaman lama (ADD_RIWAYAT_PINJAMAN). Di RTDB ini menulis ke
+     * `riwayat_pinjaman/{admin}/{pid}/{N}`; di Postgres generasi lama BUKAN
+     * arsip terpisah melainkan baris `pinjaman` biasa dengan pinjaman_ke = N
+     * (001 §3), jadi cukup upsert ke tabel yang sama.
+     */
+    suspend fun upsertGenerasiPinjaman(
+        adminUid: String,
+        pelangganId: String,
+        pinjamanKe: Int,
+        data: Map<String, Any?>
+    ): Hasil = jalankan("upsertGenerasi $pelangganId/$pinjamanKe") {
+        val baris = SupabaseMappers.barisPinjaman(
+            adminUid, pelangganId, data, pinjamanKeOverride = pinjamanKe
+        ) ?: return@jalankan Hasil.Ditolak(
+            "status arsip tidak dikenal: ${data["status"]}"
         )
+        db.from(T_PINJAMAN).upsert(baris, onConflict = "id")
+        Hasil.Sukses
+    }
+
+    /**
+     * Generasi pinjaman terkini milik satu nasabah. Dipakai bila operasi
+     * antrean tidak membawa penanda generasi (op warisan APK lama).
+     * Mengembalikan null bila nasabahnya belum ada di server.
+     */
+    suspend fun pinjamanKeTerkini(adminUid: String, pelangganId: String): Int? = try {
+        val json = db.from(T_PINJAMAN).select(Columns.raw("pinjaman_ke")) {
+            filter { eq("nasabah_id", SupabaseIds.nasabah(adminUid, pelangganId)) }
+        }.data
+        Regex("\"pinjaman_ke\"\\s*:\\s*(\\d+)").findAll(json)
+            .mapNotNull { it.groupValues[1].toIntOrNull() }.maxOrNull()
+    } catch (e: Exception) {
+        Log.w(TAG, "⚠️ pinjamanKeTerkini gagal: ${e.message}")
+        null
     }
 
     // =====================================================================

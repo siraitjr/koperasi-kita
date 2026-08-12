@@ -55,6 +55,11 @@ class SyncManager private constructor(private val context: Context) {
     // dilakukan saat offline — logic & payload identik dengan jalur online.
     private val serahTerimaNotifier by lazy { SerahTerimaNotifier(firebase) }
 
+    // ✅ M3: pemutar antrean ke Supabase. Dibuat malas agar aplikasi yang
+    // masih memakai Firebase tidak pernah menyentuh SupabaseClient sama
+    // sekali (dan tidak crash bila SUPABASE_URL belum diisi).
+    private val supabaseHandler by lazy { SupabaseSyncHandler() }
+
     companion object {
         private const val TAG = "SyncManager"
         private const val MAX_RETRY = 5
@@ -134,7 +139,11 @@ class SyncManager private constructor(private val context: Context) {
             Log.d(TAG, "💾 [STEP 1] ✅ SAVED TO ROOM DB! opId=$operationId")
 
             // ✅ STEP 2: Coba sync ke Firebase (jika online)
-            val online = isOnline()
+            // ✅ M3: di bawah sakelar Supabase, jalur tulis-langsung Firebase
+            // TIDAK dipakai. Operasi sudah tersimpan di Room di atas, jadi
+            // cukup dibiarkan diputar antrean → SupabaseSyncHandler. Kode
+            // Firebase di bawah sengaja dibiarkan utuh untuk rollback.
+            val online = isOnline() && !SyncBackend.pakaiSupabase(context)
             Log.d(TAG, "🌐 [STEP 2] Checking network: online=$online")
 
             if (online) {
@@ -234,7 +243,11 @@ class SyncManager private constructor(private val context: Context) {
             val operationId = dao.insert(operation)
             Log.d(TAG, "💰 [STEP 1] ✅ PEMBAYARAN SAVED TO ROOM DB! opId=$operationId")
 
-            if (isOnline()) {
+            // ✅ M3: di bawah sakelar Supabase, jalur tulis-langsung Firebase
+            // TIDAK dipakai. Operasi sudah tersimpan di Room di atas, jadi
+            // cukup dibiarkan diputar antrean → SupabaseSyncHandler. Kode
+            // Firebase di bawah sengaja dibiarkan utuh untuk rollback.
+            if (isOnline() && !SyncBackend.pakaiSupabase(context)) {
                 try {
                     dao.updateStatus(operationId, "SYNCING")
                     // ✅ FIX A: strip _guardPinjamanKe sebelum write (kunci guard hanya
@@ -302,7 +315,11 @@ class SyncManager private constructor(private val context: Context) {
             val operationId = dao.insert(operation)
             Log.d(TAG, "💰 [STEP 1] ✅ SUB-PEMBAYARAN SAVED TO ROOM DB! opId=$operationId")
 
-            if (isOnline()) {
+            // ✅ M3: di bawah sakelar Supabase, jalur tulis-langsung Firebase
+            // TIDAK dipakai. Operasi sudah tersimpan di Room di atas, jadi
+            // cukup dibiarkan diputar antrean → SupabaseSyncHandler. Kode
+            // Firebase di bawah sengaja dibiarkan utuh untuk rollback.
+            if (isOnline() && !SyncBackend.pakaiSupabase(context)) {
                 try {
                     dao.updateStatus(operationId, "SYNCING")
                     // ✅ FIX A: strip _guardPinjamanKe sebelum write (lihat catatan
@@ -356,7 +373,11 @@ class SyncManager private constructor(private val context: Context) {
             val operationId = dao.insert(operation)
             Log.d(TAG, "🗑️ [STEP 1] ✅ REMOVE STATUS_KHUSUS SAVED TO ROOM DB! opId=$operationId")
 
-            if (isOnline()) {
+            // ✅ M3: di bawah sakelar Supabase, jalur tulis-langsung Firebase
+            // TIDAK dipakai. Operasi sudah tersimpan di Room di atas, jadi
+            // cukup dibiarkan diputar antrean → SupabaseSyncHandler. Kode
+            // Firebase di bawah sengaja dibiarkan utuh untuk rollback.
+            if (isOnline() && !SyncBackend.pakaiSupabase(context)) {
                 try {
                     dao.updateStatus(operationId, "SYNCING")
                     firebase.getReference(path).removeValue().await()
@@ -403,7 +424,11 @@ class SyncManager private constructor(private val context: Context) {
             val operationId = dao.insert(operation)
             Log.d(TAG, "📝 [STEP 1] ✅ UPDATE SAVED TO ROOM DB! opId=$operationId")
 
-            if (isOnline()) {
+            // ✅ M3: di bawah sakelar Supabase, jalur tulis-langsung Firebase
+            // TIDAK dipakai. Operasi sudah tersimpan di Room di atas, jadi
+            // cukup dibiarkan diputar antrean → SupabaseSyncHandler. Kode
+            // Firebase di bawah sengaja dibiarkan utuh untuk rollback.
+            if (isOnline() && !SyncBackend.pakaiSupabase(context)) {
                 try {
                     dao.updateStatus(operationId, "SYNCING")
                     // ✅ FIX REGRESI PILOT (25 Jul 2026).
@@ -906,6 +931,18 @@ class SyncManager private constructor(private val context: Context) {
                 Log.d(TAG, "🔄 Syncing operation: ${operation.operationType}")
                 dao.updateStatus(operation.id, "SYNCING")
 
+                // =========================================================
+                // ✅ M3: percabangan tujuan sinkronisasi.
+                // Bila sakelar menunjuk Supabase, operasi diputar lewat
+                // SupabaseSyncHandler dan seluruh blok RTDB di bawah
+                // DILEWATI — bukan dihapus. Default tetap FIREBASE, jadi
+                // perangkat yang sudah terpasang berperilaku persis sama
+                // sampai sakelarnya dipindahkan dengan sadar (SyncBackend).
+                // =========================================================
+                if (SyncBackend.pakaiSupabase(context)) {
+                    return@withContext syncKeSupabase(operation)
+                }
+
                 val ref = firebase.getReference(operation.firebasePath)
 
                 var data: Any = try {
@@ -1102,6 +1139,64 @@ class SyncManager private constructor(private val context: Context) {
                 }
                 false
             }
+        }
+    }
+
+    // =====================================================================
+    // ✅ M3: pemutaran satu operasi antrean ke SUPABASE.
+    // ---------------------------------------------------------------------
+    // Memakai status Room yang PERSIS SAMA dengan jalur Firebase, sehingga
+    // seluruh UI status sinkronisasi (SyncStatusUI: menunggu / gagal /
+    // ditolak-buang) bekerja tanpa perubahan apa pun:
+    //
+    //   Sukses / Dilewati → SUCCESS   (Dilewati = server sudah lebih maju)
+    //   Ditolak           → REJECTED  (terminal; "Coba Lagi" tidak menyentuhnya)
+    //   GagalSementara    → PENDING / FAILED sesuai budget retry
+    //
+    // Pemisahan Ditolak vs GagalSementara inilah yang mencegah antrean
+    // berputar buta — pelajaran dari insiden "Permission denied, retry 21x"
+    // di jalur Firebase (lihat FIX C pada catch di trySyncOperation).
+    // =====================================================================
+    private suspend fun syncKeSupabase(operation: PendingOperation): Boolean {
+        return try {
+            when (val hasil = supabaseHandler.putar(operation)) {
+                is SupabaseSyncHandler.Hasil.Sukses -> {
+                    dao.updateStatus(operation.id, "SUCCESS")
+                    Log.d(TAG, "✅ [Supabase] Synced: ${operation.operationType}")
+                    true
+                }
+                is SupabaseSyncHandler.Hasil.Dilewati -> {
+                    dao.updateStatus(operation.id, "SUCCESS", hasil.alasan)
+                    Log.w(TAG, "⏭️ [Supabase] Dilewati: ${operation.operationType} — ${hasil.alasan}")
+                    true
+                }
+                is SupabaseSyncHandler.Hasil.Ditolak -> {
+                    dao.updateStatus(operation.id, "REJECTED", "Ditolak server: ${hasil.pesan}")
+                    Log.e(TAG, "🚫 [Supabase] REJECTED: ${operation.operationType} — ${hasil.pesan}")
+                    false
+                }
+                is SupabaseSyncHandler.Hasil.GagalSementara -> {
+                    val next = operation.retryCount + 1
+                    dao.updateStatus(
+                        operation.id,
+                        if (next >= MAX_RETRY) "FAILED" else "PENDING",
+                        hasil.pesan
+                    )
+                    Log.w(TAG, "⏳ [Supabase] Gagal sementara (retry $next): ${hasil.pesan}")
+                    false
+                }
+            }
+        } catch (e: Exception) {
+            // Jaring pengaman: apa pun yang lolos dari handler diperlakukan
+            // sebagai transient, supaya tidak ada operasi yang hilang diam-diam.
+            Log.e(TAG, "❌ [Supabase] Error tak terduga: ${e.message}")
+            val next = operation.retryCount + 1
+            dao.updateStatus(
+                operation.id,
+                if (next >= MAX_RETRY) "FAILED" else "PENDING",
+                e.message
+            )
+            false
         }
     }
 

@@ -64,6 +64,15 @@ object SyncTargets {
         return RefRiwayat(p[1], p[2], ke)
     }
 
+    data class RefJurnal(val cabangId: String, val yearMonth: String, val pushKey: String)
+
+    /** "jurnal_transaksi/{cabangId}/{YYYY-MM}/{pushKey}" → Ref. */
+    fun parseJurnal(path: String): RefJurnal? {
+        val p = path.trim('/').split('/')
+        return if (p.size >= 4 && p[0] == "jurnal_transaksi")
+            RefJurnal(p[1], p[2], p[3]) else null
+    }
+
     data class RefStatusKhusus(val cabangId: String, val pelangganId: String)
 
     fun parseStatusKhusus(path: String): RefStatusKhusus? {

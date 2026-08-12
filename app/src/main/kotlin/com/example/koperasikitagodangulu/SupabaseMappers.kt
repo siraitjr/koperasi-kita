@@ -176,7 +176,60 @@ object SupabaseMappers {
         "id", "adminUid", "adminEmail", "adminName", "cabangId", "pinjamanKe", "nik"
     )
 
+    /**
+     * Kunci guard internal antrean offline. HANYA ini yang di-strip untuk
+     * payload non-pelanggan (pembayaran, arsip): berbeda dari DIABAIKAN yang
+     * juga membuang field khusus node pelanggan.
+     *
+     * Kunci ini TIDAK PERNAH boleh sampai ke server — di RTDB ia bahkan
+     * ditolak Rules (`_guardPinjamanKe` punya `.validate: false`), dan di
+     * Postgres ia akan membuat PostgREST menolak seluruh request karena
+     * kolomnya tidak ada.
+     */
+    val DIABAIKAN_GUARD = setOf("_guardPinjamanKe", "_guardStatus")
+
     // ------------------------------------------------------------ builder
+
+    /**
+     * Baris `jurnal_transaksi` dari operasi antrean ADD_JURNAL_TRANSAKSI.
+     *
+     * Path RTDB-nya `jurnal_transaksi/{cabangId}/{YYYY-MM}/{pushKey}`, dengan
+     * pushKey yang di-generate KLIEN (OfflineRepository.addJurnalTransaksi)
+     * supaya replay idempoten. Push key itulah yang dipakai menurunkan
+     * `client_op_id` — dengan rumus yang sama seperti ID.jurnal di
+     * migrate.js, sehingga entri hasil migrasi dan entri baru tidak pernah
+     * bertabrakan maupun terduplikasi.
+     */
+    fun barisJurnalDariRtdb(firebasePath: String, p: Map<String, Any?>): JsonObject? {
+        val ref = SyncTargets.parseJurnal(firebasePath) ?: return null
+        val tipe = str(p["tipe"]).ifBlank { return null }
+        val adminUid = str(p["adminUid"])
+        val pelangganId = str(p["pelangganId"])
+        val ke = int(p["pinjamanKe"], 1)
+        val opId = SupabaseIds.jurnal(ref.cabangId, ref.yearMonth, ref.pushKey)
+
+        return buildJsonObject {
+            put("id", opId)
+            put("client_op_id", opId)
+            put("cabang_id", ref.cabangId)
+            put("tipe", tipe)
+            if (adminUid.isNotBlank() && pelangganId.isNotBlank()) {
+                put("nasabah_id", SupabaseIds.nasabah(adminUid, pelangganId))
+                put("pinjaman_id", SupabaseIds.pinjaman(adminUid, pelangganId, ke))
+            }
+            if (adminUid.isNotBlank()) put("admin_id", SupabaseIds.user(adminUid))
+            put("admin_name", str(p["adminName"]))
+            put("nama_pelanggan", str(p["namaPelanggan"]))
+            put("nama_ktp", str(p["namaKtp"]))
+            put("jumlah", rupiah(p["jumlah"]))
+            put("tanggal", tanggal(p["tanggal"]) ?: tanggal(p["createdAt"]) ?: "${ref.yearMonth}-01")
+            put("pinjaman_ke", ke)
+            p["sisaUtangSetelah"]?.let { put("sisa_utang_setelah", rupiah(it)) }
+            p["totalPelunasan"]?.let { put("total_pelunasan", rupiah(it)) }
+            p["totalDibayar"]?.let { put("total_dibayar", rupiah(it)) }
+            put("keterangan", str(p["keterangan"]))
+        }
+    }
 
     /** Baris tabel `nasabah` dari payload RTDB. */
     fun barisNasabah(adminUid: String, pelangganId: String, p: Map<String, Any?>): JsonObject =
@@ -201,9 +254,20 @@ object SupabaseMappers {
      * lebih baik operasi ditolak dengan jelas daripada menulis status tebakan
      * ke data keuangan.
      */
-    fun barisPinjaman(adminUid: String, pelangganId: String, p: Map<String, Any?>): JsonObject? {
+    fun barisPinjaman(
+        adminUid: String,
+        pelangganId: String,
+        p: Map<String, Any?>,
+        /**
+         * Generasi yang dipaksa dari luar. Dipakai ADD_RIWAYAT_PINJAMAN, yang
+         * generasinya ada di PATH antrean (`riwayat_pinjaman/{admin}/{pid}/{N}`)
+         * dan belum tentu sama dengan `pinjamanKe` di dalam payload snapshot.
+         * null = ambil dari payload seperti biasa.
+         */
+        pinjamanKeOverride: Int? = null
+    ): JsonObject? {
         val st = status(p["status"]) ?: return null
-        val ke = int(p["pinjamanKe"], 1)
+        val ke = pinjamanKeOverride ?: int(p["pinjamanKe"], 1)
         return buildJsonObject {
             put("id", SupabaseIds.pinjaman(adminUid, pelangganId, ke))
             put("nasabah_id", SupabaseIds.nasabah(adminUid, pelangganId))

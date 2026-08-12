@@ -82,6 +82,15 @@ object SupabaseIds {
         uuidV5("statuskhusus:${normalisasiCabang(cabangId)}/$pelangganId")
 
     /**
+     * Entri jurnal. Cermin ID.jurnal di migrate.js:
+     *     uuidv5("jurnal:" + slugCabang(cabang) + "/" + bulan + "/" + pushKey)
+     * Dipakai sekaligus sebagai `client_op_id`, sehingga entri hasil migrasi
+     * dan entri baru dari aplikasi tidak mungkin terduplikasi.
+     */
+    fun jurnal(cabangId: String, yearMonth: String, pushKey: String): String =
+        uuidV5("jurnal:${normalisasiCabang(cabangId)}/$yearMonth/$pushKey")
+
+    /**
      * cabangId RTDB adalah teks bebas dengan spasi ("simpang empat unit 1").
      * Normalisasi HARUS identik dengan slugCabang() di migrate.js, kalau tidak
      * baris klien akan menunjuk cabang yang berbeda dari hasil migrasi.
