@@ -29,44 +29,27 @@ audit, dan satu tempat yang harus benar.
 
 ## 2. Prasyarat SQL — tabel audit
 
-`006` §8.3 mencatat `password_reset_logs` belum punya padanan. Jalankan ini
-sebelum deploy; tanpa tabelnya, audit log gagal ditulis diam-diam (Edge
-Function sengaja tidak menggagalkan operasi karena log gagal — paritas dengan
-perilaku lama).
+`006` §8.3 mencatat `password_reset_logs` belum punya padanan. DDL-nya ada di
+berkas tersendiri supaya bisa dijalankan langsung di SQL Editor seperti
+`001`/`002`/`007`:
 
-```sql
-begin;
+> **`009_password_reset_log.sql`**
+> Urutan jalankan keseluruhan: `001` → `001a` → `002` → `007` → `009`
 
-create table if not exists koperasi.password_reset_log (
-  id             uuid primary key default gen_random_uuid(),
-  target_id      uuid references koperasi.app_user(id),
-  target_email   text,
-  reset_by       uuid references koperasi.app_user(id),
-  reset_by_email text,
-  berhasil       boolean not null default true,
-  error          text,
-  created_at     timestamptz not null default now()
-);
+**Jalankan sebelum `supabase functions deploy user-management`.** Tanpa
+tabelnya, Edge Function tetap berjalan tetapi audit log **gagal ditulis
+diam-diam** — `catatAudit()` sengaja tidak menggagalkan operasi (paritas
+dengan perilaku Cloud Function lama), jadi kegagalannya hanya muncul di log
+Edge, bukan di layar Pengawas.
 
-create index if not exists password_reset_log_waktu_idx
-  on koperasi.password_reset_log (created_at desc);
+Dua hal dari isi berkas itu yang perlu diketahui saat membaca kode Edge
+Function:
 
-alter table koperasi.password_reset_log enable row level security;
-alter table koperasi.password_reset_log force row level security;
-
--- Hanya Pengawas yang boleh MEMBACA. Tidak ada policy INSERT sama sekali:
--- penulisan hanya lewat service_role di Edge Function, yang mem-bypass RLS.
--- Kalau klien bisa menulis sendiri, log ini berhenti jadi bukti.
-create policy password_reset_log_baca on koperasi.password_reset_log
-  for select to authenticated using (koperasi_priv.is_pengawas());
-
-grant select on koperasi.password_reset_log to authenticated;
-
-commit;
-```
-
-`target_id` dan `reset_by` sengaja **nullable**: percobaan yang gagal karena
-target tidak ditemukan tetap harus tercatat, dan saat itu belum ada id.
+- `target_id` dan `reset_by` **nullable** — percobaan yang gagal karena target
+  tidak ditemukan tetap wajib tercatat, dan pada saat itu belum ada id.
+- **Tidak ada policy maupun GRANT tulis** untuk `authenticated`. Penulisan
+  hanya lewat `service_role` di Edge Function. Bukti yang bisa diubah
+  pelakunya bukan bukti.
 
 ---
 
