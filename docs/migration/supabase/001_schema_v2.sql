@@ -154,9 +154,20 @@ create table koperasi.app_user (
   )
 );
 
+-- FK ini MELINGKAR dengan app_user.cabang_id → cabang.id: tidak ada urutan
+-- insert yang bisa memuaskan keduanya sekaligus. DEFERRABLE INITIALLY
+-- DEFERRED memindahkan pemeriksaannya ke akhir transaksi, sehingga pemuatan
+-- massal boleh menulis kedua tabel dalam urutan apa pun asal keduanya
+-- konsisten saat commit.
+--
+-- migrate.js TIDAK bergantung pada ini — ia tetap memakai urutan tiga
+-- langkah (cabang tanpa pimpinan → app_user → update pimpinan_id) supaya
+-- basis data yang terlanjur dibuat SEBELUM baris ini ada tetap bisa diimpor
+-- tanpa mengubah skema. Ini murni lapis pengaman untuk instalasi baru.
 alter table koperasi.cabang
   add constraint cabang_pimpinan_fk
-  foreign key (pimpinan_id) references koperasi.app_user(id);
+  foreign key (pimpinan_id) references koperasi.app_user(id)
+  deferrable initially deferred;
 
 -- Koordinator menangani BANYAK cabang (CLAUDE.md §6.3 "lintas cabang").
 -- Di RTDB relasi ini tidak pernah dimodelkan eksplisit — rules hanya memberi

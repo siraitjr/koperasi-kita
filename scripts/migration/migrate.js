@@ -279,6 +279,9 @@ const cabangAdmin = new Map();
  * ditelusuri balik satu per satu bila kelak ada yang salah tempat. */
 const CABANG_DIWARISI = [];
 
+/* Cabang yang pimpinanUid-nya tidak terdaftar sebagai admin. */
+const PIMPINAN_YATIM = [];
+
 /* Nasabah yang cabangId-nya kosong. Dikumpulkan lengkap (bukan sekadar
  * dihitung) supaya bisa langsung dipakai memilih cabang tujuan. */
 const PERLU_CABANG = [];
@@ -293,6 +296,10 @@ function faseUser() {
     const u = ROWS.app_user.find((x) => x._uid === uid);
     if (u) u.role = r;
   };
+
+  /* Himpunan uid yang benar-benar terdaftar di metadata/admins. Dipakai
+   * memvalidasi pimpinanUid sebelum dijadikan FK — lihat di bawah. */
+  const adminUids = new Set(realKeys(admins));
 
   const cabangSeen = new Map();
   for (const uid of realKeys(admins)) {
@@ -333,7 +340,22 @@ function faseUser() {
     const m = cabangMeta[c] || {};
     let row = ROWS.cabang.find((x) => x.id === id);
     if (!row) { row = { id, nama: str(m.name) || id, pimpinan_id: null, aktif: true }; ROWS.cabang.push(row); }
-    if (m.pimpinanUid) row.pimpinan_id = ID.user(m.pimpinanUid);
+    /* pimpinanUid BELUM TENTU terdaftar di metadata/admins — bisa akun lama
+     * yang sudah dihapus, atau salah ketik. Kalau dipakai apa adanya, FK
+     * cabang_pimpinan_fk gagal dan SELURUH impor ter-rollback gara-gara satu
+     * cabang. Dilaporkan sebagai anomali dan dibiarkan NULL; pimpinannya bisa
+     * diisi manual sesudah impor tanpa mengulang apa pun. */
+    if (m.pimpinanUid) {
+      const puid = str(m.pimpinanUid);
+      if (adminUids.has(puid)) {
+        row.pimpinan_id = ID.user(puid);
+      } else {
+        issue('PIMPINAN_TIDAK_TERDAFTAR',
+          `cabang '${id}' menunjuk pimpinanUid ${puid} yang tidak ada di ` +
+          `metadata/admins — pimpinan_id dibiarkan NULL`);
+        PIMPINAN_YATIM.push({ cabangId: id, pimpinanUid: puid, cabangName: str(m.name) || id });
+      }
+    }
     if (m.name) row.nama = str(m.name);
   }
 
@@ -924,6 +946,30 @@ async function writeTable(client, table, rows, conflictCols) {
   return done;
 }
 
+/**
+ * Fase-3 dari penulisan cabang: mengisi pimpinan_id SETELAH app_user ada.
+ *
+ * FK antara cabang dan app_user MELINGKAR:
+ *   app_user.cabang_id  → cabang.id
+ *   cabang.pimpinan_id  → app_user.id
+ * Jadi tidak ada urutan insert yang bisa memuaskan keduanya sekaligus.
+ * Pemecahannya (sudah tertulis di 004 §8, tetapi belum diterapkan skrip ini
+ * sampai kegagalan --execute pertama): cabang masuk dulu TANPA pimpinan,
+ * app_user menyusul, baru pimpinan_id di-update.
+ */
+async function updatePimpinanCabang(client, rows) {
+  const perlu = rows.filter((c) => c.pimpinan_id);
+  if (!perlu.length) return 0;
+  for (const c of perlu) {
+    await client.query(
+      'update koperasi.cabang set pimpinan_id = $1 where id = $2',
+      [c.pimpinan_id, c.id]
+    );
+  }
+  log(`    cabang.pimpinan_id: ${perlu.length}/${rows.length}`);
+  return perlu.length;
+}
+
 // ================================================================= MAIN ===
 (async () => {
   const FASE = [
@@ -964,6 +1010,7 @@ async function writeTable(client, table, rows, conflictCols) {
     },
 
     /* Jejak audit pewarisan cabang: siapa mewarisi apa, dari admin mana. */
+    pimpinanYatim: PIMPINAN_YATIM,
     cabangDiwarisi: CABANG_DIWARISI.sort(
       (x, y) => (x.adminName + x.namaKtp).localeCompare(y.adminName + y.namaKtp)
     ),
@@ -980,6 +1027,13 @@ async function writeTable(client, table, rows, conflictCols) {
   if (ISSUES.length) {
     log('\n▶ Anomali (rincian di ' + CFG.report + ')');
     for (const [k, v] of Object.entries(kindCount)) log(`   ${k.padEnd(30)} ${v}`);
+  }
+
+  if (PIMPINAN_YATIM.length) {
+    log(`\n▶ ${PIMPINAN_YATIM.length} cabang dengan pimpinanUid tidak terdaftar`);
+    for (const r of PIMPINAN_YATIM) log(`   ${r.cabangId.padEnd(26)} ${r.pimpinanUid}`);
+    log('   → pimpinan_id dibiarkan NULL; isi manual sesudah impor.');
+    log('   ⚠ RLS pimpinan untuk cabang ini TIDAK akan berfungsi sampai diisi.');
   }
 
   if (CABANG_DIWARISI.length) {
@@ -1028,8 +1082,19 @@ async function writeTable(client, table, rows, conflictCols) {
     await client.query('alter table koperasi.approval_step disable trigger approval_urutan');
     await client.query('alter table koperasi.approval_step disable trigger approval_advance');
 
-    await writeTable(client, 'cabang', ROWS.cabang, 'id');
+    /* Urutan WAJIB (lihat updatePimpinanCabang untuk alasannya):
+     *   1. cabang TANPA pimpinan_id
+     *   2. app_user  (butuh cabang.id sudah ada)
+     *   3. update cabang.pimpinan_id  (butuh app_user.id sudah ada)
+     * Menulis cabang lengkap di langkah 1 adalah penyebab kegagalan
+     * "violates foreign key constraint cabang_pimpinan_fk". */
+    const cabangTanpaPimpinan = ROWS.cabang.map((c) => {
+      const { pimpinan_id, ...sisa } = c;
+      return sisa;
+    });
+    await writeTable(client, 'cabang', cabangTanpaPimpinan, 'id');
     await writeTable(client, 'app_user', ROWS.app_user, 'id');
+    await updatePimpinanCabang(client, ROWS.cabang);
     await writeTable(client, 'nasabah', ROWS.nasabah, 'id');
     await writeTable(client, 'pinjaman', ROWS.pinjaman, 'id');
     await writeTable(client, 'pembayaran', ROWS.pembayaran, 'id');
