@@ -155,31 +155,198 @@ tidak mendukung `alter table … disable trigger` dalam satu transaksi panjang.
 
 ---
 
-## 3. Urutan Menjalankan
+## 3. Runbook Dry Run (salin–tempel)
+
+Untuk **uji coba dengan Supabase kosong dan aplikasi masih Firebase**.
+Aman: tidak ada satu pun langkah di bawah yang menyentuh Firebase, dan
+aplikasi produksi tidak berubah perilakunya.
+
+### 3.0 Sekali di awal — kredensial
+
+Ambil tiga nilai dari Supabase Dashboard:
+
+| Nilai | Letaknya | Dipakai oleh |
+|---|---|---|
+| `SUPABASE_DSN` | Settings → Database → Connection string → **URI** | migrate.js, validate.js, create_auth_users.js |
+| `SUPABASE_URL` | Settings → API → Project URL | create_auth_users.js |
+| `SUPABASE_SERVICE_ROLE_KEY` | Settings → API → `service_role` **secret** | create_auth_users.js |
+
+Pakai **Session mode / port 5432**, bukan pooler 6543 — pooler transaksi
+tidak mendukung `alter table … disable trigger` di dalam satu transaksi
+panjang, dan seluruh impor berjalan dalam satu transaksi.
+
+```bash
+# --- Linux / macOS -------------------------------------------------------
+export SUPABASE_DSN="postgresql://postgres:PASSWORD@db.xxxxx.supabase.co:5432/postgres"
+export SUPABASE_URL="https://xxxxx.supabase.co"
+export SUPABASE_SERVICE_ROLE_KEY="eyJhbGciOi...."      # service_role, BUKAN anon
+export EXPORT_JSON="$HOME/export/koperasi-rtdb.json"
+```
+
+```powershell
+# --- Windows PowerShell --------------------------------------------------
+$env:SUPABASE_DSN="postgresql://postgres:PASSWORD@db.xxxxx.supabase.co:5432/postgres"
+$env:SUPABASE_URL="https://xxxxx.supabase.co"
+$env:SUPABASE_SERVICE_ROLE_KEY="eyJhbGciOi...."
+$env:EXPORT_JSON="C:\Project\export\koperasi-rtdb.json"
+```
+
+`service_role` mem-bypass RLS sepenuhnya. Jangan menaruhnya di berkas yang
+ikut ter-commit, dan jangan memakainya dari aplikasi.
+
+### 3.1 Pasang dependensi (sekali)
 
 ```bash
 cd scripts/migration
-
-# 1. DRY-RUN. Tidak menyentuh database sama sekali.
-node --max-old-space-size=8192 migrate.js \
-     --file=~/export/koperasi-rtdb.json --dry-run
-
-# → baca migration_report.json. Perbaiki/putuskan semua anomali DULU.
-
-# 2. Terapkan skema (di Supabase SQL Editor, urut):
-#    001_schema_v2.sql → 001a_schema_patch.sql → 002_rls_policies.sql
-#    (002 masih memuat lubang R-07 yang Anda tunda — sadari saat menjalankan.)
-
-# 3. Impor.
-node --max-old-space-size=8192 migrate.js \
-     --file=~/export/koperasi-rtdb.json \
-     --dsn="postgresql://postgres:PASS@db.xxx.supabase.co:5432/postgres" \
-     --execute
-
-# 4. Validasi. Kode keluar 1 = jangan cutover.
-node --max-old-space-size=8192 validate.js \
-     --file=~/export/koperasi-rtdb.json --dsn="postgresql://…"
+npm init -y                      # kalau belum ada package.json di folder ini
+npm i pg @supabase/supabase-js
 ```
+
+### 3.2 DRY-RUN — tidak menyentuh database sama sekali
+
+```bash
+node --max-old-space-size=8192 migrate.js --file="$EXPORT_JSON"
+```
+
+**Dry-run adalah perilaku DEFAULT** — cukup tidak menulis `--execute`.
+Skrip tidak mengenal flag `--dry-run`; menuliskannya tidak menimbulkan galat
+tetapi juga tidak memberi perlindungan apa pun. Yang menentukan hanyalah ada
+atau tidaknya `--execute`. Skrip mencetak `✓ DRY-RUN selesai` di akhir bila
+tidak ada yang ditulis.
+
+Keluarannya: ringkasan jumlah baris + `migration_report.json`.
+**Baca laporan itu dan selesaikan semua anomali sebelum lanjut.** Anomali
+yang paling perlu diputuskan: `STATUS_TIDAK_DIKENAL`, `NASABAH_TANPA_CABANG`,
+`BAYAR_DILEWATI`, dan `TANGGAL_TIDAK_TERBACA`.
+
+### 3.3 Pasang skema (Supabase SQL Editor, berurutan)
+
+```
+001_schema_v2.sql
+001a_schema_patch.sql        (blok SQL di §1.3 dokumen ini)
+002_rls_policies.sql         ← masih memuat lubang R-07 yang Anda tunda
+007_rpc_functions.sql
+009_password_reset_log.sql
+```
+
+### 3.4 Impor
+
+```bash
+node --max-old-space-size=8192 migrate.js \
+     --file="$EXPORT_JSON" --dsn="$SUPABASE_DSN" --execute
+```
+
+Seluruhnya satu transaksi: gagal di mana pun → `rollback` otomatis, database
+kembali kosong. Aman diulang — semua id deterministik dan memakai
+`on conflict do nothing`.
+
+### 3.5 Validasi — gerbang, bukan formalitas
+
+```bash
+node --max-old-space-size=8192 validate.js \
+     --file="$EXPORT_JSON" --dsn="$SUPABASE_DSN"
+echo "exit code: $?"        # 0 = lulus, 1 = ADA yang gagal
+```
+
+Exit code 1 berarti **jangan lanjut**. Yang paling penting diperhatikan:
+grup **B (jumlah uang)** — total pembayaran/jurnal/kasir harus sama persis
+dengan sumber; dan grup **E**, memastikan tidak ada trigger yang tertinggal
+mati setelah impor.
+
+### 3.6 Buat akun Auth
+
+```bash
+# Lihat dulu apa yang akan dibuat — tidak membuat akun apa pun.
+# (sama seperti migrate.js: cukup TANPA --execute)
+node create_auth_users.js
+
+# Buat akun. Pengawas DENGAN password, peran lain tanpa password.
+PENGAWAS_PASSWORD='<password-pengawas-anda>' \
+  node create_auth_users.js --execute --emit-reset-links=./reset_links.csv
+```
+
+Lalu pasang kembali FK yang dilepas patch `001a`:
+
+```sql
+alter table koperasi.app_user
+  add constraint app_user_id_fkey foreign key (id) references auth.users(id);
+
+-- harus 0:
+select count(*) from koperasi.app_user u
+ left join auth.users a on a.id = u.id where a.id is null;
+```
+
+`reset_links.csv` **setara password**. Bagikan per orang, lalu hapus
+berkasnya. Jangan di-commit.
+
+### 3.7 Kalau ingin mengulang dari nol
+
+Selama Firebase masih memegang kebenaran, mengosongkan Supabase aman:
+
+```sql
+drop schema if exists koperasi cascade;
+drop schema if exists koperasi_priv cascade;
+-- lalu ulangi §3.3
+```
+
+Akun Auth yang sudah dibuat **tidak** ikut terhapus; itu disengaja
+(`rollback_plan.md` §5). `create_auth_users.js` akan melaporkannya sebagai
+"sudah ada" pada percobaan berikutnya.
+
+---
+
+## 3A. Memindahkan Sakelar Backend di Satu Perangkat Test
+
+`SyncBackend` default `FIREBASE`. Sakelarnya dipindah lewat **broadcast ADB**,
+bukan menu tersembunyi di dalam aplikasi.
+
+Alasannya: aplikasi ini dipakai admin lapangan setiap hari. Gerakan rahasia
+di layar bisa teraktivasi tanpa sengaja, dan akibatnya bukan tampilan aneh —
+seluruh tulisan admin itu akan menuju Supabase yang masih kosong sementara ia
+mengira datanya tersimpan. Sakelar yang menuntut akses fisik/USB menutup
+kemungkinan itu sepenuhnya.
+
+Receiver-nya didaftarkan **hanya** di `app/src/debug/AndroidManifest.xml`,
+jadi pada APK release komponennya tidak ada sama sekali.
+
+```bash
+# Pasang APK debug ke perangkat test
+./gradlew :app:installDebug
+
+# 1. Lihat keadaan sekarang (backend aktif, konfigurasi, sisa antrean)
+adb shell am broadcast \
+  -a com.example.koperasikitagodangulu.DEV_SYNC_BACKEND \
+  --es cmd status \
+  -n com.example.koperasikitagodangulu/.offline.SyncBackendDevReceiver
+
+adb logcat -d -s DevSyncBackend
+
+# 2. Pindah ke Supabase
+adb shell am broadcast \
+  -a com.example.koperasikitagodangulu.DEV_SYNC_BACKEND \
+  --es cmd set --es backend SUPABASE \
+  -n com.example.koperasikitagodangulu/.offline.SyncBackendDevReceiver
+
+# 3. Kembali ke Firebase (rollback, tanpa rilis APK)
+adb shell am broadcast \
+  -a com.example.koperasikitagodangulu.DEV_SYNC_BACKEND \
+  --es cmd set --es backend FIREBASE \
+  -n com.example.koperasikitagodangulu/.offline.SyncBackendDevReceiver
+```
+
+Prasyarat yang ditegakkan sendiri oleh receiver:
+
+- **Antrean harus 0.** Kalau masih ada operasi tertunda, perpindahan
+  dibatalkan dan dilaporkan di logcat. Operasi yang dibuat saat Firebase lalu
+  diputar ke Supabase memang idempoten di kedua sisi, tetapi khusus
+  `SERAH_TERIMA` belum didukung jalur Supabase dan akan langsung `REJECTED`.
+  Paksa dengan `--ez force true` hanya bila memang disengaja.
+- **`SUPABASE_URL`/`ANON_KEY` harus terisi** di `~/.gradle/gradle.properties`
+  saat build. Kalau kosong, `SyncBackend` otomatis jatuh kembali ke Firebase
+  dan mencatatnya di log — bukan gagal senyap.
+
+Untuk dry run yang Anda rencanakan sekarang (Supabase kosong, aplikasi masih
+Firebase), **§3A tidak perlu dijalankan sama sekali**. Cukup §3.0–§3.6.
 
 ### 3a. ⚠ Alur reset password TIDAK berfungsi setelah cutover
 
@@ -232,7 +399,7 @@ export SUPABASE_SERVICE_ROLE_KEY="eyJ…"        # service_role, BUKAN anon
 export SUPABASE_DSN="postgresql://…:5432/postgres"
 export PENGAWAS_PASSWORD='…'                   # password yang Anda tentukan
 
-node create_auth_users.js --dry-run
+node create_auth_users.js                 # dry-run = default (tanpa --execute)
 node create_auth_users.js --execute --emit-reset-links=./reset_links.csv
 ```
 

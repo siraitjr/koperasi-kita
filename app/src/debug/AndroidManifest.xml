@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    MANIFEST KHUSUS BUILD DEBUG.
+    ============================================================
+    Berkas ini digabungkan HANYA ke APK debug. Pada APK release,
+    receiver di bawah tidak terdaftar sama sekali sehingga tidak
+    dapat dipanggil siapa pun — termasuk aplikasi lain.
+
+    Isinya sengaja hanya sakelar tujuan sinkronisasi untuk
+    perangkat test. Jangan tambahkan komponen lain di sini tanpa
+    alasan yang sama kuatnya.
+
+    Lihat SyncBackendDevReceiver.kt untuk perintah adb-nya.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application>
+        <!--
+            exported=true diperlukan agar `adb shell am broadcast`
+            (berjalan sebagai uid shell) dapat menjangkaunya. Aman
+            karena komponen ini absen dari build release, dan
+            onReceive() masih memeriksa BuildConfig.DEBUG.
+        -->
+        <receiver
+            android:name="com.example.koperasikitagodangulu.offline.SyncBackendDevReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.example.koperasikitagodangulu.DEV_SYNC_BACKEND" />
+            </intent-filter>
+        </receiver>
+    </application>
+
+</manifest>
