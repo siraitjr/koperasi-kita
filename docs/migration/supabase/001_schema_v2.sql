@@ -998,6 +998,91 @@ create trigger pelanggan_ditolak_immutable
   for each row execute function koperasi.tg_tolak_mutasi();
 
 
+-- -------------------------------------------------------------------------
+-- 10b.4 koreksi_storting/{cabangId}/{adminUid}/{YYYY-MM}
+--       → {cm, l1, mb, ml, updatedAt, updatedBy}
+-- -------------------------------------------------------------------------
+-- Penyesuaian manual kolom storting Buku Pokok (PB/L1/CM/MB/ML — CLAUDE.md
+-- §6.5) per admin per BULAN. Angka ini MENGUBAH hasil pembukuan, jadi tidak
+-- boleh hilang: tanpanya laporan bulanan pasca-cutover akan berbeda dari
+-- laporan yang sudah pernah dicetak dan ditandatangani.
+--
+-- Nilai disimpan apa adanya sebagai bigint rupiah. Tidak diturunkan dari
+-- `pembayaran` — justru sebaliknya, ini koreksi TERHADAP hasil hitungan.
+create table koperasi.koreksi_storting (
+  cabang_id   text not null references koperasi.cabang(id),
+  admin_id    uuid not null references koperasi.app_user(id),
+  periode     date not null,                 -- selalu tanggal 1 bulan ybs
+
+  cm          bigint not null default 0,
+  l1          bigint not null default 0,
+  mb          bigint not null default 0,
+  ml          bigint not null default 0,
+
+  updated_by  uuid references koperasi.app_user(id),
+  updated_at  timestamptz,
+
+  legacy_admin_uid text,
+  created_at  timestamptz not null default now(),
+
+  primary key (cabang_id, admin_id, periode)
+);
+
+create index koreksi_storting_periode_idx on koperasi.koreksi_storting (periode);
+
+-- -------------------------------------------------------------------------
+-- 10b.5 pelanggan_status_khusus/{cabangId}/{pelangganId}
+--       → {statusKhusus, catatanStatusKhusus, tanggalStatusKhusus,
+--          diberiTandaOleh, adminUid, adminName, namaKtp, namaPanggilan,
+--          noHp, besarPinjaman, …}
+-- -------------------------------------------------------------------------
+-- Index per-cabang nasabah bertanda khusus. Sebagian isinya memang tumpang
+-- tindih dengan kolom `nasabah.status_khusus`, TETAPI node ini menyimpan
+-- SNAPSHOT saat penandaan (nama, besar pinjaman, no HP pada saat itu) yang
+-- tidak dapat dipulihkan dari `nasabah` setelah datanya berubah. Karena itu
+-- dipindah utuh, bukan dianggap duplikat.
+create table koperasi.pelanggan_status_khusus (
+  id            uuid primary key default gen_random_uuid(),
+  cabang_id     text not null references koperasi.cabang(id),
+
+  -- Nullable: nasabah yang ditandai bisa sudah dihapus dari /pelanggan.
+  -- Barisnya tetap disimpan karena membawa datanya sendiri.
+  nasabah_id    uuid references koperasi.nasabah(id) on delete set null,
+
+  status_khusus text not null default '',    -- mis. 'MENUNGGU_PENCAIRAN'
+  catatan       text not null default '',
+  tanggal       date,
+
+  /* `diberiTandaOleh` TIDAK konsisten di data nyata: kadang nama tampilan
+   * ("Resort Idaman Panti"), kadang email ("permula@godangulu.com") —
+   * BUKAN UID. Karena itu disimpan sebagai teks apa adanya dan tidak
+   * di-FK-kan ke app_user; memaksakan FK akan menggagalkan impor. */
+  diberi_tanda_oleh text not null default '',
+
+  admin_id      uuid references koperasi.app_user(id),
+  admin_name    text not null default '',
+  nama_ktp      text not null default '',
+  nama_panggilan text not null default '',
+  no_hp         text not null default '',
+  besar_pinjaman bigint not null default 0,
+
+  -- Field lain dipertahankan utuh; export sampel memotong sebagian key,
+  -- jadi kolom eksplisit di atas belum tentu mencakup semuanya.
+  snapshot      jsonb not null default '{}'::jsonb,
+
+  legacy_pelanggan_id text,
+  legacy_admin_uid    text,
+  created_at    timestamptz not null default now(),
+
+  constraint pelanggan_status_khusus_unik unique (cabang_id, legacy_pelanggan_id)
+);
+
+create index pelanggan_status_khusus_nasabah_idx
+  on koperasi.pelanggan_status_khusus (nasabah_id) where nasabah_id is not null;
+create index pelanggan_status_khusus_status_idx
+  on koperasi.pelanggan_status_khusus (cabang_id, status_khusus);
+
+
 -- =========================================================================
 -- 11. updated_at otomatis
 -- =========================================================================

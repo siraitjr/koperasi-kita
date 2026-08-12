@@ -210,9 +210,8 @@ Tiga pilihan, tanpa menyentuh kode Android:
 | **B. Edge Function pengganti** | Tulis Edge Function Supabase yang meniru `resetUserPassword`, dipanggil di endpoint yang sama | Perlu perubahan endpoint di klien → **melanggar batasan "jangan ubah kode Android"** pada fase ini |
 | **C. Set password sementara untuk semua** | Beri password awal ke semua user saat pembuatan akun | Menyimpang dari keputusan Anda; dan password seragam untuk 1 organisasi adalah risiko nyata |
 
-**Rekomendasi: A.** Sesuai keputusan Anda (hanya Pengawas yang punya
-password), tidak menyentuh kode Android, dan bisa dieksekusi pada hari-H.
-Opsi B tetap diperlukan sebagai perbaikan permanen di fase berikutnya.
+**Keputusan pemilik (12 Agu 2026): opsi A untuk hari-H, opsi B sebagai solusi
+permanen — dikerjakan di fase berikutnya, bukan sekarang.** Rencananya di §8.
 
 ### Membuat akun Supabase Auth (langkah manual, setelah impor)
 
@@ -341,19 +340,36 @@ Catatan bentuk untuk ketiganya:
   bentuknya harus tetap seperti saat ditolak. Kolom yang dicari (`nik`,
   `nama_ktp`, `cabang_id`, `besar_pinjaman`) diekstrak agar bisa di-index.
 
+Ditambahkan pada putaran kedua (`001` §10b.4–10b.5):
+
+- **`koreksi_storting`** → `koreksi_storting`, PK `(cabang_id, admin_id,
+  periode)`. Kolom `cm/l1/mb/ml` adalah penyesuaian manual kolom storting Buku
+  Pokok per bulan. Angka ini **mengubah hasil pembukuan** — tanpanya laporan
+  bulanan pasca-cutover akan berbeda dari laporan yang sudah dicetak dan
+  ditandatangani. `validate.js` membandingkan totalnya persis.
+- **`pelanggan_status_khusus`** → `pelanggan_status_khusus`. Sebagian isinya
+  tumpang tindih dengan `nasabah.status_khusus`, tetapi node ini menyimpan
+  **snapshot saat penandaan** (nama, no HP, besar pinjaman waktu itu) yang
+  tidak bisa dipulihkan dari `nasabah` setelah datanya berubah — jadi dipindah
+  utuh, bukan dianggap duplikat. `nasabah_id` **nullable**: yang ditandai bisa
+  sudah dihapus dari `/pelanggan`, dan barisnya tetap disimpan karena membawa
+  datanya sendiri.
+
+Catatan bentuk yang perlu diketahui: `diberiTandaOleh` **tidak konsisten** di
+data nyata — kadang nama tampilan (`"Resort Idaman Panti"`), kadang email
+(`"permula@godangulu.com"`), **bukan UID**. Kolomnya karena itu bertipe `text`
+tanpa FK; memaksakan FK ke `app_user` akan menggagalkan impor.
+
 **Masih di luar lingkup** — tidak ada tabel tujuannya:
 `absensi`, `user_absensi_today`, `rekap_harian`, `rekap_harian_final`,
-`operasional_harian`, `koreksi_storting`, `deleted_sampah`,
-`pelanggan_status_khusus`, `deletion_requests`, `payment_deletion_requests`,
-`pengajuan_pencairan_simpanan`, seluruh node notifikasi, `fcm_tokens`,
-`device_presence`, `force_logout`, `location_tracking`, `user_locations`,
-`password_reset_logs`, `user_management_logs`, `jurnal_transaksi_meta`.
+`operasional_harian`, `deleted_sampah`, `deletion_requests`,
+`payment_deletion_requests`, `pengajuan_pencairan_simpanan`, seluruh node
+notifikasi, `fcm_tokens`, `device_presence`, `force_logout`,
+`location_tracking`, `user_locations`, `password_reset_logs`,
+`user_management_logs`, `jurnal_transaksi_meta`.
 
-Dari sisa itu, dua yang paling mungkin terasa hilang: **`koreksi_storting`**
-(penyesuaian setoran — memengaruhi angka pembukuan) dan
-**`pelanggan_status_khusus`** (penanda nasabah bermasalah; sebagian sudah
-tertampung di kolom `nasabah.status_khusus`, tetapi node terpisahnya belum
-diperiksa). Belum saya modelkan — sebutkan bila ingin ikut.
+`password_reset_logs` akan diperlukan begitu Edge Function reset password
+dibangun (§8.3) — belum ada tabelnya.
 
 ---
 
@@ -370,3 +386,103 @@ diperiksa). Belum saya modelkan — sebutkan bila ingin ikut.
 - Foto/Storage belum disentuh sama sekali. `003_storage_design.md` masih
   rancangan; tidak ada skrip pemindah objek.
 - Password tidak ikut bermigrasi (§3).
+
+---
+
+## 8. Roadmap Fase Berikutnya — Edge Function Pengganti User Management
+
+**Belum dikerjakan. Butuh perubahan kode Android, jadi di luar lingkup fase
+ini** sesuai batasan Anda. Bagian ini merekam rencananya supaya tidak hilang.
+
+### 8.1 Kebutuhan
+
+> "Kalau PDL A resign, Pengawas harus bisa reset password PDL A supaya
+> karyawan baru bisa login."
+
+Solusi tautan pemulihan (§3a opsi A) hanya menyelesaikan hari-H — ia berbasis
+email, sedangkan kebutuhan ini adalah Pengawas menetapkan password baru
+langsung dari aplikasi, tanpa akses ke email PDL yang sudah resign.
+
+### 8.2 Lingkupnya lebih luas dari satu fungsi
+
+Ini yang perlu diketahui sebelum memperkirakan usaha. `functions/resetUserPassword.js`
+mengekspor **lima** callable, dan Android memanggil semuanya lewat
+`functions.getHttpsCallable(...)` (`PelangganViewModel.kt:16340`):
+
+| Callable | Baris | Fungsi |
+|---|---|---|
+| `resetUserPassword` | `:22` | set password user lain |
+| `getAllUsers` | `:174` | daftar user untuk layar User Management |
+| `createNewUser` | `:343` | buat user baru |
+| `deleteExistingUser` | `:520` | hapus user |
+| `getAllCabang` | `:668` | daftar cabang |
+
+Semuanya bergantung pada dua hal yang hilang setelah cutover: `admin.auth()`
+(Firebase Auth) dan pengecekan wewenang lewat `metadata/roles/pengawas` di
+RTDB (`:37`, `:188`). **Mengganti `resetUserPassword` saja tidak cukup** —
+layar `PengawasUserManagementScreen.kt` akan tetap rusak karena `getAllUsers`
+tidak mengembalikan apa pun.
+
+Android juga memanggil `generateTakeoverToken`, `restorePimpinanSession`,
+`triggerTargetRecalc`, dan `updateAllSummaries`. Empat itu di luar user
+management, tetapi mengalami masalah yang sama dan perlu didata terpisah.
+
+### 8.3 Rancangan pengganti
+
+Lima Edge Function Supabase (Deno), satu per callable, memakai
+`SUPABASE_SERVICE_ROLE_KEY` dari environment — **tidak pernah** dikirim ke
+klien.
+
+Pola wewenang, menggantikan cek RTDB:
+
+```ts
+// Verifikasi pemanggil dari JWT, lalu cek perannya di koperasi.app_user.
+const { data: { user } } = await admin.auth.getUser(jwtDariHeader);
+const { data: profil } = await admin
+  .from('app_user').select('role').eq('id', user.id).single();
+if (profil?.role !== 'pengawas') return json(403, { error: 'Bukan pengawas' });
+```
+
+Isi `resetUserPassword` menjadi:
+
+```ts
+await admin.auth.admin.updateUserById(targetId, { password: baru });
+// revokeRefreshTokens Firebase (:99) → Supabase memutus sesi lewat:
+await admin.auth.admin.signOut(targetId, 'global');
+await admin.from('password_reset_log').insert({ ... });   // audit trail
+```
+
+Yang harus dipertahankan 1:1 dari perilaku sekarang:
+
+- **Larangan pengawas mereset pengawas lain** (`:73` memeriksa target juga
+  pengawas). Tanpa ini, satu pengawas bisa mengunci pengawas lain.
+- **Pemutusan sesi** setelah reset (`:99`) — kalau tidak, pemilik lama tetap
+  bisa memakai token yang masih hidup.
+- **Audit log** (`:104`, `:117`, `:146`) — di RTDB ke `password_reset_logs`;
+  perlu tabel padanannya. Belum ada di `001`.
+
+### 8.4 Perubahan sisi Android (fase berikutnya)
+
+Minimal, dan terpusat di satu tempat: ganti `functions.getHttpsCallable("…")`
+(`PelangganViewModel.kt:16340` dan sekitarnya) menjadi pemanggilan HTTPS ke
+URL Edge Function. Bentuk request/response dibuat **identik** dengan callable
+Firebase (`{ data: { … } }`) supaya parsing di layar tidak ikut berubah.
+
+### 8.5 Urutan yang disarankan
+
+1. Tambahkan tabel `password_reset_log` ke skema (belum ada).
+2. Tulis kelima Edge Function; uji dengan `curl` memakai JWT pengawas asli.
+3. Ubah lapisan pemanggil di Android di **satu** tempat; rilis versi baru.
+4. Baru setelah versi itu terpasang merata, matikan callable Firebase-nya.
+
+Langkah 4 harus terakhir: perangkat yang belum di-update masih memanggil
+endpoint lama, dan mematikannya lebih awal membuat User Management mati di
+perangkat tersebut tanpa pesan yang jelas.
+
+### 8.6 Selama Edge Function belum ada
+
+Pengawas tetap bisa mereset password lewat **Supabase Dashboard →
+Authentication → Users → Reset password**, atau menjalankan ulang
+`create_auth_users.js --emit-reset-links`. Kikuk, tetapi tidak ada yang
+terkunci — dan itu cukup sebagai jaring pengaman sampai fase berikutnya
+selesai.

@@ -141,7 +141,8 @@ begin
     'pembayaran','pembayaran_koreksi','simpanan','jadwal_cicilan',
     'pengajuan','approval_step','permintaan','jurnal_transaksi',
     'kasir_entry','sync_inbox','dokumen',
-    'pinjaman_history','biaya_awal','pelanggan_ditolak'
+    'pinjaman_history','biaya_awal','pelanggan_ditolak',
+    'koreksi_storting','pelanggan_status_khusus'
   ]
   loop
     execute format('alter table koperasi.%I enable row level security', t);
@@ -568,6 +569,17 @@ create policy pelanggan_ditolak_baca on koperasi.pelanggan_ditolak
     or koperasi_priv.is_pengawas()
     or koperasi_priv.boleh_lihat_cabang(cabang_id)
   );
+
+
+-- Koreksi storting mengubah angka pembukuan → hanya atasan & kasir yang
+-- perlu melihat; admin lapangan melihat miliknya sendiri.
+create policy koreksi_storting_baca on koperasi.koreksi_storting
+  for select to authenticated
+  using (admin_id = auth.uid() or koperasi_priv.boleh_lihat_cabang(cabang_id));
+
+create policy status_khusus_baca on koperasi.pelanggan_status_khusus
+  for select to authenticated
+  using (admin_id = auth.uid() or koperasi_priv.boleh_lihat_cabang(cabang_id));
 
 
 -- =========================================================================

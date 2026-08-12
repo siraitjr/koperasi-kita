@@ -105,6 +105,7 @@ const ID = {
   kasir: (cab, bulan, id) => uuidv5(`kasir:${cab}/${bulan}/${id}`),
   histori: (adminUid, pid, hid) => uuidv5(`histori:${adminUid}/${pid}/${hid}`),
   ditolak: (adminUid, rid) => uuidv5(`ditolak:${adminUid}/${rid}`),
+  statusKhusus: (cab, pid) => uuidv5(`statuskhusus:${cab}/${pid}`),
 };
 
 /* cabangId RTDB adalah teks bebas dengan SPASI ("simpang empat unit 1",
@@ -245,6 +246,7 @@ const ROWS = {
   jadwal_cicilan: [], pengajuan: [], approval_step: [], jurnal_transaksi: [],
   kasir_entry: [], dokumen: [],
   pinjaman_history: [], biaya_awal: [], pelanggan_ditolak: [],
+  koreksi_storting: [], pelanggan_status_khusus: [],
 };
 const seenBayarKey = new Map(); // untuk R-05: disambiguasi client_op_id
 
@@ -730,9 +732,81 @@ function faseHistoris() {
     }
   }
 
+  // --- koreksi_storting/{cabangId}/{adminUid}/{YYYY-MM} -------------------
+  const KS = node('koreksi_storting');
+  for (const cabRaw of realKeys(KS)) {
+    const cab = slugCabang(cabRaw);
+    if (!cabangAda.has(cab)) { issue('KOREKSI_CABANG_TIDAK_DIKENAL', cab); continue; }
+    for (const adminUid of realKeys(KS[cabRaw])) {
+      if (!userAda.has(ID.user(adminUid))) {
+        issue('KOREKSI_ADMIN_TIDAK_DIKENAL', `${cab}/${adminUid} — dilewati`);
+        continue;
+      }
+      for (const bulan of realKeys(KS[cabRaw][adminUid])) {
+        const k = KS[cabRaw][adminUid][bulan];
+        if (!k || typeof k !== 'object') continue;
+        if (!/^\d{4}-\d{2}$/.test(bulan)) {
+          issue('KOREKSI_PERIODE_TIDAK_VALID', `${cab}/${adminUid}/${bulan}`);
+          continue;
+        }
+        const by = str(k.updatedBy);
+        ROWS.koreksi_storting.push({
+          cabang_id: cab,
+          admin_id: ID.user(adminUid),
+          periode: `${bulan}-01`,
+          cm: rupiah(k.cm), l1: rupiah(k.l1),
+          mb: rupiah(k.mb), ml: rupiah(k.ml),
+          updated_by: by && userAda.has(ID.user(by)) ? ID.user(by) : null,
+          updated_at: ts(k.updatedAt),
+          legacy_admin_uid: adminUid,
+        });
+      }
+    }
+  }
+
+  // --- pelanggan_status_khusus/{cabangId}/{pelangganId} -------------------
+  const SK = node('pelanggan_status_khusus');
+  for (const cabRaw of realKeys(SK)) {
+    const cab = slugCabang(cabRaw);
+    if (!cabangAda.has(cab)) { issue('STATUS_KHUSUS_CABANG_TIDAK_DIKENAL', cab); continue; }
+    for (const pid of realKeys(SK[cabRaw])) {
+      const s = SK[cabRaw][pid];
+      if (!s || typeof s !== 'object') continue;
+      const adminUid = str(s.adminUid);
+      /* nasabah_id nullable: yang ditandai bisa sudah dihapus dari
+       * /pelanggan. Barisnya TETAP disimpan — ia membawa nama, no HP, dan
+       * besar pinjaman pada saat penandaan, yang tidak bisa dipulihkan dari
+       * tabel `nasabah` setelah datanya berubah. */
+      const nid = adminUid ? ID.nasabah(adminUid, pid) : null;
+      const bersih = {};
+      for (const k of realKeys(s)) bersih[k] = s[k];
+      ROWS.pelanggan_status_khusus.push({
+        id: ID.statusKhusus(cab, pid),
+        cabang_id: cab,
+        nasabah_id: nid && nasabahAda.has(nid) ? nid : null,
+        status_khusus: str(s.statusKhusus),
+        catatan: str(s.catatanStatusKhusus),
+        tanggal: parseTanggal(s.tanggalStatusKhusus),
+        // Teks apa adanya: kadang nama, kadang email — lihat 001 §10b.5.
+        diberi_tanda_oleh: str(s.diberiTandaOleh),
+        admin_id: adminUid && userAda.has(ID.user(adminUid)) ? ID.user(adminUid) : null,
+        admin_name: str(s.adminName),
+        nama_ktp: str(s.namaKtp),
+        nama_panggilan: str(s.namaPanggilan),
+        no_hp: str(s.noHp),
+        besar_pinjaman: rupiah(s.besarPinjaman),
+        snapshot: JSON.stringify(bersih),
+        legacy_pelanggan_id: pid,
+        legacy_admin_uid: adminUid || null,
+      });
+    }
+  }
+
   log(`  pinjaman_history=${ROWS.pinjaman_history.length} ` +
       `biaya_awal=${ROWS.biaya_awal.length} ` +
-      `pelanggan_ditolak=${ROWS.pelanggan_ditolak.length}`);
+      `pelanggan_ditolak=${ROWS.pelanggan_ditolak.length} ` +
+      `koreksi_storting=${ROWS.koreksi_storting.length} ` +
+      `status_khusus=${ROWS.pelanggan_status_khusus.length}`);
 }
 
 // ================================================================ WRITE ===
@@ -830,6 +904,8 @@ async function writeTable(client, table, rows, conflictCols) {
     await writeTable(client, 'pinjaman_history', ROWS.pinjaman_history, 'id');
     await writeTable(client, 'biaya_awal', ROWS.biaya_awal, 'admin_id,tanggal');
     await writeTable(client, 'pelanggan_ditolak', ROWS.pelanggan_ditolak, 'id');
+    await writeTable(client, 'koreksi_storting', ROWS.koreksi_storting, 'cabang_id,admin_id,periode');
+    await writeTable(client, 'pelanggan_status_khusus', ROWS.pelanggan_status_khusus, 'id');
 
     await client.query('alter table koperasi.approval_step enable trigger approval_advance');
     await client.query('alter table koperasi.approval_step enable trigger approval_urutan');

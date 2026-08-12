@@ -68,6 +68,7 @@ const src = {
   bayar: 0, bayarSum: 0, jadwal: 0, pengajuan: 0, jurnal: 0, jurnalSum: 0,
   kasir: 0, kasirSum: 0, statusCount: {}, nikUnik: new Set(), nikDuplikat: [],
   histori: 0, biayaAwal: 0, biayaAwalSum: 0, ditolak: 0,
+  koreksi: 0, koreksiSum: 0, statusKhusus: 0,
 };
 
 for (const uid of keys(node('metadata').admins || {})) {
@@ -141,6 +142,22 @@ for (const a of keys(BA)) {
 }
 for (const a of keys(node('pelanggan_ditolak'))) src.ditolak += keys(node('pelanggan_ditolak')[a]).length;
 
+// koreksi_storting/{cabang}/{admin}/{YYYY-MM}; hanya periode ber-format valid
+// yang dihitung, sama seperti migrate.js.
+const KS = node('koreksi_storting');
+for (const c of keys(KS)) {
+  for (const a of keys(KS[c])) {
+    for (const b of keys(KS[c][a])) {
+      if (!/^\d{4}-\d{2}$/.test(b)) continue;
+      const k = KS[c][a][b] || {};
+      src.koreksi++;
+      src.koreksiSum += rupiah(k.cm) + rupiah(k.l1) + rupiah(k.mb) + rupiah(k.ml);
+    }
+  }
+}
+for (const c of keys(node('pelanggan_status_khusus'))) src.statusKhusus += keys(node('pelanggan_status_khusus')[c]).length;
+
+
 for (const c of keys(node('jurnal_transaksi')))
   for (const b of keys(node('jurnal_transaksi')[c]))
     for (const id of keys(node('jurnal_transaksi')[c][b])) {
@@ -187,6 +204,8 @@ const cek = (nama, ok, detail) => {
     ['pinjaman_history', 'koperasi.pinjaman_history', src.histori],
     ['biaya_awal', 'koperasi.biaya_awal', src.biayaAwal],
     ['pelanggan_ditolak', 'koperasi.pelanggan_ditolak', src.ditolak],
+    ['koreksi_storting', 'koperasi.koreksi_storting', src.koreksi],
+    ['pelanggan_status_khusus', 'koperasi.pelanggan_status_khusus', src.statusKhusus],
   ];
   for (const [nama, tabel, expected] of pairs) {
     const { count } = await one(`select count(*)::int as count from ${tabel}`);
@@ -204,6 +223,15 @@ const cek = (nama, ok, detail) => {
   cek(`total kasir: db=${k1.s} sumber=${src.kasirSum}`, String(k1.s) === String(src.kasirSum));
   const ba = await one('select coalesce(sum(jumlah),0)::bigint as s from koperasi.biaya_awal');
   cek(`total biaya_awal: db=${ba.s} sumber=${src.biayaAwalSum}`, String(ba.s) === String(src.biayaAwalSum));
+
+  // Koreksi storting mengubah angka pembukuan: totalnya harus sama persis,
+  // kalau tidak laporan bulanan pasca-cutover akan berbeda dari yang sudah
+  // pernah dicetak.
+  const ks = await one(
+    'select coalesce(sum(cm+l1+mb+ml),0)::bigint as s from koperasi.koreksi_storting');
+  cek(`total koreksi storting: db=${ks.s} sumber=${src.koreksiSum}`,
+    String(ks.s) === String(src.koreksiSum),
+    String(ks.s) === String(src.koreksiSum) ? '' : `selisih ${Number(ks.s) - src.koreksiSum}`);
 
   // Snapshot penolakan wajib utuh — kalau kosong, bukti auditnya hilang.
   const snapKosong = await one(
@@ -243,6 +271,16 @@ const cek = (nama, ok, detail) => {
   const opDup = await one(`select count(*)::int as n from (
       select client_op_id from koperasi.pembayaran group by client_op_id having count(*)>1) t`);
   cek('client_op_id unik', opDup.n === 0);
+
+  // Status khusus yang kehilangan tautan nasabah masih sah (nasabahnya bisa
+  // sudah dihapus), tapi jumlahnya perlu terlihat — kalau hampir semuanya
+  // null, kemungkinan besar pemetaan adminUid→nasabah yang salah.
+  const skNull = await one(
+    `select count(*)::int as n from koperasi.pelanggan_status_khusus where nasabah_id is null`);
+  const skAll = await one('select count(*)::int as n from koperasi.pelanggan_status_khusus');
+  cek(`status_khusus tertaut nasabah (${skAll.n - skNull.n}/${skAll.n})`,
+    skAll.n === 0 || skNull.n <= skAll.n / 2,
+    skNull.n ? `${skNull.n} tanpa tautan` : '');
 
   const neg = await one(`select count(*)::int as n from koperasi.pembayaran where jumlah <= 0`);
   cek('tidak ada pembayaran <= 0', neg.n === 0);
