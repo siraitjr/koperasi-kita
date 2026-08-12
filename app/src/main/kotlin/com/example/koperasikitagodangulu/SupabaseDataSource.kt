@@ -83,8 +83,11 @@ class SupabaseDataSource private constructor() {
             )
 
         // Urutan wajib: nasabah dulu (induk), baru pinjaman (FK).
-        db.from(T_NASABAH).upsert(nasabah) { onConflict = "id" }
-        db.from(T_PINJAMAN).upsert(pinjaman) { onConflict = "id" }
+        // Catatan API: di supabase-kt 2.x `onConflict` adalah PARAMETER
+        // bernama, bukan properti di dalam lambda (lambda-nya adalah
+        // PostgrestRequestBuilder untuk filter/select).
+        db.from(T_NASABAH).upsert(nasabah, onConflict = "id")
+        db.from(T_PINJAMAN).upsert(pinjaman, onConflict = "id")
         Hasil.Sukses
     }
 
@@ -140,10 +143,11 @@ class SupabaseDataSource private constructor() {
          * BUKAN kegagalan — client_op_id UNIQUE (001 §4) sudah menjamin uang
          * tidak dobel. Tanpa ini, retry akan dilaporkan sebagai error dan
          * operasi menumpuk di antrean selamanya. */
-        db.from(T_PEMBAYARAN).upsert(baris) {
-            onConflict = "client_op_id"
+        db.from(T_PEMBAYARAN).upsert(
+            baris,
+            onConflict = "client_op_id",
             ignoreDuplicates = true
-        }
+        )
         Hasil.Sukses
     }
 

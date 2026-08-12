@@ -194,27 +194,43 @@ dependencies {
     // Dampak ukuran APK: menambah ±2-3 MB (Ktor + kotlinx-serialization).
     // Sementara saja — Firebase dicabut setelah cutover.
     //
-    // ⚠ Versi di bawah BELUM PERNAH DIRESOLUSI. Environment tempat kode ini
-    //   ditulis memblokir dl.google.com dan Maven (403 CONNECT), jadi Gradle
-    //   tidak bisa mengunduh apa pun. Verifikasi di mesin Anda.
+    // KENAPA 2.2.3 DAN BUKAN VERSI TERBARU
+    // -------------------------------------
+    // Project ini memakai Kotlin 1.9.20 (gradle/libs.versions.toml). Rilis
+    // supabase-kt sejak 2.3.1 dikompilasi dengan kotlin-stdlib 2.0.x, dan
+    // metadata Kotlin 2.0 TIDAK BISA dibaca compiler 1.9.20 — build akan
+    // gagal dengan "class file was compiled with a newer Kotlin version".
+    // Diverifikasi langsung dari POM di Maven Central:
+    //     2.6.1 → kotlin-stdlib 2.0.10      2.4.3 → 2.0.0-RC3
+    //     2.6.0 → kotlin-stdlib 2.0.10      2.3.1 → 2.0.0-RC1
+    //     2.5.4 → kotlin-stdlib 2.0.0       2.2.3 → 1.9.23  ← terbaru yg cocok
+    // Untuk naik ke supabase-kt 3.x, Kotlin project harus dinaikkan ke 2.x
+    // lebih dulu (ikut Compose compiler & kapt) — perubahan tersendiri.
+    //
+    // NAMA MODUL AUTH: `gotrue-kt`, BUKAN `auth-kt`.
+    // `auth-kt` baru ada sejak 3.0.0-beta-1; di seluruh lini 2.x artefaknya
+    // bernama gotrue-kt. Itulah sebab error "Could not find …:auth-kt:" —
+    // BOM 2.x tidak mengelola nama itu, sehingga versinya kosong.
+    // Nama KELAS-nya tetap `Auth` (io.github.jan.supabase.gotrue.Auth),
+    // hanya nama artefak & package-nya yang berbeda dari 3.x.
     // =====================================================================
-    implementation(platform("io.github.jan-tennert.supabase:bom:2.6.0"))
+    implementation(platform("io.github.jan-tennert.supabase:bom:2.2.3"))
     implementation("io.github.jan-tennert.supabase:postgrest-kt")
     implementation("io.github.jan-tennert.supabase:storage-kt")
     implementation("io.github.jan-tennert.supabase:realtime-kt")
 
-    // auth-kt TIDAK diminta eksplisit, tetapi WAJIB ada: seluruh tabel
-    // memakai RLS, dan tanpa JWT pengguna, setiap query PostgREST dieksekusi
-    // sebagai `anon` yang tidak punya policy apa pun (lihat 002 §0) — semua
-    // request akan balik kosong/403. Lapisan data source ini tidak akan
-    // berfungsi tanpanya.
-    // Catatan: modul ini bernama `gotrue-kt` sebelum supabase-kt 2.6.0.
-    implementation("io.github.jan-tennert.supabase:auth-kt")
+    // Tidak diminta eksplisit, tetapi WAJIB ada: seluruh tabel memakai RLS,
+    // dan tanpa JWT pengguna setiap query PostgREST dieksekusi sebagai `anon`
+    // yang tidak punya policy apa pun (002 §0) — request balik kosong, bukan
+    // error yang jelas. Lapisan data source tidak berfungsi tanpanya.
+    implementation("io.github.jan-tennert.supabase:gotrue-kt")
 
     // Engine HTTP untuk Ktor. Supabase SDK tidak membawa engine sendiri;
-    // tanpa baris ini SDK gagal saat runtime, bukan saat compile.
-    // OkHttp dipilih karena sudah ada di dependency tree (Firebase/Coil).
-    implementation("io.ktor:ktor-client-okhttp:2.3.12")
+    // tanpa baris ini SDK gagal saat RUNTIME, bukan saat compile.
+    // Versi disamakan dengan yang dipakai supabase-kt 2.2.3 (ktor-client-core
+    // 2.3.9, dibaca dari Gradle module metadata) agar tidak ada dua versi
+    // Ktor yang bertabrakan di classpath.
+    implementation("io.ktor:ktor-client-okhttp:2.3.9")
 
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.0")
 }

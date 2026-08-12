@@ -4,7 +4,12 @@ import android.util.Log
 import com.example.koperasikitagodangulu.BuildConfig
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.createSupabaseClient
-import io.github.jan.supabase.auth.Auth
+// Di supabase-kt 2.x, kelas plugin auth bernama `Auth` tetapi berada di
+// package `gotrue` (artefak gotrue-kt). Package `io.github.jan.supabase.auth`
+// baru ada sejak 3.x — memakainya di sini akan gagal resolve.
+// Diverifikasi dari isi gotrue-kt-android-2.2.3.aar:
+//   io/github/jan/supabase/gotrue/Auth.class
+import io.github.jan.supabase.gotrue.Auth
 import io.github.jan.supabase.postgrest.Postgrest
 import io.github.jan.supabase.realtime.Realtime
 import io.github.jan.supabase.storage.Storage
