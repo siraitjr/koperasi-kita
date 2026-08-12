@@ -225,6 +225,12 @@ dependencies {
     // error yang jelas. Lapisan data source tidak berfungsi tanpanya.
     implementation("io.github.jan-tennert.supabase:gotrue-kt")
 
+    // M4: pemanggilan Edge Function (pengganti 5 callable Cloud Functions).
+    // Dipilih daripada Ktor mentah karena SDK otomatis melampirkan JWT sesi
+    // yang sedang login — dan JWT itulah yang dipakai Edge Function untuk
+    // memverifikasi wewenang Pengawas serta mengisi audit log.
+    implementation("io.github.jan-tennert.supabase:functions-kt")
+
     // Engine HTTP untuk Ktor. Supabase SDK tidak membawa engine sendiri;
     // tanpa baris ini SDK gagal saat RUNTIME, bukan saat compile.
     // Versi disamakan dengan yang dipakai supabase-kt 2.2.3 (ktor-client-core

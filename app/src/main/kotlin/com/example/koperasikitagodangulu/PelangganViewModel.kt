@@ -66,6 +66,7 @@ import com.google.firebase.functions.ktx.functions
 import com.google.firebase.database.ServerValue
 import android.content.SharedPreferences
 import com.example.koperasikitagodangulu.offline.OfflineRepository
+import com.example.koperasikitagodangulu.offline.UserManagementApi
 import com.example.koperasikitagodangulu.offline.SyncWorker
 import com.example.koperasikitagodangulu.offline.SyncStatus
 import com.example.koperasikitagodangulu.offline.SaveResult
@@ -16084,12 +16085,9 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
             try {
                 Log.d("UserManagement", "📋 Loading all users...")
 
-                val result = functions.getHttpsCallable("getAllUsers")
-                    .call()
-                    .await()
-
-                @Suppress("UNCHECKED_CAST")
-                val data = result.data as? Map<String, Any>
+                // M4: transport saja — bentuk `data` identik dengan
+                // HttpsCallableResult.data, jadi parsing di bawah tidak berubah.
+                val data = UserManagementApi.panggil(context, functions, "getAllUsers")
 
                 if (data?.get("success") == true) {
                     @Suppress("UNCHECKED_CAST")
@@ -16337,12 +16335,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     "newPassword" to newPassword
                 )
 
-                val result = functions.getHttpsCallable("resetUserPassword")
-                    .call(data)
-                    .await()
-
-                @Suppress("UNCHECKED_CAST")
-                val response = result.data as? Map<String, Any>
+                val response = UserManagementApi.panggil(context, functions, "resetUserPassword", data)
 
                 if (response?.get("success") == true) {
                     val message = response["message"] as? String ?: "Password berhasil diubah"
@@ -16392,12 +16385,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     "cabangId" to cabangId
                 )
 
-                val result = functions.getHttpsCallable("createNewUser")
-                    .call(data)
-                    .await()
-
-                @Suppress("UNCHECKED_CAST")
-                val response = result.data as? Map<String, Any>
+                val response = UserManagementApi.panggil(context, functions, "createNewUser", data)
 
                 if (response?.get("success") == true) {
                     val message = response["message"] as? String ?: "User berhasil dibuat"
@@ -16438,12 +16426,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
 
                 val data = hashMapOf("targetUid" to targetUid)
 
-                val result = functions.getHttpsCallable("deleteExistingUser")
-                    .call(data)
-                    .await()
-
-                @Suppress("UNCHECKED_CAST")
-                val response = result.data as? Map<String, Any>
+                val response = UserManagementApi.panggil(context, functions, "deleteExistingUser", data)
 
                 if (response?.get("success") == true) {
                     val message = response["message"] as? String ?: "User berhasil dihapus"
@@ -16478,12 +16461,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
     fun loadAllCabang() {
         viewModelScope.launch {
             try {
-                val result = functions.getHttpsCallable("getAllCabang")
-                    .call()
-                    .await()
-
-                @Suppress("UNCHECKED_CAST")
-                val data = result.data as? Map<String, Any>
+                val data = UserManagementApi.panggil(context, functions, "getAllCabang")
 
                 if (data?.get("success") == true) {
                     @Suppress("UNCHECKED_CAST")
