@@ -146,6 +146,36 @@ alter table koperasi.app_user add column if not exists legacy_uid text unique;
 alter table koperasi.nasabah   add column if not exists legacy_admin_uid text;
 alter table koperasi.pengajuan add column if not exists created_at timestamptz;
 
+-- =========================================================================
+-- 9. nasabah.nik — UNIQUE diturunkan menjadi index biasa
+-- =========================================================================
+-- Keputusan pemilik, 12 Agu 2026, setelah pre-check menemukan 75 NIK
+-- duplikat (153 baris):
+--   * 1 NIK dummy ("0000000000000010") → ditangani nikBersih() jadi NULL
+--   * 74 sisanya adalah ORANG YANG SAMA terdaftar di DUA resort berbeda,
+--     mis. "RIKI KISWANTO HARAHAP" di Resort Permula Panti dan Resort
+--     Anggun Panti. Itu keadaan data nyata di Firebase, bukan cacat impor.
+--
+-- Pilihannya: menahan migrasi sampai 74 kasus dibereskan manual, atau
+-- membawa seluruh baris utuh dan membereskannya belakangan. Dipilih yang
+-- kedua supaya migrasi tidak tersandera pekerjaan pembersihan data.
+--
+-- ⚠ YANG HILANG: jaminan basis data bahwa satu NIK = satu nasabah.
+--   Pencegahan duplikat kembali bergantung penuh pada pemeriksaan di
+--   aplikasi sebelum registrasi — sama seperti keadaan di RTDB sekarang,
+--   jadi ini bukan kemunduran dari sistem berjalan, tetapi juga bukan
+--   perbaikan yang tadinya dijanjikan 004 §6.
+--
+-- ⚠ EFEK KE LAPORAN: selama duplikat ada, satu orang punya DUA baris
+--   nasabah dengan riwayat pinjaman terpisah, dan "jumlah nasabah" akan
+--   menghitungnya dua kali.
+--
+-- Daftar lengkapnya ada di migration_report.json → nikPerluCleanup.
+-- Setelah dibersihkan, index bisa dinaikkan lagi jadi UNIQUE (lihat 001).
+drop index if exists koperasi.nasabah_nik_unik;
+create index if not exists nasabah_nik_idx
+  on koperasi.nasabah (nik) where nik is not null;
+
 commit;
 
 

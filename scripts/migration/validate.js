@@ -44,6 +44,21 @@ const rupiah = (v) => {
   const n = Number(String(v).replace(/[^0-9-]/g, ''));
   return Number.isFinite(n) ? Math.round(n) : 0;
 };
+/* Normalisasi NIK — WAJIB identik dengan nikBersih() di migrate.js. Kalau
+ * berbeda, hitungan sumber dan hitungan Postgres tidak bisa dibandingkan dan
+ * validasi ini justru menghasilkan alarm palsu. */
+const NIK_DUMMY = new Set([
+  '0000000000000000', '0000000000000010', '1111111111111111', '1234567890123456',
+]);
+function nikBersih(v) {
+  const t = String(v == null ? '' : v).trim();
+  if (!/^\d{16}$/.test(t)) return null;
+  if (NIK_DUMMY.has(t)) return null;
+  if (t.startsWith('00')) return null;           // kode provinsi 11–94
+  if (/^(\d)\1{15}$/.test(t)) return null;
+  return t;
+}
+
 function toIndexedList(v) {
   if (v == null) return [];
   const out = [];
@@ -87,8 +102,8 @@ for (const a of keys(node('pelanggan'))) {
     const st = String(p.status || '').trim();
     src.statusCount[st] = (src.statusCount[st] || 0) + 1;
 
-    const nik = String(p.nik || '');
-    if (/^\d{16}$/.test(nik)) {
+    const nik = nikBersih(p.nik);
+    if (nik) {
       if (src.nikUnik.has(nik)) src.nikDuplikat.push(nik);
       src.nikUnik.add(nik);
     }
@@ -259,14 +274,18 @@ const cek = (nama, ok, detail) => {
        group by nasabah_id having count(*) > 1) t`);
   cek('nasabah dengan >1 pinjaman hidup', dup.n === 0, dup.n ? `${dup.n} nasabah` : '');
 
+  /* NIK duplikat BUKAN kegagalan sejak 12 Agu 2026: constraint UNIQUE
+   * diturunkan jadi index biasa karena 74 orang memang terdaftar di dua
+   * resort (001a §9). Yang diperiksa sekarang bukan "harus nol", melainkan
+   * "jumlahnya sama dengan sumber" — itulah yang membuktikan tidak ada baris
+   * yang diam-diam hilang saat impor. */
   const nikDup = await one(`select count(*)::int as n from (
       select nik from koperasi.nasabah where nik is not null
        group by nik having count(*) > 1) t`);
-  cek('NIK duplikat di Postgres', nikDup.n === 0, nikDup.n ? `${nikDup.n} NIK` : '');
-  if (src.nikDuplikat.length) {
-    cek('NIK duplikat SUDAH ADA di sumber', false,
-      `${src.nikDuplikat.length} — impor pasti kehilangan sebagian; tinjau manual`);
-  }
+  const sumberDupUnik = new Set(src.nikDuplikat).size;
+  cek(`NIK duplikat: db=${nikDup.n} sumber=${sumberDupUnik} (diketahui, perlu cleanup)`,
+    nikDup.n === sumberDupUnik,
+    nikDup.n === sumberDupUnik ? '' : 'SELISIH → ada baris nasabah yang hilang saat impor');
 
   const opDup = await one(`select count(*)::int as n from (
       select client_op_id from koperasi.pembayaran group by client_op_id having count(*)>1) t`);

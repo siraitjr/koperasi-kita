@@ -235,9 +235,22 @@ create table koperasi.nasabah (
 -- Pengganti `nik_registry/{nik}` (CLAUDE.md §5.2, node index anti-duplikat).
 -- Di RTDB butuh node terpisah + 3 trigger Cloud Function untuk menjaganya
 -- konsisten (onPelangganCreatedRegisterNik / onStatusChangeUpdateNik /
--- onPelangganDeletedRemoveNik). Di Postgres cukup SATU unique index parsial:
--- tidak bisa desinkron, tidak butuh trigger, tidak butuh maintenance job.
-create unique index nasabah_nik_unik
+-- onPelangganDeletedRemoveNik). Di Postgres cukup satu index parsial.
+--
+-- ⚠ SENGAJA TIDAK UNIQUE (keputusan pemilik, 12 Agu 2026).
+-- Data produksi memuat 74 NIK yang dipakai dua nasabah — satu orang yang
+-- terdaftar di DUA resort berbeda. Itu keadaan nyata, bukan cacat impor, dan
+-- UNIQUE akan menolak seluruh migrasi karenanya.
+--
+-- Yang HILANG dengan keputusan ini harus disadari: tidak ada lagi jaminan
+-- basis data bahwa satu NIK = satu nasabah. Pencegahan duplikat kembali
+-- bergantung sepenuhnya pada pemeriksaan di aplikasi sebelum registrasi —
+-- persis seperti di RTDB. Kalau kelak data sudah dibersihkan, index ini bisa
+-- dinaikkan lagi:
+--     drop index koperasi.nasabah_nik_idx;
+--     create unique index nasabah_nik_unik on koperasi.nasabah (nik)
+--       where nik is not null;
+create index nasabah_nik_idx
   on koperasi.nasabah (nik)
   where nik is not null;
 

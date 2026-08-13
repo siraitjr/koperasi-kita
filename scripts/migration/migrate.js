@@ -177,10 +177,28 @@ function ts(v) {
  * (buildCairkanCleansePayload menulis "nik" to ""), jadi NIK kosong adalah
  * keadaan normal di data ini, bukan kerusakan.
  */
+/* NIK dummy yang sudah pasti bukan identitas, di luar aturan umum di bawah. */
+const NIK_DUMMY = new Set([
+  '0000000000000000',
+  '0000000000000010',   // ditemukan dry run: dipakai LENI dan Putri
+  '1111111111111111',
+  '1234567890123456',
+]);
+
 function nikBersih(v) {
   const t = str(v).trim();
   if (!/^\d{16}$/.test(t)) return null;   // kosong, "-", "0", <16, ada huruf
-  if (/^0+$/.test(t)) return null;         // "0000000000000000" — isian dummy
+  if (NIK_DUMMY.has(t)) return null;
+
+  /* Dua digit pertama NIK adalah KODE PROVINSI, rentangnya 11–94. "00"
+   * tidak pernah sah, jadi seluruh NIK berawalan "00" pasti isian, bukan
+   * nomor KTP sungguhan. Aturan ini menangkap "0000000000000000" dan
+   * "0000000000000010" sekaligus — dan juga varian berawalan nol lain yang
+   * belum kita lihat, sehingga tidak perlu menunggu gagal dulu untuk
+   * menambahkannya satu per satu ke daftar di atas. */
+  if (t.startsWith('00')) return null;
+
+  if (/^(\d)\1{15}$/.test(t)) return null;  // 16 digit identik
   return t;
 }
 
@@ -1135,11 +1153,18 @@ function precheckNikKembar() {
   }
   log('');
   log('  Ini NIK yang LOLOS normalisasi — bukan isian dummy, melainkan nomor');
-  log('  16 digit yang sah tetapi terpakai berulang. Dua kemungkinan, dan');
-  log('  tindakannya berbeda:');
-  log('    (a) satu orang terdaftar dua kali  → gabungkan, sisakan satu');
-  log('    (b) salah ketik pada salah satunya → perbaiki NIK-nya di RTDB');
-  log('  Skrip tidak menebak. Perbaiki di sumber, ambil export baru, ulangi.');
+  log('  16 digit sah yang terpakai berulang. Pola yang terlihat di dry run:');
+  log('  satu orang terdaftar di DUA resort berbeda. Itu keadaan data nyata');
+  log('  di Firebase, bukan cacat impor.');
+  log('');
+  log('  KEPUTUSAN PEMILIK (12 Agu 2026): impor DILANJUTKAN. Constraint UNIQUE');
+  log('  pada nasabah.nik diturunkan menjadi index biasa supaya seluruh baris');
+  log('  terbawa utuh; penggabungan dikerjakan belakangan sebagai cleanup.');
+  log('  Daftar di bawah tersimpan di laporan → nikPerluCleanup.');
+  log('');
+  log('  ⚠ Konsekuensi yang harus disadari: selama duplikat ini ada, satu');
+  log('    orang punya DUA baris nasabah dengan riwayat pinjaman terpisah.');
+  log('    Laporan "jumlah nasabah" akan menghitungnya dua kali.');
   log('');
   return { kembar, baris };
 }
@@ -1189,8 +1214,18 @@ function precheckNikKembar() {
     /* Jejak audit pewarisan cabang: siapa mewarisi apa, dari admin mana. */
     pimpinanYatim: PIMPINAN_YATIM,
     /* NIK yang dipakai lebih dari satu nasabah SETELAH placeholder
-     * dinormalkan jadi NULL. Kalau tidak kosong, impor dihentikan. */
-    nikKembar: nikCek.baris,
+     * dinormalkan jadi NULL. TIDAK menghentikan impor (UNIQUE sudah
+     * diturunkan jadi index biasa) — ini daftar kerja cleanup. */
+    nikPerluCleanup: {
+      catatan:
+        'Satu orang terdaftar di lebih dari satu resort. Semua baris tetap ' +
+        'diimpor utuh. Gabungkan belakangan: pilih satu nasabah_id sebagai ' +
+        'induk, pindahkan pinjaman/pembayaran ke sana, lalu arsipkan sisanya ' +
+        'lewat koperasi.rpc_arsipkan_nasabah (007).',
+      jumlahNik: nikCek.kembar.length,
+      jumlahBaris: nikCek.baris.length,
+      grup: nikCek.kembar,
+    },
     cabangDiwarisi: CABANG_DIWARISI.sort(
       (x, y) => (x.adminName + x.namaKtp).localeCompare(y.adminName + y.namaKtp)
     ),
@@ -1241,15 +1276,15 @@ function precheckNikKembar() {
     }
   }
 
-  /* Gerbang keras. Diletakkan SEBELUM koneksi dibuka: kalau NIK masih
-   * kembar, impor pasti gagal di tengah jalan dan me-rollback seluruhnya —
-   * lebih baik berhenti di sini dengan daftar yang bisa ditindaklanjuti. */
+  /* Dulu gerbang keras (exit 6). Diturunkan menjadi PERINGATAN setelah
+   * constraint UNIQUE pada nasabah.nik diganti index biasa (001a §9):
+   * duplikat tidak lagi menggagalkan impor, jadi menghentikan proses hanya
+   * akan menahan migrasi tanpa memperbaiki apa pun. Daftarnya tetap dicetak
+   * dan tersimpan supaya cleanup-nya tidak terlupakan. */
   if (CFG.execute && nikCek.kembar.length) {
-    console.error(`✗ DIHENTIKAN: ${nikCek.kembar.length} NIK kembar harus diselesaikan dulu.`);
-    console.error(`  Daftar lengkap ada di ${CFG.report} → nikKembar`);
-    console.error('  Tidak ada satu baris pun ditulis.');
-    process.exitCode = 6;
-    return;
+    log(`⚠ Melanjutkan dengan ${nikCek.kembar.length} NIK duplikat ` +
+        `(${nikCek.baris.length} baris) — perlu cleanup manual nanti.`);
+    log(`  Daftar lengkap: ${CFG.report} → nikPerluCleanup`);
   }
 
   if (!CFG.execute) {
