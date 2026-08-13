@@ -161,6 +161,29 @@ function ts(v) {
   return isNaN(d.getTime()) ? null : d.toISOString();
 }
 
+/* =========================================================================
+ * NIK — normalisasi placeholder menjadi NULL
+ * =========================================================================
+ * Kolom `nasabah.nik` punya unique index parsial `where nik is not null`
+ * (001 §2), pengganti node nik_registry. Postgres mengizinkan BANYAK baris
+ * NULL pada index unik, jadi NULL adalah cara yang benar untuk menyatakan
+ * "NIK tidak diketahui" — bukan string kosong, dan bukan angka isian.
+ *
+ * Kegagalan --execute pada tabel nasabah berasal dari sini: "0000000000000000"
+ * lolos uji 16-digit sehingga diperlakukan sebagai NIK sungguhan, lalu semua
+ * nasabah tanpa KTP saling bertabrakan di index yang sama.
+ *
+ * Perhatikan: alur cairkan–serah terima memang SENGAJA mengosongkan NIK
+ * (buildCairkanCleansePayload menulis "nik" to ""), jadi NIK kosong adalah
+ * keadaan normal di data ini, bukan kerusakan.
+ */
+function nikBersih(v) {
+  const t = str(v).trim();
+  if (!/^\d{16}$/.test(t)) return null;   // kosong, "-", "0", <16, ada huruf
+  if (/^0+$/.test(t)) return null;         // "0000000000000000" — isian dummy
+  return t;
+}
+
 /** Uang → integer rupiah. Menolak desimal & string berformat. */
 function rupiah(v) {
   if (v == null || v === '') return 0;
@@ -387,14 +410,14 @@ function nasabahDariRecord(adminUid, pid, p) {
     id: ID.nasabah(adminUid, pid),
     legacy_pelanggan_id: pid,
     legacy_admin_uid: adminUid,
-    nik: /^\d{16}$/.test(str(p.nik)) ? str(p.nik) : null,
+    nik: nikBersih(p.nik),
     nama_ktp: str(p.namaKtp) || str(p.namaPanggilan) || '(tanpa nama)',
     nama_panggilan: str(p.namaPanggilan),
     nomor_anggota: str(p.nomorAnggota) || null,
     nama_ktp_suami: str(p.namaKtpSuami),
     nama_ktp_istri: str(p.namaKtpIstri),
-    nik_suami: /^\d{16}$/.test(str(p.nikSuami)) ? str(p.nikSuami) : null,
-    nik_istri: /^\d{16}$/.test(str(p.nikIstri)) ? str(p.nikIstri) : null,
+    nik_suami: nikBersih(p.nikSuami),
+    nik_istri: nikBersih(p.nikIstri),
     nama_panggilan_suami: str(p.namaPanggilanSuami),
     nama_panggilan_istri: str(p.namaPanggilanIstri),
     alamat_ktp: str(p.alamatKtp),
@@ -828,7 +851,7 @@ function faseHistoris() {
         rejected_at: ts(r.timestamp),
         nama_ktp: str(snap.namaKtp),
         nama_panggilan: str(snap.namaPanggilan),
-        nik: /^\d{16}$/.test(nik) ? nik : null,
+        nik: nikBersih(nik),
         besar_pinjaman: rupiah(snap.besarPinjaman),
         cabang_id: cabangAda.has(slugCabang(snap.cabangId)) ? slugCabang(snap.cabangId) : null,
         admin_id: userAda.has(ID.user(adminUid)) ? ID.user(adminUid) : null,
@@ -1061,6 +1084,66 @@ async function precheckEnum(client) {
   return false;
 }
 
+/* =========================================================================
+ * PRE-CHECK NIK KEMBAR — dijalankan pada hasil transformasi, sebelum menulis
+ * =========================================================================
+ * Berjalan juga pada mode dry-run, supaya daftarnya bisa diperiksa TANPA
+ * menyentuh basis data sama sekali.
+ *
+ * Setelah nikBersih() mengubah seluruh isian placeholder menjadi NULL, NIK
+ * yang masih kembar berarti dua nasabah BERBEDA memakai nomor KTP yang sama.
+ * Itu bukan sesuatu yang boleh diputuskan skrip: bisa jadi satu orang
+ * terdaftar dua kali (perlu digabung), bisa jadi salah ketik pada salah
+ * satunya (perlu diperbaiki). Keduanya menghasilkan tindakan berbeda, jadi
+ * prosesnya berhenti dan menyerahkan keputusan ke pemilik data.
+ * ========================================================================= */
+function precheckNikKembar() {
+  const peta = new Map();
+  for (const n of ROWS.nasabah) {
+    if (!n.nik) continue;                       // NULL tidak pernah bentrok
+    if (!peta.has(n.nik)) peta.set(n.nik, []);
+    peta.get(n.nik).push({
+      nik: n.nik,
+      namaKtp: n.nama_ktp,
+      namaPanggilan: n.nama_panggilan,
+      legacyPelangganId: n.legacy_pelanggan_id,
+      legacyAdminUid: n.legacy_admin_uid,
+      adminName: namaAdmin.get(n.legacy_admin_uid) || '(admin tidak dikenal)',
+      cabangId: n.cabang_id || '',
+    });
+  }
+
+  const kembar = [...peta.values()].filter((v) => v.length > 1);
+  if (!kembar.length) {
+    log(`  ✓ pre-check NIK lulus (${peta.size} NIK unik, sisanya NULL)`);
+    return { kembar: [], baris: [] };
+  }
+
+  const baris = kembar.flat();
+  log('');
+  log('╔' + '═'.repeat(70) + '╗');
+  log(`  ⛔ ${kembar.length} NIK dipakai lebih dari satu nasabah (${baris.length} baris)`);
+  log('╚' + '═'.repeat(70) + '╝');
+  for (const grup of kembar) {
+    log(`  NIK ${grup[0].nik}  — ${grup.length} nasabah:`);
+    for (const r of grup) {
+      log(`     • ${(r.namaKtp || '(tanpa nama)').padEnd(30)} ` +
+          `${(r.namaPanggilan || '-').padEnd(14)} ` +
+          `admin=${r.adminName}`);
+      log(`       pelangganId=${r.legacyPelangganId}  cabang=${r.cabangId || '-'}`);
+    }
+  }
+  log('');
+  log('  Ini NIK yang LOLOS normalisasi — bukan isian dummy, melainkan nomor');
+  log('  16 digit yang sah tetapi terpakai berulang. Dua kemungkinan, dan');
+  log('  tindakannya berbeda:');
+  log('    (a) satu orang terdaftar dua kali  → gabungkan, sisakan satu');
+  log('    (b) salah ketik pada salah satunya → perbaiki NIK-nya di RTDB');
+  log('  Skrip tidak menebak. Perbaiki di sumber, ambil export baru, ulangi.');
+  log('');
+  return { kembar, baris };
+}
+
 // ================================================================= MAIN ===
 (async () => {
   const FASE = [
@@ -1076,6 +1159,9 @@ async function precheckEnum(client) {
     log(` fase ${nama}:`);
     fn();
   }
+
+  log('\n▶ Pre-check NIK kembar');
+  const nikCek = precheckNikKembar();
 
   const summary = Object.fromEntries(Object.entries(ROWS).map(([k, v]) => [k, v.length]));
   const kindCount = ISSUES.reduce((m, i) => ((m[i.kind] = (m[i.kind] || 0) + 1), m), {});
@@ -1102,6 +1188,9 @@ async function precheckEnum(client) {
 
     /* Jejak audit pewarisan cabang: siapa mewarisi apa, dari admin mana. */
     pimpinanYatim: PIMPINAN_YATIM,
+    /* NIK yang dipakai lebih dari satu nasabah SETELAH placeholder
+     * dinormalkan jadi NULL. Kalau tidak kosong, impor dihentikan. */
+    nikKembar: nikCek.baris,
     cabangDiwarisi: CABANG_DIWARISI.sort(
       (x, y) => (x.adminName + x.namaKtp).localeCompare(y.adminName + y.namaKtp)
     ),
@@ -1150,6 +1239,17 @@ async function precheckEnum(client) {
           `${r.namaPanggilan || '-'}`.padEnd(16) +
           `wilayah=${r.wilayah || '-'}`);
     }
+  }
+
+  /* Gerbang keras. Diletakkan SEBELUM koneksi dibuka: kalau NIK masih
+   * kembar, impor pasti gagal di tengah jalan dan me-rollback seluruhnya —
+   * lebih baik berhenti di sini dengan daftar yang bisa ditindaklanjuti. */
+  if (CFG.execute && nikCek.kembar.length) {
+    console.error(`✗ DIHENTIKAN: ${nikCek.kembar.length} NIK kembar harus diselesaikan dulu.`);
+    console.error(`  Daftar lengkap ada di ${CFG.report} → nikKembar`);
+    console.error('  Tidak ada satu baris pun ditulis.');
+    process.exitCode = 6;
+    return;
   }
 
   if (!CFG.execute) {
