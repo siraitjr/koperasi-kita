@@ -255,6 +255,16 @@ const STATUS_MAP = new Map([
   ['tidak aktif', 'Tidak Aktif'],
 ]);
 
+/** Peringkat status — cermin koperasi.status_rank(). <3 berarti masih hidup. */
+function statusRankLokal(st) {
+  switch (st) {
+    case 'Menunggu Approval': return 0;
+    case 'Disetujui': return 1;
+    case 'Aktif': return 2;
+    default: return 3;
+  }
+}
+
 function normStatus(v, ctx) {
   const k = str(v).trim().toLowerCase();
   if (k === '') return 'Menunggu Approval';
@@ -454,9 +464,36 @@ function nasabahDariRecord(adminUid, pid, p) {
   };
 }
 
-function pinjamanDariRecord(adminUid, pid, ke, p, ctx) {
-  const st = normStatus(p.status, ctx);
+function pinjamanDariRecord(adminUid, pid, ke, p, ctx, isArsip = false) {
+  let st = normStatus(p.status, ctx);
   if (st === null) return null;
+
+  /* GENERASI ARSIP TIDAK BOLEH BERSTATUS HIDUP.
+   * ---------------------------------------------------------------------
+   * Baris di riwayat_pinjaman ada PERSIS KARENA sudah digantikan generasi
+   * berikutnya (top-up). Apa pun status yang tersimpan di snapshot-nya, saat
+   * ini ia bukan pinjaman berjalan.
+   *
+   * Dua hal membuatnya berbahaya kalau dibiarkan:
+   *   1. Snapshot arsip sering TIDAK menyimpan `status` sama sekali —
+   *      normStatus('') mengembalikan 'Menunggu Approval', yang termasuk
+   *      status HIDUP. Setiap nasabah ber-top-up jadi punya dua baris hidup
+   *      sekaligus.
+   *   2. Yang menyimpan status pun membekukan nilai lamanya ('Aktif'), yang
+   *      juga hidup.
+   * Keduanya melanggar pinjaman_satu_aktif_per_nasabah, DAN — jauh lebih
+   * buruk daripada sekadar gagal impor — akan memunculkan ratusan pengajuan
+   * hantu di layar approval Pimpinan seandainya constraint-nya dilepas.
+   *
+   * Diturunkan ke 'Lunas': alur top-up memang melunasi sisa utang pinjaman
+   * lama lebih dulu (CLAUDE.md §7.1, jurnal `pelunasan_sisa_utang`). */
+  if (isArsip && statusRankLokal(st) < 3) {
+    issue(
+      str(p.status).trim() === '' ? 'ARSIP_TANPA_STATUS' : 'ARSIP_STATUS_HIDUP_DITURUNKAN',
+      `${ctx} — '${st}' → 'Lunas' (generasi arsip tidak mungkin masih berjalan)`
+    );
+    st = 'Lunas';
+  }
   return {
     id: ID.pinjaman(adminUid, pid, ke),
     nasabah_id: ID.nasabah(adminUid, pid),
@@ -649,7 +686,10 @@ function faseNasabahPinjaman() {
       for (const ke of [...gens.keys()].sort((a, b) => a - b)) {
         const src = gens.get(ke);
         if (!src || typeof src !== 'object') continue;
-        const row = pinjamanDariRecord(adminUid, pid, ke, src, `${pid}/${ke}`);
+        // Generasi berjalan = yang nomornya sama dengan pinjamanKe di node
+        // pelanggan; selebihnya berasal dari riwayat_pinjaman = arsip.
+        const isArsip = ke !== keSekarang;
+        const row = pinjamanDariRecord(adminUid, pid, ke, src, `${pid}/${ke}`, isArsip);
         if (!row) continue;
         // Arsip mewarisi identitas nasabah dari record berjalan; hanya kolom
         // finansial yang diambil dari arsip.
@@ -1169,6 +1209,53 @@ function precheckNikKembar() {
   return { kembar, baris };
 }
 
+/* =========================================================================
+ * PRE-CHECK: nasabah dengan >1 pinjaman HIDUP
+ * =========================================================================
+ * Berjalan pada hasil transformasi, termasuk mode dry-run.
+ *
+ * Setelah generasi arsip diturunkan ke 'Lunas', sisa pelanggaran di sini
+ * adalah kasus nyata: satu nasabah benar-benar punya dua pinjaman berjalan
+ * di data sumber. Dilaporkan, tidak menghentikan impor — index uniknya
+ * dilepas di 001a §10.
+ * ========================================================================= */
+function precheckPinjamanHidup() {
+  const perNasabah = new Map();
+  for (const p of ROWS.pinjaman) {
+    if (statusRankLokal(p.status) >= 3) continue;
+    if (!perNasabah.has(p.nasabah_id)) perNasabah.set(p.nasabah_id, []);
+    perNasabah.get(p.nasabah_id).push(p);
+  }
+
+  const namaNasabah = new Map(ROWS.nasabah.map((n) => [n.id, n]));
+  const bentrok = [];
+  for (const [nid, list] of perNasabah) {
+    if (list.length < 2) continue;
+    const n = namaNasabah.get(nid) || {};
+    bentrok.push({
+      nasabahId: nid,
+      namaKtp: n.nama_ktp || '(tidak dikenal)',
+      legacyPelangganId: n.legacy_pelanggan_id || '',
+      adminName: namaAdmin.get(n.legacy_admin_uid) || '(admin tidak dikenal)',
+      generasi: list.map((x) => ({ pinjamanKe: x.pinjaman_ke, status: x.status })),
+    });
+  }
+
+  if (!bentrok.length) {
+    log(`  ✓ pre-check pinjaman hidup lulus (${perNasabah.size} nasabah punya 1 pinjaman berjalan)`);
+    return [];
+  }
+
+  log(`  ⚠ ${bentrok.length} nasabah punya LEBIH DARI SATU pinjaman berjalan:`);
+  for (const b of bentrok.slice(0, 40)) {
+    const gen = b.generasi.map((g) => `ke-${g.pinjamanKe}=${g.status}`).join(', ');
+    log(`     ${(b.namaKtp).padEnd(30)} ${b.adminName.padEnd(26)} ${gen}`);
+  }
+  if (bentrok.length > 40) log(`     … dan ${bentrok.length - 40} lagi (lengkap di laporan)`);
+  log('     → constraint pinjaman_satu_aktif_per_nasabah dilepas (001a §10).');
+  return bentrok;
+}
+
 // ================================================================= MAIN ===
 (async () => {
   const FASE = [
@@ -1187,6 +1274,9 @@ function precheckNikKembar() {
 
   log('\n▶ Pre-check NIK kembar');
   const nikCek = precheckNikKembar();
+
+  log('\n▶ Pre-check pinjaman hidup ganda');
+  const pinjamanBentrok = precheckPinjamanHidup();
 
   const summary = Object.fromEntries(Object.entries(ROWS).map(([k, v]) => [k, v.length]));
   const kindCount = ISSUES.reduce((m, i) => ((m[i.kind] = (m[i.kind] || 0) + 1), m), {});
@@ -1213,6 +1303,19 @@ function precheckNikKembar() {
 
     /* Jejak audit pewarisan cabang: siapa mewarisi apa, dari admin mana. */
     pimpinanYatim: PIMPINAN_YATIM,
+    /* Batas "1 pinjaman aktif per nasabah" DILONGGARKAN untuk mengakomodasi
+     * data legacy — index uniknya dilepas di 001a §10. Daftar ini adalah
+     * kasus yang benar-benar melanggarnya setelah generasi arsip diturunkan
+     * ke 'Lunas'. */
+    pinjamanHidupGanda: {
+      catatan:
+        'Batas 1 pinjaman aktif per nasabah DILONGGARKAN untuk mengakomodasi ' +
+        'data legacy. Seluruh baris diimpor utuh. Tinjau daftar ini: sebagian ' +
+        'kemungkinan pinjaman lama yang lupa ditutup, dan bisa diselesaikan ' +
+        'dengan menutup status generasi lamanya.',
+      jumlah: pinjamanBentrok.length,
+      daftar: pinjamanBentrok,
+    },
     /* NIK yang dipakai lebih dari satu nasabah SETELAH placeholder
      * dinormalkan jadi NULL. TIDAK menghentikan impor (UNIQUE sudah
      * diturunkan jadi index biasa) — ini daftar kerja cleanup. */

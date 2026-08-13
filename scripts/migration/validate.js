@@ -268,11 +268,28 @@ const cek = (nama, ok, detail) => {
   for (const r of yatim) cek(`tanpa induk ${r.rel}`, r.n === 0, r.n ? `${r.n} baris` : '');
 
   console.log('\n▶ D. Invarian bisnis');
+  /* Batas 1 pinjaman aktif per nasabah DILONGGARKAN (001a §10) untuk
+   * mengakomodasi data legacy, jadi ini BUKAN kegagalan — hanya dilaporkan.
+   *
+   * Yang tetap diperiksa keras: tidak boleh ada generasi ARSIP yang
+   * berstatus hidup. Itu bukan keadaan legacy melainkan cacat transformasi
+   * (snapshot arsip tanpa `status` sempat jatuh ke 'Menunggu Approval'), dan
+   * kalau lolos akan memunculkan pengajuan hantu di layar approval. */
   const dup = await one(`select count(*)::int as n from (
       select nasabah_id from koperasi.pinjaman
        where status in ('Menunggu Approval','Disetujui','Aktif')
        group by nasabah_id having count(*) > 1) t`);
-  cek('nasabah dengan >1 pinjaman hidup', dup.n === 0, dup.n ? `${dup.n} nasabah` : '');
+  console.log(`  · nasabah dengan >1 pinjaman hidup: ${dup.n} (dilonggarkan, bukan galat)`);
+
+  const arsipHidup = await one(`
+    select count(*)::int as n
+      from koperasi.pinjaman p
+     where p.status in ('Menunggu Approval','Disetujui','Aktif')
+       and exists (select 1 from koperasi.pinjaman q
+                    where q.nasabah_id = p.nasabah_id
+                      and q.pinjaman_ke > p.pinjaman_ke)`);
+  cek('tidak ada generasi lama yang masih berstatus hidup', arsipHidup.n === 0,
+    arsipHidup.n ? `${arsipHidup.n} baris — akan tampil sebagai pengajuan hantu` : '');
 
   /* NIK duplikat BUKAN kegagalan sejak 12 Agu 2026: constraint UNIQUE
    * diturunkan jadi index biasa karena 74 orang memang terdaftar di dua

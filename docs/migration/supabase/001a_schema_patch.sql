@@ -176,6 +176,42 @@ drop index if exists koperasi.nasabah_nik_unik;
 create index if not exists nasabah_nik_idx
   on koperasi.nasabah (nik) where nik is not null;
 
+-- =========================================================================
+-- 10. pinjaman — batas "1 pinjaman aktif per nasabah" DILONGGARKAN
+-- =========================================================================
+-- 001 §3.1 memasang unique index parsial:
+--     create unique index pinjaman_satu_aktif_per_nasabah
+--       on koperasi.pinjaman (nasabah_id)
+--       where status in ('Menunggu Approval','Disetujui','Aktif');
+--
+-- ⚠ PENYEBAB KEGAGALAN --execute BUKAN 74 NIK duplikat.
+--   Index ini per `nasabah_id`, sedangkan dua nasabah ber-NIK sama tetap
+--   punya nasabah_id BERBEDA (id diturunkan dari adminUid/pelangganId).
+--   Jadi NIK kembar secara struktural tidak bisa melanggarnya.
+--
+--   Penyebab sebenarnya ada di transformasi: generasi ARSIP
+--   (riwayat_pinjaman) diberi status hidup. Snapshot arsip sering tidak
+--   menyimpan `status` sama sekali, dan normStatus('') mengembalikan
+--   'Menunggu Approval' — yang termasuk hidup. Akibatnya SETIAP nasabah
+--   yang pernah top-up punya dua baris hidup sekaligus.
+--   Sudah diperbaiki di migrate.js: generasi arsip diturunkan ke 'Lunas'.
+--   Tanpa perbaikan itu, melepas index ini saja akan memunculkan ratusan
+--   pengajuan hantu di layar approval Pimpinan — gagal impor justru
+--   menyelamatkan kita dari kerusakan yang lebih halus.
+--
+-- Index tetap dilepas (keputusan pemilik 12 Agu 2026) supaya kasus legacy
+-- yang benar-benar punya dua pinjaman berjalan tetap terbawa utuh.
+-- Daftarnya ada di migration_report.json → pinjamanHidupGanda.
+--
+-- Setelah data ditertibkan, invariannya bisa dipasang kembali:
+--     create unique index pinjaman_satu_aktif_per_nasabah
+--       on koperasi.pinjaman (nasabah_id)
+--       where status in ('Menunggu Approval','Disetujui','Aktif');
+drop index if exists koperasi.pinjaman_satu_aktif_per_nasabah;
+create index if not exists pinjaman_hidup_idx
+  on koperasi.pinjaman (nasabah_id)
+  where status in ('Menunggu Approval', 'Disetujui', 'Aktif');
+
 commit;
 
 
