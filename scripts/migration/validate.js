@@ -130,6 +130,7 @@ for (const uid of keys(node('metadata').admins || {})) {
  * padahal disengaja. */
 for (const c of keys(node('metadata').cabang || {})) src.cabang.add(slugCabang(c));
 
+let arsipBukanObjek = 0;
 const riwayat = node('riwayat_pinjaman');
 for (const a of keys(node('pelanggan'))) {
   for (const pid of keys(node('pelanggan')[a])) {
@@ -146,8 +147,20 @@ for (const a of keys(node('pelanggan'))) {
       src.nikUnik.add(nik);
     }
 
+    /* Generasi arsip yang nilainya BUKAN OBJEK (boolean/string/null sisa bug
+     * lama) tidak bisa jadi baris pinjaman — migrate.js melewatinya. Dulu di
+     * sini kuncinya tetap dihitung, sehingga selisihnya muncul sebagai
+     * "pinjaman hilang" padahal memang sampah struktural.
+     * Dikeluarkan dari pembanding, TETAPI tetap dihitung terpisah dan
+     * dicetak — supaya jumlahnya tidak lenyap dari pandangan. */
     const gens = new Set();
-    for (const g of keys((riwayat[a] || {})[pid] || {})) if (/^\d+$/.test(g)) gens.add(+g);
+    const arsipPid = (riwayat[a] || {})[pid] || {};
+    for (const g of keys(arsipPid)) {
+      if (!/^\d+$/.test(g)) continue;
+      const v = arsipPid[g];
+      if (!v || typeof v !== 'object') { arsipBukanObjek++; continue; }
+      gens.add(+g);
+    }
     gens.add(parseInt(p.pinjamanKe, 10) || 1);
     src.pinjaman += gens.size;
     for (const g of gens) src.pinjamanKeys.add(`${a}/${pid}/${g}`);
@@ -257,6 +270,12 @@ for (const c of keys(node('kasir_entries'))) {
     for (const id of keys(node('kasir_entries')[c][b])) {
       src.kasir++; src.kasirSum += rupiah(node('kasir_entries')[c][b][id].jumlah);
     }
+}
+
+if (arsipBukanObjek) {
+  console.log(`  ⚠ ${arsipBukanObjek} generasi arsip BUKAN OBJEK (boolean/string/null) —`);
+  console.log('    tidak bisa jadi baris pinjaman, dikeluarkan dari pembanding.');
+  console.log('    Sampah struktural sisa bug lama, bukan kehilangan data.');
 }
 
 if (biayaAwalTakTerimpor) {

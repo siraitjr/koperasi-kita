@@ -241,6 +241,16 @@ node --max-old-space-size=8192 migrate.js \
      --file="$EXPORT_JSON" --dsn="$SUPABASE_DSN" --execute
 ```
 
+**Mengulang impor setelah memperbaiki skrip? KOSONGKAN DULU.**
+Seluruh penulisan memakai `on conflict (id) do nothing`. Itu membuat impor
+idempoten, tetapi juga berarti baris yang **sudah ada tidak akan pernah
+diperbarui** — perbaikan apa pun di `migrate.js` tidak berpengaruh pada
+baris yang telanjur masuk, sementara skripnya tetap melaporkan sukses.
+
+Sejak versi ini `migrate.js` **menolak jalan** bila tabel tujuan sudah
+berisi (exit 7) dan mencetak perintah `truncate`-nya. Paksa dengan
+`--izinkan-tabel-terisi` hanya bila memang sengaja menambahkan.
+
 Seluruhnya satu transaksi: gagal di mana pun → `rollback` otomatis, database
 kembali kosong. Aman diulang — semua id deterministik dan memakai
 `on conflict do nothing`.

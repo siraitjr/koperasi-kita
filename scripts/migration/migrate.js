@@ -51,6 +51,7 @@ const CFG = {
   checkpoint: arg('checkpoint', './migration_checkpoint.json'),
   report: arg('report', './migration_report.json'),
   batch: parseInt(arg('batch', '500'), 10),
+  izinkanTerisi: arg('izinkan-tabel-terisi', false) === true,
 };
 
 if (!CFG.file) {
@@ -1477,6 +1478,65 @@ function precheckPengajuanGanda() {
   return ganda;
 }
 
+/* =========================================================================
+ * PRE-CHECK: tabel tujuan harus KOSONG
+ * =========================================================================
+ * Seluruh penulisan memakai `on conflict (id) do nothing`. Itu membuat impor
+ * idempoten — tetapi juga berarti baris yang SUDAH ADA tidak akan pernah
+ * diperbarui.
+ *
+ * Konsekuensinya halus dan mahal: setelah satu impor berhasil, memperbaiki
+ * bug di skrip lalu menjalankan ulang TIDAK memperbaiki baris yang telanjur
+ * masuk. Skripnya melaporkan sukses, angkanya tidak berubah, dan penyebabnya
+ * sulit ditebak. Persis itu yang terjadi pada 16 "generasi lama masih hidup":
+ * barisnya berasal dari impor sebelum perbaikan isArsip.
+ *
+ * Karena itu impor ke tabel yang sudah berisi dihentikan. Untuk mengulang
+ * dari nol, kosongkan dulu (rollback_plan.md §3.2), atau paksa dengan
+ * --izinkan-tabel-terisi bila memang sengaja menambahkan.
+ * ========================================================================= */
+async function precheckTabelKosong(client) {
+  const tabel = ['nasabah', 'pinjaman', 'pembayaran', 'pengajuan', 'jurnal_transaksi'];
+  const terisi = [];
+  for (const t of tabel) {
+    const { rows } = await client.query(`select count(*)::int as n from koperasi.${t}`);
+    if (rows[0].n > 0) terisi.push(`${t}=${rows[0].n}`);
+  }
+  if (!terisi.length) {
+    log('  ✓ tabel tujuan kosong');
+    return true;
+  }
+  if (CFG.izinkanTerisi) {
+    log(`  ⚠ tabel sudah berisi (${terisi.join(', ')}) — dilanjutkan atas permintaan.`);
+    log('    INGAT: baris yang sudah ada TIDAK akan diperbarui (on conflict do nothing).');
+    return true;
+  }
+  console.error('\n✗ DIHENTIKAN: tabel tujuan sudah berisi data.');
+  console.error(`  ${terisi.join(', ')}`);
+  console.error('');
+  console.error('  Impor memakai `on conflict do nothing`, jadi baris yang sudah ada');
+  console.error('  TIDAK akan diperbarui — perbaikan apa pun di skrip ini tidak akan');
+  console.error('  berpengaruh pada baris tersebut, dan skrip akan tetap melaporkan');
+  console.error('  sukses. Itu cara paling mudah tertipu.');
+  console.error('');
+  console.error('  Untuk mengulang dari nol (aman selama Firebase masih sumber kebenaran):');
+  console.error('    begin;');
+  console.error('    truncate table koperasi.approval_step, koperasi.pengajuan,');
+  console.error('      koperasi.pembayaran_koreksi, koperasi.pembayaran,');
+  console.error('      koperasi.jadwal_cicilan, koperasi.simpanan,');
+  console.error('      koperasi.jurnal_transaksi, koperasi.kasir_entry,');
+  console.error('      koperasi.permintaan, koperasi.dokumen, koperasi.sync_inbox,');
+  console.error('      koperasi.pinjaman_history, koperasi.biaya_awal,');
+  console.error('      koperasi.pelanggan_ditolak, koperasi.koreksi_storting,');
+  console.error('      koperasi.pelanggan_status_khusus,');
+  console.error('      koperasi.pinjaman, koperasi.nasabah');
+  console.error('      restart identity cascade;');
+  console.error('    commit;');
+  console.error('');
+  console.error('  Atau lanjutkan tanpa mengosongkan: --izinkan-tabel-terisi');
+  return false;
+}
+
 // ================================================================= MAIN ===
 (async () => {
   const FASE = [
@@ -1711,6 +1771,13 @@ function precheckPengajuanGanda() {
   await client.connect();
 
   // Gerbang: seluruh nilai enum diperiksa SEBELUM transaksi dibuka.
+  log('\n▶ Pre-check tabel tujuan');
+  if (!(await precheckTabelKosong(client))) {
+    await client.end();
+    process.exitCode = 7;
+    return;
+  }
+
   log('\n▶ Pre-check enum');
   if (!(await precheckEnum(client))) {
     await client.end();
