@@ -316,6 +316,11 @@ const userAda = new Set();
 const cabangAda = new Set();
 const nasabahAda = new Set();
 
+/* Id pinjaman yang benar-benar diimpor. Dipakai menyaring pengajuan yang
+ * menunjuk generasi tidak ada — tanpa ini FK pengajuan→pinjaman gagal dan
+ * seluruh impor ter-rollback. */
+const pinjamanAda = new Set();
+
 /* Nama admin (uid → nama) untuk memperkaya laporan. Sekadar "adminUid/pid"
  * tidak cukup bagi pemilik untuk memutuskan cabang tujuan — ia perlu tahu
  * SIAPA nasabahnya dan admin mana yang memegangnya. */
@@ -694,6 +699,7 @@ function faseNasabahPinjaman() {
         // Arsip mewarisi identitas nasabah dari record berjalan; hanya kolom
         // finansial yang diambil dari arsip.
         ROWS.pinjaman.push(row);
+        pinjamanAda.add(row.id);
         tarikPembayaran(adminUid, pid, ke, src);
       }
     }
@@ -728,11 +734,22 @@ function fasePengajuan() {
       const ke = int(g.pinjamanKe, 1);
       if (!adminUid || !pid) { issue('PENGAJUAN_TANPA_REF', `${cab}/${gid}`); continue; }
 
+      const pinjamanId = ID.pinjaman(adminUid, pid, ke);
+      /* Pengajuan bisa menunjuk nasabah/generasi yang sudah tidak ada di
+       * /pelanggan maupun /riwayat_pinjaman (nasabah dihapus, atau pengajuan
+       * lama yang tidak pernah jadi pinjaman). FK-nya NOT NULL, jadi baris
+       * seperti ini akan menggagalkan seluruh transaksi kalau dibiarkan. */
+      if (!pinjamanAda.has(pinjamanId)) {
+        issue('PENGAJUAN_TANPA_PINJAMAN',
+          `${cab}/${gid} → ${pid} generasi ke-${ke} tidak ada — dilewati`);
+        continue;
+      }
+
       const pengajuanId = ID.pengajuan(cab, gid);
       const besar = rupiah(g.besarPinjaman);
       ROWS.pengajuan.push({
         id: pengajuanId,
-        pinjaman_id: ID.pinjaman(adminUid, pid, ke),
+        pinjaman_id: pinjamanId,
         cabang_id: cab,
         requires_dual: d.requiresDualApproval === true || besar >= 3000000,
         phase: PHASE_ORDER.includes(str(d.approvalPhase)) ? str(d.approvalPhase) : 'awaiting_pimpinan',
@@ -1256,6 +1273,61 @@ function precheckPinjamanHidup() {
   return bentrok;
 }
 
+/* =========================================================================
+ * PRE-CHECK: pengajuan ganda untuk satu pinjaman
+ * =========================================================================
+ * `pengajuan.pinjaman_id` semula UNIQUE (satu pengajuan per generasi).
+ * RTDB tidak menegakkan apa pun, dan duplikat approval memang keadaan yang
+ * dikenal di sistem ini — buktinya ada fungsi khusus untuk membersihkannya:
+ * functions/cleanupDuplicateApprovals.js ("Jalankan ini SEKALI saja").
+ *
+ * Jadi ini benar-benar data legacy, bukan cacat transformasi. Dilaporkan,
+ * tidak menghentikan impor; uniknya dilepas di 001a §11.
+ * ========================================================================= */
+function precheckPengajuanGanda() {
+  const perPinjaman = new Map();
+  for (const g of ROWS.pengajuan) {
+    if (!perPinjaman.has(g.pinjaman_id)) perPinjaman.set(g.pinjaman_id, []);
+    perPinjaman.get(g.pinjaman_id).push(g);
+  }
+
+  const namaPinjaman = new Map(ROWS.pinjaman.map((p) => [p.id, p]));
+  const namaNasabah = new Map(ROWS.nasabah.map((n) => [n.id, n]));
+
+  const ganda = [];
+  for (const [pid, list] of perPinjaman) {
+    if (list.length < 2) continue;
+    const p = namaPinjaman.get(pid) || {};
+    const n = namaNasabah.get(p.nasabah_id) || {};
+    ganda.push({
+      pinjamanId: pid,
+      namaKtp: n.nama_ktp || '(tidak dikenal)',
+      legacyPelangganId: n.legacy_pelanggan_id || '',
+      pinjamanKe: p.pinjaman_ke,
+      cabangId: list[0].cabang_id,
+      jumlahPengajuan: list.length,
+      phase: list.map((x) => x.phase),
+    });
+  }
+
+  if (!ganda.length) {
+    log(`  ✓ pre-check pengajuan lulus (${perPinjaman.size} pinjaman, 1 pengajuan masing-masing)`);
+    return [];
+  }
+
+  const totalBaris = ganda.reduce((a, b) => a + b.jumlahPengajuan, 0);
+  log(`  ⚠ ${ganda.length} pinjaman punya LEBIH DARI SATU pengajuan (${totalBaris} baris):`);
+  for (const g of ganda.slice(0, 40)) {
+    log(`     ${g.namaKtp.padEnd(30)} ke-${String(g.pinjamanKe).padEnd(3)} ` +
+        `${g.jumlahPengajuan}x  [${g.phase.join(', ')}]`);
+  }
+  if (ganda.length > 40) log(`     … dan ${ganda.length - 40} lagi (lengkap di laporan)`);
+  log('     → constraint UNIQUE pengajuan.pinjaman_id dilepas (001a §11).');
+  log('     ⚠ Layar approval akan menampilkan lebih dari satu entri untuk');
+  log('       pinjaman yang sama sampai duplikatnya dibereskan.');
+  return ganda;
+}
+
 // ================================================================= MAIN ===
 (async () => {
   const FASE = [
@@ -1277,6 +1349,9 @@ function precheckPinjamanHidup() {
 
   log('\n▶ Pre-check pinjaman hidup ganda');
   const pinjamanBentrok = precheckPinjamanHidup();
+
+  log('\n▶ Pre-check pengajuan ganda');
+  const pengajuanGanda = precheckPengajuanGanda();
 
   const summary = Object.fromEntries(Object.entries(ROWS).map(([k, v]) => [k, v.length]));
   const kindCount = ISSUES.reduce((m, i) => ((m[i.kind] = (m[i.kind] || 0) + 1), m), {});
@@ -1315,6 +1390,21 @@ function precheckPinjamanHidup() {
         'dengan menutup status generasi lamanya.',
       jumlah: pinjamanBentrok.length,
       daftar: pinjamanBentrok,
+    },
+
+    /* Constraint unique pengajuan.pinjaman_id DILONGGARKAN untuk
+     * mengakomodasi data legacy — lihat 001a §11. */
+    pengajuanGanda: {
+      catatan:
+        'Constraint unique pengajuan.pinjaman_id DILONGGARKAN untuk ' +
+        'mengakomodasi data legacy. RTDB tidak menegakkan keunikan, dan ' +
+        'duplikat approval adalah keadaan yang sudah dikenal — lihat ' +
+        'functions/cleanupDuplicateApprovals.js. Seluruh baris diimpor utuh; ' +
+        'layar approval akan menampilkan lebih dari satu entri untuk pinjaman ' +
+        'yang sama sampai duplikatnya dibereskan.',
+      jumlahPinjaman: pengajuanGanda.length,
+      jumlahBaris: pengajuanGanda.reduce((a, b) => a + b.jumlahPengajuan, 0),
+      daftar: pengajuanGanda,
     },
     /* NIK yang dipakai lebih dari satu nasabah SETELAH placeholder
      * dinormalkan jadi NULL. TIDAK menghentikan impor (UNIQUE sudah

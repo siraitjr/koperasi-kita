@@ -212,6 +212,30 @@ create index if not exists pinjaman_hidup_idx
   on koperasi.pinjaman (nasabah_id)
   where status in ('Menunggu Approval', 'Disetujui', 'Aktif');
 
+-- =========================================================================
+-- 11. pengajuan.pinjaman_id — UNIQUE dilonggarkan
+-- =========================================================================
+-- 001 §5 mendeklarasikan `pinjaman_id uuid not null unique`, yang menghasilkan
+-- constraint bernama otomatis `pengajuan_pinjaman_id_key`.
+--
+-- Ini BENAR-BENAR data legacy, bukan cacat transformasi. RTDB tidak
+-- menegakkan keunikan apa pun, dan duplikat approval sudah lama menjadi
+-- keadaan yang dikenal di sistem ini — buktinya ada fungsi khusus untuk
+-- membersihkannya: functions/cleanupDuplicateApprovals.js, yang bahkan
+-- diberi komentar "Jalankan ini SEKALI saja, lalu hapus/disable".
+--
+-- ⚠ EFEK KE APLIKASI: layar approval akan menampilkan LEBIH DARI SATU entri
+--   untuk pinjaman yang sama sampai duplikatnya dibereskan. Daftar lengkap
+--   ada di migration_report.json → pengajuanGanda.
+--
+-- Setelah ditertibkan, keunikan bisa dipasang kembali:
+--     alter table koperasi.pengajuan
+--       add constraint pengajuan_pinjaman_id_key unique (pinjaman_id);
+alter table koperasi.pengajuan
+  drop constraint if exists pengajuan_pinjaman_id_key;
+create index if not exists pengajuan_pinjaman_idx
+  on koperasi.pengajuan (pinjaman_id);
+
 commit;
 
 

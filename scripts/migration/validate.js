@@ -84,6 +84,11 @@ const src = {
   kasir: 0, kasirSum: 0, statusCount: {}, nikUnik: new Set(), nikDuplikat: [],
   histori: 0, biayaAwal: 0, biayaAwalSum: 0, ditolak: 0,
   koreksi: 0, koreksiSum: 0, statusKhusus: 0,
+  /* Kunci "admin/pelanggan/generasi" yang benar-benar jadi baris pinjaman.
+   * Dipakai menghitung pengajuan dengan aturan yang SAMA seperti migrate.js
+   * (yang melewati pengajuan tanpa pinjaman induk) — kalau tidak, selisihnya
+   * selalu dilaporkan sebagai kegagalan padahal memang disengaja. */
+  pinjamanKeys: new Set(),
 };
 
 for (const uid of keys(node('metadata').admins || {})) {
@@ -112,6 +117,7 @@ for (const a of keys(node('pelanggan'))) {
     for (const g of keys((riwayat[a] || {})[pid] || {})) if (/^\d+$/.test(g)) gens.add(+g);
     gens.add(parseInt(p.pinjamanKe, 10) || 1);
     src.pinjaman += gens.size;
+    for (const g of gens) src.pinjamanKeys.add(`${a}/${pid}/${g}`);
 
     // Pembayaran dihitung dari SEMUA generasi (arsip + berjalan), sama seperti
     // migrate.js — kalau tidak, angkanya tidak bisa dibandingkan.
@@ -135,7 +141,17 @@ for (const a of keys(node('pelanggan'))) {
   }
 }
 
-for (const c of keys(node('pengajuan_approval'))) src.pengajuan += keys(node('pengajuan_approval')[c]).length;
+for (const c of keys(node('pengajuan_approval'))) {
+  for (const gid of keys(node('pengajuan_approval')[c])) {
+    const g = node('pengajuan_approval')[c][gid] || {};
+    const a = String(g.adminUid || '');
+    const pid = String(g.pelangganId || '');
+    const ke = parseInt(g.pinjamanKe, 10) || 1;
+    if (!a || !pid) continue;                               // tanpa referensi
+    if (!src.pinjamanKeys.has(`${a}/${pid}/${ke}`)) continue; // yatim → dilewati
+    src.pengajuan++;
+  }
+}
 
 // --- data historis -----------------------------------------------------------
 // pinjamanHistory dihitung HANYA untuk nasabah yang induknya ada, sama seperti
@@ -303,6 +319,13 @@ const cek = (nama, ok, detail) => {
   cek(`NIK duplikat: db=${nikDup.n} sumber=${sumberDupUnik} (diketahui, perlu cleanup)`,
     nikDup.n === sumberDupUnik,
     nikDup.n === sumberDupUnik ? '' : 'SELISIH → ada baris nasabah yang hilang saat impor');
+
+  /* pengajuan.pinjaman_id sengaja TIDAK unik lagi (001a §11) — duplikat
+   * approval adalah keadaan legacy yang diterima. Dilaporkan saja. */
+  const pengGanda = await one(`select count(*)::int as n from (
+      select pinjaman_id from koperasi.pengajuan
+       group by pinjaman_id having count(*) > 1) t`);
+  console.log(`  · pinjaman dengan >1 pengajuan: ${pengGanda.n} (dilonggarkan, bukan galat)`);
 
   const opDup = await one(`select count(*)::int as n from (
       select client_op_id from koperasi.pembayaran group by client_op_id having count(*)>1) t`);
