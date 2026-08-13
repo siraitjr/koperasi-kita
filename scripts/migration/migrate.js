@@ -341,6 +341,15 @@ const PIMPINAN_YATIM = [];
 /* Jurnal yang nasabah induknya tidak ada. Barisnya tetap diimpor dengan
  * nasabah_id NULL — lihat alasannya di faseJurnalKasir. */
 const JURNAL_YATIM = [];
+
+/* Generasi pinjaman yang TIDAK jadi baris, beserta sebab & nominalnya.
+ * validate.js menghitung generasi dari kunci arsip, jadi setiap yang
+ * dilewati di sini harus terlihat — kalau tidak, selisihnya tampak sebagai
+ * kehilangan data tanpa penjelasan. */
+const PINJAMAN_DILEWATI = [];
+/* Pembayaran & biaya_awal yang dilewati, LENGKAP DENGAN NOMINALNYA. */
+const BAYAR_DILEWATI_DETAIL = [];
+const BIAYA_AWAL_DILEWATI = [];
 let jurnalDilewati = 0;
 let kasirDilewati = 0;
 
@@ -568,25 +577,39 @@ function tarikPembayaran(adminUid, pid, ke, p) {
     if (!bayar || typeof bayar !== 'object') continue;
     const jml = rupiah(bayar.jumlah);
     const tgl = parseTanggal(bayar.tanggal);
-    if (jml <= 0 || !tgl) {
-      /* Tetap DILEWATI (keputusan pemilik, 12 Agu 2026): entri tanpa jumlah
-       * yang sah adalah sampah, bukan pembayaran. Alasannya dibedakan agar
-       * terlihat di laporan mana yang benar-benar kosong dan mana yang
-       * jumlahnya ada tetapi tanggalnya tidak terbaca — dua hal berbeda. */
+
+    /* Entri induk tanpa jumlah/tanggal yang sah TETAP DILEWATI (keputusan
+     * pemilik 12 Agu 2026) — tetapi SUB-nya TIDAK ikut dibuang.
+     *
+     * Sebelumnya `continue` di sini melewati seluruh blok subPembayaran di
+     * bawah, sehingga tambah-bayar yang menempel pada induk rusak ikut
+     * lenyap. Itulah sebab selisih -6 baris / -Rp145.000 sementara hanya 4
+     * entri yang dilaporkan dilewati: 4 induk + 2 sub miliknya. Sub adalah
+     * uang tersendiri; induk yang rusak tidak membuatnya jadi sampah. */
+    const indukSah = jml > 0 && !!tgl;
+    let parentKey = null;
+
+    if (!indukSah) {
       const sebab = (bayar.jumlah == null || bayar.jumlah === '')
         ? 'jumlah kosong/undefined (sampah)'
         : (jml <= 0 ? `jumlah tidak sah (${bayar.jumlah})` : `tanggal tidak terbaca (${bayar.tanggal})`);
-      issue('BAYAR_DILEWATI', `${pid}/${ke}[${i}] — ${sebab}`);
-      continue;
+      issue('BAYAR_DILEWATI', `${pid}/${ke}[${i}] — ${sebab} — Rp ${jml.toLocaleString('id-ID')}`);
+      BAYAR_DILEWATI_DETAIL.push({
+        legacyPelangganId: pid, legacyAdminUid: adminUid, pinjamanKe: ke,
+        indeks: i, jenis: 'cicilan', sebab,
+        jumlah: jml, jumlahMentah: bayar.jumlah ?? null,
+        tanggalMentah: str(bayar.tanggal), keterangan: str(bayar.keterangan),
+      });
+    } else {
+      const cid = str(bayar.clientOpId);
+      const base = cid !== '' ? `op:${cid}` : `derive:${pid}/${ke}/${tgl}/${jml}`;
+      parentKey = kunciBayar(base);
+      ROWS.pembayaran.push({
+        id: ID.bayar(parentKey), pinjaman_id: pinjamanId, jenis: 'cicilan',
+        jumlah: jml, tanggal: tgl, keterangan: str(bayar.keterangan),
+        client_op_id: ID.bayar(parentKey), dicatat_oleh: adminId,
+      });
     }
-    const cid = str(bayar.clientOpId);
-    const base = cid !== '' ? `op:${cid}` : `derive:${pid}/${ke}/${tgl}/${jml}`;
-    const key = kunciBayar(base);
-    ROWS.pembayaran.push({
-      id: ID.bayar(key), pinjaman_id: pinjamanId, jenis: 'cicilan',
-      jumlah: jml, tanggal: tgl, keterangan: str(bayar.keterangan),
-      client_op_id: ID.bayar(key), dicatat_oleh: adminId,
-    });
 
     /* subPembayaran BERSARANG di dalam tiap pembayaran (bukan array sejajar
      * seperti disebut CLAUDE.md §5.2). Diratakan jadi baris tersendiri
@@ -595,15 +618,31 @@ function tarikPembayaran(adminUid, pid, ke, p) {
     for (const [j, sub] of toIndexedList(bayar.subPembayaran)) {
       if (!sub || typeof sub !== 'object') continue;
       const sj = rupiah(sub.jumlah);
+      // Tanggal sub sendiri lebih dulu; tanggal induk hanya cadangan, dan
+      // bisa null bila induknya memang rusak.
       const stg = parseTanggal(sub.tanggal) || tgl;
-      if (sj <= 0) continue;
+      if (sj <= 0 || !stg) {
+        const sebab = sj <= 0
+          ? `jumlah tidak sah (${sub.jumlah})`
+          : 'tanggal tidak terbaca pada sub maupun induk';
+        issue('SUB_BAYAR_DILEWATI',
+          `${pid}/${ke}[${i}].sub[${j}] — ${sebab} — Rp ${sj.toLocaleString('id-ID')}`);
+        BAYAR_DILEWATI_DETAIL.push({
+          legacyPelangganId: pid, legacyAdminUid: adminUid, pinjamanKe: ke,
+          indeks: `${i}.${j}`, jenis: 'tambah_bayar', sebab,
+          jumlah: sj, jumlahMentah: sub.jumlah ?? null,
+          tanggalMentah: str(sub.tanggal), keterangan: str(sub.keterangan),
+        });
+        continue;
+      }
       const sk = kunciBayar(`sub:${pid}/${ke}/${i}/${j}/${stg}/${sj}`);
       ROWS.pembayaran.push({
         id: ID.bayar(sk), pinjaman_id: pinjamanId, jenis: 'tambah_bayar',
         jumlah: sj, tanggal: stg,
         keterangan: str(sub.keterangan) || 'Tambah Bayar',
         client_op_id: ID.bayar(sk), dicatat_oleh: adminId,
-        parent_pembayaran_id: ID.bayar(key),
+        // null bila induknya dilewati — sub tetap masuk, hanya tanpa tautan.
+        parent_pembayaran_id: parentKey ? ID.bayar(parentKey) : null,
       });
     }
   }
@@ -693,15 +732,47 @@ function faseNasabahPinjaman() {
       }
       const keSekarang = int(p.pinjamanKe, 1);
       gens.set(keSekarang, p); // generasi berjalan menang atas arsip
+      const maxGen = Math.max(...gens.keys());
+      if (maxGen > keSekarang) {
+        issue('ARSIP_GENERASI_LEBIH_TINGGI',
+          `${pid} — arsip punya ke-${maxGen} sementara node pelanggan ke-${keSekarang}`);
+      }
 
       for (const ke of [...gens.keys()].sort((a, b) => a - b)) {
         const src = gens.get(ke);
-        if (!src || typeof src !== 'object') continue;
-        // Generasi berjalan = yang nomornya sama dengan pinjamanKe di node
-        // pelanggan; selebihnya berasal dari riwayat_pinjaman = arsip.
-        const isArsip = ke !== keSekarang;
+        if (!src || typeof src !== 'object') {
+          /* Node arsip yang bukan objek (boolean/string/null sisa bug lama).
+           * validate.js menghitung KUNCI generasinya, jadi tanpa dicatat di
+           * sini selisihnya muncul sebagai "pinjaman hilang" tanpa sebab. */
+          PINJAMAN_DILEWATI.push({
+            legacyPelangganId: pid, legacyAdminUid: adminUid, pinjamanKe: ke,
+            sebab: 'node arsip bukan objek',
+            nilaiMentah: JSON.stringify(src).slice(0, 80),
+            besarPinjaman: 0,
+          });
+          continue;
+        }
+        /* Generasi berjalan = yang nomornya sama dengan pinjamanKe DAN
+         * merupakan generasi TERTINGGI.
+         *
+         * Syarat kedua menutup kasus nyata: riwayat_pinjaman kadang memuat
+         * generasi yang LEBIH TINGGI daripada pinjamanKe di node pelanggan
+         * (mis. arsip punya ke-5 sementara node bilang ke-4). Dengan syarat
+         * pertama saja, ke-4 dianggap berjalan dan tetap berstatus hidup,
+         * padahal ada ke-5 di atasnya — itulah 16 "generasi lama masih hidup"
+         * yang ditemukan validate.js. Kini paling banyak SATU baris hidup
+         * per nasabah, apa pun bentuk datanya. */
+        const isArsip = ke !== keSekarang || ke < maxGen;
         const row = pinjamanDariRecord(adminUid, pid, ke, src, `${pid}/${ke}`, isArsip);
-        if (!row) continue;
+        if (!row) {
+          PINJAMAN_DILEWATI.push({
+            legacyPelangganId: pid, legacyAdminUid: adminUid, pinjamanKe: ke,
+            sebab: 'status tidak dikenal',
+            statusMentah: str(src.status),
+            besarPinjaman: rupiah(src.besarPinjaman),
+          });
+          continue;
+        }
         // Arsip mewarisi identitas nasabah dari record berjalan; hanya kolom
         // finansial yang diambil dari arsip.
         ROWS.pinjaman.push(row);
@@ -963,7 +1034,16 @@ function faseHistoris() {
       const tanggal = parseTanggal(b.tanggal) || parseTanggal(tgl);
       if (!tanggal) { issue('BIAYA_AWAL_TANPA_TANGGAL', `${adminUid}/${tgl}`); continue; }
       if (!userAda.has(ID.user(adminUid))) {
-        issue('BIAYA_AWAL_ADMIN_TIDAK_DIKENAL', `${adminUid} — dilewati`);
+        /* admin_id NOT NULL + FK, dan PK-nya (admin_id, tanggal) — tanpa
+         * admin yang sah baris ini tidak punya tempat. Nominalnya dicetak
+         * supaya terlihat kalau yang hilang ternyata material. */
+        const jml = rupiah(b.jumlah);
+        issue('BIAYA_AWAL_ADMIN_TIDAK_DIKENAL',
+          `${adminUid} @ ${tanggal} — Rp ${jml.toLocaleString('id-ID')} — dilewati`);
+        BIAYA_AWAL_DILEWATI.push({
+          legacyAdminUid: adminUid, tanggal, jumlah: jml,
+          sebab: 'admin tidak terdaftar di metadata/admins',
+        });
         continue;
       }
       ROWS.biaya_awal.push({
@@ -1478,6 +1558,27 @@ function precheckPengajuanGanda() {
     },
     dilewatiCabangTidakDikenal: { jurnal: jurnalDilewati, kasir: kasirDilewati },
 
+    /* Setiap baris yang TIDAK jadi diimpor, LENGKAP DENGAN NOMINALNYA.
+     * Tanpa nominal, "4 entri dilewati" terdengar sepele padahal bisa
+     * bernilai ratusan ribu rupiah — itulah yang terjadi pada dry run
+     * sebelumnya. */
+    dilewatiDenganNominal: {
+      pembayaran: {
+        jumlahBaris: BAYAR_DILEWATI_DETAIL.length,
+        totalRupiah: BAYAR_DILEWATI_DETAIL.reduce((a, b) => a + b.jumlah, 0),
+        daftar: BAYAR_DILEWATI_DETAIL,
+      },
+      biayaAwal: {
+        jumlahBaris: BIAYA_AWAL_DILEWATI.length,
+        totalRupiah: BIAYA_AWAL_DILEWATI.reduce((a, b) => a + b.jumlah, 0),
+        daftar: BIAYA_AWAL_DILEWATI,
+      },
+      pinjaman: {
+        jumlahGenerasi: PINJAMAN_DILEWATI.length,
+        daftar: PINJAMAN_DILEWATI.slice(0, 2000),
+      },
+    },
+
     pengajuanGanda: {
       catatan:
         'Constraint unique pengajuan.pinjaman_id DILONGGARKAN untuk ' +
@@ -1519,6 +1620,39 @@ function precheckPengajuanGanda() {
   if (ISSUES.length) {
     log('\n▶ Anomali (rincian di ' + CFG.report + ')');
     for (const [k, v] of Object.entries(kindCount)) log(`   ${k.padEnd(30)} ${v}`);
+  }
+
+  const totalBayarHilang = BAYAR_DILEWATI_DETAIL.reduce((a, b) => a + b.jumlah, 0);
+  const totalBiayaHilang = BIAYA_AWAL_DILEWATI.reduce((a, b) => a + b.jumlah, 0);
+  if (BAYAR_DILEWATI_DETAIL.length || PINJAMAN_DILEWATI.length || BIAYA_AWAL_DILEWATI.length) {
+    log('\n▶ Rekonsiliasi baris yang TIDAK diimpor (dengan nominal)');
+    if (BAYAR_DILEWATI_DETAIL.length) {
+      log(`   pembayaran : ${BAYAR_DILEWATI_DETAIL.length} baris — ` +
+          `Rp ${totalBayarHilang.toLocaleString('id-ID')}`);
+      for (const r of BAYAR_DILEWATI_DETAIL.slice(0, 30)) {
+        log(`     ${r.legacyPelangganId}/${r.pinjamanKe}[${r.indeks}] ${r.jenis.padEnd(12)} ` +
+            `Rp ${String(r.jumlah).padStart(10)}  ${r.sebab}`);
+      }
+      if (BAYAR_DILEWATI_DETAIL.length > 30) log(`     … ${BAYAR_DILEWATI_DETAIL.length - 30} lagi`);
+    }
+    if (BIAYA_AWAL_DILEWATI.length) {
+      log(`   biaya_awal : ${BIAYA_AWAL_DILEWATI.length} baris — ` +
+          `Rp ${totalBiayaHilang.toLocaleString('id-ID')}`);
+      for (const r of BIAYA_AWAL_DILEWATI) {
+        log(`     ${r.legacyAdminUid} @ ${r.tanggal}  Rp ${String(r.jumlah).padStart(12)}  ${r.sebab}`);
+      }
+    }
+    if (PINJAMAN_DILEWATI.length) {
+      const perSebab = PINJAMAN_DILEWATI.reduce((m, r) => ((m[r.sebab] = (m[r.sebab] || 0) + 1), m), {});
+      log(`   pinjaman   : ${PINJAMAN_DILEWATI.length} generasi — ${JSON.stringify(perSebab)}`);
+      for (const r of PINJAMAN_DILEWATI.slice(0, 30)) {
+        log(`     ${r.legacyPelangganId} ke-${String(r.pinjamanKe).padEnd(3)} ${r.sebab}` +
+            (r.statusMentah ? `  status='${r.statusMentah}'` : '') +
+            (r.nilaiMentah ? `  nilai=${r.nilaiMentah}` : ''));
+      }
+      if (PINJAMAN_DILEWATI.length > 30) log(`     … ${PINJAMAN_DILEWATI.length - 30} lagi`);
+    }
+    log('   (detail lengkap di ' + CFG.report + ' → dilewatiDenganNominal)');
   }
 
   if (PIMPINAN_YATIM.length) {

@@ -59,6 +59,31 @@ function nikBersih(v) {
   return t;
 }
 
+/* Parser tanggal — WAJIB identik dengan migrate.js. validate.js dulu hanya
+ * memeriksa `b.tanggal` truthy, sedangkan migrate.js menuntut tanggal yang
+ * benar-benar TERBACA. Akibatnya entri bertanggal sampah dihitung di sini
+ * tetapi dilewati di sana, dan selisihnya muncul sebagai "kehilangan data"
+ * padahal memang sampah yang sudah dilaporkan migrate.js. */
+const BULAN_V = {
+  jan: 1, feb: 2, mar: 3, apr: 4, mei: 5, jun: 6, jul: 7, agu: 8,
+  sep: 9, okt: 10, nov: 11, des: 12, may: 5, aug: 8, oct: 10, dec: 12, agt: 8,
+};
+function parseTanggal(v) {
+  if (v == null || v === '') return null;
+  const t = String(v).trim();
+  let m = /^(\d{4})-(\d{2})-(\d{2})/.exec(t);
+  if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+  m = /^(\d{1,2})\s+([A-Za-z]{3,})\s+(\d{4})(?:,?\s+\d{1,2}:\d{2}(?::\d{2})?)?$/.exec(t);
+  if (m) {
+    const b = BULAN_V[m[2].slice(0, 3).toLowerCase()];
+    if (!b) return null;
+    return `${m[3]}-${String(b).padStart(2, '0')}-${String(+m[1]).padStart(2, '0')}`;
+  }
+  if (/^\d{12,}$/.test(t)) return new Date(+t).toISOString().slice(0, 10);
+  const iso = /^(\d{4}-\d{2}-\d{2})T/.exec(t);
+  return iso ? iso[1] : null;
+}
+
 function toIndexedList(v) {
   if (v == null) return [];
   const out = [];
@@ -137,11 +162,16 @@ for (const a of keys(node('pelanggan'))) {
       for (const [, b] of toIndexedList(rec.pembayaranList)) {
         if (!b || typeof b !== 'object') continue;
         const j = rupiah(b.jumlah);
-        if (j > 0 && b.tanggal) { src.bayar++; src.bayarSum += j; }
+        const tglInduk = parseTanggal(b.tanggal);
+        if (j > 0 && tglInduk) { src.bayar++; src.bayarSum += j; }
+        /* Sub dihitung TERLEPAS dari sah-tidaknya induk — migrate.js kini
+         * juga mengimpornya begitu (sub adalah uang tersendiri). Tanggalnya
+         * memakai tanggal sub, dengan tanggal induk sebagai cadangan. */
         for (const [, s] of toIndexedList(b.subPembayaran)) {
           if (!s || typeof s !== 'object') continue;
           const sj = rupiah(s.jumlah);
-          if (sj > 0) { src.bayar++; src.bayarSum += sj; }
+          const tglSub = parseTanggal(s.tanggal) || tglInduk;
+          if (sj > 0 && tglSub) { src.bayar++; src.bayarSum += sj; }
         }
       }
       for (const [, s] of toIndexedList(rec.hasilSimulasiCicilan)) if (s && s.tanggal) src.jadwal++;
@@ -172,11 +202,28 @@ for (const a of keys(PH)) {
     src.histori += keys(PH[a][pid]).length;
   }
 }
+/* biaya_awal.admin_id NOT NULL + FK, dan PK-nya (admin_id, tanggal) — baris
+ * dengan admin tak terdaftar TIDAK BISA diimpor apa pun caranya. migrate.js
+ * melewatinya, jadi di sini pun tidak dihitung; kalau tidak, selisihnya
+ * selamanya dilaporkan sebagai kegagalan.
+ *
+ * TETAPI nominalnya tetap dijumlahkan terpisah dan dicetak — uang yang
+ * hilang tidak boleh lenyap dari pandangan hanya karena gerbangnya
+ * dilonggarkan. */
+const adminUidsSrc = new Set(keys(node('metadata').admins || {}));
+let biayaAwalTakTerimpor = 0;
+let biayaAwalTakTerimporRp = 0;
 const BA = node('biaya_awal');
 for (const a of keys(BA)) {
   for (const t of keys(BA[a])) {
+    const jml = rupiah((BA[a][t] || {}).jumlah);
+    if (!adminUidsSrc.has(a)) {
+      biayaAwalTakTerimpor++;
+      biayaAwalTakTerimporRp += jml;
+      continue;
+    }
     src.biayaAwal++;
-    src.biayaAwalSum += rupiah((BA[a][t] || {}).jumlah);
+    src.biayaAwalSum += jml;
   }
 }
 for (const a of keys(node('pelanggan_ditolak'))) src.ditolak += keys(node('pelanggan_ditolak')[a]).length;
@@ -210,6 +257,13 @@ for (const c of keys(node('kasir_entries'))) {
     for (const id of keys(node('kasir_entries')[c][b])) {
       src.kasir++; src.kasirSum += rupiah(node('kasir_entries')[c][b][id].jumlah);
     }
+}
+
+if (biayaAwalTakTerimpor) {
+  console.log(`  ⚠ biaya_awal TIDAK bisa diimpor: ${biayaAwalTakTerimpor} baris ` +
+    `(Rp ${biayaAwalTakTerimporRp.toLocaleString('id-ID')}) — admin tidak terdaftar.`);
+  console.log('    Dikeluarkan dari pembanding agar tidak jadi alarm palsu, TETAPI');
+  console.log('    ini uang nyata yang hilang. Perbaiki adminnya di RTDB bila material.');
 }
 
 console.log('  sumber:', JSON.stringify({
