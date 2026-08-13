@@ -91,11 +91,19 @@ const src = {
   pinjamanKeys: new Set(),
 };
 
+const slugCabang = (c) =>
+  String(c == null ? '' : c).trim().toLowerCase().replace(/\s+/g, ' ');
+
 for (const uid of keys(node('metadata').admins || {})) {
   src.admins++;
   const c = (node('metadata').admins[uid] || {}).cabang;
-  if (c) src.cabang.add(String(c).trim().toLowerCase().replace(/\s+/g, ' '));
+  if (c) src.cabang.add(slugCabang(c));
 }
+/* migrate.js membentuk daftar cabang dari admins DAN metadata/cabang. Harus
+ * ditiru persis: jurnal/kasir bercabang tak dikenal DILEWATI di sana, jadi
+ * kalau di sini ikut dihitung, selisihnya dilaporkan sebagai kehilangan data
+ * padahal disengaja. */
+for (const c of keys(node('metadata').cabang || {})) src.cabang.add(slugCabang(c));
 
 const riwayat = node('riwayat_pinjaman');
 for (const a of keys(node('pelanggan'))) {
@@ -189,16 +197,20 @@ for (const c of keys(KS)) {
 for (const c of keys(node('pelanggan_status_khusus'))) src.statusKhusus += keys(node('pelanggan_status_khusus')[c]).length;
 
 
-for (const c of keys(node('jurnal_transaksi')))
+for (const c of keys(node('jurnal_transaksi'))) {
+  if (!src.cabang.has(slugCabang(c))) continue;      // dilewati migrate.js juga
   for (const b of keys(node('jurnal_transaksi')[c]))
     for (const id of keys(node('jurnal_transaksi')[c][b])) {
       src.jurnal++; src.jurnalSum += rupiah(node('jurnal_transaksi')[c][b][id].jumlah);
     }
-for (const c of keys(node('kasir_entries')))
+}
+for (const c of keys(node('kasir_entries'))) {
+  if (!src.cabang.has(slugCabang(c))) continue;
   for (const b of keys(node('kasir_entries')[c]))
     for (const id of keys(node('kasir_entries')[c][b])) {
       src.kasir++; src.kasirSum += rupiah(node('kasir_entries')[c][b][id].jumlah);
     }
+}
 
 console.log('  sumber:', JSON.stringify({
   nasabah: src.nasabah, pinjaman: src.pinjaman, bayar: src.bayar,
@@ -270,6 +282,12 @@ const cek = (nama, ok, detail) => {
       where snapshot is null or snapshot = '{}'::jsonb`);
   cek('snapshot pelanggan_ditolak terisi', snapKosong.n === 0,
     snapKosong.n ? `${snapKosong.n} baris tanpa snapshot` : '');
+
+  /* Jurnal tanpa nasabah induk adalah keadaan yang DITERIMA (nasabah dihapus
+   * di RTDB). Yang penting nominalnya utuh — itu sudah diuji di grup B. */
+  const jurnalNull = await one(
+    'select count(*)::int as n from koperasi.jurnal_transaksi where nasabah_id is null');
+  console.log(`  · jurnal tanpa nasabah induk: ${jurnalNull.n} (diterima, tautan diputus)`);
 
   console.log('\n▶ C. Integritas referensial');
   const yatim = await all(`

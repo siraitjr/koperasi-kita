@@ -338,6 +338,12 @@ const CABANG_DIWARISI = [];
 /* Cabang yang pimpinanUid-nya tidak terdaftar sebagai admin. */
 const PIMPINAN_YATIM = [];
 
+/* Jurnal yang nasabah induknya tidak ada. Barisnya tetap diimpor dengan
+ * nasabah_id NULL — lihat alasannya di faseJurnalKasir. */
+const JURNAL_YATIM = [];
+let jurnalDilewati = 0;
+let kasirDilewati = 0;
+
 /* Nasabah yang cabangId-nya kosong. Dikumpulkan lengkap (bukan sekadar
  * dihitung) supaya bisa langsung dipakai memilih cabang tujuan. */
 const PERLU_CABANG = [];
@@ -810,12 +816,54 @@ function faseJurnalKasir() {
         if (!tipe) continue;
         const adminUid = str(e.adminUid);
         const pid = str(e.pelangganId);
+
+        /* cabang_id NOT NULL — satu-satunya FK di sini yang tidak bisa
+         * di-NULL-kan, jadi barisnya terpaksa dilewati. */
+        if (!cabangAda.has(cab)) {
+          issue('JURNAL_CABANG_TIDAK_DIKENAL', `${cab}/${bulan}/${jid} — dilewati`);
+          jurnalDilewati++;
+          continue;
+        }
+
+        /* Sisanya NULLABLE, jadi induk yang hilang cukup diputus tautannya.
+         * Barisnya TETAP diimpor — nominalnya adalah uang yang benar-benar
+         * pernah bergerak, dan jurnal adalah audit trail. Membuang barisnya
+         * akan mengubah total pembukuan; memutus tautannya tidak. */
+        let nasabahId = adminUid && pid ? ID.nasabah(adminUid, pid) : null;
+        let pinjamanId = adminUid && pid
+          ? ID.pinjaman(adminUid, pid, int(e.pinjamanKe, 1)) : null;
+        let adminId = adminUid ? ID.user(adminUid) : null;
+
+        if (nasabahId && !nasabahAda.has(nasabahId)) {
+          issue('JURNAL_NASABAH_TIDAK_DITEMUKAN',
+            `${cab}/${bulan}/${jid} → ${pid} (${str(e.namaPelanggan) || 'tanpa nama'}) ` +
+            `— nasabah_id di-NULL-kan, baris tetap diimpor`);
+          JURNAL_YATIM.push({
+            jurnalId: jid, cabangId: cab, bulan,
+            legacyAdminUid: adminUid, legacyPelangganId: pid,
+            namaPelanggan: str(e.namaPelanggan), namaKtp: str(e.namaKtp),
+            tipe, jumlah: rupiah(e.jumlah), tanggal: str(e.tanggal),
+          });
+          nasabahId = null;
+          pinjamanId = null;          // induknya hilang, generasinya pasti ikut
+        } else if (pinjamanId && !pinjamanAda.has(pinjamanId)) {
+          issue('JURNAL_PINJAMAN_TIDAK_DITEMUKAN',
+            `${cab}/${bulan}/${jid} → ${pid} generasi ke-${int(e.pinjamanKe, 1)} ` +
+            `— pinjaman_id di-NULL-kan`);
+          pinjamanId = null;
+        }
+
+        if (adminId && !userAda.has(adminId)) {
+          issue('JURNAL_ADMIN_TIDAK_DITEMUKAN', `${cab}/${bulan}/${jid} → ${adminUid}`);
+          adminId = null;
+        }
+
         ROWS.jurnal_transaksi.push({
           id: ID.jurnal(cab, bulan, jid), cabang_id: cab, tipe,
-          nasabah_id: adminUid && pid ? ID.nasabah(adminUid, pid) : null,
-          pinjaman_id: adminUid && pid ? ID.pinjaman(adminUid, pid, int(e.pinjamanKe, 1)) : null,
+          nasabah_id: nasabahId,
+          pinjaman_id: pinjamanId,
           nama_pelanggan: str(e.namaPelanggan), nama_ktp: str(e.namaKtp),
-          admin_id: adminUid ? ID.user(adminUid) : null, admin_name: str(e.adminName),
+          admin_id: adminId, admin_name: str(e.adminName),
           jumlah: rupiah(e.jumlah),
           tanggal: parseTanggal(e.tanggal) || parseTanggal(e.createdAt) || `${bulan}-01`,
           pinjaman_ke: int(e.pinjamanKe, null),
@@ -836,6 +884,19 @@ function faseJurnalKasir() {
         const e = K[cabRaw][bulan][kid];
         if (!e || typeof e !== 'object') continue;
         const by = str(e.createdBy);
+
+        if (!cabangAda.has(cab)) {
+          issue('KASIR_CABANG_TIDAK_DIKENAL', `${cab}/${bulan}/${kid} — dilewati`);
+          kasirDilewati++;
+          continue;
+        }
+        const byId = by && userAda.has(ID.user(by)) ? ID.user(by) : null;
+        if (by && !byId) issue('KASIR_PENCATAT_TIDAK_DITEMUKAN', `${kid} → ${by}`);
+        const targetRaw = str(e.targetAdminUid);
+        const targetId = targetRaw && userAda.has(ID.user(targetRaw))
+          ? ID.user(targetRaw) : null;
+        if (targetRaw && !targetId) issue('KASIR_TARGET_TIDAK_DITEMUKAN', `${kid} → ${targetRaw}`);
+
         ROWS.kasir_entry.push({
           id: ID.kasir(cab, bulan, kid), cabang_id: cab,
           periode: /^\d{4}-\d{2}$/.test(bulan) ? `${bulan}-01` : null,
@@ -844,8 +905,8 @@ function faseJurnalKasir() {
           arah: enumOrNull(e.arah, ['masuk', 'keluar'], `kasir/${kid}`),
           nominal: rupiah(e.jumlah),
           keterangan: str(e.keterangan),
-          target_admin_id: str(e.targetAdminUid) ? ID.user(e.targetAdminUid) : null,
-          dicatat_oleh: by ? ID.user(by) : null,
+          target_admin_id: targetId,
+          dicatat_oleh: byId,
           dicatat_oleh_nama: str(e.createdByName),
           client_op_id: ID.kasir(cab, bulan, kid),
           created_at: ts(e.createdAt),
@@ -854,6 +915,14 @@ function faseJurnalKasir() {
     }
   }
   log(`  jurnal=${ROWS.jurnal_transaksi.length} kasir=${ROWS.kasir_entry.length}`);
+  if (JURNAL_YATIM.length) {
+    const totalRp = JURNAL_YATIM.reduce((a, b) => a + b.jumlah, 0);
+    log(`  ⚠ ${JURNAL_YATIM.length} jurnal kehilangan nasabah induk ` +
+        `(Rp ${totalRp.toLocaleString('id-ID')}) — nasabah_id di-NULL-kan, baris TETAP diimpor`);
+  }
+  if (jurnalDilewati || kasirDilewati) {
+    log(`  ⚠ dilewati karena cabang tidak dikenal: jurnal=${jurnalDilewati} kasir=${kasirDilewati}`);
+  }
 }
 
 // ======================================== FASE 5: DATA HISTORIS ===========
@@ -1394,6 +1463,21 @@ function precheckPengajuanGanda() {
 
     /* Constraint unique pengajuan.pinjaman_id DILONGGARKAN untuk
      * mengakomodasi data legacy — lihat 001a §11. */
+    /* Jurnal yang induknya hilang. Barisnya TETAP diimpor (nominalnya uang
+     * yang benar-benar bergerak); hanya tautannya yang diputus. */
+    jurnalNasabahTidakDitemukan: {
+      catatan:
+        'Jurnal merujuk nasabah yang tidak ada di tabel nasabah (nasabah ' +
+        'dihapus di RTDB, atau pengajuan yang tidak pernah jadi nasabah). ' +
+        'nasabah_id dan pinjaman_id di-NULL-kan, BARIS TETAP DIIMPOR agar ' +
+        'total pembukuan tidak berubah — jurnal adalah audit trail, membuang ' +
+        'barisnya akan mengubah angka yang sudah pernah dilaporkan.',
+      jumlah: JURNAL_YATIM.length,
+      totalRupiah: JURNAL_YATIM.reduce((a, b) => a + b.jumlah, 0),
+      daftar: JURNAL_YATIM.slice(0, 1000),
+    },
+    dilewatiCabangTidakDikenal: { jurnal: jurnalDilewati, kasir: kasirDilewati },
+
     pengajuanGanda: {
       catatan:
         'Constraint unique pengajuan.pinjaman_id DILONGGARKAN untuk ' +
