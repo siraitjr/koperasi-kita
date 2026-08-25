@@ -321,6 +321,34 @@ curl -s -X POST "$SUPA_URL/auth/v1/verify" \
 Respons berisi `access_token` + `refresh_token` — itulah sesinya. Ingat:
 **sekali pakai**.
 
+### 5.7b Kalau dapat 401/403 — pakai aksi `diag` lebih dulu
+
+```bash
+curl -s -X POST "$SUPA_URL/functions/v1/session-management" \
+  -H "apikey: $ANON" -H "Authorization: Bearer $JWT_PENGAWAS" \
+  -H "Content-Type: application/json" \
+  -d '{"action":"diag"}'
+```
+
+Balasannya menjawab pertanyaan yang tidak bisa dijawab kode galat saja:
+apakah JWT-nya sah menurut GoTrue, apakah `koperasi.app_user` **terbaca**,
+berapa barisnya, dan dari mana peran pemanggil diambil
+(`app_user` atau `user_metadata`).
+
+Membaca hasilnya:
+
+| Gejala | Artinya |
+|---|---|
+| `jwtSah:false` | Token memang ditolak GoTrue — ambil ulang lewat `/auth/v1/token`. |
+| `jwtSah:true`, `appUserTerbaca:false` | **Paling sering.** Schema `koperasi` belum terdaftar di Dashboard → Settings → API → **Exposed schemas**. Tambahkan `koperasi`, simpan, ulangi. |
+| `jwtSah:true`, `appUserTerbaca:true`, `identitas.sumber:"user_metadata"` | Barisnya belum ada untuk uid ini — periksa `select * from koperasi.app_user where id='<uid>'`. |
+| `identitas.gagal:"tanpa_peran"` | Peran tidak ada di `app_user` maupun `user_metadata`. |
+
+Sejak perbaikan ini, **403 `permission-denied` ≠ 401 `unauthenticated`**:
+401 berarti tokennya benar-benar ditolak, 403 berarti tokennya sah tetapi
+peran/profilnya tidak terbaca. Versi pertama menyatukan keduanya jadi 401,
+dan itu menyesatkan.
+
 ### 5.8 Melihat log
 
 ```bash
@@ -340,6 +368,32 @@ memanggil `getHttpsCallable("generateTakeoverToken")` seperti biasa.
 Artinya: **men-deploy Edge Function ini tidak mengubah apa pun di produksi.**
 Ia hanya ada dan menunggu. Rollback = tidak melakukan apa-apa; kalau ingin
 bersih, `supabase functions delete session-management`.
+
+---
+
+## 6b. Catatan Perbaikan (13 Agu 2026)
+
+Deploy pertama mengembalikan 401 untuk JWT yang sah. **Bukan** karena
+verifikasi manual HS256 — fungsi ini sejak awal memakai
+`admin.auth.getUser(jwt)`, yang diverifikasi GoTrue di sisi server dan
+karena itu independen dari algoritma (ES256 maupun HS256 sama saja).
+
+Penyebabnya rancangan `pemanggil()` yang lama: ia mengembalikan `null` untuk
+**tiga** kegagalan berbeda — header kosong, JWT ditolak, dan baris
+`app_user` tidak terbaca — dan pemanggilnya memetakan ketiganya ke 401
+`unauthenticated`. Jadi kegagalan PostgREST (kemungkinan besar schema
+`koperasi` belum di-expose) tampil sebagai "token tidak valid".
+
+Yang diperbaiki:
+- ketiga sebab dibedakan; `tanpa_peran` kini **403**, bukan 401;
+- `user_metadata` dipakai sebagai cadangan bila `app_user` tidak terbaca,
+  sehingga kegagalan infrastruktur tidak menyamar jadi kegagalan token;
+- `console.log/warn/error` di tiap langkah — sebelumnya tidak ada satu pun
+  log, itulah kenapa Dashboard hanya menampilkan booted/shutdown;
+- aksi `diag` (§5.7b).
+
+Seluruh pemeriksaan §3 dan §3.1 tidak berubah, begitu juga kosakata kode
+galat.
 
 ---
 

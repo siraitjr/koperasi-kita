@@ -92,24 +92,122 @@ async function buatTokenSesi(
   return { token_hash: data.properties.hashed_token };
 }
 
-/** Profil pemanggil dari JWT. null = tidak sah. */
-async function pemanggil(
-  admin: SupabaseClient,
-  req: Request,
-): Promise<{ id: string; email: string; role: string; cabang_id: string | null; nama: string } | null> {
-  const jwt = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '').trim();
-  if (!jwt) return null;
-  const { data, error } = await admin.auth.getUser(jwt);
-  if (error || !data?.user) return null;
+interface Profil {
+  id: string;
+  email: string;
+  role: string;
+  cabang_id: string | null;
+  nama: string;
+  sumber: 'app_user' | 'user_metadata';
+}
 
-  const { data: profil } = await admin
+type HasilPemanggil =
+  | { ok: true; profil: Profil }
+  | { ok: false; sebab: 'tanpa_header' | 'jwt_ditolak' | 'tanpa_peran'; detail: string };
+
+/**
+ * Identitas pemanggil dari JWT.
+ *
+ * VERIFIKASI TOKEN: `admin.auth.getUser(jwt)` — diverifikasi GoTrue di sisi
+ * server, jadi INDEPENDEN dari algoritma penandatanganan. Project yang
+ * menerbitkan ES256 (kunci ber-`kid`) sama validnya dengan HS256; tidak ada
+ * pembacaan `SUPABASE_JWT_SECRET` maupun verifikasi manual di sini.
+ *
+ * KENAPA HASILNYA BERBEDA-BEDA, BUKAN null
+ * -----------------------------------------
+ * Versi pertama mengembalikan `null` untuk tiga kegagalan yang sama sekali
+ * berbeda — header kosong, JWT ditolak, dan baris `app_user` tidak terbaca —
+ * lalu pemanggilnya memetakan semuanya ke 401 "unauthenticated". Akibatnya
+ * masalah PostgREST (schema `koperasi` belum di-expose, atau barisnya belum
+ * ada) tampil sebagai "token tidak valid", dan pemilik mencari
+ * penyebabnya di tempat yang salah. Itu kesalahan rancangan saya, bukan
+ * kesalahan tokennya.
+ */
+async function pemanggil(admin: SupabaseClient, req: Request): Promise<HasilPemanggil> {
+  const jwt = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '').trim();
+  if (!jwt) {
+    console.warn('[auth] Authorization header kosong');
+    return { ok: false, sebab: 'tanpa_header', detail: 'Header Authorization tidak ada.' };
+  }
+
+  const { data, error } = await admin.auth.getUser(jwt);
+  if (error || !data?.user) {
+    console.warn('[auth] getUser ditolak:', error?.message ?? '(tanpa pesan)');
+    return { ok: false, sebab: 'jwt_ditolak', detail: error?.message ?? 'token ditolak GoTrue' };
+  }
+
+  const u = data.user;
+  const meta = (u.user_metadata ?? {}) as Record<string, unknown>;
+  console.log(`[auth] JWT sah untuk ${u.email} (${u.id})`);
+
+  // Sumber utama: koperasi.app_user (otoritatif — dipakai RLS & Edge
+  // Function lain). Kegagalannya TIDAK lagi mematikan.
+  const { data: profil, error: eProfil } = await admin
     .from('app_user')
     .select('id, email, role, cabang_id, nama, aktif')
-    .eq('id', data.user.id)
-    .single();
+    .eq('id', u.id)
+    .maybeSingle();
 
-  if (!profil || profil.aktif === false) return null;
-  return profil as never;
+  if (eProfil) {
+    // Paling sering: schema `koperasi` belum terdaftar di
+    // Settings → API → Exposed schemas, sehingga PostgREST menolak query.
+    console.error('[auth] query app_user gagal:', eProfil.message);
+  }
+
+  if (profil && profil.aktif !== false) {
+    return {
+      ok: true,
+      profil: {
+        id: profil.id, email: profil.email ?? u.email ?? '',
+        role: String(profil.role ?? ''), cabang_id: profil.cabang_id ?? null,
+        nama: profil.nama ?? '', sumber: 'app_user',
+      },
+    };
+  }
+
+  if (profil && profil.aktif === false) {
+    console.warn('[auth] user nonaktif di app_user');
+    return { ok: false, sebab: 'tanpa_peran', detail: 'Akun Anda nonaktif.' };
+  }
+
+  // Cadangan: user_metadata pada JWT. Dipakai bila baris app_user belum ada
+  // atau PostgREST tidak bisa dibaca — supaya kegagalan infrastruktur tidak
+  // menyamar jadi "token tidak valid".
+  const roleMeta = String(meta.role ?? '');
+  if (roleMeta) {
+    console.warn('[auth] app_user tidak terbaca — memakai user_metadata sebagai cadangan');
+    return {
+      ok: true,
+      profil: {
+        id: u.id, email: u.email ?? '',
+        role: roleMeta,
+        cabang_id: (meta.cabang as string | null) ?? (meta.cabang_id as string | null) ?? null,
+        nama: String(meta.nama ?? meta.name ?? ''),
+        sumber: 'user_metadata',
+      },
+    };
+  }
+
+  console.error('[auth] peran tidak dapat ditentukan dari app_user maupun user_metadata');
+  return {
+    ok: false,
+    sebab: 'tanpa_peran',
+    detail: 'Peran tidak dapat ditentukan. Pastikan schema `koperasi` sudah di-expose '
+          + 'di Settings → API → Exposed schemas, dan baris app_user untuk akun ini ada.',
+  };
+}
+
+/** Terjemahan kegagalan identitas → respons, dengan kosakata kode yang sama. */
+function tolakPemanggil(
+  h: Extract<HasilPemanggil, { ok: false }>,
+  origin: string | null,
+): Response {
+  if (h.sebab === 'tanpa_peran') {
+    // BUKAN 401: tokennya sah, yang kurang adalah profil/peran. Membedakan
+    // keduanya adalah seluruh inti perbaikan ini.
+    return err('permission-denied', h.detail, 403, origin);
+  }
+  return err('unauthenticated', 'Token tidak valid atau sudah kadaluarsa.', 401, origin);
 }
 
 // =========================================================================
@@ -122,8 +220,9 @@ async function pemanggil(
 // parameter uid — mustahil meminta token untuk orang lain. Versi Firebase
 // pun begitu; dipertahankan.
 async function autoLogin(admin: SupabaseClient, req: Request, origin: string | null) {
-  const p = await pemanggil(admin, req);
-  if (!p) return err('unauthenticated', 'Token tidak valid atau sudah kadaluarsa.', 401, origin);
+  const h = await pemanggil(admin, req);
+  if (!h.ok) return tolakPemanggil(h, origin);
+  const p = h.profil;
 
   const hasil = await buatTokenSesi(admin, p.email);
   if ('gagal' in hasil) return err('internal', hasil.gagal, 500, origin);
@@ -141,8 +240,9 @@ async function takeover(
   body: Record<string, unknown>,
   origin: string | null,
 ) {
-  const p = await pemanggil(admin, req);
-  if (!p) return err('unauthenticated', 'Harus login.', 401, origin);
+  const h = await pemanggil(admin, req);
+  if (!h.ok) return tolakPemanggil(h, origin);
+  const p = h.profil;
 
   const targetId = String(body.targetAdminUid ?? '').trim();
   if (!targetId) return err('invalid-argument', 'targetAdminUid wajib diisi.', 400, origin);
@@ -244,8 +344,9 @@ async function restore(
   body: Record<string, unknown>,
   origin: string | null,
 ) {
-  const p = await pemanggil(admin, req);
-  if (!p) return err('unauthenticated', 'Harus login.', 401, origin);
+  const h = await pemanggil(admin, req);
+  if (!h.ok) return tolakPemanggil(h, origin);
+  const p = h.profil;
 
   const adminId = String(body.adminUid ?? '').trim();
   // pimpinanUid TIDAK diambil dari body.
@@ -303,6 +404,55 @@ async function restore(
 }
 
 // =========================================================================
+// 4. diag — melihat apa yang DILIHAT fungsi ini
+// =========================================================================
+// Ditambahkan setelah 401 yang menyesatkan: tanpa ini, satu-satunya
+// informasi yang dimiliki pemilik adalah kode galat, dan itu sempat
+// menunjuk ke arah yang salah (algoritma token) padahal masalahnya di
+// lapisan lain. Aksi ini menjawab "sebenarnya fungsi ini melihat apa?".
+//
+// Tidak membocorkan apa pun yang belum dimiliki pemanggil: ia hanya
+// menceritakan kembali JWT milik pemanggil sendiri + apakah tabel terbaca.
+async function diag(admin: SupabaseClient, req: Request, origin: string | null) {
+  const jwt = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '').trim();
+  const laporan: Record<string, unknown> = {
+    adaHeaderAuthorization: jwt.length > 0,
+    panjangJwt: jwt.length,
+    schemaDipakai: SCHEMA,
+  };
+
+  if (jwt) {
+    const { data, error } = await admin.auth.getUser(jwt);
+    laporan.jwtSah = !error && !!data?.user;
+    laporan.jwtPesanGalat = error?.message ?? null;
+    if (data?.user) {
+      laporan.uid = data.user.id;
+      laporan.email = data.user.email;
+      laporan.userMetadata = data.user.user_metadata ?? {};
+    }
+  }
+
+  // Apakah PostgREST bisa membaca schema `koperasi`?
+  const { error: eTabel, count } = await admin
+    .from('app_user').select('id', { count: 'exact', head: true });
+  laporan.appUserTerbaca = !eTabel;
+  laporan.appUserGalat = eTabel?.message ?? null;
+  laporan.appUserJumlah = count ?? null;
+  if (eTabel) {
+    laporan.saran = 'Schema `koperasi` kemungkinan belum terdaftar di '
+      + 'Settings → API → Exposed schemas.';
+  }
+
+  const h = await pemanggil(admin, req);
+  laporan.identitas = h.ok
+    ? { role: h.profil.role, cabang_id: h.profil.cabang_id, sumber: h.profil.sumber }
+    : { gagal: h.sebab, detail: h.detail };
+
+  console.log('[diag]', JSON.stringify(laporan));
+  return ok({ diag: laporan }, origin);
+}
+
+// =========================================================================
 // DISPATCHER
 // =========================================================================
 Deno.serve(async (req) => {
@@ -324,12 +474,16 @@ Deno.serve(async (req) => {
 
   const admin = adminClient();
   const action = String(body.action ?? '');
+  // Log per-request. Ketiadaannya membuat Dashboard hanya menampilkan
+  // booted/shutdown saat 401 kemarin — tidak ada apa pun untuk ditelusuri.
+  console.log(`[req] action=${action} origin=${origin ?? '-'}`);
 
   try {
     switch (action) {
       case 'autoLogin': return await autoLogin(admin, req, origin);
       case 'takeover': return await takeover(admin, req, body, origin);
       case 'restore': return await restore(admin, req, body, origin);
+      case 'diag': return await diag(admin, req, origin);
       default: return err('invalid-argument', `Aksi tidak dikenal: ${action}`, 400, origin);
     }
   } catch (e) {
