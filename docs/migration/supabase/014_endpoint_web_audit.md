@@ -351,19 +351,103 @@ ditemukan satu view sekaligus daripada tujuh.
 
 ---
 
-## 6. Yang Perlu Diputuskan
+## 6. Keputusan Pemilik (13 Agu 2026) — SUDAH DIPUTUSKAN
 
-1. **Cakupan baca kasir.** `002` §9 `kasir_baca` mengizinkan **semua**
-   pengguna terautentikasi; `kasirApi.js:188` menolak `admin`. Mana yang
-   dipakai? Rekomendasi: ikuti daftar `KASIR_ALLOWED_ROLES` — lebih ketat,
-   dan itu perilaku yang berjalan sekarang.
-2. **`deleteKasirEntry`: hapus permanen atau soft delete?** Sejalan `007`
-   saya sarankan soft delete; entri kasir adalah catatan uang.
-3. **`syncOperasionalTransport`** belum saya baca isinya — kalau ternyata
-   hanya menghitung dan menyalin, ia bisa jadi view, bukan RPC.
-4. **Kunci HMAC rekening koran** — nilainya sekarang ada di
-   `rekeningKoranService.js`. Perlu dicek apakah ter-commit; kalau ya, harus
-   diganti saat pindah, bukan disalin.
+Keempatnya terjawab. Implementasinya ada di **`015_tahap_b_views.sql`**.
+
+### 6.1 Cakupan baca kasir → ikuti `KASIR_ALLOWED_ROLES`
+Policy `kasir_baca` (`002` §9) diganti dengan versi yang membatasi ke enam
+peran dan **menolak `admin`** — perilaku yang berjalan sekarang. Ada di
+`015` batch B-3.1.
+
+### 6.2 `deleteKasirEntry` → SOFT DELETE
+Kolom `dihapus_at` / `dihapus_oleh` / `alasan_hapus` ditambahkan, dan kedua
+view kasir menyaring `where dihapus_at is null`.
+
+Satu urutan yang mudah terlewat: kolomnya ditambahkan di **B-3.0, sebelum
+view dibuat** — bukan di B-4 bersama RPC-nya. Kalau kolomnya baru ada di
+B-4, view-nya terlanjur dibuat tanpa filter dan entri terhapus tetap tampil.
+
+### 6.3 `syncOperasionalTransport` → RPC, dan BELUM BISA DIPAKAI
+
+Sudah dibaca (`kasirApi.js:576-714`). **Bukan** sekadar menghitung+menyalin:
+
+1. membaca `operasional_harian/{cabangId}/{todayKey}` (`:52`)
+2. menjumlahkan `uangMakan + transport` seluruh staf (`:58-64`)
+3. **menulis** satu entri kasir ber-key `auto_ops_{tanggal}` (`:69-74`),
+   membaca entri lama dulu — pola upsert
+
+Karena menulis, **RPC** — bukan view.
+
+**Tetapi ada penghalang yang lebih besar:** sumbernya, node
+`operasional_harian`, **tidak ikut dimigrasikan** (`006` §6). Tabelnya belum
+ada di Postgres, jadi RPC-nya tidak punya apa pun untuk dibaca.
+
+Di `015` fungsinya sengaja dibuat **gagal-keras** dengan pesan yang
+menjelaskan sebabnya, bukan diam-diam menulis nol — entri kas Rp 0 yang
+muncul tiap hari jauh lebih buruk daripada galat yang jelas, karena ia
+terlihat seperti data.
+
+Perlu diputuskan terpisah: **(a)** migrasikan `operasional_harian`, atau
+**(b)** hentikan fitur ini dan catat transport manual lewat
+`rpc_tambah_kasir_entry`.
+
+### 6.4 Kunci HMAC rekening koran → TER-COMMIT, wajib dirotasi
+
+Diperiksa, dan hasilnya lebih luas dari dugaan:
+
+```
+functions/rekeningKoranService.js:31
+  return functions.config().rk?.secret || 'K0p3r4s1K1t4G0d4ngUluS3cur3Key!';
+
+app/src/main/kotlin/.../RekeningKoranHelper.kt
+  (kunci yang SAMA)
+```
+
+Ter-commit sejak **13 Apr 2026** (`e570701`), di **dua tempat**. Komentarnya
+sendiri berbunyi *"SECRET KEY - WAJIB SAMA DI ANDROID DAN CLOUD FUNCTION"*.
+
+Artinya siapa pun yang bisa membaca repo dapat **menempa tautan rekening
+koran untuk nasabah mana pun**. Ini bukan risiko teoretis: yang dilindungi
+tautan itu adalah identitas dan riwayat pembayaran nasabah.
+
+**Prosedur rotasi untuk B-5 — kunci lama JANGAN disalin:**
+
+1. Bangkitkan kunci baru (≥32 byte acak), mis.
+   `openssl rand -base64 48`.
+2. Simpan sebagai secret Edge Function — **tidak pernah** masuk repo:
+   `supabase secrets set REKENING_KORAN_HMAC_KEY='<kunci-baru>'`
+3. Edge Function membacanya lewat `Deno.env.get('REKENING_KORAN_HMAC_KEY')`,
+   **tanpa nilai cadangan hardcoded**. Kalau secret kosong, fungsi harus
+   menolak — bukan jatuh ke kunci bawaan seperti sekarang.
+4. Android: `RekeningKoranHelper.kt` harus memakai kunci baru. Karena kunci
+   ada di APK, ini **rilis terkoordinasi** — tautan yang dibuat APK lama
+   tidak akan lolos verifikasi kunci baru.
+5. Selama masa transisi, Edge Function boleh menerima **dua** kunci (baru
+   dan lama) agar APK lama tetap jalan; matikan kunci lama setelah pembaruan
+   merata.
+6. Setelah dimatikan, seluruh tautan lama otomatis tidak berlaku — itu
+   memang tujuannya.
+
+Catatan yang tidak enak tetapi perlu: karena kunci lama ada di riwayat git,
+**menghapusnya dari berkas tidak menghapusnya dari sejarah**. Rotasi adalah
+satu-satunya penawar yang benar-benar bekerja.
+
+---
+
+## 6z. Yang Masih Perlu Diputuskan
+
+1. **Nasib `operasional_harian`** — migrasikan, atau hentikan fitur
+   `syncOperasionalTransport`? (§6.3)
+2. **Tiga view lama tanpa `security_invoker`**: `v_pinjaman_saldo` (`001`
+   §4), `v_summary_cabang` (`001` §12), `v_nasabah_aktif` (`007` §1).
+   `v_pinjaman_saldo` **dipakai `v_buku_pokok`**, jadi ini bukan soal
+   kerapian — selama ia tanpa `security_invoker`, ia berpotensi melebarkan
+   baris yang terlihat lewat `v_buku_pokok`. Sengaja tidak saya masukkan ke
+   batch mana pun di `015`: ketiganya sudah Anda jalankan, dan mengubah
+   perilaku view yang sudah dipakai perlu keputusan sadar, bukan efek
+   samping. Perbaikannya satu baris per view:
+   `alter view koperasi.v_pinjaman_saldo set (security_invoker = on);`
 
 ---
 
