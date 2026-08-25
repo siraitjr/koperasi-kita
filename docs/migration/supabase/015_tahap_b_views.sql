@@ -4,6 +4,9 @@
 -- =========================================================================
 --
 -- Prasyarat: 001 → 001a → 002 → 007 → 009 → 011 sudah terpasang.
+-- Khusus BATCH B-4: `016a_operasional_harian.sql` harus dijalankan lebih
+-- dulu dan datanya sudah diimpor — rpc_sync_operasional_transport membaca
+-- tabel itu. Lihat CATATAN §B-4a dan 016_operasional_harian.md.
 --
 -- BERKAS INI DIRANCANG UNTUK DIJALANKAN BATCH PER BATCH.
 -- Tiap batch dipisah kepala komentar besar. Jalankan SATU batch, periksa
@@ -522,31 +525,150 @@ $$;
 -- -------------------------------------------------------------------------
 -- rpc_sync_operasional_transport — menggantikan syncOperasionalTransport
 -- -------------------------------------------------------------------------
--- ⚠ TIDAK BISA DIPAKAI SEKARANG. Lihat CATATAN §B-4a di akhir berkas.
+-- PRASYARAT: `016a_operasional_harian.sql` sudah dijalankan, dan datanya
+-- sudah diimpor dengan `scripts/migration/migrate_operasional_harian.js`.
+-- Tanpa tabel itu fungsi ini gagal dengan 42P01 (relation does not exist) —
+-- galat yang jelas, bukan entri kas Rp 0 yang diam-diam tertulis.
 --
--- Isi aslinya (kasirApi.js:576-714) BUKAN sekadar menghitung+menyalin:
--- ia membaca `operasional_harian/{cabang}/{hari}`, menjumlahkan uangMakan +
--- transport seluruh staf, lalu MENULIS satu entri kasir ber-key
--- `auto_ops_{tanggal}` (upsert — entri lama dibaca dulu). Karena menulis,
--- ia RPC, bukan view.
+-- Versi sebelumnya di berkas ini sengaja gagal-keras karena
+-- `operasional_harian` belum dimigrasikan (006 §6). Pemilik memutuskan
+-- fiturnya dipakai sehari-hari, jadi sumbernya dimigrasikan dan badan fungsi
+-- ini diisi penuh. Riwayat keputusannya di `016_operasional_harian.md` §5.
 --
--- Masalahnya: `operasional_harian` TIDAK ikut dimigrasikan (006 §6), jadi
--- tabel sumbernya belum ada. Fungsi di bawah sengaja gagal-keras alih-alih
--- diam-diam menulis nol — menulis entri kas Rp 0 tiap hari jauh lebih buruk
--- daripada galat yang jelas.
+-- Setara 1:1 dengan kasirApi.js:576-714:
+--   * gate `kasir_unit` saja                       (:606)
+--   * cabang diambil dari profil pemanggil          (:610)
+--   * tanggal default = hari ini WIB                (:616-624)
+--   * jumlahkan uangMakan+transport, hanya subtotal > 0   (:632-641)
+--   * keterangan menghitung SELURUH record, termasuk yang nol  (:675)
+--   * satu entri ber-kunci tetap `auto_ops_{tanggal}` → upsert (:644)
+--   * total 0 tanpa entri lama  → tidak melakukan apa-apa      (:653)
+--   * total 0 dengan entri lama → entri lama dihapus           (:662)
+--
+-- Dua penyimpangan yang disengaja, keduanya lebih aman dari aslinya:
+--   1. Penghapusan memakai SOFT DELETE (kolom dari B-3.0), bukan `remove()`.
+--      Alasannya sama dengan rpc_hapus_kasir_entry: entri kas adalah catatan
+--      uang. Kalau esoknya angkanya muncul lagi, baris yang sama dihidupkan
+--      kembali — bukan baris baru — sehingga jejaknya utuh.
+--   2. Tidak ada penyesuaian `kasir_summary`. Rekap kasir di Supabase adalah
+--      view beragregat (B-3.3), dihitung saat dibaca; tidak ada penghitung
+--      tersimpan yang bisa melenceng seperti di RTDB.
+--
+-- Idempotensi: `client_op_id` deterministik dari (cabang, tanggal), sehingga
+-- dipanggil sepuluh kali sehari pun tetap satu baris.
 create or replace function koperasi.rpc_sync_operasional_transport(
-  p_cabang_id text,
+  p_cabang_id text default null,
   p_tanggal   date default null
 ) returns uuid
 language plpgsql
 security definer
 set search_path = ''
 as $$
+declare
+  v_role    koperasi.user_role;
+  v_cabang  text;
+  v_nama    text;
+  v_tgl     date;
+  v_total   bigint;
+  v_jumlah_record int;
+  v_op      uuid;
+  v_id      uuid;
+  v_dihapus timestamptz;
 begin
-  raise exception
-    'Belum tersedia: tabel operasional_harian belum dimigrasikan (006 §6). '
-    'Migrasikan sumbernya lebih dulu, lalu ganti badan fungsi ini.'
-    using errcode = '0A000';   -- feature_not_supported
+  select role, cabang_id, nama into v_role, v_cabang, v_nama
+    from koperasi.app_user where id = auth.uid() and aktif;
+  if v_role is null then
+    raise exception 'Pemanggil tidak dikenal atau nonaktif' using errcode = '42501';
+  end if;
+
+  -- kasirApi.js:606 — hanya Kasir Unit.
+  if v_role <> 'kasir_unit' then
+    raise exception 'Hanya Kasir Unit yang dapat sync operasional'
+      using errcode = '42501';
+  end if;
+  if v_cabang is null or v_cabang = '' then
+    raise exception 'User tidak memiliki cabang' using errcode = '23514';
+  end if;
+  -- Cabang TIDAK diambil dari parameter (aslinya pun tidak). Parameter hanya
+  -- boleh menegaskan cabang sendiri; kalau berbeda, itu salah panggil.
+  if p_cabang_id is not null and p_cabang_id <> v_cabang then
+    raise exception 'Cabang tidak sesuai cabang Anda' using errcode = '42501';
+  end if;
+
+  -- kasirApi.js:616-624 — hari berjalan menurut WIB, bukan UTC.
+  v_tgl := coalesce(p_tanggal, (now() at time zone 'Asia/Jakarta')::date);
+
+  -- Hanya subtotal > 0 yang dijumlahkan, tetapi SEMUA record dihitung untuk
+  -- keterangan — persis seperti aslinya (:641 vs :675).
+  select coalesce(sum(o.uang_makan + o.transport)
+                    filter (where o.uang_makan + o.transport > 0), 0),
+         count(*)
+    into v_total, v_jumlah_record
+    from koperasi.operasional_harian o
+   where o.cabang_id = v_cabang
+     and o.tanggal   = v_tgl;
+
+  v_op := md5('auto_ops:' || v_cabang || ':' || v_tgl::text)::uuid;
+
+  select id, dihapus_at into v_id, v_dihapus
+    from koperasi.kasir_entry where client_op_id = v_op;
+
+  -- (a) tidak ada operasional, tidak ada entri lama → tidak ada yang dikerjakan
+  if v_total = 0 and (v_id is null or v_dihapus is not null) then
+    return null;
+  end if;
+
+  -- (b) operasional dinolkan/dihapus tetapi entri lama masih hidup
+  if v_total = 0 then
+    update koperasi.kasir_entry
+       set dihapus_at   = now(),
+           dihapus_oleh = auth.uid(),
+           alasan_hapus = 'Sinkron operasional: total hari ini 0'
+     where id = v_id;
+    return v_id;
+  end if;
+
+  -- (c) upsert entri
+  if v_id is null then
+    insert into koperasi.kasir_entry (
+      cabang_id, periode, tanggal, jenis, arah, nominal, keterangan,
+      dicatat_oleh, dicatat_oleh_nama, client_op_id
+    ) values (
+      v_cabang,
+      date_trunc('month', v_tgl)::date,
+      v_tgl,
+      'transport',
+      'keluar',
+      v_total,
+      'Operasional ' || v_jumlah_record || ' karyawan',
+      auth.uid(),
+      coalesce(v_nama, ''),
+      v_op
+    )
+    on conflict (client_op_id) do nothing
+    returning id into v_id;
+
+    if v_id is null then                -- balapan dua perangkat
+      select id into v_id from koperasi.kasir_entry where client_op_id = v_op;
+    end if;
+  else
+    -- `created_at` sengaja TIDAK disentuh (aslinya juga mempertahankan
+    -- createdAt lama, :681). `dihapus_at` dinolkan supaya entri yang kemarin
+    -- terhapus karena total 0 hidup lagi tanpa menggandakan baris.
+    update koperasi.kasir_entry
+       set nominal      = v_total,
+           keterangan   = 'Operasional ' || v_jumlah_record || ' karyawan',
+           tanggal      = v_tgl,
+           periode      = date_trunc('month', v_tgl)::date,
+           jenis        = 'transport',
+           arah         = 'keluar',
+           dihapus_at   = null,
+           dihapus_oleh = null,
+           alasan_hapus = ''
+     where id = v_id;
+  end if;
+
+  return v_id;
 end;
 $$;
 
@@ -570,13 +692,18 @@ commit;
 -- #   CATATAN                                                             #
 -- #########################################################################
 --
--- B-4a  syncOperasionalTransport — kesimpulan pembacaan kode
---       Ia MENULIS (kasirApi.js:69-74: entryKey `auto_ops_{tanggal}`,
---       entryRef.once lalu tulis), jadi tidak bisa jadi view. Dan sumbernya
---       `operasional_harian` belum dimigrasikan, jadi RPC-nya pun belum
---       bisa berfungsi. Dua hal yang harus diputuskan bersama:
---         (a) migrasikan `operasional_harian`, atau
---         (b) hentikan fitur ini dan catat entri transport manual.
+-- B-4a  syncOperasionalTransport — SUDAH DIPUTUSKAN (opsi a)
+--       Ia MENULIS (kasirApi.js:644-686: entryKey `auto_ops_{tanggal}`,
+--       entryRef.once lalu tulis), jadi tidak bisa jadi view — RPC.
+--       Versi pertama berkas ini gagal-keras karena sumbernya,
+--       `operasional_harian`, tidak ikut dimigrasikan (006 §6).
+--       Pemilik memutuskan fiturnya dipakai sehari-hari, maka:
+--         * DDL sumbernya  → 016a_operasional_harian.sql
+--         * impor datanya  → scripts/migration/migrate_operasional_harian.js
+--         * RPC-nya di atas sudah versi penuh, bukan lagi stub.
+--       Urutan jalan: 016a → impor data → baru B-4 ini.
+--       Kalau B-4 dijalankan lebih dulu, fungsinya tetap tercipta tetapi
+--       gagal 42P01 saat dipanggil. Rincian di 016_operasional_harian.md.
 --
 -- B-4b  View bawaan 001/007 BELUM memakai security_invoker:
 --         koperasi.v_pinjaman_saldo   (001 §4)
