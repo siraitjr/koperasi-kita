@@ -7,6 +7,36 @@ Berkas: `supabase/functions/user-management/index.ts`,
 
 ---
 
+## 0. ATURAN MENGIKAT: TIDAK ADA ALUR YANG MENGANDALKAN EMAIL
+
+Seluruh email staf berdomain `@godangulu.com` yang **fiktif** — domainnya
+tidak ada, jadi tidak ada surat yang pernah sampai.
+
+> Setiap Edge Function user-management **dilarang** memakai alur yang menuntut
+> pengguna membuka email. Password di-set langsung oleh Pengawas, atau tautan
+> dibuat lewat *admin generate-link* lalu **ditampilkan di aplikasi** untuk
+> dibacakan/disalin.
+
+**DILARANG:** `auth.resetPasswordForEmail()`,
+`auth.admin.inviteUserByEmail()`, `auth.signInWithOtp({ email })`.
+Ketiganya menyurati — ke alamat yang tidak ada — dan gagalnya senyap.
+
+**BOLEH:** `auth.admin.updateUserById(id, { password })` (set langsung), dan
+`auth.admin.generateLink()` yang **membuat** tautan lalu mengembalikannya ke
+pemanggil tanpa mengirim apa pun.
+
+Sistem Firebase yang berjalan sudah mematuhi aturan ini, dan itu
+terverifikasi: pencarian
+`nodemailer|sendMail|sendgrid|mailgun|smtp|generatePasswordResetLink|sendPasswordResetEmail`
+atas ke-37 berkas `functions/` menghasilkan **nol hasil**. Reset password
+bekerja lewat `admin.auth().updateUser(targetUid, { password })`
+(`resetUserPassword.js:94`) — Pengawas mengetik password baru di aplikasi.
+
+Implementasi di dokumen ini sudah sesuai: `resetUserPassword` memakai
+`updateUserById(..., { password })`, tanpa email sama sekali.
+
+---
+
 ## 1. Bentuk yang Dipilih: Satu Function, Lima Aksi
 
 Lima callable Firebase (`functions/resetUserPassword.js`) menjadi **satu**

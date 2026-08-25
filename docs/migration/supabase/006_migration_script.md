@@ -388,7 +388,7 @@ Tiga pilihan, tanpa menyentuh kode Android:
 
 | Opsi | Cara | Catatan |
 |---|---|---|
-| **A. Tautan pemulihan** (paling cepat) | `create_auth_users.js --emit-reset-links=./reset.csv` | Menghasilkan CSV berisi tautan reset per user. Bagikan **per orang**. Berkasnya setara password — jangan di-commit, hapus setelah dipakai. |
+| **A. Tautan pemulihan** (paling cepat) | `create_auth_users.js --emit-reset-links=./reset.csv` | `generateLink()` **membuat** tautan lalu mengembalikannya — Supabase TIDAK mengirimnya, jadi domain email fiktif tidak jadi masalah (lihat 008 §0). CSV dibagikan **per orang**, tangan ke tangan. Berkasnya setara password: jangan di-commit, hapus setelah dipakai. |
 | **B. Edge Function pengganti** | Tulis Edge Function Supabase yang meniru `resetUserPassword`, dipanggil di endpoint yang sama | Perlu perubahan endpoint di klien → **melanggar batasan "jangan ubah kode Android"** pada fase ini |
 | **C. Set password sementara untuk semua** | Beri password awal ke semua user saat pembuatan akun | Menyimpang dari keputusan Anda; dan password seragam untuk 1 organisasi adalah risiko nyata |
 
