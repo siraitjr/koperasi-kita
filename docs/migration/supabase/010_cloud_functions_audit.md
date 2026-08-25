@@ -139,6 +139,7 @@ karena pekerjaannya tidak ada lagi.**
 | 8 trigger `onNik*` | — | `nik_registry` digantikan index pada `nasabah.nik`. |
 | `updateNasabahIndex` | — | `nasabah_index` adalah tabel `nasabah` itu sendiri. |
 | `dailySummaryReset`, `dailyTargetRecalc`, `weeklyFullRecalc`, `summaryHealthCheck`, `dailyUpdatePelangganBermasalah` | — | Tidak ada agregat tersimpan yang perlu di-reset atau diperbaiki. |
+| `updateAllSummaries`, `triggerTargetRecalc` | — | Alasan sama. Tombol "Update Summary" di aplikasi ikut dihapus (keputusan pemilik 13 Agu 2026 — §5). |
 | 5 trigger fase approval | **Sudah ada** | Digantikan trigger Postgres `approval_advance` + `approval_urutan` (`001` §5) — sudah ditulis di Fase 1. |
 
 ### 3.2 Yang HARUS dimigrasikan
@@ -151,7 +152,7 @@ karena pekerjaannya tidak ada lagi.**
 | 14 HTTP Web (Buku Pokok, Kasir, Jurnal, Koreksi Storting, Rekening Koran) | **PostgREST langsung + RLS**, sisanya Edge Function | Sebagian besar hanya SELECT beragregat — tidak butuh function sama sekali, cukup view + RLS. `addKasirEntry`/`deleteKasirEntry`/`setKoreksiStorting` jadi Edge Function atau RPC. |
 | `generateAutoLoginToken` | **Edge Function** | Android → Web SSO. Supabase punya sesi yang bisa dioper; perlu rancangan tersendiri. |
 | `generateTakeoverToken`, `restorePimpinanSession` | **Edge Function** | Butuh `auth.admin` (impersonasi). Paling sensitif — Pimpinan mengambil alih sesi admin. |
-| `updateAllSummaries`, `triggerTargetRecalc` | **Kemungkinan besar dihapus** | Keduanya me-recalc agregat tersimpan. Kalau dashboard membaca view, tombolnya kehilangan makna. Perlu dicek ke layar yang memanggilnya. |
+| ~~`updateAllSummaries`, `triggerTargetRecalc`~~ | **DIHAPUS** — keputusan pemilik 13 Agu 2026 | `summary` jadi view; tidak ada agregat tersimpan yang perlu di-recalc. Tombolnya ikut dihapus dari aplikasi. Lihat §5. |
 | `freezeRekapHarian`, `refreezeRekapHarian` | **pg_cron + Edge Function** | Rekap beku memang snapshot yang disengaja — tetap perlu. |
 | `cleanupOldNotifications`, `cleanupOldEventHarian`, `cleanupExpiredBroadcasts`, `cleanupProcessedApprovals` | **pg_cron** | Retensi baris; cukup `delete … where created_at < now() - interval`. |
 
@@ -205,10 +206,21 @@ keluhan. Semua tahap sebelumnya gagal dengan berisik.
 
 ## 5. Yang Belum Dijawab
 
-- **`updateAllSummaries` / `triggerTargetRecalc` dipanggil dari layar mana?**
-  Ada 4 callsite di `PelangganViewModel.kt` (`:9689`, `:11360`, `:11400`,
-  `:14627`). Kalau tombolnya ada di layar Pengawas/Pimpinan, perlu diputuskan
-  apakah tombol itu dihapus atau diganti "refresh view".
+- ~~`updateAllSummaries` / `triggerTargetRecalc` dipanggil dari layar mana?~~
+  **TERJAWAB — keputusan pemilik, 13 Agu 2026: tombol "Update Summary"
+  DIHAPUS** dari aplikasi saat pekerjaan `app/` dimulai.
+
+  Alasannya: di Postgres `summary` adalah **view**, bukan agregat tersimpan
+  (`001` §12, `004` §6). Tidak ada yang perlu di-recalc — angkanya dihitung
+  saat dibaca, jadi selalu sinkron. Tombol pemicu recalc kehilangan maknanya,
+  dan membiarkannya justru menyesatkan: pengguna akan mengira ada sesuatu
+  yang perlu "diperbarui" padahal tidak pernah ada yang tertinggal.
+
+  Empat callsite yang harus dibersihkan saat `app/` dikerjakan:
+  `PelangganViewModel.kt:9689`, `:11360`, `:11400`, `:14627`, beserta
+  tombol/UI pemanggilnya.
+
+  **Belum dieksekusi** — `app/` sengaja tidak disentuh pada fase ini.
 - **`searchNikGlobal`** ter-export tetapi tidak terpanggil. Fitur yang belum
   selesai, atau dipanggil dinamis?
 - **`exportExcel.js`** tidak pernah di-export. Ekspor Excel di web memakai
