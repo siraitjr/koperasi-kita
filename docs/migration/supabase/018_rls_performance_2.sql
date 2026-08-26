@@ -1,7 +1,10 @@
 -- =========================================================================
 -- KOPERASI KITA — 018: RLS SET-BASED (lanjutan 017)
 -- 43.603 ms → 8.334 ms (017 B-1) → 9.134 ms (017 B-2, memburuk) → target < 1 s
--- RANCANGAN — BELUM PERNAH DIJALANKAN di instance mana pun.
+--
+-- STATUS: BATCH 1 SUDAH DIJALANKAN pemilik di server, setelah cast `::text[]`
+-- ditambahkan (lihat §1 catatan 2). Angka hasilnya belum dilaporkan, jadi §3
+-- masih terbuka. §4 dan §4b belum dijalankan.
 -- =========================================================================
 --
 -- Prasyarat: 001 → 001a → 002 → 017 BATCH 1 & 2 sudah terpasang.
@@ -72,7 +75,7 @@
 -- Ada dua bentuk sekali-jalan, dan keduanya dipakai — untuk keperluan yang
 -- berbeda. Salah memilih akan mengembalikan masalahnya dalam rupa lain.
 --
---   (A) `x = any ((select f()))`  — f mengembalikan ARRAY.
+--   (A) `x = any ((select f())::text[])`  — f mengembalikan ARRAY.
 --       Sublink skalar tak berkorelasi → InitPlan, dijalankan TEPAT SEKALI.
 --       Biaya per baris = pemindaian linier isi array, O(|himpunan|).
 --       BAGUS untuk himpunan kecil. Untuk 5.000 elemen × 13.189 baris =
@@ -89,11 +92,27 @@
 --   nasabah  → (B). Ribuan.
 --   pinjaman → (B). Ribuan.
 --
--- ⚠ TANDA KURUNG GANDA DI (A) BUKAN GAYA PENULISAN. `= any (f())` tanpa
---   sublink membuat f() dievaluasi PER BARIS — persis penyakit 017 Batch 2,
---   hanya berpindah tempat. `= any ((select f()))` yang menjadikannya
---   InitPlan. Kalau Anda menyunting berkas ini, jangan "merapikan" kurung
---   itu.
+-- ⚠ DUA DETAIL DI (A) YANG KEDUANYA WAJIB. Bukan gaya penulisan; menghapus
+--   salah satunya merusak berkas ini dengan cara yang berbeda-beda.
+--
+--   1. SUBLINK-nya. `= any (f())` tanpa `(select …)` membuat f() dievaluasi
+--      PER BARIS — persis penyakit 017 Batch 2, hanya berpindah tempat.
+--      Sublink itulah yang menjadikannya InitPlan sekali-jalan.
+--
+--   2. CAST `::text[]`-nya. Ini KOREKSI: versi pertama 018 menulis
+--      `= any ((select f()))` tanpa cast dan GAGAL di server dengan
+--          42883  operator does not exist: text = text[]
+--      Sebabnya tata bahasa, bukan tipe. Pada `expr = any (…)` PostgreSQL
+--      mendahulukan bentuk ANY-SUBQUERY bila isinya sublink telanjang, jadi
+--      ia mencoba membandingkan `text` (satu baris) dengan `text[]` (nilai
+--      yang dikembalikan fungsi) dan tidak menemukan operatornya. Cast itu
+--      membuat isinya menjadi EKSPRESI, bukan sublink telanjang, sehingga
+--      terpilih bentuk ANY-ARRAY yang memang dimaksud.
+--
+--      Cast-nya TIDAK mengubah tipe apa pun — `cabang_terlihat_arr()` sudah
+--      `text[]`. Fungsinya semata memaksa cabang parser yang benar, dan
+--      InitPlan-nya tetap dijalankan sekali. Jangan dihapus dengan alasan
+--      "cast yang mubazir".
 
 -- =========================================================================
 -- 2. PERKIRAAN BIAYA (perkiraan saya, bukan pengukuran)
@@ -177,7 +196,7 @@ as $$
   select n.id
     from koperasi.nasabah n
    where n.admin_id = auth.uid()
-      or n.cabang_id = any ((select koperasi_priv.cabang_terlihat_arr()))
+      or n.cabang_id = any ((select koperasi_priv.cabang_terlihat_arr())::text[])
 $$;
 
 -- -------------------------------------------------------------------------
@@ -196,7 +215,7 @@ as $$
     from koperasi.pinjaman p
     join koperasi.nasabah  n on n.id = p.nasabah_id
    where n.admin_id = auth.uid()
-      or n.cabang_id = any ((select koperasi_priv.cabang_terlihat_arr()))
+      or n.cabang_id = any ((select koperasi_priv.cabang_terlihat_arr())::text[])
 $$;
 
 revoke all on function
@@ -223,7 +242,7 @@ create policy nasabah_baca on koperasi.nasabah
   for select to authenticated
   using (
     admin_id = auth.uid()
-    or cabang_id = any ((select koperasi_priv.cabang_terlihat_arr()))
+    or cabang_id = any ((select koperasi_priv.cabang_terlihat_arr())::text[])
   );
 
 drop policy if exists pinjaman_baca on koperasi.pinjaman;
@@ -308,7 +327,7 @@ rollback;
 --
 --   3. `InitPlan` untuk `cabang_terlihat_arr` muncul TEPAT SEKALI, dan
 --      `Function Scan on cabang_terlihat_arr` TIDAK punya `loops` ribuan.
---      Kalau `loops` besar, tanda kurung ganda di §1 hilang.
+--      Kalau `loops` besar, sublink `(select …)` di §1 hilang.
 --
 --   4. TIDAK ada lagi `Function Scan on boleh_lihat_pinjaman` /
 --      `boleh_lihat_nasabah` dengan `loops` 13.189 / 3.026.
@@ -347,7 +366,7 @@ begin
 
     select count(*) into n_beda
       from koperasi.cabang c
-     where (c.id = any ((select koperasi_priv.cabang_terlihat_arr())))
+     where (c.id = any ((select koperasi_priv.cabang_terlihat_arr())::text[]))
            is distinct from
            koperasi_priv.boleh_lihat_cabang_lama(c.id);
 
@@ -454,7 +473,8 @@ $$;
 --
 -- 5.2  `Function Scan on cabang_terlihat_arr` ber-`loops` ribuan.
 --      Tanda kurung ganda hilang saat menyunting. Kembalikan bentuk
---      `= any ((select …))` — lihat peringatan di §1.
+--      `= any ((select …)::text[])` — lihat peringatan di §1,
+--      TERMASUK cast-nya: tanpa cast bukan lambat, tapi gagal 42883.
 --
 -- 5.3  Pemilik fungsi tidak punya BYPASSRLS (§2b).
 --      Pindahkan kepemilikan ke pemilik skema:
@@ -514,7 +534,11 @@ $$;
 -- #########################################################################
 -- #   CATATAN                                                             #
 -- #########################################################################
--- Berkas ini BELUM PERNAH DIJALANKAN. Tidak ada PostgreSQL di sisi penulis.
+-- BATCH 1 sudah dijalankan pemilik, dengan satu suntingan di server: cast
+-- `::text[]` pada tiga kemunculan. Suntingan itu kini masuk ke berkas ini,
+-- ditambah satu kemunculan keempat di §4(a) yang belum dijalankan dan akan
+-- kena galat 42883 yang sama. Sisa berkas (§3-§6) belum dijalankan, dan
+-- tidak ada PostgreSQL di sisi penulis.
 -- Angka 43.603 / 8.334 / 9.134 ms dan hitungan loop 13.189 / 3.026 adalah
 -- pengukuran ANDA; §0 adalah penjelasan atasnya dari pembacaan kode, dan §2
 -- adalah perkiraan — bukan pengukuran tandingan. Perkiraan saya di 017
