@@ -331,7 +331,17 @@ Supabase rekapnya view beragregat — tidak ada yang perlu disesuaikan.
   → 016a_operasional_harian.sql      (buat tabel + RLS)
     → migrate_operasional_harian.js  (dry-run, lalu --execute)
       → 015 BATCH B-4                (RPC)
+        → 019_backfill_kasir_auto_ops.sql
+          → baru web dialihkan memanggil RPC
 ```
+
+**Langkah 019 wajib, dan ditemukan lewat pengujian pemilik, bukan lewat
+perancangan.** `migrate.js:973/983` memberi `id` dan `client_op_id` nilai
+yang sama (uuidv5 dari kunci RTDB), sedangkan B-4 mencari barisnya lewat
+`md5('auto_ops:'||cabang||':'||tanggal)`. Dua rumus berbeda untuk baris yang
+sama → RPC tidak mengenali entri warisan, menyimpulkan "belum ada", lalu
+INSERT. Hasilnya dua baris untuk satu hari dan rekap kasir yang menggelembung.
+019 menyelaraskan kuncinya. Rinciannya di berkas itu.
 
 B-4 dijalankan lebih dulu tidak merusak apa pun — fungsinya tetap tercipta —
 tetapi panggilan pertamanya gagal `42P01 relation does not exist`.
