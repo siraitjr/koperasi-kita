@@ -1,315 +1,388 @@
-# 021 — Evakuasi Penuh dari Firebase (revisi)
+# 021 — Evakuasi Penuh dari Firebase
 
-> **Revisi total.** Versi pertama dokumen ini menyusun cut-over bertahap
-> dengan Firebase sebagai jaring pengaman. **Premis itu batal.** Tagihan
-> Firebase tidak dibayar; Auth + RTDB + Functions + Hosting akan suspend.
-> **Tidak ada rollback.** Yang belum pindah pada hari-H tidak akan hidup lagi.
+> **CUTOFF: Selasa, 1 September 2026.** Hari ini Rabu, 26 Agustus 2026.
+> **Sisa 6 hari kalender — 4 hari kerja.**
+> Firebase Auth + RTDB + Functions + Hosting suspend. **Tidak ada rollback.**
+> Yang belum pindah pada hari itu tidak akan hidup lagi.
 
-**TANGGAL CUTOFF: `[ISI DI SINI]`** — seluruh tanggal di bawah relatif
-terhadapnya (D-21, D-14, …). Isi satu kali di baris ini; jangan sebar
-salinannya ke berkas lain.
+Perencanaan + backend. Tidak ada kode web/Android yang saya ubah. Nomor baris
+dari pembacaan repo.
 
-Perencanaan + backend. **Tidak ada kode web/Android yang saya ubah.**
-Nomor baris dari pembacaan repo.
+---
+
+## 0. Kalender, dan apa yang tidak muat
+
+| | Tanggal | Hari | Isi |
+|---|---|---|---|
+| **D-6** | 26 Agu | Rabu | pastikan host · mulai ekspor · jalankan 022+023 |
+| **D-5** | 27 Agu | Kamis | rk.html pindah host · klien+login Supabase |
+| **D-4** | 28 Agu | Jumat | alihkan 13 fungsi · kasir · absensi semua peran |
+| **D-3** | 29 Agu | **Sabtu** | Android v2 |
+| **D-2** | 30 Agu | **Minggu** | sebar APK · password staf |
+| **D-1** | 31 Agu | Senin | uji beku |
+| **D-0** | 1 Sep | Selasa | **cutoff** |
+
+**D-3 dan D-2 jatuh di akhir pekan.** Kalau tidak ada yang bekerja Sabtu–Minggu,
+sisa waktu sesungguhnya **4 hari kerja**, dan Android v2 terdorong ke Senin —
+menyisakan nol hari untuk uji beku. Ini yang harus diputuskan hari ini juga,
+bukan Jumat sore.
+
+### Yang saya nilai TIDAK MUAT, dan sarannya
+
+**Ekspor Firebase Storage (foto KTP bertahun-tahun) tidak akan selesai dalam
+6 hari** bila dikerjakan sambil mengerjakan yang lain. Ini tiang paling
+panjang dan paling sering diremehkan.
+
+Saran: **jalankan ekspornya sebagai proses terpisah mulai hari ini, jangan
+jadikan syarat cutoff.** Foto KTP tidak menghalangi orang bekerja pada D-0 —
+yang menghalangi adalah login, pencatatan, dan rekening koran. Kalau Storage
+belum selesai pada D-0, yang hilang adalah arsip foto, bukan kemampuan
+beroperasi. **Tetapi ia hilang permanen**, jadi mulai sekarang dan pantau
+tiap hari.
+
+Prioritas kalau waktu habis, berurutan:
+1. Login (tanpa ini tidak ada yang bisa bekerja)
+2. Ekspor RTDB penuh (tidak bisa diulang setelah suspend)
+3. Pencatatan: operasional, absensi, kasir
+4. Rekening koran
+5. Storage
+6. Android v2 — **kalau tidak selesai, staf lapangan pindah ke web sementara**
+
+Poin 6 itu jalan keluar yang tersedia dan sebaiknya disiapkan sejak sekarang:
+web berjalan di browser HP. Ia tidak menggantikan APK (tidak ada mode
+offline, tidak ada scan KTP), tetapi ia menahan agar orang tidak berhenti
+bekerja.
 
 ---
 
 ## 1. Yang mati, dan apa akibatnya
 
-| Layanan Firebase | Dipakai untuk | Akibat saat suspend |
+| Layanan | Dipakai untuk | Akibat |
 |---|---|---|
-| **Auth** | login web (`lib/firebase.js:26`), login Android | tidak ada yang bisa masuk, di mana pun |
-| **RTDB** | seluruh data operasional Android; `operasional_harian` + `absensi` di web | Android buta total; kasir tidak bisa mencatat |
-| **Functions** | 13 fungsi `lib/api.js` | seluruh dashboard web gagal memuat |
+| **Auth** | login web (`lib/firebase.js:26`) & Android | tidak ada yang bisa masuk |
+| **RTDB** | data operasional Android; `operasional_harian` + `absensi` di web | Android buta; kasir tidak bisa mencatat |
+| **Functions** | 13 fungsi `lib/api.js` | dashboard gagal memuat |
 | **Hosting** | `public/rk.html` | **halaman rekening koran hilang** |
 
-### 1.1 Temuan hosting — divalidasi dari repo
+### 1.1 Hosting — divalidasi dari repo
 
-**`rk.html` ADA di Firebase Hosting.** `firebase.json` → `"hosting": {"public": "public"}`, dan `public/` hanya berisi `rk.html`. Android
-menunjuknya di `RekeningKoranHelper.kt:37`:
+**`rk.html` MEMANG di Firebase Hosting.** `firebase.json` →
+`"hosting": {"public": "public"}`, dan `public/` hanya berisi `rk.html`.
+Android menunjuknya di `RekeningKoranHelper.kt:37`:
 
 ```kotlin
 private const val BASE_URL = "https://koperasikitagodangulu.web.app/rk.html"
 ```
 
-Jadi benar: **`rk.html` mati bersama Hosting, dan halamannya sendiri harus
-pindah host — mengganti konstanta API saja tidak cukup.** Rencana lama
-(langkah 1: ubah satu konstanta) sudah tidak berlaku.
+Jadi benar: **halamannya sendiri harus pindah host; mengganti konstanta API
+saja tidak cukup.**
 
-Lebih jauh: host itu **hardcoded di APK**. Setelah Hosting mati, seluruh
-tautan buatan APK lama menunjuk ke alamat yang tidak ada — dan tidak bisa
-ditolong redirect, karena redirect-nya pun harus tinggal di Hosting yang
-mati. **Tautan rekening koran yang sudah beredar hilang permanen.** Itu
-alasan pertama pembuat tautan sisi-server (§3.3) tidak bisa ditunda.
+Dan karena host itu **hardcoded di APK**, setelah Hosting mati seluruh tautan
+buatan APK lama menunjuk alamat yang tidak ada — tidak bisa ditolong
+redirect, karena redirect-nya pun harus tinggal di Hosting yang mati.
+**Tautan rekening koran yang sudah beredar hilang permanen.** Itu sebabnya
+pembuat tautan sisi-server (§3.3) tidak bisa ditunda.
 
-**`buku-pokok-web` kemungkinan besar TIDAK di Firebase Hosting.** Buktinya:
+**`buku-pokok-web` kemungkinan besar BUKAN di Firebase Hosting:**
 
-- `firebase.json` hanya punya satu target hosting, dan isinya `public/`.
-- `next.config.js` **tidak** memakai `output: 'export'`, jadi butuh runtime
-  Node — Firebase Hosting statis tidak bisa menyajikannya.
-- Origin-nya `https://www.koperasi-kita.com`
-  (`functions/generateAutoLoginToken.js:17`), domain kustom, bukan
-  `*.web.app`.
-- Tidak ada `vercel.json`, `netlify.toml`, `Dockerfile`, atau workflow CI di
-  repo.
+- `firebase.json` hanya punya satu target hosting, isinya `public/`;
+- `next.config.js` tanpa `output: 'export'` → butuh runtime Node, yang
+  Firebase Hosting statis tidak sediakan;
+- origin-nya `https://www.koperasi-kita.com`
+  (`functions/generateAutoLoginToken.js:17`) — domain kustom, bukan `*.web.app`;
+- tidak ada `vercel.json`, `netlify.toml`, `Dockerfile`, atau CI di repo.
 
-> **VERIFIKASI MANUAL D-21, JANGAN DIASUMSIKAN.** Repo tidak memuat
-> konfigurasi deploy web sama sekali, jadi kesimpulan di atas berdasar bukti
-> tak-langsung. Buka dasbor penyedia hosting `www.koperasi-kita.com` dan
-> pastikan. **Kalau ternyata ia Firebase Hosting, dashboard ikut mati** dan
-> pemindahan hostnya naik ke prioritas tertinggi bersama `rk.html`.
+> **PASTIKAN HARI INI — bukti di atas tak-langsung.** Buka dasbor penyedia
+> `www.koperasi-kita.com`. **Kalau ternyata Firebase Hosting, dashboard ikut
+> mati** dan pemindahan hostnya naik ke prioritas tertinggi. Ini satu-satunya
+> hal yang bisa membalik seluruh jadwal, dan repo tidak bisa menjawabnya.
 
 ---
 
-## 2. Peta ketergantungan Firebase di web
+## 2. Peta ketergantungan web
 
 | # | Lokasi | Ketergantungan | Pengganti |
 |---|---|---|---|
 | W-1 | `lib/firebase.js:9-30` | Auth + Storage + RTDB | `lib/supabase.js` |
 | W-2 | `lib/api.js:8` | `BASE_URL` Cloud Functions | PostgREST + RPC |
-| W-3 | `lib/api.js:19,55` | `getIdToken()` Firebase | sesi Supabase |
+| W-3 | `lib/api.js:19,55` | `getIdToken()` | sesi Supabase |
 | W-4 | `lib/api.js:81-171` | 13 fungsi | view + RPC Tahap B |
-| W-5 | `kasir/page.js:3796` | tulis RTDB `operasional_harian` | **`rpc_catat_operasional_harian`** (022) |
+| W-5 | `kasir/page.js:3796` | tulis RTDB `operasional_harian` | `rpc_catat_operasional_harian` (022) |
 | W-6 | `kasir/page.js:3702` | baca RTDB `operasional_harian` | `select` (policy 016a) |
-| W-7 | `kasir/page.js:3758-3759` | tulis RTDB `absensi` + `user_absensi_today` | **`rpc_catat_absensi`** (023) |
+| W-7 | `kasir/page.js:3758-3759` | tulis RTDB `absensi` ×2 | `rpc_catat_absensi` (023) |
 | W-8 | `kasir/page.js:3682,3690` | baca RTDB `absensi` | `v_absensi_hari_ini` (023) |
-| W-9 | `kasir/page.js:11` | Firebase Storage (nota kasir) | Supabase Storage (003) |
+| W-9 | `kasir/page.js:11` | Firebase Storage (nota) | Supabase Storage (003) |
 | W-10 | `public/rk.html:392` | URL Cloud Function | Edge Function `rekening-koran` |
-| W-11 | `public/rk.html` (host) | Firebase Hosting | host baru |
+| W-11 | `public/rk.html` (host) | Firebase Hosting | **Supabase Storage** (§7) |
 
-13 fungsi di W-4, seluruhnya sudah punya pengganti teruji:
+### 13 fungsi `lib/api.js`
 
-| `lib/api.js` | Pengganti | |
+| Fungsi | Baris | Pengganti |
 |---|---|---|
-| `getSummary` `:81` | view Tahap B | B-1/B-2 |
-| `getBukuPokok` `:88` | `v_buku_pokok` | B-1 |
-| `getPembayaranHariIni` `:98` | `v_pembayaran_hari_ini` | B-2 |
-| `getKasirSummary` `:109` | view kasir | B-3.3 |
-| `getKasirEntries` `:116` | `v_kasir_entry` | B-3 |
-| `addKasirEntry` `:123` | `rpc_tambah_kasir_entry` | B-4 |
-| `deleteKasirEntry` `:130` | `rpc_hapus_kasir_entry` | B-4 |
-| `syncOperasionalTransport` `:137` | `rpc_sync_operasional_transport` | B-4 |
-| `getJurnalTransaksi` `:148` | view jurnal | B-3 |
-| `backfillJurnalTransaksi` `:155` | — **lihat §6** | — |
-| `getKoreksiStorting` `:162` | view koreksi | B-3 |
-| `setKoreksiStorting` `:169` | `rpc_set_koreksi_storting` | B-4 |
-| `getBukuPokokSummary` | `v_buku_pokok_summary` | B-2 |
+| `getSummary` | 81 | view B-1/B-2 |
+| `getBukuPokok` | 88 | `v_buku_pokok` |
+| `getBukuPokokSummary` | — | `v_buku_pokok_summary` |
+| `getPembayaranHariIni` | 98 | `v_pembayaran_hari_ini` |
+| `getKasirSummary` | 109 | view kasir B-3.3 |
+| `getKasirEntries` | 116 | `v_kasir_entry` |
+| `addKasirEntry` | 123 | `rpc_tambah_kasir_entry` |
+| `deleteKasirEntry` | 130 | `rpc_hapus_kasir_entry` |
+| `syncOperasionalTransport` | 137 | `rpc_sync_operasional_transport` |
+| `getJurnalTransaksi` | 148 | view jurnal B-3 |
+| `backfillJurnalTransaksi` | 155 | **HAPUS TOMBOLNYA** (keputusan pemilik) |
+| `getKoreksiStorting` | 162 | view koreksi B-3 |
+| `setKoreksiStorting` | 169 | `rpc_set_koreksi_storting` |
+
+`backfillJurnalTransaksi`: alat sesekali, bukan fitur harian. Tombolnya
+dihapus dari web; kalau nanti dibutuhkan, dibuat RPC baru. **Catat di CHANGELOG
+bahwa ia sengaja ditinggalkan**, supaya enam bulan lagi tidak dikira hilang
+karena kelalaian migrasi.
 
 ---
 
-## 3. Backend yang hilang — sudah dikerjakan dalam commit ini
+## 3. Backend yang hilang — sudah selesai
 
 | Berkas | Isi | Membuka |
 |---|---|---|
 | `022_operasional_tulis.sql` | `app_user.legacy_uid` + `rpc_catat_operasional_harian` | W-5 |
-| `023_absensi.sql` | tabel `absensi`, `v_absensi_hari_ini`, `rpc_catat_absensi` | W-7, W-8 |
+| `023_absensi.sql` | tabel `absensi`, `v_absensi_hari_ini`, `rpc_catat_absensi(p_cabang_id)` | W-7, W-8 |
 | `supabase/functions/rekening-koran-link/` | pembuat tautan v2 sisi server | ketergantungan APK |
 
-### 3.1 `022` — jembatan identitas yang selama ini tidak ada
+### 3.1 `022` — jembatan identitas
 
 `operasional_harian` ber-PK `(cabang_id, tanggal, legacy_uid)`, dan
 `legacy_uid` itu **UID Firebase**. Sesudah Firebase mati klien hanya punya
 uuid Supabase — dan `app_user` **tidak punya kolom** yang memetakan keduanya.
+Tanpa jembatan itu, baris pasca-evakuasi memakai identitas berbeda dari baris
+warisan untuk orang yang sama, dan riwayat satu staf terbelah dua.
 
-Tanpa jembatan itu, baris pasca-evakuasi memakai identitas berbeda dari
-baris warisan **untuk orang yang sama**, dan riwayat satu staf terbelah dua.
-`022` menambah `app_user.legacy_uid` dan mem-backfill-nya dari dua sumber
-yang sudah memuat pasangannya (`operasional_harian.user_id`+`legacy_uid`,
-dan `nasabah.admin_id`+`legacy_admin_uid`) — uuidv5 tidak bisa dibalik, jadi
-ini satu-satunya jalan.
+`022` menambah `app_user.legacy_uid` + backfill dari dua sumber yang sudah
+memuat pasangannya (`operasional_harian.user_id`+`legacy_uid`,
+`nasabah.admin_id`+`legacy_admin_uid`); uuidv5 tidak bisa dibalik, jadi ini
+satu-satunya jalan.
 
-### 3.2 `023` — absensi
+### 3.2 `023` — dan satu cacat yang ditemukan keputusan Anda
 
-Brief masih memuat penanda kosong `[MIGRASIKAN_SEKARANG / TANGGUHKAN]`. Saya
-kerjakan dengan asumsi **MIGRASIKAN**, karena pada premis baru "tangguhkan"
-bukan lagi "kerjakan nanti":
+Keputusan "koordinator harus bisa absen di web" **membongkar versi pertama
+`rpc_catat_absensi`**, dan cacatnya nyata:
 
-> Absensi hanya hidup di RTDB. Menangguhkan = fitur **berhenti** pada
-> cutoff, dan seluruh riwayatnya **hilang permanen**.
+`001a:127` membolehkan `cabang_id` NULL untuk `pengawas`, `koordinator`, dan
+`sekretaris`. Versi pertama menolak siapa pun tanpa cabang dengan
+`23514 'User tidak memiliki cabang'` — jadi **koordinator tidak akan bisa
+absen sama sekali**, dan itu baru ketahuan saat orangnya mencoba, kemungkinan
+besar pada D-0.
 
-Kalau ternyata dipilih tangguhkan, berkas itu tinggal tidak dijalankan —
-tanpa ongkos. Yang tidak bisa diperbaiki belakangan adalah kebalikannya.
-**Ekspor `absensi/` tetap wajib sebelum cutoff apa pun keputusannya.**
+Sudah diperbaiki: `rpc_catat_absensi(p_cabang_id text default null)`. Peran
+tanpa cabang **wajib menyebut** di cabang mana ia hadir, dibatasi
+`cabang_terlihat_arr()`. Peran bercabang tetap tidak bisa memindahkan diri ke
+cabang lain.
 
-### 3.3 `rekening-koran-link` — memutus ketergantungan APK
+> Ujilah dengan **JWT koordinator sungguhan**. Menguji hanya dengan akun
+> kasir akan lulus dan tetap menyembunyikan cacat ini.
 
-Staf web meminta tautan; server yang menandatangani. Kunci tidak pernah
-masuk bundel web. Host tautan dari env `REKENING_KORAN_BASE_URL`, jadi bisa
-diganti tanpa rilis apa pun. Ini yang membuat rekening koran tetap jalan
-walau seluruh APK di lapangan masih versi lama.
+### 3.3 `rekening-koran-link`
+
+Staf minta, server yang menandatangani. Kunci tidak pernah masuk bundel web;
+host tautan dari `REKENING_KORAN_BASE_URL`, bisa diganti tanpa rilis. Ada
+pemeriksaan wewenang atas nasabahnya — tanpa itu, kebocoran hanya pindah dari
+"menempa token" ke "meminta token".
 
 ---
 
-## 4. Jadwal evakuasi
+## 4. Checklist D-6 → D-0
 
-Urutan ditentukan **ketergantungan**, bukan risiko — tidak ada lagi
-kemewahan memilih yang paling aman dulu.
+### D-6 · Rabu 26 Agu — pastikan & selamatkan
 
-### D-21 — pastikan dan selamatkan
-
-- [ ] **Pastikan host `www.koperasi-kita.com`** (§1.1). Ini menentukan
-      apakah ada satu pemindahan host atau dua.
-- [ ] **Ekspor penuh RTDB** dan simpan di dua tempat berbeda. Termasuk node
-      yang belum tersentuh migrasi: `absensi`, `user_absensi_today`,
-      `operasional_harian` terbaru, `fcm_tokens`, `broadcast_messages`,
-      `location_tracking`, `user_locations`, `device_presence`.
-      **Setelah suspend, ekspor tidak mungkin lagi.**
-- [ ] **Ekspor Firebase Storage** (foto KTP, foto profil, nota kasir) ke
-      Supabase Storage (`003`). Volumenya paling besar dan paling lambat —
-      mulai paling awal.
-- [ ] Jalankan `022`, lalu `023` bila diputuskan migrasi.
+- [ ] **Pastikan host `www.koperasi-kita.com`** (§1.1). Paling dulu; ia bisa
+      membalik seluruh jadwal.
+- [ ] **Mulai ekspor Firebase Storage** sebagai proses latar. Jangan tunggu
+      selesai.
+- [ ] **Ekspor RTDB penuh**, simpan di dua tempat. Termasuk node yang belum
+      tersentuh migrasi: `absensi`, `user_absensi_today`, `operasional_harian`
+      terbaru, `fcm_tokens`, `broadcast_messages`, `location_tracking`,
+      `user_locations`, `device_presence`.
+- [ ] Jalankan `022`. Periksa hasil backfill:
+      `select count(*) filter (where legacy_uid is null) from koperasi.app_user where aktif;`
+- [ ] Jalankan `023`. Uji `rpc_catat_absensi` dengan JWT **kasir, admin,
+      pimpinan, DAN koordinator** (§3.2).
 - [ ] Impor riwayat `absensi` (pola `migrate_operasional_harian.js`).
+- [ ] Uji rantai penuh operasional: `rpc_catat_operasional_harian` →
+      `rpc_sync_operasional_transport` → periksa entri kasir (`022` §VERIFIKASI).
 - [ ] Daftar seluruh akun staf yang harus bisa login (§5).
 
-### D-14 — web berdiri di atas Supabase
+### D-5 · Kamis 27 Agu — rk.html & fondasi web
 
-- [ ] **Pindahkan host `rk.html`.** Opsi termurah di §7.
-- [ ] `rk.html:392` → URL Edge Function `rekening-koran`.
-- [ ] Deploy `rekening-koran-link`; set `REKENING_KORAN_BASE_URL` ke host
-      baru `rk.html`.
-- [ ] `npm i @supabase/supabase-js`; buat `lib/supabase.js` (URL + anon key
-      dari `NEXT_PUBLIC_*`, **bukan** literal — pelajaran `014` §6.4).
-- [ ] Ganti login ke `signInWithPassword` (§5).
-- [ ] Alihkan 13 fungsi `lib/api.js` (§2), satu per satu, bandingkan angka
-      terhadap Cloud Functions **selagi keduanya masih hidup** — sesudah
-      cutoff tidak ada pembanding lagi.
-- [ ] Alihkan W-5..W-9 di `kasir/page.js`.
-- [ ] Tambah tombol "Salin Tautan Rekening Koran" yang memanggil
-      `rekening-koran-link`.
+- [ ] Buat bucket publik Supabase, unggah `rk.html` (§7).
+- [ ] Ubah `rk.html:392` → URL Edge Function `rekening-koran`.
+- [ ] Deploy `rekening-koran-link`; set `REKENING_KORAN_BASE_URL` = URL
+      bucket.
+- [ ] Uji tautan v2 ujung-ke-ujung dari HP di jaringan seluler.
+- [ ] `npm i @supabase/supabase-js`; `lib/supabase.js` (URL + anon key dari
+      `NEXT_PUBLIC_*`, **bukan literal** — `014` §6.4).
+- [ ] Ganti login ke `signInWithPassword` (§5). Firebase Auth masih terpasang
+      hari ini; jangan cabut dulu.
+- [ ] Pengawas bangkitkan password awal untuk seluruh staf.
 
-### D-7 — Android v2 (§8)
+### D-4 · Jumat 28 Agu — alihkan web
 
-- [ ] Rilis APK v2. Sebarkan lewat saluran langsung (WhatsApp/USB), **jangan
-      andalkan Play Store review** yang bisa memakan berhari-hari.
-- [ ] Pantau adopsi. Staf yang belum memperbarui akan buta total pada D-0.
+Hari kerja terakhir sebelum akhir pekan. Selesaikan yang menghalangi orang
+bekerja.
 
-### D-3 — uji beku
+- [ ] Alihkan 13 fungsi `lib/api.js` (§2), satu per satu, **bandingkan
+      angkanya terhadap Cloud Functions selagi keduanya masih hidup** —
+      setelah D-0 tidak ada pembanding lagi.
+- [ ] Hapus tombol `backfillJurnalTransaksi`.
+- [ ] Alihkan W-5, W-6 (operasional) — **sekaligus, tanpa tulis-ganda**.
+- [ ] Alihkan W-7, W-8 (absensi).
+- [ ] **Tambah UI absensi untuk admin/pimpinan/koordinator** — bukan hanya
+      halaman kasir. Koordinator butuh pemilih cabang (§3.2).
+- [ ] Tambah tombol "Salin Tautan Rekening Koran".
+- [ ] Alihkan W-9 (nota kasir) ke Supabase Storage.
+- [ ] Uji dengan **tiga peran**; bandingkan jumlah baris dengan
+      `Prefer: count=exact` supaya tidak tertipu paginasi (`018`).
 
-- [ ] Satu hari kerja penuh, seluruh alur di Supabase saja.
-- [ ] **Matikan Firebase lebih dulu secara sengaja** — cabut config web,
-      matikan APK lama di satu perangkat uji — dan lihat apa yang patah
-      **selagi masih bisa dihidupkan lagi**. Ini satu-satunya kesempatan
-      menemukan ketergantungan yang terlewat.
+### D-3 · Sabtu 29 Agu — Android v2
+
+- [ ] Bangun APK v2 (§8). **Kalau tidak ada yang bekerja Sabtu, geser ke
+      Senin dan terima bahwa uji beku hilang** — putuskan hari ini.
+- [ ] Uji internal di satu perangkat.
+
+### D-2 · Minggu 30 Agu — sebar
+
+- [ ] Sebar APK lewat WhatsApp/USB. **Jangan andalkan Play Store review.**
+- [ ] Lacak adopsi **per orang**, bukan per rilis.
+- [ ] Serahkan password awal ke tiap staf; pastikan mereka berhasil login
+      **sebelum** D-0, bukan pada D-0.
+
+### D-1 · Senin 31 Agu — uji beku
+
+- [ ] **Matikan Firebase secara sengaja** di satu perangkat uji dan di satu
+      sesi web (cabut config). Lihat apa yang patah **selagi masih bisa
+      dihidupkan lagi.** Ini satu-satunya latihan yang mungkin.
+- [ ] Satu hari kerja penuh di Supabase saja: absen, catat operasional, sync,
+      entri kasir, buka buku pokok, buat tautan rekening koran.
 - [ ] Bekukan perubahan non-darurat.
+- [ ] Ekspor RTDB **sekali lagi** — menangkap perubahan sejak D-6.
 
-### D-0 — cutoff
+### D-0 · Selasa 1 Sep — cutoff
 
+- [ ] Pastikan ekspor RTDB & Storage tersimpan aman.
 - [ ] Hapus `firebase` dari `buku-pokok-web/package.json`; hapus
-      `lib/firebase.js`; pastikan `grep -rn "firebase" buku-pokok-web/`
-      bersih kecuali komentar.
-- [ ] Arsipkan `functions/` dan `public/` di repo (**jangan dihapus** —
-      aturan repo, dan keduanya jadi rujukan perilaku lama).
+      `lib/firebase.js`; `grep -rn "firebase" buku-pokok-web/` harus bersih
+      kecuali komentar.
+- [ ] Arsipkan `functions/` dan `public/` di repo — **jangan dihapus**
+      (aturan repo; keduanya rujukan perilaku lama).
+- [ ] Siapkan nomor kontak untuk staf yang terkendala hari itu.
 
 ---
 
-## 5. Login web + password awal
+## 5. Login web & password awal
 
 `signInWithPassword` ke akun `@godangulu.com` hasil migrasi.
 
-**Kendala yang mengikat:** domain `@godangulu.com` **fiktif** — tidak ada
-kotak surat. Setiap alur "kirim tautan reset" mustahil. Aturan ini sudah
-berlaku sejak `008` §0 dan tetap berlaku di sini.
+**Domain `@godangulu.com` fiktif** — tidak ada kotak surat, jadi setiap alur
+"kirim tautan reset" mustahil (`008` §0). Password awal:
 
-Karena itu password awal **tidak boleh** lewat email:
-
-1. **Pengawas** membangkitkan password awal per staf lewat Edge Function
-   `user-management` (Milestone 4) — password acak ditampilkan **di layar**,
-   dicatat pengawas, diserahkan langsung.
+1. **Pengawas** membangkitkan password acak per staf lewat Edge Function
+   `user-management` — ditampilkan **di layar**, dicatat, diserahkan langsung.
 2. Staf login, lalu **wajib ganti password** di pemakaian pertama.
-3. Pemulihan lupa-password menempuh jalur yang sama: pengawas
-   membangkitkan ulang. Tidak ada pemulihan mandiri, dan itu memang
+3. Lupa password: pengawas membangkitkan ulang. Tidak ada pemulihan mandiri —
    konsekuensi domain fiktif.
 
-**Jangan pakai satu password sama untuk semua staf**, sekalipun sementara.
-`013` §4 mencatat tiga akun uji berbagi satu password sementara — itu dapat
-diterima untuk pengujian, **tidak** untuk seluruh staf di produksi tanpa
-jaring pengaman Firebase.
+**Jangan satu password sama untuk semua staf**, sekalipun sementara. `013` §4
+memakai satu password bersama untuk tiga akun uji; itu dapat diterima untuk
+pengujian, **tidak** untuk seluruh staf produksi tanpa jaring pengaman.
 
-> Password apa pun **tidak ditulis di repo**, termasuk di berkas ini —
-> alasan yang sama seperti `006` §3.6: yang ter-commit tetap ada di riwayat
-> git selamanya.
+> Password tidak ditulis di repo, termasuk di berkas ini — yang ter-commit
+> tetap ada di riwayat git selamanya (`006` §3.6).
 
----
-
-## 6. `backfillJurnalTransaksi` — satu-satunya tanpa pengganti
-
-`lib/api.js:155`. Tidak ada padanannya di Tahap B, dan `010` mengklasifikasi
-fungsi backfill sebagai perawatan sekali-jalan, bukan alur harian.
-
-**Keputusan yang dibutuhkan sebelum D-14:** dipakai rutin, atau alat
-perbaikan sesekali? Kalau rutin, ia butuh RPC sendiri dan harus masuk
-jadwal. Kalau tidak, hapus tombolnya dari web dan catat sebagai fitur yang
-sengaja ditinggalkan. Menemukannya hilang pada D-0 adalah kemungkinan
-terburuk.
+**Uji login tiap staf pada D-2, bukan D-0.** Akun yang gagal login pada hari
+cutoff tidak punya jalan keluar.
 
 ---
 
-## 7. Pemindahan host — opsi termurah
+## 6. `rk.html` → Supabase Storage (Opsi A, Rp 0)
 
-`rk.html` adalah satu berkas HTML statis tanpa proses build.
+`rk.html` satu berkas statis tanpa build.
 
-| Opsi | Ongkos | Catatan |
-|---|---|---|
-| **Supabase Storage bucket publik** | **Rp 0**, sudah berlangganan | Taruh `rk.html` di bucket publik; URL-nya langsung dipakai `REKENING_KORAN_BASE_URL`. **Tidak menambah vendor, tidak menambah tagihan** — itulah kenapa saya sarankan ini. |
-| Cloudflare Pages / Netlify / GitHub Pages | gratis | Perlu akun & domain baru; satu vendor lagi untuk diurus |
-| Ikut host `buku-pokok-web` | gratis | Taruh di `buku-pokok-web/public/rk.html` → tersaji di `/rk.html`. **Paling rapi bila web memang bukan di Firebase.** Bergantung hasil verifikasi §1.1 |
+```bash
+# bucket publik
+supabase storage create rk-public --public          # atau lewat dasbor
+supabase storage cp public/rk.html ss:///rk-public/rk.html \
+  --content-type "text/html; charset=utf-8"
+```
 
-Rekomendasi: **verifikasi §1.1 dulu.** Kalau web di host non-Firebase, pakai
-opsi ketiga — nol vendor baru, nol URL baru untuk diurus. Kalau tidak, pakai
-Supabase Storage.
+URL-nya:
+`https://<ref>.supabase.co/storage/v1/object/public/rk-public/rk.html`
+→ masuk ke `REKENING_KORAN_BASE_URL`.
 
-Apa pun pilihannya, host itu masuk ke `REKENING_KORAN_BASE_URL` dan bisa
-diganti belakangan tanpa rilis.
+Tiga hal yang perlu diperiksa saat mengunggah:
+
+1. **`Content-Type` harus `text/html`.** Kalau terunggah sebagai
+   `application/octet-stream`, browser mengunduhnya alih-alih menampilkan.
+2. **Query string harus lolos.** `rk.html:400` membaca `?t=`; pastikan URL
+   bucket menerimanya (seharusnya ya — Storage mengabaikan query tak dikenal).
+3. **Uji dari HP di jaringan seluler**, bukan hanya desktop. Tautan ini
+   dibuka nasabah lewat WhatsApp.
+
+Kalau §1.1 ternyata menunjukkan web **bukan** di Firebase, alternatif yang
+lebih rapi: taruh `rk.html` di `buku-pokok-web/public/rk.html` → tersaji di
+`/rk.html` pada domain yang sudah dipakai. Nol vendor baru, nol URL baru.
+Keduanya sama-sama gratis; pilih setelah §1.1 terjawab.
 
 ---
 
-## 8. Lingkup minimal Android v2
+## 7. Lingkup minimal Android v2
 
-Hanya yang membuat APK **tetap berfungsi** setelah Firebase mati. Bukan
-kesempatan merapikan hal lain — `PelangganViewModel.kt` (16k baris) tidak
-disentuh selain jalur transportnya.
+Hanya yang membuat APK **tetap berfungsi**. Bukan kesempatan merapikan hal
+lain — `PelangganViewModel.kt` (16k baris) tidak disentuh selain jalur
+transportnya.
 
 | # | Lingkup | Berkas | Kenapa wajib |
 |---|---|---|---|
-| A-1 | **Auth Supabase** menggantikan Firebase Auth | `SupabaseClientProvider.kt` (ada), layar login | Tanpa ini tidak ada yang bisa masuk |
-| A-2 | **Tulis operasional** → `rpc_catat_operasional_harian` | layar kasir/operasional | RTDB mati |
-| A-3 | **Tulis + baca absensi** → `rpc_catat_absensi`, `v_absensi_hari_ini` | `AbsensiScreen.kt` | RTDB mati (bila §3.2 migrasi) |
-| A-4 | **Tautan rekening koran** → panggil `rekening-koran-link` | `RekeningKoranHelper.kt` | Host lama mati; kunci tidak boleh lagi di APK |
-| A-5 | **Sisa jalur sync** → Supabase | `SyncManager.kt`, `SupabaseSyncHandler.kt` (ada) | Sudah disiapkan Milestone 3; tinggal alihkan sakelar |
+| A-1 | **Auth Supabase** ganti Firebase Auth | `SupabaseClientProvider.kt` (ada), layar login | tanpa ini tidak ada yang masuk |
+| A-2 | **Tulis operasional** → `rpc_catat_operasional_harian` | layar operasional | RTDB mati |
+| A-3 | **Absensi** → `rpc_catat_absensi`, `v_absensi_hari_ini` | `AbsensiScreen.kt` | RTDB mati |
+| A-4 | **Tautan rekening koran** → panggil `rekening-koran-link` | `RekeningKoranHelper.kt` | host lama mati; kunci tidak boleh lagi di APK |
+| A-5 | **Sisa jalur sync** → Supabase | `SyncManager.kt`, `SupabaseSyncHandler.kt` (ada) | disiapkan Milestone 3; tinggal alihkan sakelar |
 
-Pada A-4, `RekeningKoranHelper.kt` berubah dari *pembuat* tanda tangan
-menjadi *peminta* tautan: `SECRET_KEY` (`:34`) dan `BASE_URL` (`:37`)
-**dihapus dari APK**. Itu sekaligus menutup temuan `014` §6.4 secara
-permanen — kunci tidak lagi ada di berkas yang bisa dibaca siapa pun.
+Pada A-4, `RekeningKoranHelper.kt` berubah dari **pembuat** tanda tangan
+menjadi **peminta** tautan: `SECRET_KEY` (`:34`) dan `BASE_URL` (`:37`)
+**dihapus dari APK**. Itu menutup `014` §6.4 secara permanen — kunci tidak
+lagi ada di berkas yang bisa dibaca siapa pun.
 
-**Yang boleh ditinggalkan di v2:** FCM, tracking GPS, mode offline penuh.
-Ketiganya penting, tetapi tidak menghalangi orang bekerja pada D-0.
+**Boleh ditinggalkan di v2:** FCM, tracking GPS, mode offline penuh. Penting,
+tetapi tidak menghalangi orang bekerja pada D-0.
 
----
-
-## 9. Risiko terbesar, disebut apa adanya
-
-1. **Tidak ada rollback.** Setiap langkah yang gagal pada D-0 gagal permanen.
-   Karena itu D-3 (uji beku dengan Firebase sengaja dimatikan) bukan
-   formalitas — itu satu-satunya latihan yang mungkin.
-2. **Adopsi APK.** Staf yang tidak memperbarui akan buta total. Mulai D-7 dan
-   lacak per orang, bukan per rilis.
-3. **Storage paling lambat.** Foto KTP bertahun-tahun. Mulai D-21; kalau
-   belum selesai di D-3, itu sinyal untuk menambah tangan, bukan menunggu.
-4. **Host web belum dipastikan** (§1.1). Satu-satunya yang bisa membalik
-   seluruh jadwal ini. Pastikan hari ini.
-5. **Absensi belum diputuskan** (§3.2). Setiap hari tertunda mengurangi
-   peluang riwayatnya terselamatkan.
+**Kalau v2 tidak selesai:** staf lapangan pakai web di browser HP sementara
+(§0). Siapkan instruksinya sekarang, jangan disusun pada D-0.
 
 ---
 
-## 10. Catatan kejujuran
+## 8. Risiko terbesar
+
+1. **Waktu.** 4 hari kerja. Satu keterlambatan tidak punya penyangga.
+   Putuskan hari ini apakah akhir pekan dipakai.
+2. **Tidak ada rollback.** Karena itu D-1 (uji beku dengan Firebase sengaja
+   dimatikan) bukan formalitas.
+3. **Adopsi APK.** Staf yang tidak memperbarui buta total. Lacak per orang.
+4. **Storage tidak akan selesai** (§0). Jalankan sebagai proses terpisah;
+   jangan biarkan ia menyandera cutoff, tetapi jangan pula dilupakan — ia
+   hilang permanen.
+5. **Host web belum dipastikan** (§1.1). Satu-satunya yang bisa membalik
+   jadwal. Jawab hari ini.
+6. **Password.** Kalau pembagiannya baru dilakukan D-0, hari itu habis untuk
+   melayani orang yang tidak bisa masuk, bukan untuk bekerja.
+
+---
+
+## 9. Catatan kejujuran
 
 - `022` dan `023` belum pernah dijalankan; tidak ada PostgreSQL di sisi saya.
-- `rekening-koran-link/index.ts` belum pernah dijalankan Deno, belum
-  di-deploy.
-- Kesimpulan bahwa `buku-pokok-web` bukan di Firebase Hosting berdasar
-  **bukti tak-langsung** (§1.1) — repo tidak memuat konfigurasi deploy web
-  sama sekali. Harus dipastikan manual, bukan dipercaya dari dokumen ini.
-- `[ISI DI SINI]` untuk tanggal cutoff sengaja saya biarkan kosong: menebak
-  tanggalnya akan membuat seluruh jadwal tampak pasti padahal tidak.
+- `rekening-koran-link/index.ts` belum pernah dijalankan Deno, belum di-deploy.
+- Kesimpulan bahwa `buku-pokok-web` bukan di Firebase Hosting berdasar bukti
+  **tak-langsung** (§1.1) — repo tidak memuat konfigurasi deploy web sama
+  sekali. Pastikan manual.
+- Penilaian "Storage tidak akan muat 6 hari" adalah **perkiraan saya**, bukan
+  pengukuran: saya tidak tahu volume bucketnya. Ukur hari ini; kalau ternyata
+  kecil, ia naik prioritas.

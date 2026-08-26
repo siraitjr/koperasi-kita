@@ -3,22 +3,20 @@
 -- RANCANGAN — BELUM PERNAH DIJALANKAN di instance mana pun.
 -- =========================================================================
 --
--- ⚠ ASUMSI YANG SAYA AMBIL, DAN ALASANNYA
--- -------------------------------------------------------------------------
--- Keputusan absensi di brief masih berupa penanda kosong
--- `[MIGRASIKAN_SEKARANG / TANGGUHKAN]`. Saya kerjakan dengan asumsi
--- MIGRASIKAN, karena pada premis baru "tangguhkan" tidak lagi berarti
--- "kerjakan nanti":
+-- KEPUTUSAN PEMILIK: MIGRASIKAN SEKARANG. Jalankan berkas ini.
 --
---   RTDB mati pada cutoff. Absensi HANYA hidup di RTDB (tidak pernah masuk
---   lingkup migrasi mana pun — 021 §1.4). Menangguhkan = fitur absensi
---   BERHENTI pada hari cutoff, dan seluruh riwayatnya HILANG PERMANEN.
+-- Absensi HANYA hidup di RTDB — tidak pernah masuk lingkup migrasi mana pun.
+-- RTDB mati 1 September 2026, jadi tanpa berkas ini fitur absensi berhenti
+-- pada hari itu dan seluruh riwayatnya hilang permanen.
 --
--- Kalau itu memang yang dipilih, berkas ini tinggal tidak dijalankan — tidak
--- ada ongkosnya. Yang tidak bisa diperbaiki belakangan adalah kebalikannya.
--- Ekspor `absensi/` dan `user_absensi_today/` SEBELUM cutoff tetap wajib,
--- apa pun keputusannya: ekspor bisa dibuang, RTDB yang mati tidak bisa
+-- Ekspor `absensi/` dan `user_absensi_today/` SEBELUM cutoff tetap WAJIB dan
+-- terpisah dari berkas ini: berkas ini membuat wadahnya, bukan mengisi
+-- riwayatnya. Ekspor bisa dibuang belakangan; RTDB yang mati tidak bisa
 -- dihidupkan.
+--
+-- Siapa yang absen di web (keputusan pemilik): kasir SUDAH, dan kini juga
+-- admin, pimpinan, serta koordinator — karena APK mereka ikut mati. Itu yang
+-- melahirkan parameter `p_cabang_id` di bawah; lihat alasannya di sana.
 --
 -- Prasyarat: 001 → 001a → 002 → 018 B-1 → 022 (butuh app_user.legacy_uid).
 --
@@ -102,8 +100,24 @@ grant select on koperasi.absensi, koperasi.v_absensi_hari_ini to authenticated;
 -- Beda yang disengaja: jam diambil dari jam SERVER, bukan jam perangkat.
 -- Di RTDB `jam` dihitung dari `new Date()` di browser, jadi seseorang cukup
 -- memundurkan jam laptopnya untuk absen "tepat waktu". Di sini tidak bisa.
-create or replace function koperasi.rpc_catat_absensi()
-returns jsonb
+-- -------------------------------------------------------------------------
+-- `p_cabang_id` — ADA KARENA KOORDINATOR TIDAK PUNYA CABANG
+-- -------------------------------------------------------------------------
+-- Keputusan pemilik: admin/pimpinan/KOORDINATOR yang selama ini absen di APK
+-- harus bisa absen di web. Itu membongkar asumsi versi pertama fungsi ini.
+--
+-- `001a:127` membolehkan `cabang_id` NULL untuk `pengawas`, `koordinator`,
+-- dan `sekretaris`. Versi pertama fungsi ini menolak mereka dengan
+-- 23514 'User tidak memiliki cabang' — jadi koordinator TIDAK AKAN BISA
+-- absen sama sekali, dan itu baru ketahuan saat orangnya mencoba.
+--
+-- Karena `absensi.cabang_id` NOT NULL (absensi selalu absensi DI SUATU
+-- TEMPAT), peran tanpa cabang harus MENYEBUTKAN di cabang mana ia hadir.
+-- Yang boleh disebut dibatasi `cabang_terlihat_arr()`, jadi tidak ada yang
+-- bisa mengaku hadir di cabang yang bukan wewenangnya.
+create or replace function koperasi.rpc_catat_absensi(
+  p_cabang_id text default null
+) returns jsonb
 language plpgsql
 security definer
 set search_path = ''
@@ -124,8 +138,21 @@ begin
   if v_role is null then
     raise exception 'Pemanggil tidak dikenal atau nonaktif' using errcode = '42501';
   end if;
+
   if v_cabang is null or v_cabang = '' then
-    raise exception 'User tidak memiliki cabang' using errcode = '23514';
+    -- Peran tanpa cabang tetap (koordinator/pengawas/sekretaris).
+    if p_cabang_id is null or p_cabang_id = '' then
+      raise exception 'Sebutkan cabang tempat Anda hadir' using errcode = '23514';
+    end if;
+    if not (p_cabang_id = any (
+              (select koperasi_priv.cabang_terlihat_arr())::text[])) then
+      raise exception 'Cabang tersebut di luar wewenang Anda' using errcode = '42501';
+    end if;
+    v_cabang := p_cabang_id;
+  elsif p_cabang_id is not null and p_cabang_id <> v_cabang then
+    -- Punya cabang tetap: parameter hanya boleh menegaskan, tidak memindahkan.
+    raise exception 'Anda hanya dapat absen di cabang Anda sendiri'
+      using errcode = '42501';
   end if;
 
   select c.nama into v_cnama from koperasi.cabang c where c.id = v_cabang;
@@ -154,8 +181,8 @@ begin
 end;
 $$;
 
-revoke all on function koperasi.rpc_catat_absensi() from public, anon;
-grant execute on function koperasi.rpc_catat_absensi() to authenticated;
+revoke all on function koperasi.rpc_catat_absensi(text) from public, anon;
+grant execute on function koperasi.rpc_catat_absensi(text) to authenticated;
 
 commit;
 
@@ -166,14 +193,24 @@ commit;
 --   curl -X POST "$SUPA_URL/rest/v1/rpc/rpc_catat_absensi" \
 --     -H "apikey: $ANON" -H "Authorization: Bearer $JWT" \
 --     -H "Content-Type: application/json" -d '{}'
+--   # koordinator/pengawas/sekretaris WAJIB menyebut cabang:
+--   #   -d '{"p_cabang_id":"panti"}'
 --
--- | Uji                          | Harapan                                  |
--- |------------------------------|------------------------------------------|
--- | panggilan pertama hari ini   | jsonb berisi jam server                   |
--- | panggilan KEDUA hari ini     | jsonb SAMA — jam pertama tidak berubah    |
--- | tanpa Authorization          | 401                                       |
--- | baca v_absensi_hari_ini      | hanya diri sendiri + cabang yang berhak   |
--- | JWT cabang lain              | baris itu TIDAK terlihat                  |
+-- | Uji                                   | Harapan                         |
+-- |---------------------------------------|---------------------------------|
+-- | kasir/admin/pimpinan, panggilan ke-1  | jsonb berisi jam server         |
+-- | panggilan KEDUA hari ini              | jsonb SAMA — jam ke-1 tetap     |
+-- | punya cabang + p_cabang_id cabang lain| 42501                           |
+-- | KOORDINATOR tanpa p_cabang_id         | 23514                           |
+-- | KOORDINATOR + cabang berwenang        | 200                             |
+-- | KOORDINATOR + cabang di luar wewenang | 42501                           |
+-- | tanpa Authorization                   | 401                             |
+-- | baca v_absensi_hari_ini               | diri sendiri + cabang berhak    |
+-- | JWT cabang lain                       | baris itu TIDAK terlihat        |
+--
+-- Empat baris koordinator itu WAJIB diuji dengan JWT koordinator sungguhan.
+-- Versi pertama fungsi ini menolak mereka tanpa disadari; menguji hanya
+-- dengan akun kasir akan lulus dan tetap menyembunyikan cacat itu.
 --
 -- Impor riwayat (opsional, TETAPI hanya mungkin sebelum RTDB mati):
 --   Polanya identik dengan scripts/migration/migrate_operasional_harian.js —
