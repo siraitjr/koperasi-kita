@@ -4,7 +4,12 @@
 -- RANCANGAN — BELUM PERNAH DIJALANKAN di instance mana pun.
 -- =========================================================================
 --
--- Urutan: 001 → 001a → 002 → 007 → 009 → 011 → 016a → 015 (B-1..B-4)
+-- Urutan: 001 → 001a → 002 → 007 → 009 → 011 → 015 (B-1..B-3) → 017 B-1
+--         → 018 B-1 → 016a → impor data → 015 B-4
+--
+-- ⚠ 018 BATCH 1 harus sudah terpasang: policy di bawah memakai
+--   `koperasi_priv.cabang_terlihat_arr()` yang lahir di sana. Menjalankan
+--   016a lebih dulu gagal dengan 42883 (function does not exist).
 --
 -- Node asal: operasional_harian/{cabangId}/{YYYY-MM-DD}/{staffUid}
 -- Bentuk record (dari data nyata di data/firebase_sample.json):
@@ -71,15 +76,31 @@ alter table koperasi.operasional_harian force  row level security;
 
 -- Peran yang sama dengan pembacaan kasir (kasirApi.js:188), ditambah staf
 -- yang bersangkutan — wajar seseorang boleh melihat uang makannya sendiri.
+--
+-- BENTUKNYA MENGIKUTI 018, bukan 002. Berkas ini ditulis sebelum 018 ada,
+-- dan versi pertamanya memakai `koperasi_priv.role() in (…) and
+-- boleh_lihat_cabang(cabang_id)` — yaitu panggilan SECURITY DEFINER PER
+-- BARIS, pola yang 018 §0 buktikan mahal (fungsi definer / ber-klausa SET
+-- tidak bisa di-inline, jadi tiap panggilan = eksekusi SPI penuh).
+--
+-- Tabel ini kecil, jadi bentuk lama pun tidak akan terasa hari ini. Diubah
+-- bukan demi milidetik, melainkan supaya tidak ada pola lama yang tersisa
+-- untuk disalin ke tabel berikutnya yang tidak kecil.
+--
+-- Kedua sublink `(select …)` menjadikannya InitPlan sekali-jalan; cast
+-- `::text[]` memaksa parser memilih bentuk ANY-ARRAY. Keduanya wajib —
+-- lihat 018 §1 catatan 1 dan 2. Semantiknya tidak berubah:
+-- `boleh_lihat_cabang(c)` ≡ `c = any(cabang_terlihat_arr())`, sudah
+-- diuji diferensial di 018 §4(a) untuk seluruh user × cabang.
 create policy operasional_harian_baca on koperasi.operasional_harian
   for select to authenticated
   using (
     user_id = auth.uid()
     or (
-      koperasi_priv.role() in (
+      (select koperasi_priv.role()) in (
         'kasir_unit','kasir_wilayah','sekretaris','pimpinan','koordinator','pengawas'
       )
-      and koperasi_priv.boleh_lihat_cabang(cabang_id)
+      and cabang_id = any ((select koperasi_priv.cabang_terlihat_arr())::text[])
     )
   );
 

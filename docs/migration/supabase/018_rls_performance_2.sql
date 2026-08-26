@@ -2,9 +2,34 @@
 -- KOPERASI KITA — 018: RLS SET-BASED (lanjutan 017)
 -- 43.603 ms → 8.334 ms (017 B-1) → 9.134 ms (017 B-2, memburuk) → target < 1 s
 --
--- STATUS: BATCH 1 SUDAH DIJALANKAN pemilik di server, setelah cast `::text[]`
--- ditambahkan (lihat §1 catatan 2). Angka hasilnya belum dilaporkan, jadi §3
--- masih terbuka. §4 dan §4b belum dijalankan.
+-- STATUS: SELESAI. Batch 1 dijalankan pemilik (dengan cast `::text[]`, §1
+-- catatan 2). Hasil yang dilaporkan:
+--
+--     43.603 ms → 8.334 (017 B-1) → 9.134 (017 B-2) → 674,751 ms
+--
+--   §3  674,751 ms — di bawah target 1 detik. 64x lebih cepat dari baseline,
+--       dan 13,5x dari keadaan 017.
+--   §4  uji diferensial (a)(b)(c) LULUS tanpa selisih untuk seluruh user.
+--   §4b anggun 741 baris; anggun + filter cabang payakumbuh 0 baris (isolasi
+--       lintas-cabang tegak); pengawas cepat tanpa timeout.
+--
+-- SATU SISA YANG BELUM TERTUTUP, dan sebaiknya tidak dianggap tertutup:
+-- pemeriksaan pengawas di §4b mentok limit halaman PostgREST (1000/5000),
+-- jadi yang terbukti adalah "cepat dan tidak timeout" — BUKAN bahwa jumlah
+-- barisnya sama persis dengan sebelum 018. Untuk menutupnya perlu
+-- perbandingan yang tidak kena paginasi:
+--
+--     curl -s -I "$SUPA_URL/rest/v1/v_buku_pokok?select=nasabah_id" \
+--       -H "apikey: $ANON" -H "Authorization: Bearer $JWT_PENGAWAS" \
+--       -H "Prefer: count=exact" -H "Range: 0-0"
+--     # baca header Content-Range: 0-0/<TOTAL>
+--
+-- Bandingkan <TOTAL> dengan angka yang sama sebelum 018. Uji (a)(b)(c) sudah
+-- membuktikan kesetaraan predikatnya di tingkat SQL untuk SETIAP user
+-- termasuk pengawas, jadi ini pemeriksaan penutup, bukan kecurigaan.
+--
+-- Yang tersisa di berkas ini (§5, §6) tidak perlu dijalankan: §5 hanya untuk
+-- kasus target tidak tercapai, §6 hanya jalan pulang.
 -- =========================================================================
 --
 -- Prasyarat: 001 → 001a → 002 → 017 BATCH 1 & 2 sudah terpasang.
@@ -131,6 +156,15 @@
 --
 -- Marginnya terhadap target 1 detik lebar, dan itu disengaja: perkiraan
 -- saya di 017 meleset, jadi §3 yang memutuskan, bukan tabel ini.
+--
+-- HASILNYA: 674,751 ms, bukan ~400 ms. Perkiraan ini meleset ~275 ms, yaitu
+-- tambahan RLS-nya ±14x lebih mahal dari dugaan (20 ms → ~300 ms). Arahnya
+-- benar dan targetnya tercapai, tetapi angkanya jangan dipakai sebagai dasar
+-- perencanaan berikutnya. Dugaan saya atas selisihnya — belum diperiksa, dan
+-- tidak perlu diperiksa selama masih di bawah target: pembangunan himpunan
+-- `pinjaman_terlihat` terjadi per NODE pemindaian, bukan sekali per query,
+-- jadi query yang menyentuh `pembayaran` di beberapa tempat membayarnya
+-- berulang.
 
 
 -- #########################################################################

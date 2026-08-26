@@ -2,8 +2,25 @@
 -- KOPERASI KITA — 017: BIAYA PEMERIKSAAN RLS
 -- Menutup penghambat Tahap B: v_buku_pokok 43.603 ms lewat PostgREST,
 -- 374 ms sebagai superuser.
--- RANCANGAN — BELUM PERNAH DIJALANKAN di instance mana pun.
--- =========================================================================
+--
+-- STATUS: BATCH 1 & 2 sudah dijalankan pemilik. Batch 2 TERNYATA MEMBURUK
+-- (8.334 → 9.134 ms) dan sudah DIGANTI oleh 018.
+--
+--   ⚠ JANGAN jalankan BATCH 3 (GUC) maupun BATCH 4 (denormalisasi).
+--     Keduanya masih tertulis di bawah sebagai opsi, tetapi 018 §0
+--     membuktikan Batch 3 menyasar lapisan yang salah, dan Batch 4 menjadi
+--     tidak perlu setelah 018 mencapai 674,751 ms. Batch 4 menuntut
+--     pelonggaran trigger append-only `pembayaran` — jangan dibayar untuk
+--     masalah yang sudah selesai.
+--
+--   Yang MASIH BERLAKU dari berkas ini:
+--     * BATCH 1 — `boleh_lihat_cabang()` versi lookup PK. Masih dipakai
+--       policy TULIS dan `pengajuan_baca`; 018 tidak menyentuhnya.
+--     * `boleh_lihat_cabang_lama()` — oracle uji diferensial 018 §4.
+--     * §7 temuan sampingan P-01/P-02/P-03, semuanya masih terbuka.
+--
+--   Policy SELECT di BATCH 2 sudah TIDAK berlaku — digantikan 018 BATCH 1.
+-- ==========================================================================
 --
 -- Prasyarat: 001 → 001a → 002 sudah terpasang.
 -- Berkas ini TIDAK mengubah siapa boleh melihat apa. Setiap penulisan ulang

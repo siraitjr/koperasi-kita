@@ -327,13 +327,42 @@ Supabase rekapnya view beragregat — tidak ada yang perlu disesuaikan.
 ### Urutan jalan yang benar
 
 ```
-016a_operasional_harian.sql          (buat tabel + RLS)
-  → migrate_operasional_harian.js    (dry-run, lalu --execute)
-    → 015 BATCH B-4                  (RPC)
+018 BATCH 1                          (sudah terpasang — prasyarat baru)
+  → 016a_operasional_harian.sql      (buat tabel + RLS)
+    → migrate_operasional_harian.js  (dry-run, lalu --execute)
+      → 015 BATCH B-4                (RPC)
 ```
 
 B-4 dijalankan lebih dulu tidak merusak apa pun — fungsinya tetap tercipta —
 tetapi panggilan pertamanya gagal `42P01 relation does not exist`.
+
+**Prasyarat 018 itu baru, ditambahkan setelah 016a ditulis.** Policy di 016a
+kini memakai `koperasi_priv.cabang_terlihat_arr()` yang lahir di 018 Batch 1;
+menjalankan 016a tanpa 018 gagal `42883 function does not exist`. Karena 018
+sudah terpasang di server, ini tidak menambah langkah — hanya menetapkan
+urutannya.
+
+### Perubahan bentuk RLS di 016a (setelah 018)
+
+016a ditulis sebelum 017/018 ada, jadi policy-nya memakai pola lama:
+`koperasi_priv.role() in (…) and boleh_lihat_cabang(cabang_id)` — panggilan
+SECURITY DEFINER **per baris**, yang 018 §0 buktikan mahal karena fungsi
+definer (dan fungsi ber-klausa `SET`) tidak bisa di-inline PostgreSQL.
+
+Diubah ke bentuk 018: `(select koperasi_priv.role())` dan
+`cabang_id = any ((select koperasi_priv.cabang_terlihat_arr())::text[])`.
+
+Alasannya **bukan** kecepatan — `operasional_harian` cuma berisi beberapa
+baris per cabang per hari, pola lama pun tidak akan terasa. Alasannya supaya
+tidak ada contoh pola lama yang tersisa di repo untuk disalin ke tabel
+berikutnya yang tidak kecil. Semantiknya tidak berubah:
+`boleh_lihat_cabang(c)` ≡ `c = any(cabang_terlihat_arr())`, sudah diuji
+diferensial di 018 §4(a) untuk seluruh user × cabang tanpa selisih.
+
+Ini aman dilakukan karena 016a **belum pernah dijalankan**. Berkas yang sudah
+Anda jalankan (015 B-1..B-3) sengaja TIDAK disentuh, walau `kasir_baca` di
+B-3.1 memakai pola lama yang sama — mengubah berkas yang sudah berjalan
+menuntut siklus ukur-dan-uji tersendiri, dan `kasir_entry` juga kecil.
 
 ---
 
