@@ -1,1 +1,23 @@
 .vercel
+
+# Rahasia lokal. Berkas ini SEBELUMNYA hanya berisi `.vercel`, jadi bukan
+# .gitignore bawaan Next.js dan TIDAK menyaring .env apa pun — `.env.local`
+# akan ikut ter-commit kalau tidak ditambahkan di sini.
+.env
+.env.local
+.env.*.local
+
+# Hasil build & dependensi
+/node_modules
+/.next/
+/out/
+*.tsbuildinfo
+next-env.d.ts
+
+# Log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+.DS_Store
