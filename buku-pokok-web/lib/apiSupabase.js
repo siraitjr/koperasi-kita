@@ -433,7 +433,18 @@ export async function unggahNota({ file, cabangId, periodeBulan, clientOpId }) {
   const { error } = await supabase.storage
     .from('nota-kasir')
     .upload(path, file, { contentType: 'image/jpeg', upsert: true });
-  if (error) lempar(error, 'unggahNota');
+
+  if (error) {
+    // Tersangka pertama bila ini muncul: policy INSERT pada storage.objects
+    // untuk bucket `nota-kasir` belum terpasang (003 §3.3). Bucket-nya bisa
+    // ada tanpa satu pun policy tulis, dan RLS menolak dengan diam.
+    // Disebut di pesannya supaya tidak perlu ditebak dua kali.
+    throw new Error(
+      `unggahNota (${path}): ${error.message || 'gagal'}. ` +
+      'Kalau pesannya menyebut row-level security, policy INSERT bucket ' +
+      '`nota-kasir` belum dipasang — lihat 003 §3.3.'
+    );
+  }
   return path;
 }
 
@@ -482,6 +493,29 @@ export async function addKasirEntry({
     },
   });
   if (error) lempar(error, 'addKasirEntry');
+
+  // BACA-BALIK. Satu-satunya cara MEMBUKTIKAN nota_path benar-benar tersimpan,
+  // bukan sekadar terkirim. Tanpa ini, `nota_path` yang hilang di perjalanan
+  // (nama parameter berubah, RPC lama masih terpasang, kolomnya di-drop)
+  // menghasilkan entri yang tampak sukses dengan lampiran yang tidak ada —
+  // gejala yang persis sama dengan bug ini, dan sama sulitnya dilacak.
+  //
+  // Hanya dijalankan bila memang ada nota, jadi entri biasa tetap satu
+  // perjalanan bolak-balik.
+  if (notaPath) {
+    const { data: cek, error: eCek } = await supabase
+      .from('kasir_entry').select('nota_path').eq('id', data).maybeSingle();
+    if (eCek) lempar(eCek, 'addKasirEntry/verifikasi nota');
+    if (!cek?.nota_path) {
+      throw new Error(
+        'addKasirEntry: entri tersimpan tetapi nota_path KOSONG di database. ' +
+        'Notanya sudah terunggah, entrinya belum menunjuk ke sana — jangan ' +
+        'dianggap berhasil. Periksa apakah rpc_tambah_kasir_entry versi ' +
+        'terpasang sudah memuat kolom nota_path (015 B-4).'
+      );
+    }
+  }
+
   return { success: true, data: { id: data, clientOpId: opId } };
 }
 

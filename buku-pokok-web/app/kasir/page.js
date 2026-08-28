@@ -1423,20 +1423,28 @@ function FormModal({ cabangAdmins, cabangId, bulan, onClose, onSuccess }) {
       const clientOpId = crypto.randomUUID();
       const bulanKey = (tanggal || new Date().toISOString().slice(0, 10)).slice(0, 7);
 
+      // ── KEBIJAKAN: unggah gagal ⇒ ENTRI DIBATALKAN ──────────────────────
+      // Versi sebelumnya menelan galat unggah dan tetap membuat entri, meniru
+      // perilaku lama yang "tidak blocking". Itu keliru di sini, dan bukan
+      // sekadar kurang rapi: pengguna melihat pesan SUKSES, mengira fotonya
+      // terlampir, lalu tidak pernah memotret ulang. Entri BU tercatat seolah
+      // ada buktinya padahal tidak — persis kelas kegagalan yang paling mahal
+      // di migrasi ini, dan tidak ada yang menyadarinya sampai audit.
+      //
+      // Sekarang galatnya dibiarkan naik ke catch luar dan tampil apa adanya.
+      // Mengulang aman: `clientOpId` dibangkitkan sekali di atas dan dipakai
+      // ulang, jadi menekan Simpan lagi TIDAK menggandakan entri kas.
+      //
+      // Melampirkan foto tetap OPSIONAL. Kalau pengguna memang tidak memilih
+      // berkas, entri dibuat tanpa nota seperti biasa. Yang dibatalkan hanya
+      // kasus "sudah memilih foto, tetapi unggahannya gagal".
       let notaPath = null;
       if (fakturFile && jenis === 'penggajian' && cabangId) {
-        try {
-          const { unggahNota } = await import('../../lib/apiSupabase');
-          const compressed = await compressImage(fakturFile);
-          notaPath = await unggahNota({
-            file: compressed, cabangId, periodeBulan: bulanKey, clientOpId,
-          });
-        } catch (uploadErr) {
-          console.error('Gagal upload faktur:', uploadErr);
-          // Tetap tidak blocking, sama seperti perilaku lama: entri kas jauh
-          // lebih penting daripada lampirannya. Bedanya kini yang hilang
-          // hanya notanya, bukan entri yang terlanjur ada tanpa nota.
-        }
+        const { unggahNota } = await import('../../lib/apiSupabase');
+        const compressed = await compressImage(fakturFile);
+        notaPath = await unggahNota({
+          file: compressed, cabangId, periodeBulan: bulanKey, clientOpId,
+        });
       }
 
       await addKasirEntry({
