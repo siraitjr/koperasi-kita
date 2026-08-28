@@ -72,6 +72,63 @@ function lempar(error, konteks) {
   throw new Error(`${konteks}: ${error.message || 'kesalahan tidak dikenal'}`);
 }
 
+// =========================================================================
+// NORMALISASI TANGGAL — arah sebaliknya dari tglIndo()
+// =========================================================================
+// `tglIndo()` mengubah ISO → tampilan. Ini kebalikannya, dan ia ada karena
+// halaman menyimpan tanggal dalam BENTUK TAMPILAN:
+//
+//     kasir/page.js:1385   const [tanggal] = useState(getTodayIndo());
+//     kasir/page.js:125     getTodayIndo() → "28 Agu 2026"
+//
+// Cloud Function lama menerima bentuk itu apa adanya (RTDB menyimpan tanggal
+// sebagai string). PostgreSQL tidak: kolomnya bertipe `date`, dan RPC
+// menolaknya dengan `invalid input syntax for type date`.
+//
+// LAPISANNYA DI SINI, bukan di halaman. Alasannya: `tglIndo()` (ISO →
+// tampilan) sudah tinggal di berkas ini, jadi pasangannya harus bersebelahan;
+// dan halaman tidak seharusnya tahu bentuk apa yang diminta database. Satu
+// tempat untuk diperiksa kalau nanti ada format ketiga.
+const BULAN_KE_NOMOR = {};
+BULAN_INDO.forEach((b, i) => { BULAN_KE_NOMOR[b.toLowerCase()] = i + 1; });
+// `Agt` dipakai sebagian data warisan berdampingan dengan `Agu` — alias yang
+// sama sudah ditangani migrate.js saat impor.
+BULAN_KE_NOMOR.agt = 8;
+
+/**
+ * Apa pun → "YYYY-MM-DD", atau null bila tidak bisa dibaca.
+ * Menerima: ISO, Date, dan "dd MMM yyyy" gaya Indonesia.
+ *
+ * Mengembalikan null alih-alih menebak. Tanggal yang salah tebak pada
+ * catatan uang lebih buruk daripada entri yang ditolak.
+ */
+function isoDari(v) {
+  if (!v) return null;
+  if (v instanceof Date) {
+    return Number.isNaN(v.getTime()) ? null : v.toISOString().slice(0, 10);
+  }
+  const t = String(v).trim();
+  if (/^\d{4}-\d{2}-\d{2}/.test(t)) return t.slice(0, 10);
+
+  const bagian = t.split(/\s+/);
+  if (bagian.length === 3) {
+    const hari = parseInt(bagian[0], 10);
+    const bulan = BULAN_KE_NOMOR[bagian[1].toLowerCase()];
+    const tahun = parseInt(bagian[2], 10);
+    if (Number.isFinite(hari) && bulan && Number.isFinite(tahun)) {
+      return `${tahun}-${String(bulan).padStart(2, '0')}-${String(hari).padStart(2, '0')}`;
+    }
+  }
+  return null;
+}
+
+/** Apa pun → "YYYY-MM" (periode), atau null. */
+function periodeDari(v) {
+  const t = String(v ?? '').trim();
+  if (/^\d{4}-\d{2}$/.test(t)) return t;
+  return isoDari(t)?.slice(0, 7) ?? null;
+}
+
 /**
  * Ubah parameter `bulan` menjadi rentang tanggal.
  *
@@ -217,7 +274,11 @@ export const getSummary = getBukuPokokSummary;
 
 /** Padanan getPembayaranHariIni (bukuPokokApi.js:1099). */
 export async function getPembayaranHariIni({ cabangId, tanggal }) {
-  const tgl = tanggal || hariIniWIB();
+  // Kalau bentuk tampilan lolos ke sini, `.eq('tanggal', …)` TIDAK melempar —
+  // ia hanya mengembalikan nol baris. Kegagalan senyap seperti itu lebih
+  // mahal daripada galat, jadi dinormalisasi walau belum ada pemanggil yang
+  // mengirim bentuk salah.
+  const tgl = isoDari(tanggal) || hariIniWIB();
 
   let q = supabase
     .from('v_pembayaran_harian')
@@ -361,7 +422,14 @@ export async function unggahNota({ file, cabangId, periodeBulan, clientOpId }) {
   // 003 §3.1 menamai berkas dengan kasir_entry_id. Di sini dipakai
   // client_op_id karena entrinya belum ada saat unggahan terjadi — dan
   // client_op_id memang kunci unik entri itu nantinya.
-  const path = `${cabangId}/${periodeBulan}/${clientOpId}.jpg`;
+  //
+  // ⚠ CACAT KEDUA, tidak terlihat di layar: kasir/page.js:1424 menghitung
+  // periodenya dengan `tanggal.slice(0, 7)`, dan `tanggal` berbentuk
+  // "28 Agu 2026" — potongannya jadi "28 Agu", bukan "2026-08". Berkas
+  // mendarat di path yang salah DAN mengandung spasi, tanpa satu pun galat.
+  // Objek yatim dari percobaan sebelumnya ada di sana.
+  const periode = periodeDari(periodeBulan) || hariIniWIB().slice(0, 7);
+  const path = `${cabangId}/${periode}/${clientOpId}.jpg`;
   const { error } = await supabase.storage
     .from('nota-kasir')
     .upload(path, file, { contentType: 'image/jpeg', upsert: true });
@@ -396,6 +464,9 @@ export async function addKasirEntry({
   // akan menggandakan entri kas, jadi pemanggil sebaiknya menyimpannya.
   const opId = clientOpId || crypto.randomUUID();
 
+  // Halaman mengirim "28 Agu 2026" (kasir/page.js:1385). Kolomnya `date`.
+  const tglIso = isoDari(tanggal) || hariIniWIB();
+
   const { data, error } = await supabase.rpc('rpc_tambah_kasir_entry', {
     p: {
       cabang_id: saya.cabang_id,
@@ -403,7 +474,7 @@ export async function addKasirEntry({
       arah,
       nominal: Number(jumlah || 0),
       keterangan: keterangan || '',
-      tanggal: tanggal || hariIniWIB(),
+      tanggal: tglIso,
       target_admin_id: targetAdminUid || null,
       nota_path: notaPath || null,
       dicatat_oleh_nama: saya.nama || '',
@@ -426,8 +497,11 @@ export async function deleteKasirEntry({ entryId, alasan }) {
 
 /** Padanan syncOperasionalTransport (kasirApi.js:576) → RPC 015 B-4. */
 export async function syncOperasionalTransport(tanggal) {
+  // Halaman memanggilnya tanpa argumen (RPC memakai hari berjalan WIB), tetapi
+  // parameternya tetap dinormalisasi supaya pemanggil lain tidak mengulang
+  // kesalahan yang sama.
   const { data, error } = await supabase.rpc('rpc_sync_operasional_transport', {
-    p_tanggal: tanggal || null,
+    p_tanggal: isoDari(tanggal),
   });
   if (error) lempar(error, 'syncOperasionalTransport');
   return { success: true, data: { id: data } };
