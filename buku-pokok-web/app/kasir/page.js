@@ -220,65 +220,6 @@ function generateBulanOptions() {
 // BukuRekap (kredit = totalDrop + pencairanTabungan). Bila tidak diberikan,
 // pencairan dianggap 0 (perilaku lama).
 //
-// =========================================================================
-// BLOK 4 — Tombol "Salin Tautan Rekening Koran"
-// =========================================================================
-// Menggantikan pembuatan tautan di Android (RekeningKoranHelper.kt:46-64),
-// yang menanam kunci HMAC di dalam APK dan menanam host
-// `koperasikitagodangulu.web.app` yang ikut mati 1 September. Di sini server
-// yang menandatangani; kunci tidak pernah masuk bundel web.
-//
-// ⚠ CORS: Edge Function memakai daftar putih origin. localhost dan
-// *.vercel.app BELUM ada di ALLOWED_ORIGINS, jadi tombol ini akan gagal saat
-// diuji di luar production sampai origin-nya ditambahkan di secrets Supabase.
-// Pesan galatnya disampaikan apa adanya supaya penyebabnya terbaca, bukan
-// disamarkan jadi "gagal".
-function TombolTautanRK({ nasabahId }) {
-  const [sibuk, setSibuk] = useState(false);
-  const [pesan, setPesan] = useState('');
-
-  const salin = async (e) => {
-    e.stopPropagation();
-    setSibuk(true);
-    setPesan('');
-    try {
-      const { buatTautanRekeningKoran } = await import('../../lib/apiSupabase');
-      const { url, ttlDays } = await buatTautanRekeningKoran(nasabahId);
-      try {
-        await navigator.clipboard.writeText(url);
-        setPesan(`Tersalin · berlaku ${ttlDays} hari`);
-      } catch {
-        // clipboard butuh konteks aman (https/localhost). Kalau ditolak,
-        // tautannya tetap ditampilkan supaya bisa disalin manual —
-        // jangan biarkan pengguna mengira pembuatannya yang gagal.
-        setPesan(url);
-      }
-    } catch (err) {
-      setPesan(err.message);
-    } finally {
-      setSibuk(false);
-      setTimeout(() => setPesan(''), 8000);
-    }
-  };
-
-  return (
-    <div>
-      <button onClick={salin} disabled={sibuk}
-        style={{ marginTop: 4, padding: '2px 8px', fontSize: 10, borderRadius: 6,
-                 border: '1px solid var(--border)', background: 'var(--card)',
-                 cursor: sibuk ? 'default' : 'pointer', opacity: sibuk ? 0.6 : 1 }}>
-        {sibuk ? 'Membuat…' : '🔗 Salin Tautan RK'}
-      </button>
-      {pesan && (
-        <div style={{ fontSize: 9, color: 'var(--text-muted)', marginTop: 2,
-                      wordBreak: 'break-all', maxWidth: 220 }}>
-          {pesan}
-        </div>
-      )}
-    </div>
-  );
-}
-
 // orphanByDate (opsional): bukuData.orphanPaymentsByDate dari getBukuPokok.
 // Pembayaran "orphan" = pembayaran_harian yang pelangganId-nya sudah tidak ada
 // di pelanggan/ (mis. setelah cairkanSimpanan). BukuRekap menambahkannya ke
@@ -1810,7 +1751,6 @@ function BukuPokokAccessScreen({ user, cabang, cabangList, onBack, onLogout }) {
                       <td style={{ padding: '8px' }}>
                         <div style={{ fontWeight: 600, fontSize: 12 }}>{n.namaPanggilan || n.namaKtp}</div>
                         <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{n.nomorAnggota} • Ke-{n.pinjamanKe}</div>
-                        <TombolTautanRK nasabahId={n.id} />
                       </td>
                       <td style={{ padding: '8px', textAlign: 'right', fontFamily: "'DM Mono', monospace", fontSize: 11 }}>{formatRp(n.totalPelunasan)}</td>
                       <td style={{ padding: '8px', textAlign: 'right', fontFamily: "'DM Mono', monospace", fontSize: 11, fontWeight: 600, color: n.sisaUtang > 0 ? 'var(--danger)' : 'var(--success)' }}>{formatRp(n.sisaUtang)}</td>

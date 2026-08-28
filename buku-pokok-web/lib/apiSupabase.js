@@ -720,11 +720,20 @@ export async function getBukuPokok({ cabangId, adminUid, status, bulan }) {
  * satu-satunya pembuat tautan dan menanam kuncinya di dalam APK
  * (RekeningKoranHelper.kt:34).
  *
- * ⚠ CORS: Edge Function memakai daftar putih origin
+ * ⚠ TIDAK DIPAKAI WEB. Keputusan pemilik (D-4): fitur "Salin Tautan
+ * Rekening Koran" milik aplikasi Android admin lapangan, bukan web — merekalah
+ * yang bertemu nasabah dan membagikan tautannya. Komponen `TombolTautanRK`
+ * sudah dihapus dari `app/kasir/page.js`; fungsinya pindah ke Android (D-3,
+ * lingkup A-4 di 021 §7).
+ *
+ * Fungsi ini DITAHAN, tidak dihapus: Edge Function `rekening-koran-link`
+ * tetap hidup dan dipanggil Android, jadi ini padanan web-nya kalau suatu
+ * saat dibutuhkan. Kalau tidak, ia tidak menimbulkan biaya apa pun.
+ *
+ * ⚠ CORS bila kelak dipakai: Edge Function memakai daftar putih origin
  * (`https://www.koperasi-kita.com`, `https://koperasi-kita.com`).
  * `http://localhost:3000` dan URL preview `*.vercel.app` TIDAK ada di
- * daftar itu, jadi pemanggilan dari sana akan ditolak browser. Tambahkan
- * origin-nya di ALLOWED_ORIGINS sebelum menguji di luar production.
+ * daftar itu.
  */
 export async function buatTautanRekeningKoran(nasabahId) {
   const { data: sesi } = await supabase.auth.getSession();
