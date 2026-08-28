@@ -48,7 +48,21 @@ function tglIndo(iso) {
   return `${d} ${BULAN_INDO[parseInt(m, 10) - 1]} ${y}`;
 }
 
-/** Hari ini menurut WIB, "YYYY-MM-DD". Padanan getTodayIndonesia(). */
+/**
+ * Hari ini menurut WIB, "YYYY-MM-DD" — bentuk untuk QUERY database.
+ *
+ * ⚠ JANGAN dikembalikan apa adanya sebagai medan `today` dalam respons.
+ * `getTodayIndonesia()` (bukuPokokApi.js:236-244) mengembalikan
+ * "dd MMM yyyy", dan `lib/target.js` mem-parsingnya dengan
+ * `parseTanggalIndo()` yang menuntut tiga bagian dipisah spasi.
+ *
+ * Memberi ISO ke sana TIDAK melempar galat — `parseTanggalIndo` hanya
+ * mengembalikan null, lalu `isTanggalHistoris()` (target.js:63-74) diam-diam
+ * jatuh ke jam KLIEN. Akibatnya gerbang yang menentukan kapan `rekapBeku`
+ * dipakai jadi bergantung jam laptop pengguna, bukan jam server — dan
+ * "benteng anti-shrink historis" yang dibangun 026 lumpuh tanpa satu pun
+ * gejala di layar. Karena itu respons memakai `tglIndo(hariIniWIB())`.
+ */
 function hariIniWIB() {
   const wib = new Date(Date.now() + 7 * 3600 * 1000);
   return wib.toISOString().slice(0, 10);
@@ -56,6 +70,39 @@ function hariIniWIB() {
 
 function lempar(error, konteks) {
   throw new Error(`${konteks}: ${error.message || 'kesalahan tidak dikenal'}`);
+}
+
+/**
+ * Ubah parameter `bulan` menjadi rentang tanggal.
+ *
+ * ⚠ `bulan` BISA BERISI BANYAK BULAN, dipisah koma. `pembukuan/page.js:1044-1051`
+ * mengirim empat bulan sekaligus ("2026-08,2026-07,2026-06,2026-05") karena
+ * perhitungan carry-over Buku Pokok butuh kontinuitas orphan lintas seluruh
+ * jendela 60 hari kerja, bukan cuma bulan berjalan.
+ *
+ * Versi pertama fungsi ini menganggapnya satu bulan dan langsung
+ * `bulan.split('-')`, sehingga untuk daftar berkoma `mm` menjadi NaN,
+ * `Date.UTC(y, NaN, 0)` menjadi Invalid Date, dan `.toISOString()`
+ * melempar `RangeError: Invalid time value` — galat yang muncul di layar
+ * TANPA konteks apa pun karena ia bukan galat PostgREST.
+ *
+ * Mengembalikan null bila tidak ada satu pun bulan yang sah, supaya
+ * pemanggil bisa melewatkan bagiannya alih-alih meledak.
+ */
+function rentangBulan(bulan) {
+  const sah = String(bulan ?? '')
+    .split(',')
+    .map((x) => x.trim())
+    .filter((x) => /^\d{4}-\d{2}$/.test(x))
+    .sort();
+  if (!sah.length) return null;
+
+  const awal = `${sah[0]}-01`;
+  const [y, m] = sah[sah.length - 1].split('-').map(Number);
+  // Hari 0 bulan berikutnya = hari terakhir bulan ini.
+  const akhirDate = new Date(Date.UTC(y, m, 0));
+  if (Number.isNaN(akhirDate.getTime())) return null;   // sabuk pengaman
+  return { awal, akhir: akhirDate.toISOString().slice(0, 10) };
 }
 
 // =========================================================================
@@ -156,7 +203,7 @@ export async function getBukuPokokSummary() {
     data: {
       user: { uid: saya.id, name: saya.nama, role: saya.role, cabang: saya.cabang_id },
       cabangList: terlihat,
-      today: hariIniWIB(),
+      today: tglIndo(hariIniWIB()),      // "dd MMM yyyy" — lihat hariIniWIB()
     },
   };
 }
@@ -245,7 +292,7 @@ export async function getKasirSummary() {
       user: ringkas.data.user,
       cabangList,
       summary,
-      today: hariIniWIB(),
+      today: tglIndo(hariIniWIB()),      // "dd MMM yyyy" — lihat hariIniWIB()
       currentMonth: bulan,
       jenisLabels: JENIS_LABELS,
     },
@@ -392,15 +439,18 @@ export async function syncOperasionalTransport(tanggal) {
 
 /** Padanan getJurnalTransaksi (jurnalTransaksiApi.js:75). */
 export async function getJurnalTransaksi({ cabangId, bulan, tipe, adminUid }) {
-  const awal = `${bulan}-01`;
-  const [y, m] = bulan.split('-').map(Number);
-  const akhir = new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10);
+  const rentang = rentangBulan(bulan);
+  if (!rentang) {
+    // Bulan tidak sah → kembalikan kosong, jangan melempar. Halaman memanggil
+    // ini saat render pertama ketika pilihan bulan bisa saja belum terisi.
+    return { success: true, data: { cabangId, bulan, entries: [], totalEntries: 0 } };
+  }
 
   let q = supabase
     .from('v_jurnal_transaksi')
     .select('*')
-    .gte('tanggal', awal)
-    .lte('tanggal', akhir)
+    .gte('tanggal', rentang.awal)
+    .lte('tanggal', rentang.akhir)
     .order('tanggal', { ascending: true });
 
   if (cabangId) q = q.eq('cabang_id', cabangId);
@@ -696,9 +746,8 @@ export async function getBukuPokok({ cabangId, adminUid, status, bulan }) {
   // Hanya dihitung bila `bulan` diminta, sama seperti CF (lib/api.js:88-92:
   // cuma BukuRekap yang mengirim parameter ini).
   const orphanPaymentsByDate = {};
-  if (bulan) {
-    const [yy, mm] = bulan.split('-').map(Number);
-    const akhir = new Date(Date.UTC(yy, mm, 0)).toISOString().slice(0, 10);
+  const rentangOrphan = rentangBulan(bulan);
+  if (rentangOrphan) {
     let qa = supabase.from('nasabah').select('id').not('arsip_at', 'is', null);
     if (cabangId) qa = qa.eq('cabang_id', cabangId);
     const { data: arsip, error } = await qa;
@@ -707,7 +756,7 @@ export async function getBukuPokok({ cabangId, adminUid, status, bulan }) {
       const op = await ambilBerkelompok(
         'v_pembayaran_harian', 'nasabah_id', arsip.map((a) => a.id),
         'tanggal, jumlah, nasabah_id',
-        (q) => q.gte('tanggal', `${bulan}-01`).lte('tanggal', akhir));
+        (q) => q.gte('tanggal', rentangOrphan.awal).lte('tanggal', rentangOrphan.akhir));
       for (const p of op) {
         const t = tglIndo(p.tanggal);
         orphanPaymentsByDate[t] = (orphanPaymentsByDate[t] || 0) + Number(p.jumlah || 0);
@@ -722,7 +771,10 @@ export async function getBukuPokok({ cabangId, adminUid, status, bulan }) {
       nasabah: nasabahList,
       tanggalList: generateHariKerja(60),
       adminNames,
-      today,
+      // `today` di sini "dd MMM yyyy", sedangkan variabel `today` di atas ISO
+      // karena dipakai memfilter query. Yang dikirim ke halaman harus bentuk
+      // tampilan — isTanggalHistoris() mem-parsingnya.
+      today: todayIndo,
       totalNasabah: nasabahList.length,
       totalSisaUtang: nasabahList.reduce((s, n) => s + n.sisaUtang, 0),
       totalPinjaman: nasabahList.reduce((s, n) => s + n.besarPinjaman, 0),
