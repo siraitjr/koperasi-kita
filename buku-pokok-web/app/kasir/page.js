@@ -220,6 +220,65 @@ function generateBulanOptions() {
 // BukuRekap (kredit = totalDrop + pencairanTabungan). Bila tidak diberikan,
 // pencairan dianggap 0 (perilaku lama).
 //
+// =========================================================================
+// BLOK 4 — Tombol "Salin Tautan Rekening Koran"
+// =========================================================================
+// Menggantikan pembuatan tautan di Android (RekeningKoranHelper.kt:46-64),
+// yang menanam kunci HMAC di dalam APK dan menanam host
+// `koperasikitagodangulu.web.app` yang ikut mati 1 September. Di sini server
+// yang menandatangani; kunci tidak pernah masuk bundel web.
+//
+// ⚠ CORS: Edge Function memakai daftar putih origin. localhost dan
+// *.vercel.app BELUM ada di ALLOWED_ORIGINS, jadi tombol ini akan gagal saat
+// diuji di luar production sampai origin-nya ditambahkan di secrets Supabase.
+// Pesan galatnya disampaikan apa adanya supaya penyebabnya terbaca, bukan
+// disamarkan jadi "gagal".
+function TombolTautanRK({ nasabahId }) {
+  const [sibuk, setSibuk] = useState(false);
+  const [pesan, setPesan] = useState('');
+
+  const salin = async (e) => {
+    e.stopPropagation();
+    setSibuk(true);
+    setPesan('');
+    try {
+      const { buatTautanRekeningKoran } = await import('../../lib/apiSupabase');
+      const { url, ttlDays } = await buatTautanRekeningKoran(nasabahId);
+      try {
+        await navigator.clipboard.writeText(url);
+        setPesan(`Tersalin · berlaku ${ttlDays} hari`);
+      } catch {
+        // clipboard butuh konteks aman (https/localhost). Kalau ditolak,
+        // tautannya tetap ditampilkan supaya bisa disalin manual —
+        // jangan biarkan pengguna mengira pembuatannya yang gagal.
+        setPesan(url);
+      }
+    } catch (err) {
+      setPesan(err.message);
+    } finally {
+      setSibuk(false);
+      setTimeout(() => setPesan(''), 8000);
+    }
+  };
+
+  return (
+    <div>
+      <button onClick={salin} disabled={sibuk}
+        style={{ marginTop: 4, padding: '2px 8px', fontSize: 10, borderRadius: 6,
+                 border: '1px solid var(--border)', background: 'var(--card)',
+                 cursor: sibuk ? 'default' : 'pointer', opacity: sibuk ? 0.6 : 1 }}>
+        {sibuk ? 'Membuat…' : '🔗 Salin Tautan RK'}
+      </button>
+      {pesan && (
+        <div style={{ fontSize: 9, color: 'var(--text-muted)', marginTop: 2,
+                      wordBreak: 'break-all', maxWidth: 220 }}>
+          {pesan}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // orphanByDate (opsional): bukuData.orphanPaymentsByDate dari getBukuPokok.
 // Pembayaran "orphan" = pembayaran_harian yang pelangganId-nya sudah tidak ada
 // di pelanggan/ (mis. setelah cairkanSimpanan). BukuRekap menambahkannya ke
@@ -1407,30 +1466,43 @@ function FormModal({ cabangAdmins, cabangId, bulan, onClose, onSuccess }) {
     setError('');
     try {
       const selectedAdm = cabangAdmins.find(a => a.uid === targetAdmin);
-      const result = await addKasirEntry({
+
+      // ── BLOK 5 (W-9): nota ke Supabase Storage ──────────────────────────
+      // URUTAN DIBALIK dari alur lama. Dulu: buat entri → unggah → tempel
+      // URL-nya lewat update RTDB. Di Supabase `kasir_entry` TIDAK punya
+      // jalur UPDATE sama sekali (015 B-4 hanya insert + soft delete), jadi
+      // menempel belakangan mustahil tanpa RPC baru. Nota diunggah lebih
+      // dulu, lalu path-nya ikut saat entri dibuat.
+      //
+      // `clientOpId` dibangkitkan di sini dan dipakai DUA KALI: sebagai nama
+      // berkas dan sebagai kunci idempotensi entri. Ia harus tetap sama bila
+      // pengguna menekan Simpan dua kali — itu yang mencegah entri kas ganda.
+      const clientOpId = crypto.randomUUID();
+      const bulanKey = (tanggal || new Date().toISOString().slice(0, 10)).slice(0, 7);
+
+      let notaPath = null;
+      if (fakturFile && jenis === 'penggajian' && cabangId) {
+        try {
+          const { unggahNota } = await import('../../lib/apiSupabase');
+          const compressed = await compressImage(fakturFile);
+          notaPath = await unggahNota({
+            file: compressed, cabangId, periodeBulan: bulanKey, clientOpId,
+          });
+        } catch (uploadErr) {
+          console.error('Gagal upload faktur:', uploadErr);
+          // Tetap tidak blocking, sama seperti perilaku lama: entri kas jauh
+          // lebih penting daripada lampirannya. Bedanya kini yang hilang
+          // hanya notanya, bukan entri yang terlanjur ada tanpa nota.
+        }
+      }
+
+      await addKasirEntry({
         jenis, arah, jumlah: nominal, keterangan, tanggal,
         targetAdminUid: jenis === 'uang_kas' ? targetAdmin : '',
         targetAdminName: jenis === 'uang_kas' ? (selectedAdm?.name || '') : '',
         targetBuku: jenis === 'penggajian' ? targetBuku : [],
+        clientOpId, notaPath,
       });
-
-      // Upload faktur photo if exists (BU only)
-      if (fakturFile && jenis === 'penggajian' && result?.data?.id && cabangId) {
-        try {
-          const entryId = result.data.id;
-          const bulanKey = result.data.bulan;
-          const compressed = await compressImage(fakturFile);
-          const photoRef = storageRef(storage, `faktur_bu/${cabangId}/${bulanKey}/${entryId}.jpg`);
-          await uploadBytes(photoRef, compressed, { contentType: 'image/jpeg' });
-          const downloadUrl = await getDownloadURL(photoRef);
-          // Update RTDB entry with fakturUrl
-          const entryDbRef = dbRef(database, `kasir_entries/${cabangId}/${bulanKey}/${entryId}/fakturUrl`);
-          await update(dbRef(database, `kasir_entries/${cabangId}/${bulanKey}/${entryId}`), { fakturUrl: downloadUrl });
-        } catch (uploadErr) {
-          console.error('Gagal upload faktur:', uploadErr);
-          // Entry sudah tersimpan, foto gagal — tidak blocking
-        }
-      }
 
       onSuccess();
     } catch (err) {
@@ -1738,6 +1810,7 @@ function BukuPokokAccessScreen({ user, cabang, cabangList, onBack, onLogout }) {
                       <td style={{ padding: '8px' }}>
                         <div style={{ fontWeight: 600, fontSize: 12 }}>{n.namaPanggilan || n.namaKtp}</div>
                         <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{n.nomorAnggota} • Ke-{n.pinjamanKe}</div>
+                        <TombolTautanRK nasabahId={n.id} />
                       </td>
                       <td style={{ padding: '8px', textAlign: 'right', fontFamily: "'DM Mono', monospace", fontSize: 11 }}>{formatRp(n.totalPelunasan)}</td>
                       <td style={{ padding: '8px', textAlign: 'right', fontFamily: "'DM Mono', monospace", fontSize: 11, fontWeight: 600, color: n.sisaUtang > 0 ? 'var(--danger)' : 'var(--success)' }}>{formatRp(n.sisaUtang)}</td>
@@ -3676,31 +3749,59 @@ function AbsensiScreen({ user, cabang, cabangList, onBack, onLogout, onNavigate 
     setLoading(true);
     setError('');
     try {
-      const { ref: dbRefFn, get } = await import('firebase/database');
-      const { database: db } = await import('../../lib/firebase');
+      // ── BLOK 2 (W-6) + BLOK 3 (W-8): baca dari Supabase, bukan RTDB ──────
+      // `user_absensi_today` tidak dibaca lagi: ia tabel kedua yang ditulis
+      // terpisah di RTDB dan bisa melenceng dari sumbernya. Di Supabase
+      // status "sudah absen" diturunkan dari baris absensi itu sendiri (023).
+      const { supabase } = await import('../../lib/supabaseClient');
 
-      const snap = await get(dbRefFn(db, `absensi/${activeCabang.id}/${todayKey}`));
-      const data = snap.val() || {};
-      const list = Object.values(data).sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+      const { data: absen, error: eAbsen } = await supabase
+        .from('absensi')
+        .select('user_id, legacy_uid, nama, role, jam, recorded_at')
+        .eq('cabang_id', activeCabang.id)
+        .eq('tanggal', todayKey)
+        .order('recorded_at', { ascending: true });
+      if (eAbsen) throw new Error(eAbsen.message);
+
+      // Bentuk lama dipertahankan supaya JSX di bawah tidak perlu diubah:
+      // `uid` kini uuid Supabase — itu juga yang diterima
+      // rpc_catat_operasional_harian, jadi kunci peta tetap satu macam.
+      const list = (absen || []).map((a) => ({
+        uid: a.user_id || a.legacy_uid,
+        nama: a.nama,
+        role: a.role,
+        jam: a.jam,
+        timestamp: a.recorded_at ? new Date(a.recorded_at).getTime() : 0,
+      }));
       setAbsensiList(list);
 
-      // Check if kasir already absented (using their uid)
-      const uid = (await import('firebase/auth')).getAuth().currentUser?.uid;
+      const { data: sesi } = await supabase.auth.getUser();
+      const uid = sesi?.user?.id;
       if (uid) {
-        const selfSnap = await get(dbRefFn(db, `user_absensi_today/${uid}`));
-        const selfData = selfSnap.val();
-        if (selfData && selfData.tanggal === todayKey) {
-          setSudahAbsen(true);
-          setAbsensiSendiri(selfData);
-        } else {
-          setSudahAbsen(false);
-          setAbsensiSendiri(null);
-        }
+        const sendiri = list.find((a) => a.uid === uid) || null;
+        setSudahAbsen(!!sendiri);
+        setAbsensiSendiri(sendiri);
       }
 
-      // Load operasional harian
-      const opsSnap = await get(dbRefFn(db, `operasional_harian/${activeCabang.id}/${todayKey}`));
-      const opsData = opsSnap.val() || {};
+      // Operasional harian — RLS 016a membolehkan SELECT untuk peran kasir.
+      const { data: ops, error: eOps } = await supabase
+        .from('operasional_harian')
+        .select('user_id, legacy_uid, nama, uang_makan, transport')
+        .eq('cabang_id', activeCabang.id)
+        .eq('tanggal', todayKey);
+      if (eOps) throw new Error(eOps.message);
+
+      // Peta tetap berbentuk { [uid]: {uangMakan, transport, nama} } supaya
+      // pemakaian di JSX tidak berubah.
+      const opsData = {};
+      for (const o of ops || []) {
+        opsData[o.user_id || o.legacy_uid] = {
+          uid: o.user_id || o.legacy_uid,
+          nama: o.nama,
+          uangMakan: Number(o.uang_makan || 0),
+          transport: Number(o.transport || 0),
+        };
+      }
       setOperasionalMap(opsData);
 
       // Initialize input map (format ribuan untuk tampilan)
@@ -3724,39 +3825,42 @@ function AbsensiScreen({ user, cabang, cabangList, onBack, onLogout, onNavigate 
 
   useEffect(() => { loadAbsensi(); }, [activeCabang?.id]);
 
-  // Kasir absen sendiri
+  // Absen sendiri — SEMUA PERAN, bukan hanya kasir_unit.
+  // ── BLOK 3 (W-7) ────────────────────────────────────────────────────────
+  // Gerbang `!isUnit` DIHAPUS. Sebelumnya hanya kasir_unit yang bisa absen di
+  // web; admin/pimpinan/koordinator absen lewat APK. APK itu mati 1 September,
+  // jadi mereka harus bisa absen di sini (021 §4, D-4).
   const handleAbsenSendiri = async () => {
-    if (!activeCabang || !isUnit) return;
+    if (!activeCabang) return;
     setSubmittingAbsensi(true);
     setError('');
     try {
-      const { ref: dbRefFn, set, serverTimestamp } = await import('firebase/database');
-      const { database: db } = await import('../../lib/firebase');
-      const { getAuth } = await import('firebase/auth');
+      const { supabase } = await import('../../lib/supabaseClient');
 
-      const auth = getAuth();
-      const uid = auth.currentUser?.uid;
-      if (!uid) throw new Error('Tidak ada sesi login');
+      // Jam dan tanggal diambil SERVER, bukan perangkat. Di RTDB `jam`
+      // dihitung dari new Date() di browser, jadi memundurkan jam laptop
+      // cukup untuk absen "tepat waktu". rpc_catat_absensi menutup itu.
+      //
+      // `p_cabang_id` hanya berarti bagi peran tanpa cabang tetap
+      // (koordinator/pengawas/sekretaris — 001a:127); bagi yang punya cabang
+      // ia hanya menegaskan, dan RPC menolak kalau berbeda. Di sini
+      // activeCabang SUDAH menjadi pemilih cabangnya.
+      const { data, error } = await supabase.rpc('rpc_catat_absensi', {
+        p_cabang_id: activeCabang.id,
+      });
+      if (error) throw new Error(error.message);
 
-      const now = new Date();
-      const jakartaOffset = 7 * 60;
-      const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
-      const jakarta = new Date(utc + (jakartaOffset * 60000));
-      const jam = `${String(jakarta.getHours()).padStart(2, '0')}:${String(jakarta.getMinutes()).padStart(2, '0')}`;
-
+      const jam = data?.jam || '';
       const record = {
-        uid,
-        nama: user.name,
-        role: user.role,
-        cabangId: activeCabang.id,
-        cabangNama: activeCabang.name,
+        uid: data?.user_id,
+        nama: data?.nama,
+        role: data?.role,
+        cabangId: data?.cabang_id,
+        cabangNama: data?.cabang_nama,
         jam,
-        tanggal: todayKey,
-        timestamp: Date.now(),
+        tanggal: data?.tanggal,
+        timestamp: data?.recorded_at ? new Date(data.recorded_at).getTime() : Date.now(),
       };
-
-      await set(dbRefFn(db, `absensi/${activeCabang.id}/${todayKey}/${uid}`), record);
-      await set(dbRefFn(db, `user_absensi_today/${uid}`), record);
 
       setSudahAbsen(true);
       setAbsensiSendiri(record);
@@ -3781,27 +3885,36 @@ function AbsensiScreen({ user, cabang, cabangList, onBack, onLogout, onNavigate 
     setSavingMap(m => ({ ...m, [uid]: true }));
     setError('');
     try {
-      const { ref: dbRefFn, set } = await import('firebase/database');
-      const { database: db } = await import('../../lib/firebase');
-      const { getAuth } = await import('firebase/auth');
-      const kasirUid = getAuth().currentUser?.uid;
+      // ── BLOK 2 (W-5): tulis ke Supabase, PINDAH SEKALIGUS ────────────────
+      // Keputusan pemilik: tanpa tulis-ganda. RTDB mati 1 September, jadi
+      // menulis ke dua tempat hanya menunda pekerjaan dan menciptakan dua
+      // sumber kebenaran selama beberapa hari.
+      //
+      // URUTAN INI MENGIKAT: tulis dulu, baru sync. Dibalik, RPC sync membaca
+      // tabel yang belum menerima entri hari ini → total 0 → cabang
+      // "total 0 dengan entri lama" MENGHAPUS LUNAK entri kasir hari itu
+      // (015 B-4, cermin kasirApi.js:662). Lihat 021 §3.1.
+      const { supabase } = await import('../../lib/supabaseClient');
 
-      const record = {
-        uid, nama, uangMakan, transport,
-        diberikanOleh: kasirUid,
-        diberikanOlehNama: user.name,
-        timestamp: Date.now(),
-      };
+      const { error: eTulis } = await supabase.rpc('rpc_catat_operasional_harian', {
+        p_user_id: uid,
+        p_uang_makan: uangMakan,
+        p_transport: transport,
+      });
+      if (eTulis) throw new Error(eTulis.message);
 
-      await set(dbRefFn(db, `operasional_harian/${activeCabang.id}/${todayKey}/${uid}`), record);
-      setOperasionalMap(m => ({ ...m, [uid]: record }));
+      setOperasionalMap(m => ({
+        ...m,
+        [uid]: { uid, nama, uangMakan, transport },
+      }));
 
-      // Sync total operasional ke jurnal kasir sebagai entry Transport
+      // Sync total operasional ke jurnal kasir sebagai entry Transport.
+      // Tetap non-blocking seperti perilaku lama: operasionalnya sudah
+      // tersimpan, dan sync bisa diulang kapan saja karena idempoten.
       try {
-        await syncOperasionalTransport();
+        await supabase.rpc('rpc_sync_operasional_transport', { p_tanggal: null });
       } catch (syncErr) {
         console.error('Sync operasional ke jurnal gagal:', syncErr);
-        // Tidak blocking — operasional tetap tersimpan
       }
 
       setSuccessMsg(`Operasional ${nama} berhasil disimpan`);
@@ -3865,8 +3978,14 @@ function AbsensiScreen({ user, cabang, cabangList, onBack, onLogout, onNavigate 
           </div>
         )}
 
-        {/* Kasir absen sendiri */}
-        {isUnit && activeCabang && (
+        {/* Absen sendiri — SEMUA PERAN (BLOK 3).
+            Gerbang `isUnit` dihapus: admin/pimpinan/koordinator yang selama
+            ini absen lewat APK harus bisa absen di sini, karena APK-nya mati
+            1 September. Pemilih cabang di atas (`!isUnit && cabangList.length
+            > 1`) sudah menjadi pemilih cabang untuk koordinator — ia yang
+            mengisi `activeCabang`, dan `activeCabang` itulah yang dikirim ke
+            rpc_catat_absensi sebagai p_cabang_id. */}
+        {activeCabang && (
           <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, padding: 20, marginBottom: 20 }}>
             <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 12, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
               Absensi Saya

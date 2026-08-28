@@ -254,9 +254,50 @@ export async function getKasirEntries({ cabangId, bulan }) {
   };
 }
 
+/**
+ * Unggah nota/faktur ke bucket `nota-kasir` (003 §3.3) dan kembalikan PATH-nya.
+ *
+ * Dipanggil SEBELUM addKasirEntry, bukan sesudah — beda dari alur lama yang
+ * membuat entri dulu lalu menempelkan URL-nya. Alasannya: `kasir_entry` tidak
+ * punya jalur UPDATE sama sekali (015 B-4 hanya menyediakan insert dan soft
+ * delete), jadi menempel belakangan mustahil tanpa RPC baru. Menaruh unggahan
+ * di depan juga menghilangkan keadaan "entri ada, notanya menyusul".
+ *
+ * Ongkosnya: kalau insert entri gagal sesudah unggahan sukses, berkasnya
+ * jadi yatim. Itu tukar-tambah yang disengaja — berkas yatim murah, catatan
+ * uang tanpa nota tidak.
+ */
+export async function unggahNota({ file, cabangId, periodeBulan, clientOpId }) {
+  // 003 §3.1 menamai berkas dengan kasir_entry_id. Di sini dipakai
+  // client_op_id karena entrinya belum ada saat unggahan terjadi — dan
+  // client_op_id memang kunci unik entri itu nantinya.
+  const path = `${cabangId}/${periodeBulan}/${clientOpId}.jpg`;
+  const { error } = await supabase.storage
+    .from('nota-kasir')
+    .upload(path, file, { contentType: 'image/jpeg', upsert: true });
+  if (error) lempar(error, 'unggahNota');
+  return path;
+}
+
+/**
+ * URL bertanda tangan untuk menampilkan nota.
+ *
+ * Bucket `nota-kasir` PRIVATE (003 §2), jadi tidak ada URL permanen seperti
+ * `getDownloadURL` Firebase. Setiap penayangan perlu URL bertanda tangan yang
+ * kedaluwarsa — itu pengetatan yang disengaja: URL Firebase lama berlaku
+ * selamanya bagi siapa pun yang pernah menyalinnya.
+ */
+export async function urlNota(path, detik = 3600) {
+  if (!path) return '';
+  const { data, error } = await supabase.storage
+    .from('nota-kasir').createSignedUrl(path, detik);
+  if (error) lempar(error, 'urlNota');
+  return data?.signedUrl || '';
+}
+
 /** Padanan addKasirEntry (kasirApi.js:364) → rpc_tambah_kasir_entry (015 B-4). */
 export async function addKasirEntry({
-  jenis, arah, jumlah, keterangan, tanggal, targetAdminUid, clientOpId,
+  jenis, arah, jumlah, keterangan, tanggal, targetAdminUid, clientOpId, notaPath,
 }) {
   const saya = await profilSaya();
 
@@ -274,6 +315,7 @@ export async function addKasirEntry({
       keterangan: keterangan || '',
       tanggal: tanggal || hariIniWIB(),
       target_admin_id: targetAdminUid || null,
+      nota_path: notaPath || null,
       dicatat_oleh_nama: saya.nama || '',
       client_op_id: opId,
     },
@@ -663,4 +705,46 @@ export async function getBukuPokok({ cabangId, adminUid, status, bulan }) {
       rekapBeku,
     },
   };
+}
+
+// =========================================================================
+// REKENING KORAN — pembuat tautan v2 (BLOK 4)
+// =========================================================================
+
+/**
+ * Minta tautan rekening koran bertanda tangan v2 dari Edge Function
+ * `rekening-koran-link` (020).
+ *
+ * Kunci HMAC TIDAK PERNAH masuk bundel web — server yang menandatangani.
+ * Itu sekaligus memutus ketergantungan pada APK lama, yang selama ini jadi
+ * satu-satunya pembuat tautan dan menanam kuncinya di dalam APK
+ * (RekeningKoranHelper.kt:34).
+ *
+ * ⚠ CORS: Edge Function memakai daftar putih origin
+ * (`https://www.koperasi-kita.com`, `https://koperasi-kita.com`).
+ * `http://localhost:3000` dan URL preview `*.vercel.app` TIDAK ada di
+ * daftar itu, jadi pemanggilan dari sana akan ditolak browser. Tambahkan
+ * origin-nya di ALLOWED_ORIGINS sebelum menguji di luar production.
+ */
+export async function buatTautanRekeningKoran(nasabahId) {
+  const { data: sesi } = await supabase.auth.getSession();
+  const token = sesi?.session?.access_token;
+  if (!token) throw new Error('Belum login');
+
+  const base = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const res = await fetch(`${base}/functions/v1/rekening-koran-link`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      apikey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ nasabahId }),
+  });
+
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok || !body?.success) {
+    throw new Error(body?.error || `Gagal membuat tautan (HTTP ${res.status})`);
+  }
+  return body.data;   // { url, expiresAt, ttlDays }
 }
