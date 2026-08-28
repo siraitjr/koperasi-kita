@@ -1615,6 +1615,14 @@ function FakturModal({ fakturList, onClose }) {
               <img src={item.fakturUrl} alt="Faktur BU"
                 onClick={() => setZoomedUrl(item.fakturUrl)}
                 style={{ width: '100%', maxWidth: 400, borderRadius: 10, border: '1px solid var(--border)', cursor: 'pointer' }} />
+            ) : item.notaPath ? (
+              /* Ada notanya di Storage, tetapi URL bertanda tangannya gagal
+                 dibuat. Dulu keadaan ini tampil sama persis dengan "memang
+                 tidak ada foto" — dan itu yang membuat bug ini butuh tiga
+                 putaran untuk ditemukan. Sekarang dibedakan. */
+              <p style={{ fontSize: 12, color: 'var(--danger,#ef4444)', fontStyle: 'italic' }}>
+                Foto ada tetapi gagal dimuat — periksa konsol.
+              </p>
             ) : (
               <p style={{ fontSize: 12, color: 'var(--text-light)', fontStyle: 'italic' }}>Tidak ada foto faktur</p>
             )}
@@ -2600,7 +2608,7 @@ function KasPenuntunScreen({ user, cabang, cabangList, onBack, onLogout, onNavig
         if (!buku || (Array.isArray(buku) && buku.includes('kas_penuntun'))) {
           buPerDate[tgl] = (buPerDate[tgl] || 0) + (e.jumlah || 0);
           if (!buFakturPerDate[tgl]) buFakturPerDate[tgl] = [];
-          buFakturPerDate[tgl].push({ jumlah: e.jumlah || 0, fakturUrl: e.fakturUrl || null, keterangan: e.keterangan || '' });
+          buFakturPerDate[tgl].push({ jumlah: e.jumlah || 0, fakturUrl: e.fakturUrl || null, notaPath: e.notaPath || '', keterangan: e.keterangan || '' });
         }
       }
     });
@@ -3356,7 +3364,7 @@ function BukuEkspedisiScreen({ user, cabang, cabangList, onBack, onLogout, onNav
         if (!buku || (Array.isArray(buku) && buku.includes('ekspedisi'))) {
           buPerDate[tgl] = (buPerDate[tgl] || 0) + jumlah;
           if (!buFakturPerDate[tgl]) buFakturPerDate[tgl] = [];
-          buFakturPerDate[tgl].push({ jumlah, fakturUrl: e.fakturUrl || null, keterangan: e.keterangan || '' });
+          buFakturPerDate[tgl].push({ jumlah, fakturUrl: e.fakturUrl || null, notaPath: e.notaPath || '', keterangan: e.keterangan || '' });
         }
       } else if (e.jenis === 'pengembalian_kas' && e.arah === 'keluar') {
         pengembalianPerDate[tgl] = (pengembalianPerDate[tgl] || 0) + jumlah;

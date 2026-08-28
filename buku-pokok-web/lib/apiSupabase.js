@@ -372,9 +372,40 @@ export async function getKasirEntries({ cabangId, bulan }) {
     .order('tanggal', { ascending: true });
   if (error) lempar(error, 'getKasirEntries');
 
+  // ── URL BERTANDA TANGAN UNTUK NOTA ────────────────────────────────────
+  // `nota_path` adalah PATH, bukan URL. Bucket `nota-kasir` PRIVATE (003 §2),
+  // jadi tidak ada URL permanen seperti getDownloadURL() Firebase — setiap
+  // penayangan perlu URL bertanda tangan yang kedaluwarsa.
+  //
+  // Ditandatangani SEKALIGUS dengan createSignedUrls (jamak): satu panggilan
+  // untuk seluruh nota di bulan itu, bukan satu per baris.
+  const jalurNota = (data || []).map((e) => e.nota_path).filter(Boolean);
+  const urlNotaPer = {};
+  if (jalurNota.length) {
+    const { data: ttd, error: eTtd } = await supabase.storage
+      .from('nota-kasir').createSignedUrls(jalurNota, 3600);
+    if (eTtd) {
+      // Jalur BACA, jadi tidak dibatalkan seperti jalur tulis: satu objek
+      // bermasalah tidak boleh mengosongkan seluruh daftar kasir. Tetapi
+      // dicatat jelas — dan `notaPath` di bawah tetap terisi, sehingga UI
+      // bisa membedakan "tidak ada foto" dari "ada foto, URL-nya gagal".
+      console.error('Gagal menandatangani URL nota:', eTtd.message);
+    }
+    for (const t of ttd || []) {
+      if (t?.path && t?.signedUrl) urlNotaPer[t.path] = t.signedUrl;
+    }
+  }
+
   // Nama field dikembalikan ke bentuk lama supaya halaman tidak perlu diubah.
   // `jumlah` (RTDB) = `nominal` (Postgres); `source` menandai entri otomatis
   // dan dipakai kasir/page.js:1320 untuk lencana "Auto".
+  //
+  // ⚠ `fakturUrl`, BUKAN `notaUrl`. Versi pertama memberinya nama `notaUrl`
+  // sedangkan halaman membaca `item.fakturUrl` (kasir/page.js:1614, dan dua
+  // pemakaian lain di :2603 dan :3359). Nama yang tidak cocok selalu falsy,
+  // jadi modalnya menampilkan "Tidak ada foto faktur" untuk entri yang
+  // notanya ADA — kegagalan senyap, bukan galat. Nama lama yang dipakai
+  // halaman adalah kontraknya; berkas ini yang menyesuaikan.
   const entries = (data || []).map((e) => ({
     id: e.id,
     jenis: e.jenis,
@@ -385,7 +416,10 @@ export async function getKasirEntries({ cabangId, bulan }) {
     createdBy: e.dicatat_oleh || '',
     createdByName: e.dicatat_oleh_nama || '',
     targetAdminUid: e.target_admin_id || '',
-    notaUrl: e.nota_path || '',
+    fakturUrl: e.nota_path ? (urlNotaPer[e.nota_path] || '') : '',
+    // Dipertahankan supaya "belum melampirkan" bisa dibedakan dari
+    // "sudah melampirkan tetapi URL-nya gagal dibuat".
+    notaPath: e.nota_path || '',
     source: e.keterangan?.startsWith('Operasional ') ? 'operasional_harian' : '',
   }));
 
