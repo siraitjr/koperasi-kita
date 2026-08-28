@@ -59,6 +59,49 @@ function lempar(error, konteks) {
 }
 
 // =========================================================================
+// PENGAMBILAN BERKELOMPOK — jangan pernah `in()` dengan daftar tak terbatas
+// =========================================================================
+// PostgREST memfilter lewat QUERY STRING, jadi `in.(uuid,uuid,…)` masuk ke
+// URL. Satu uuid = 36 karakter + koma = 37. Cabang dengan 700 pinjaman
+// menghasilkan URL ±26 KB, dan gateway di depan PostgREST menolaknya
+// SEBELUM permintaan sampai ke database.
+//
+// Itu sebabnya galatnya berupa teks polos "Bad Request" dan bukan JSON:
+// PostgREST SELALU menjawab galat dengan JSON ({code, message, hint}).
+// Badan non-JSON = yang menolak bukan PostgREST, melainkan gateway di
+// depannya. Ini juga yang menjelaskan kenapa sebagian permintaan serupa
+// tetap 200 — yang lolos adalah yang daftarnya pendek (mis. `admin_id`,
+// hanya beberapa uuid).
+//
+// Ukuran potongan dipilih supaya URL tetap jauh di bawah batas gateway
+// mana pun: 80 × 37 ≈ 3 KB, ditambah basis URL masih < 4 KB.
+const BATAS_ID_PER_PERMINTAAN = 80;
+
+/**
+ * Ambil baris berdasarkan daftar id, dipotong-potong agar URL tidak meledak.
+ * Daftarnya di-dedupe lebih dulu — itu sering memangkasnya cukup banyak.
+ */
+async function ambilBerkelompok(tabel, kolom, ids, kolomPilih, penyaring) {
+  const unik = [...new Set((ids || []).filter(Boolean))];
+  if (!unik.length) return [];
+
+  const potongan = [];
+  for (let i = 0; i < unik.length; i += BATAS_ID_PER_PERMINTAAN) {
+    potongan.push(unik.slice(i, i + BATAS_ID_PER_PERMINTAAN));
+  }
+
+  const hasil = await Promise.all(potongan.map(async (bagian, n) => {
+    let q = supabase.from(tabel).select(kolomPilih).in(kolom, bagian);
+    if (penyaring) q = penyaring(q);
+    const { data, error } = await q;
+    if (error) lempar(error, `${tabel}/kelompok ${n + 1} dari ${potongan.length}`);
+    return data || [];
+  }));
+
+  return hasil.flat();
+}
+
+// =========================================================================
 // SUMMARY / PROFIL
 // =========================================================================
 
@@ -468,30 +511,22 @@ export async function getBukuPokok({ cabangId, adminUid, status, bulan }) {
 
   // Kolom top-up ada di `pinjaman` (001:318-320), tidak diekspos view.
   const pinjamanIds = rows.map((r) => r.pinjaman_id);
-  let topUp = {};
-  if (pinjamanIds.length) {
-    const { data: pj, error: e2 } = await supabase
-      .from('pinjaman')
-      .select('id, sisa_utang_lama_sebelum_top_up, besar_pinjaman_lama_sebelum_top_up')
-      .in('id', pinjamanIds);
-    if (e2) lempar(e2, 'getBukuPokok/pinjaman');
-    topUp = Object.fromEntries((pj || []).map((p) => [p.id, p]));
-  }
+  const pj = await ambilBerkelompok(
+    'pinjaman', 'id', pinjamanIds,
+    'id, sisa_utang_lama_sebelum_top_up, besar_pinjaman_lama_sebelum_top_up');
+  const topUp = Object.fromEntries(pj.map((p) => [p.id, p]));
 
   // --------------------------------------------------------- pembayaran ---
   // Diambil dari tabel, bukan v_pembayaran_harian: yang terakhir sudah
   // teragregat per (pinjaman, tanggal, jenis) sehingga `keterangan` per
   // transaksi hilang — padahal itulah yang muncul di kolom rincian.
-  let bayar = [];
-  if (pinjamanIds.length) {
-    const { data, error } = await supabase
-      .from('pembayaran')
-      .select('pinjaman_id, tanggal, jumlah, jenis, keterangan')
-      .in('pinjaman_id', pinjamanIds)
-      .order('tanggal', { ascending: true });
-    if (error) lempar(error, 'getBukuPokok/pembayaran');
-    bayar = data || [];
-  }
+  // Diurutkan SESUDAH digabung, bukan per kelompok: `order` di dalam tiap
+  // permintaan hanya mengurutkan potongannya sendiri, dan hasil gabungannya
+  // akan berselang-seling antar kelompok.
+  const bayar = (await ambilBerkelompok(
+    'pembayaran', 'pinjaman_id', pinjamanIds,
+    'pinjaman_id, tanggal, jumlah, jenis, keterangan'))
+    .sort((a, b) => String(a.tanggal).localeCompare(String(b.tanggal)));
 
   const bayarPer = {};   // pinjaman_id → { "dd MMM yyyy": {total, entries[]} }
   for (const b of bayar) {
@@ -512,18 +547,16 @@ export async function getBukuPokok({ cabangId, adminUid, status, bulan }) {
   // dihitung ulang dan bergeser dari cetakan lama (bukuPokokApi.js:951).
   const adminIds = [...new Set(rows.map((r) => r.admin_id).filter(Boolean))];
   const rekapBeku = {};
-  if (adminIds.length) {
-    const { data: beku, error } = await supabase
-      .from('v_rekap_harian_beku')
-      .select('admin_id, tanggal_indo, target, storting')
-      .in('admin_id', adminIds);
-    if (error) lempar(error, 'getBukuPokok/rekapBeku');
-    for (const r of beku || []) {
-      (rekapBeku[r.admin_id] ||= {})[r.tanggal_indo] = {
-        target: Number(r.target || 0),
-        storting: Number(r.storting || 0),
-      };
-    }
+  // Daftar admin memang pendek, tetapi tetap lewat helper yang sama supaya
+  // tidak ada satu pun `in()` telanjang tersisa untuk disalin nanti.
+  const beku = await ambilBerkelompok(
+    'v_rekap_harian_beku', 'admin_id', adminIds,
+    'admin_id, tanggal_indo, target, storting');
+  for (const r of beku) {
+    (rekapBeku[r.admin_id] ||= {})[r.tanggal_indo] = {
+      target: Number(r.target || 0),
+      storting: Number(r.storting || 0),
+    };
   }
 
   // ------------------------------------------------------- susun nasabah ---
@@ -637,14 +670,13 @@ export async function getBukuPokok({ cabangId, adminUid, status, bulan }) {
 
   // Simpanan per nasabah — satu query, bukan N.
   const nasabahIds = nasabahList.map((n) => n.id);
-  if (nasabahIds.length) {
-    const { data: simp, error } = await supabase
-      .from('simpanan').select('nasabah_id, jumlah').in('nasabah_id', nasabahIds);
-    if (error) lempar(error, 'getBukuPokok/simpanan');
-    const per = {};
-    for (const s of simp || []) per[s.nasabah_id] = (per[s.nasabah_id] || 0) + Number(s.jumlah || 0);
-    for (const n of nasabahList) n.simpanan = per[n.id] || 0;
+  const simp = await ambilBerkelompok(
+    'simpanan', 'nasabah_id', nasabahIds, 'nasabah_id, jumlah');
+  const perSimpanan = {};
+  for (const s of simp) {
+    perSimpanan[s.nasabah_id] = (perSimpanan[s.nasabah_id] || 0) + Number(s.jumlah || 0);
   }
+  for (const n of nasabahList) n.simpanan = perSimpanan[n.id] || 0;
 
   // ------------------------------------------------------------- total ---
   const todayIndo = tglIndo(today);
@@ -654,14 +686,10 @@ export async function getBukuPokok({ cabangId, adminUid, status, bulan }) {
   // Target hari ini dari jadwal cicilan yang jatuh tempo. Di RTDB angka ini
   // datang dari `summary.targetHariIni` (summaryHelpers.js); keduanya belum
   // tentu identik — lihat 026 §VERIFIKASI no. 4.
-  let targetHarianHariIni = 0;
-  if (pinjamanIds.length) {
-    const { data: jd, error } = await supabase
-      .from('jadwal_cicilan').select('jumlah')
-      .in('pinjaman_id', pinjamanIds).eq('tanggal', today);
-    if (error) lempar(error, 'getBukuPokok/jadwal');
-    targetHarianHariIni = (jd || []).reduce((s, x) => s + Number(x.jumlah || 0), 0);
-  }
+  const jd = await ambilBerkelompok(
+    'jadwal_cicilan', 'pinjaman_id', pinjamanIds, 'jumlah',
+    (q) => q.eq('tanggal', today));
+  const targetHarianHariIni = jd.reduce((s, x) => s + Number(x.jumlah || 0), 0);
 
   // orphanPaymentsByDate — pembayaran milik nasabah yang sudah DIARSIPKAN
   // (padanan pelanggan terhapus di RTDB, mis. setelah cairkanSimpanan).
@@ -676,12 +704,11 @@ export async function getBukuPokok({ cabangId, adminUid, status, bulan }) {
     const { data: arsip, error } = await qa;
     if (error) lempar(error, 'getBukuPokok/orphan');
     if (arsip?.length) {
-      const { data: op } = await supabase
-        .from('v_pembayaran_harian')
-        .select('tanggal, jumlah, nasabah_id')
-        .in('nasabah_id', arsip.map((a) => a.id))
-        .gte('tanggal', `${bulan}-01`).lte('tanggal', akhir);
-      for (const p of op || []) {
+      const op = await ambilBerkelompok(
+        'v_pembayaran_harian', 'nasabah_id', arsip.map((a) => a.id),
+        'tanggal, jumlah, nasabah_id',
+        (q) => q.gte('tanggal', `${bulan}-01`).lte('tanggal', akhir));
+      for (const p of op) {
         const t = tglIndo(p.tanggal);
         orphanPaymentsByDate[t] = (orphanPaymentsByDate[t] || 0) + Number(p.jumlah || 0);
       }
