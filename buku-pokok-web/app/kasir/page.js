@@ -6,11 +6,13 @@
 // =========================================================================
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { onAuthStateChanged, signInWithEmailAndPassword, signOut } from 'firebase/auth';
-import { auth, storage, database } from '../../lib/firebase';
-import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { ref as dbRef, update } from 'firebase/database';
-import { getKasirSummary, getKasirEntries, addKasirEntry, deleteKasirEntry, getBukuPokok, syncOperasionalTransport, getJurnalTransaksi } from '../../lib/api';
+// BLOK 6 — halaman ini kini sepenuhnya Supabase.
+// Impor firebase/auth, firebase/storage, dan firebase/database DIHAPUS karena
+// tidak ada lagi yang memakainya di berkas ini: Blok 2/3 memindahkan absensi
+// dan operasional, Blok 5 memindahkan nota. `lib/firebase.js` sendiri TIDAK
+// dihapus — halaman lain masih mengimpornya untuk jalur SSO (024 §5, U-2).
+import { pantauSesi, masuk, keluar } from '../../lib/authSupabase';
+import { getKasirSummary, getKasirEntries, addKasirEntry, deleteKasirEntry, getBukuPokok, syncOperasionalTransport, getJurnalTransaksi } from '../../lib/apiSupabase';
 import { formatRp, formatRpFull } from '../../lib/format';
 import { isEligibleForTarget, isTanggalHistoris } from '../../lib/target';
 
@@ -546,9 +548,9 @@ export default function KasirPage() {
 
   // ==================== AUTH STATE ====================
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-      if (firebaseUser) {
-        setUser(firebaseUser);
+    const unsubscribe = pantauSesi(async (pengguna) => {
+      if (pengguna) {
+        setUser(pengguna);
         try {
           const result = await getKasirSummary();
           if (result.success) {
@@ -599,7 +601,7 @@ export default function KasirPage() {
 
   // ==================== HANDLERS ====================
   const handleLogin = async (email, password) => {
-    await signInWithEmailAndPassword(auth, email, password);
+    await masuk(email, password);
   };
 
   const handleLogout = () => {
@@ -613,7 +615,7 @@ export default function KasirPage() {
 
   const doLogout = async () => {
     setShowLogoutModal(false);
-    await signOut(auth);
+    await keluar();
   };
 
   const goToAbsensi = () => {

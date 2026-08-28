@@ -22,9 +22,12 @@
 // =========================================================================
 
 import { useState, useEffect } from 'react';
-import { onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
+// BLOK 6 — penjaga halaman pindah ke Supabase. `signInWithCustomToken`
+// ditahan untuk blok SSO di bawah, yang kini INERT (lihat komentar di sana).
+import { signInWithCustomToken } from 'firebase/auth';
+import { pantauSesi } from '../../lib/authSupabase';
 import { auth } from '../../lib/firebase';
-import { getSummary, getBukuPokok, getKasirSummary } from '../../lib/api';
+import { getSummary, getBukuPokok, getKasirSummary } from '../../lib/apiSupabase';
 import { formatRp } from '../../lib/format';
 
 // Role yang boleh melihat menu kasir di nav (parity pembukuan/page.js).
@@ -234,6 +237,8 @@ export default function BukuPerkembanganPage() {
     const idToken = urlParams.get('idToken');
     if (!idToken) return;
     window.history.replaceState({}, '', window.location.pathname + window.location.search.replace(/([?&])idToken=[^&]*/, '').replace(/^&/, '?'));
+    // ⚠ INERT SEJAK BLOK 6 — membuat sesi Firebase yang tidak dibaca lagi.
+    // Lihat catatan sama di pembukuan/page.js. Utang U-2, 024 §5.
     fetch('https://asia-southeast1-koperasikitagodangulu.cloudfunctions.net/generateAutoLoginToken', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -246,8 +251,8 @@ export default function BukuPerkembanganPage() {
 
   // ---- Auth + cabang resolution ----
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
-      if (!firebaseUser) {
+    const unsub = pantauSesi(async (pengguna) => {
+      if (!pengguna) {
         // Tidak login → arahkan ke halaman utama untuk login.
         window.location.href = '/pembukuan';
         return;

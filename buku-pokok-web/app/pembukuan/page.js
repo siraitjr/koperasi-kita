@@ -6,9 +6,13 @@
 // =========================================================================
 
 import { useState, useEffect, useRef } from 'react';
-import { onAuthStateChanged, signInWithEmailAndPassword, signOut, signInWithCustomToken } from 'firebase/auth';
+// BLOK 6 — login pindah ke Supabase. `signInWithCustomToken` DITAHAN karena
+// blok SSO Android→Web di bawah masih memakainya; blok itu kini INERT (lihat
+// komentar di sana) dan ikut mati 1 September bersama Cloud Function-nya.
+import { signInWithCustomToken } from 'firebase/auth';
+import { pantauSesi, masuk, keluar } from '../../lib/authSupabase';
 import { auth } from '../../lib/firebase';
-import { getSummary, getBukuPokok, getKasirSummary, getJurnalTransaksi, getKoreksiStorting, setKoreksiStorting } from '../../lib/api';
+import { getSummary, getBukuPokok, getKasirSummary, getJurnalTransaksi, getKoreksiStorting, setKoreksiStorting } from '../../lib/apiSupabase';
 import { formatRp, formatRpFull, formatRpShort } from '../../lib/format';
 import { isEligibleForTarget, isTanggalHistoris } from '../../lib/target';
 
@@ -34,6 +38,12 @@ export default function Home() {
     // Segera hapus token dari URL (keamanan - tidak tersimpan di history browser)
     window.history.replaceState({}, '', window.location.pathname);
 
+    // ⚠ INERT SEJAK BLOK 6. Blok ini membuat sesi FIREBASE, sedangkan
+    // penjaga halaman kini membaca sesi SUPABASE — jadi auto-login dari
+    // Android tidak lagi memasukkan siapa pun. Sengaja tidak dihapus
+    // (aturan repo), dan memang ikut mati 1 September bersama Cloud
+    // Function-nya. Penggantinya `verifyOtp` lewat session-management
+    // (012 §1), bagian dari Android v2 — utang U-2 di 024 §5.
     // Tukar ID Token dengan Custom Token via Cloud Function
     fetch('https://asia-southeast1-koperasikitagodangulu.cloudfunctions.net/generateAutoLoginToken', {
       method: 'POST',
@@ -81,9 +91,9 @@ export default function Home() {
 
   // ==================== AUTH STATE ====================
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-      if (firebaseUser) {
-        setUser(firebaseUser);
+    const unsubscribe = pantauSesi(async (pengguna) => {
+      if (pengguna) {
+        setUser(pengguna);
         try {
           const result = await getSummary();
           if (result.success) {
@@ -191,7 +201,7 @@ export default function Home() {
 
   // ==================== HANDLERS ====================
   const handleLogin = async (email, password) => {
-    await signInWithEmailAndPassword(auth, email, password);
+    await masuk(email, password);
   };
 
   const handleLogout = () => {
@@ -206,7 +216,7 @@ export default function Home() {
   const doLogout = async () => {
     setShowLogoutModal(false);
     clearNav();
-    await signOut(auth);
+    await keluar();
   };
 
   const goToAbsensi = () => {

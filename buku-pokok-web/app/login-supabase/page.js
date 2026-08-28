@@ -3,8 +3,19 @@
 // =========================================================================
 // /login-supabase — halaman uji login Supabase (D-5, 021 §5)
 // =========================================================================
-// RUTE TERPISAH, SENGAJA. Halaman ini TIDAK menggantikan `/pembukuan` hari
-// ini, dan tidak satu pun halaman lama mengimpornya.
+// STATUS SESUDAH BLOK 6: DIPERTAHANKAN sebagai alat DIAGNOSTIK.
+//
+// Login sungguhan sudah pindah ke `/pembukuan`. Rute ini tidak lagi
+// dibutuhkan untuk masuk — tetapi ia satu-satunya tempat yang menampilkan
+// `auth.uid()`, peran, dan cabang MENTAH langsung dari `koperasi.app_user`.
+//
+// Itu persis yang dibutuhkan saat halaman tampak kosong dan Anda belum tahu
+// sebabnya: sesi yang tidak terbentuk, atau RLS yang menyembunyikan baris.
+// Tanpa halaman ini keduanya terlihat sama persis — layar kosong. Ongkosnya
+// satu rute kecil yang tidak diimpor siapa pun; nilainya besar pada hari
+// D-0 ketika tidak ada waktu menebak.
+//
+// Hapus setelah evakuasi tenang, bukan sekarang.
 //
 // Alasannya di 024 §3: `/pembukuan` mengambil peran dan daftar cabang dari
 // `getSummary()` — Cloud Function yang butuh token Firebase. Mengganti
