@@ -13,8 +13,11 @@
  *   faktur_bu/{cabang}/{YYYY-MM}/{pushId}.jpg
  *       → nota-kasir/{cabang}/{YYYY-MM}/{kasir_entry_id}.jpg
  *         (nama asli dipertahankan bila pushId tidak terpetakan)
- *   ktp_images/{adminUid}/{pelangganId}/ktp_{jenis}.jpg
+ *   ktp_images/{adminUid}/{pushId}/ktp_{jenis}.jpg
  *       → ktp/{nasabah_id}/{jenis}.jpg
+ *         pushId dicari BERLAPIS — lihat cariNasabah(). Ia tidak selalu
+ *         nasabah.legacy_pelanggan_id; sebagian ada di pinjaman_history
+ *         (push id generasi pinjaman) atau pelanggan_status_khusus.
  *   ktp_images_pending/{adminUid}/{pelangganId}/ktp_{jenis}.jpg
  *       → ktp-pending/{nasabah_id}/{pinjaman_id}/{jenis}.jpg
  *   profile_photos/{uid}/profile.jpg
@@ -182,32 +185,38 @@ async function muatPemetaan() {
   const klien = new Client({ connectionString: CFG.dsn });
   await klien.connect();
   try {
-    // Satu query per tabel, tanpa paginasi: koneksi langsung tidak punya
-    // batas 1000 baris seperti PostgREST, jadi seluruh baris datang sekaligus.
     const q = async (sql) => (await klien.query(sql)).rows;
 
     const nasabah = await q(
       'select id, legacy_admin_uid, legacy_pelanggan_id from koperasi.nasabah');
     const appUser = await q(
       'select id, legacy_uid from koperasi.app_user where legacy_uid is not null');
-    // Generasi tertinggi per nasabah dihitung DI DATABASE — distinct on lebih
-    // murah daripada menarik seluruh baris pinjaman lalu memilahnya di Node.
     const pinjaman = await q(
       'select distinct on (nasabah_id) nasabah_id, id, pinjaman_ke ' +
       '  from koperasi.pinjaman order by nasabah_id, pinjaman_ke desc');
     const kasir = await q('select id from koperasi.kasir_entry');
 
-    // kunci: "{adminUid}/{pelangganId}" → nasabah_id
-    const perNasabah = new Map();
-    // cadangan: pelangganId saja → nasabah_id (legacy_pelanggan_id UNIQUE di
-    // 001:193, jadi ini tetap tidak ambigu). Menyelamatkan berkas yang adminnya
-    // sudah dipindah sejak foto diunggah.
-    const perPelanggan = new Map();
-    // teks() di SETIAP nilai dari database. Dua alasan, keduanya nyata:
-    //   · data warisan menyimpan spasi di belakang ("panti " bukan "panti"),
-    //     dan kunci yang berbeda satu spasi tidak akan pernah cocok;
-    //   · kolom bisa NULL, dan `${null}/${null}` diam-diam menghasilkan
-    //     kunci "null/null" yang mencocokkan hal-hal yang salah.
+    // ── TIGA SUMBER PUSH ID LAIN ─────────────────────────────────────────
+    // `pinjaman` TIDAK punya kolom legacy sama sekali (diperiksa di
+    // 001_schema_v2.sql), jadi "cari pushId di tabel pinjaman" tidak bisa
+    // dilakukan apa adanya. Yang menyimpan push id generasi pinjaman adalah
+    // `pinjaman_history` — padanan node RTDB `riwayat_pinjaman` — dan ia
+    // PUNYA nasabah_id, jadi bisa dipetakan.
+    const riwayat = await q(
+      'select nasabah_id, legacy_push_id, legacy_admin_uid ' +
+      '  from koperasi.pinjaman_history where legacy_push_id is not null');
+    const statusKhusus = await q(
+      'select nasabah_id, legacy_pelanggan_id, legacy_admin_uid ' +
+      '  from koperasi.pelanggan_status_khusus ' +
+      ' where nasabah_id is not null and legacy_pelanggan_id is not null');
+    // `pelanggan_ditolak` TIDAK punya nasabah_id — mereka memang tidak pernah
+    // jadi nasabah. Fotonya tidak punya rumah di bucket `ktp`, yang path-nya
+    // menuntut nasabah_id. Tetap dimuat supaya bisa DILAPORKAN sebagai
+    // kategori tersendiri, bukan hilang di tumpukan "yatim".
+    const ditolak = await q(
+      'select legacy_push_id from koperasi.pelanggan_ditolak ' +
+      ' where legacy_push_id is not null');
+
     let spasiLiar = 0;
     const bersih = (v) => {
       const t = teks(v);
@@ -215,12 +224,40 @@ async function muatPemetaan() {
       return t;
     };
 
+    // Lapisan pencarian, diurut dari yang paling pasti ke paling longgar.
+    // Setiap lapisan dicatat namanya supaya laporan bisa menjawab pertanyaan
+    // "sebenarnya pushId itu id apa?" dengan bukti, bukan dugaan.
+    const L = {
+      nasabahPasangan: new Map(),   // adminUid/pelangganId → nasabah_id
+      nasabahPelanggan: new Map(),  // pelangganId          → nasabah_id
+      riwayatPasangan: new Map(),   // adminUid/pushId      → nasabah_id
+      riwayatPush: new Map(),       // pushId               → nasabah_id
+      statusKhusus: new Map(),      // pelangganId          → nasabah_id
+      ditolak: new Set(),           // pushId (tanpa nasabah_id)
+    };
+
     for (const n of nasabah) {
       const adm = bersih(n.legacy_admin_uid);
       const pel = bersih(n.legacy_pelanggan_id);
       const id = teks(n.id);
-      if (adm && pel && id) perNasabah.set(`${adm}/${pel}`, id);
-      if (pel && id) perPelanggan.set(pel, id);
+      if (adm && pel && id) L.nasabahPasangan.set(`${adm}/${pel}`, id);
+      if (pel && id) L.nasabahPelanggan.set(pel, id);
+    }
+    for (const r of riwayat) {
+      const adm = bersih(r.legacy_admin_uid);
+      const push = bersih(r.legacy_push_id);
+      const id = teks(r.nasabah_id);
+      if (adm && push && id) L.riwayatPasangan.set(`${adm}/${push}`, id);
+      if (push && id) L.riwayatPush.set(push, id);
+    }
+    for (const sk of statusKhusus) {
+      const pel = bersih(sk.legacy_pelanggan_id);
+      const id = teks(sk.nasabah_id);
+      if (pel && id) L.statusKhusus.set(pel, id);
+    }
+    for (const d of ditolak) {
+      const push = bersih(d.legacy_push_id);
+      if (push) L.ditolak.add(push);
     }
 
     const perUser = new Map();
@@ -239,22 +276,47 @@ async function muatPemetaan() {
 
     const idKasirAda = new Set(kasir.map((k) => teks(k.id)).filter(Boolean));
 
-    if (spasiLiar) {
-      log(`   ⚠ ${spasiLiar} nilai legacy punya spasi liar — sudah dipangkas`);
-    }
+    log(`   nasabah ${L.nasabahPasangan.size} · riwayat_pinjaman ${L.riwayatPush.size}` +
+        ` · status_khusus ${L.statusKhusus.size} · ditolak ${L.ditolak.size}`);
+    log(`   staf ${perUser.size} · pinjaman ${pinjamanTerbaru.size} · kasir_entry ${idKasirAda.size}`);
+    if (spasiLiar) log(`   ⚠ ${spasiLiar} nilai legacy punya spasi liar — sudah dipangkas`);
 
-    log(`   nasabah ${perNasabah.size} · staf ${perUser.size} ` +
-        `· pinjaman ${pinjamanTerbaru.size} · kasir_entry ${idKasirAda.size}`);
-
-    if (!perNasabah.size) {
+    if (!L.nasabahPasangan.size) {
       throw new Error(
         'Tidak ada nasabah ber-legacy id. DSN-nya menunjuk database yang benar? ' +
         'Tanpa pemetaan ini SELURUH berkas ktp akan jadi yatim.');
     }
-    return { perNasabah, perPelanggan, perUser, pinjamanTerbaru, idKasirAda };
+    return { L, perUser, pinjamanTerbaru, idKasirAda };
   } finally {
     await klien.end();
   }
+}
+
+/**
+ * Cari nasabah_id untuk pasangan (adminUid, pushId), berlapis.
+ *
+ * ⚠ INI JAWABAN ATAS 73% YATIM. Versi sebelumnya hanya mencoba lapisan 1-2,
+ *   yaitu `nasabah.legacy_pelanggan_id`. Bukti bahwa itu tidak cukup ada di
+ *   angka dry-run sendiri: ktp_images_pending memakai BENTUK PATH YANG SAMA
+ *   dan pencarian yang SAMA, tetapi kena 90% sementara ktp_images hanya 13%.
+ *   Pencariannya bekerja; yang berbeda adalah RUANG ID yang dipakai kedua
+ *   folder itu.
+ *
+ *   Karena itu setiap lapisan diberi NAMA dan dihitung. Laporan dry-run akan
+ *   memberi tahu ruang id mana yang sebenarnya dipakai `ktp_images/` —
+ *   dengan bukti, bukan dugaan.
+ */
+function cariNasabah(M, adminUid, pushId) {
+  const c = [
+    ['nasabah_pasangan',  M.L.nasabahPasangan.get(`${adminUid}/${pushId}`)],
+    ['nasabah_pelanggan', M.L.nasabahPelanggan.get(pushId)],
+    ['riwayat_pasangan',  M.L.riwayatPasangan.get(`${adminUid}/${pushId}`)],
+    ['riwayat_push',      M.L.riwayatPush.get(pushId)],
+    ['status_khusus',     M.L.statusKhusus.get(pushId)],
+  ];
+  for (const [lapisan, id] of c) if (id) return { id, lapisan };
+  if (M.L.ditolak.has(pushId)) return { id: null, lapisan: 'pelanggan_ditolak' };
+  return { id: null, lapisan: null };
 }
 
 // ================================================================= WALK ===
@@ -319,13 +381,22 @@ function petaKtp(seg, M, pending) {
   const jenis = JENIS_KTP[dasar] || dasar.replace(/^ktp_/, '');
   if (!jenis) return { yatim: `nama berkas tidak dikenali: ${berkas}` };
 
-  const nasabahId = M.perNasabah.get(`${adminUid}/${pelangganId}`)
-    || M.perPelanggan.get(pelangganId);
+  const { id: nasabahId, lapisan } = cariNasabah(M, adminUid, pelangganId);
   if (!nasabahId) {
-    return { yatim: `nasabah tidak terpetakan: ${adminUid}/${pelangganId}` };
+    return {
+      yatim: lapisan === 'pelanggan_ditolak'
+        // Pemohon yang DITOLAK tidak pernah jadi nasabah, jadi tidak ada
+        // nasabah_id — dan path bucket `ktp` menuntutnya. Disebut apa adanya
+        // supaya tidak tercampur dengan "benar-benar tidak dikenal".
+        ? `pemohon ditolak (tidak punya nasabah_id): ${pelangganId}`
+        : `tidak ditemukan di lapisan mana pun: ${adminUid}/${pelangganId}`,
+      lapisan,
+    };
   }
 
-  if (!pending) return { bucket: 'ktp', tujuan: `${nasabahId}/${jenis}.jpg`, tertaut: true };
+  if (!pending) {
+    return { bucket: 'ktp', tujuan: `${nasabahId}/${jenis}.jpg`, tertaut: true, lapisan };
+  }
 
   // ── ktp-pending: satu-satunya tempat yang butuh keputusan ──────────────
   // 003 §2 menuntut `{nasabah_id}/{pinjaman_id}/{jenis}.jpg`, tetapi path
@@ -338,11 +409,12 @@ function petaKtp(seg, M, pending) {
   // pending berturut-turut, foto lama bisa menempel ke generasi yang salah.
   // Dicatat di laporan supaya bisa diperiksa, bukan disembunyikan.
   const pj = M.pinjamanTerbaru.get(nasabahId);
-  if (!pj) return { yatim: `nasabah ${nasabahId} belum punya baris pinjaman` };
+  if (!pj) return { yatim: `nasabah ${nasabahId} belum punya baris pinjaman`, lapisan };
   return {
     bucket: 'ktp-pending',
     tujuan: `${nasabahId}/${pj.id}/${jenis}.jpg`,
     tertaut: true,
+    lapisan,
     catatan: 'pinjaman_id = generasi tertinggi (asumsi, lihat komentar)',
   };
 }
@@ -382,15 +454,30 @@ const TIPE = { '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png',
   const rencana = [];
   const yatim = [];
   const perBucket = {};
+  // Berapa berkas yang cocok lewat lapisan mana. INI yang menjawab
+  // "pushId itu sebenarnya id apa" — dengan hitungan, bukan hipotesis.
+  const perLapisan = {};
+  const perLapisanBucket = {};
+  const contohYatim = {};
 
   for (const abs of berkas) {
     const rel = path.relative(CFG.dir, abs);
     const hasil = petakan(rel, M);
     if (hasil.yatim) {
-      yatim.push({ sumber: rel, alasan: hasil.yatim });
+      yatim.push({ sumber: rel, alasan: hasil.yatim, lapisan: hasil.lapisan || null });
+      // Simpan beberapa contoh per alasan supaya bisa diperiksa manual tanpa
+      // membuka laporan 5.000 baris.
+      const kunci = teks(hasil.yatim).replace(/:.*$/, '');
+      (contohYatim[kunci] ||= []);
+      if (contohYatim[kunci].length < 5) contohYatim[kunci].push(rel);
       continue;
     }
     perBucket[hasil.bucket] = (perBucket[hasil.bucket] || 0) + 1;
+    if (hasil.lapisan) {
+      perLapisan[hasil.lapisan] = (perLapisan[hasil.lapisan] || 0) + 1;
+      const kb = `${hasil.bucket} ← ${hasil.lapisan}`;
+      perLapisanBucket[kb] = (perLapisanBucket[kb] || 0) + 1;
+    }
     rencana.push({ abs, rel, ...hasil });
   }
 
@@ -400,12 +487,29 @@ const TIPE = { '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png',
   const takTertaut = rencana.filter((r) => r.tertaut === false).length;
   if (takTertaut) log(`   ⚠ faktur tanpa kasir_entry (nama asli) : ${takTertaut}`);
 
+  if (Object.keys(perLapisanBucket).length) {
+    log(`\n▶ Lapisan mana yang mencocokkan — ini bukti ruang id yang dipakai`);
+    for (const [k, n] of Object.entries(perLapisanBucket).sort((a, b) => b[1] - a[1])) {
+      log(`   ${String(n).padStart(6)}  ${k}`);
+    }
+  }
+  if (Object.keys(contohYatim).length) {
+    log(`\n▶ Contoh yatim per alasan (maksimal 5)`);
+    for (const [alasan, contoh] of Object.entries(contohYatim)) {
+      log(`   ${alasan} — ${yatim.filter((y) => y.alasan.startsWith(alasan)).length} berkas`);
+      for (const c of contoh) log(`      ${c}`);
+    }
+  }
+
   const tulisLaporan = (ringkas) => {
     fs.writeFileSync(CFG.report, JSON.stringify({
       generatedAt: new Date().toISOString(),
       dir: CFG.dir, executed: CFG.execute,
       ...ringkas,
       perBucket,
+      perLapisan,
+      perLapisanBucket,
+      contohYatim,
       // Peta lengkap sumber→tujuan. Ini juga bahan mentah untuk mengisi
       // `koperasi.dokumen` nanti (003 §4) — belum dikerjakan skrip ini.
       rencana: rencana.map((r) => ({
