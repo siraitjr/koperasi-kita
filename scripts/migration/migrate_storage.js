@@ -20,8 +20,25 @@
  *   profile_photos/{uid}/profile.jpg
  *       → profil/{user_id}/profile.jpg
  *
+ * DUA JALUR YANG BERBEDA, DAN INI YANG SEMPAT SALAH
+ *   Pemetaan dibaca lewat `pg` (koneksi Postgres LANGSUNG), bukan PostgREST.
+ *   Versi pertama memakai supabase.from('nasabah').select(...) dan gagal
+ *   dengan "Legacy API keys are disabled": setelan proyek itu mematikan
+ *   endpoint PostgREST untuk kunci lama. Storage API TIDAK ikut terblokir,
+ *   jadi unggahannya tetap boleh lewat supabase-js.
+ *
+ *     baca DB      → pg + DB_DSN          (wajib)
+ *     unggah objek → Storage API + kunci  (hanya saat --execute)
+ *
+ *   Karena itu DRY-RUN kini cukup dengan DSN saja — tidak perlu kunci sama
+ *   sekali, dan tidak menyentuh jaringan Supabase.
+ *
  * PEMAKAIAN
+ *   export DB_DSN='postgresql://postgres:<pw>@<host>:5432/postgres'
  *   node scripts/migration/migrate_storage.js                    # dry-run
+ *
+ *   export SUPABASE_URL='https://<ref>.supabase.co'
+ *   export SUPABASE_SERVICE_ROLE_KEY='<kunci secret>'
  *   node scripts/migration/migrate_storage.js --execute          # unggah
  * ========================================================================= */
 
@@ -42,14 +59,28 @@ const CFG = {
   execute: arg('execute', false) === true,
   paralel: Math.max(1, parseInt(arg('paralel', '5'), 10)),
   report: arg('report', './storage_report.json'),
+  dsn: arg('dsn', process.env.DB_DSN),
   url: process.env.SUPABASE_URL,
   key: process.env.SUPABASE_SERVICE_ROLE_KEY,
 };
 
-if (!CFG.url || !CFG.key) {
-  console.error('FATAL: set SUPABASE_URL dan SUPABASE_SERVICE_ROLE_KEY.');
-  console.error('       Service role key MEM-BYPASS RLS — jalankan dari mesin');
-  console.error('       Anda sendiri, jangan dari CI, jangan taruh di .env.local.');
+// DSN selalu wajib: seluruh pemetaan dibaca dari Postgres langsung.
+if (!CFG.dsn) {
+  console.error('FATAL: DSN Postgres tidak ada.');
+  console.error('       export DB_DSN="postgresql://postgres:<pw>@<host>:5432/postgres"');
+  console.error('       atau --dsn="…". PostgREST TIDAK dipakai lagi di sini —');
+  console.error('       endpoint itu diblokir setelan "Disable legacy API keys".');
+  process.exit(2);
+}
+// Kunci Storage hanya perlu saat benar-benar mengunggah. Dry-run tidak
+// menyentuh jaringan Supabase sama sekali.
+if (CFG.execute && (!CFG.url || !CFG.key)) {
+  console.error('FATAL: --execute butuh SUPABASE_URL dan SUPABASE_SERVICE_ROLE_KEY.');
+  console.error('       ⚠ Bila proyek sudah mematikan legacy API keys, pakai kunci');
+  console.error('         SECRET yang baru (sb_secret_…), bukan JWT service_role lama —');
+  console.error('         yang lama akan ditolak Storage dengan pesan yang sama.');
+  console.error('       Kunci ini mem-bypass RLS: jalankan dari mesin Anda sendiri,');
+  console.error('       jangan dari CI, jangan taruh di .env.local.');
   process.exit(2);
 }
 if (!fs.existsSync(CFG.dir)) {
@@ -57,18 +88,26 @@ if (!fs.existsSync(CFG.dir)) {
   process.exit(2);
 }
 
-let createClient;
-try { ({ createClient } = require('@supabase/supabase-js')); }
+let Client;
+try { ({ Client } = require('pg')); }
 catch {
-  console.error('FATAL: @supabase/supabase-js belum terpasang di root repo.');
-  console.error('       npm i @supabase/supabase-js   (atau jalankan dari buku-pokok-web/)');
+  console.error('FATAL: paket `pg` belum terpasang.');
+  console.error('       cd scripts/migration && npm i');
   process.exit(2);
 }
 
-const db = createClient(CFG.url, CFG.key, {
-  auth: { persistSession: false },
-  db: { schema: 'koperasi' },
-});
+// supabase-js HANYA untuk Storage, dan hanya dimuat saat --execute.
+let storage = null;
+if (CFG.execute) {
+  let createClient;
+  try { ({ createClient } = require('@supabase/supabase-js')); }
+  catch {
+    console.error('FATAL: @supabase/supabase-js belum terpasang.');
+    console.error('       cd scripts/migration && npm i');
+    process.exit(2);
+  }
+  storage = createClient(CFG.url, CFG.key, { auth: { persistSession: false } }).storage;
+}
 
 const log = (...a) => console.log(...a);
 
@@ -98,55 +137,61 @@ const idKasir = (cab, bulan, kid) => uuidv5(`kasir:${cab}/${bulan}/${kid}`);
 //       kunci, sama seperti yang dipakai rpc_rekening_koran (020a).
 //     · `pinjaman` TIDAK punya kolom legacy sama sekali. Lihat §ktp-pending.
 async function muatPemetaan() {
-  log('▶ Memuat pemetaan dari database …');
+  log('▶ Memuat pemetaan dari Postgres (pg, bukan PostgREST) …');
 
-  const semua = async (tabel, kolom) => {
-    const out = [];
-    for (let dari = 0; ; dari += 1000) {
-      const { data, error } = await db.from(tabel).select(kolom)
-        .range(dari, dari + 999);
-      if (error) throw new Error(`baca ${tabel}: ${error.message}`);
-      out.push(...(data || []));
-      if (!data || data.length < 1000) break;
+  const klien = new Client({ connectionString: CFG.dsn });
+  await klien.connect();
+  try {
+    // Satu query per tabel, tanpa paginasi: koneksi langsung tidak punya
+    // batas 1000 baris seperti PostgREST, jadi seluruh baris datang sekaligus.
+    const q = async (sql) => (await klien.query(sql)).rows;
+
+    const nasabah = await q(
+      'select id, legacy_admin_uid, legacy_pelanggan_id from koperasi.nasabah');
+    const appUser = await q(
+      'select id, legacy_uid from koperasi.app_user where legacy_uid is not null');
+    // Generasi tertinggi per nasabah dihitung DI DATABASE — distinct on lebih
+    // murah daripada menarik seluruh baris pinjaman lalu memilahnya di Node.
+    const pinjaman = await q(
+      'select distinct on (nasabah_id) nasabah_id, id, pinjaman_ke ' +
+      '  from koperasi.pinjaman order by nasabah_id, pinjaman_ke desc');
+    const kasir = await q('select id from koperasi.kasir_entry');
+
+    // kunci: "{adminUid}/{pelangganId}" → nasabah_id
+    const perNasabah = new Map();
+    // cadangan: pelangganId saja → nasabah_id (legacy_pelanggan_id UNIQUE di
+    // 001:193, jadi ini tetap tidak ambigu). Menyelamatkan berkas yang adminnya
+    // sudah dipindah sejak foto diunggah.
+    const perPelanggan = new Map();
+    for (const n of nasabah) {
+      if (n.legacy_admin_uid && n.legacy_pelanggan_id) {
+        perNasabah.set(`${n.legacy_admin_uid}/${n.legacy_pelanggan_id}`, n.id);
+      }
+      if (n.legacy_pelanggan_id) perPelanggan.set(n.legacy_pelanggan_id, n.id);
     }
-    return out;
-  };
 
-  const nasabah = await semua('nasabah', 'id, legacy_admin_uid, legacy_pelanggan_id');
-  const appUser = await semua('app_user', 'id, legacy_uid');
-  const pinjaman = await semua('pinjaman', 'id, nasabah_id, pinjaman_ke');
-  const kasir = await semua('kasir_entry', 'id');
+    const perUser = new Map();
+    for (const u of appUser) perUser.set(u.legacy_uid, u.id);
 
-  // kunci: "{adminUid}/{pelangganId}" → nasabah_id
-  const perNasabah = new Map();
-  // cadangan: pelangganId saja → nasabah_id (legacy_pelanggan_id UNIQUE di
-  // 001:193, jadi ini tetap tidak ambigu). Menyelamatkan berkas yang adminnya
-  // sudah dipindah sejak foto diunggah.
-  const perPelanggan = new Map();
-  for (const n of nasabah) {
-    if (n.legacy_admin_uid && n.legacy_pelanggan_id) {
-      perNasabah.set(`${n.legacy_admin_uid}/${n.legacy_pelanggan_id}`, n.id);
-    }
-    if (n.legacy_pelanggan_id) perPelanggan.set(n.legacy_pelanggan_id, n.id);
-  }
-
-  const perUser = new Map();
-  for (const u of appUser) if (u.legacy_uid) perUser.set(u.legacy_uid, u.id);
-
-  // Generasi TERTINGGI per nasabah — lihat alasannya di petaKtpPending().
-  const pinjamanTerbaru = new Map();
-  for (const p of pinjaman) {
-    const ada = pinjamanTerbaru.get(p.nasabah_id);
-    if (!ada || Number(p.pinjaman_ke) > ada.ke) {
+    const pinjamanTerbaru = new Map();
+    for (const p of pinjaman) {
       pinjamanTerbaru.set(p.nasabah_id, { id: p.id, ke: Number(p.pinjaman_ke) });
     }
+
+    const idKasirAda = new Set(kasir.map((k) => k.id));
+
+    log(`   nasabah ${perNasabah.size} · staf ${perUser.size} ` +
+        `· pinjaman ${pinjamanTerbaru.size} · kasir_entry ${idKasirAda.size}`);
+
+    if (!perNasabah.size) {
+      throw new Error(
+        'Tidak ada nasabah ber-legacy id. DSN-nya menunjuk database yang benar? ' +
+        'Tanpa pemetaan ini SELURUH berkas ktp akan jadi yatim.');
+    }
+    return { perNasabah, perPelanggan, perUser, pinjamanTerbaru, idKasirAda };
+  } finally {
+    await klien.end();
   }
-
-  const idKasirAda = new Set(kasir.map((k) => k.id));
-
-  log(`   nasabah ${perNasabah.size} · staf ${perUser.size} ` +
-      `· pinjaman ${pinjamanTerbaru.size} · kasir_entry ${idKasirAda.size}`);
-  return { perNasabah, perPelanggan, perUser, pinjamanTerbaru, idKasirAda };
 }
 
 // ================================================================= WALK ===
@@ -311,7 +356,7 @@ const TIPE = { '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png',
 
   const kerjakan = async (r) => {
     const ext = path.extname(r.tujuan).toLowerCase();
-    const { error } = await db.storage.from(r.bucket).upload(
+    const { error } = await storage.from(r.bucket).upload(
       r.tujuan, fs.readFileSync(r.abs),
       // ⚠ upsert:false WAJIB. Inilah yang membuat skrip ini idempoten dan
       //   bisa dihentikan lalu dilanjutkan: objek yang sudah ada ditolak
