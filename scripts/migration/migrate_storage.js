@@ -47,26 +47,66 @@ const path = require('path');
 const crypto = require('crypto');
 
 const argv = process.argv.slice(2);
+
+/**
+ * Ambil nilai flag. Menerima DUA bentuk:
+ *   --dsn=postgresql://…     (sama dengan)
+ *   --dsn postgresql://…     (spasi)
+ *
+ * ⚠ VERSI PERTAMA HANYA MENERIMA BENTUK "=". Bentuk berspasi mengembalikan
+ *   boolean `true`, dan itu penyebab "str.charAt is not a function": nilai
+ *   `true` diteruskan ke `new Client({ connectionString: true })`, lalu
+ *   pg-connection-string memanggil `str.charAt(0)` di atasnya. Galatnya
+ *   muncul dari dalam pustaka, sepuluh bingkai jauh dari sebabnya, dan tidak
+ *   menyebut flag mana pun — jadi tampak seperti masalah data padahal
+ *   masalah pengurai argumen.
+ */
 const arg = (k, d = null) => {
-  const h = argv.find((a) => a === `--${k}` || a.startsWith(`--${k}=`));
-  if (!h) return d;
+  const i = argv.findIndex((a) => a === `--${k}` || a.startsWith(`--${k}=`));
+  if (i === -1) return d;
+  const h = argv[i];
   const e = h.indexOf('=');
-  return e === -1 ? true : h.slice(e + 1);
+  if (e !== -1) return h.slice(e + 1);
+  // Bentuk berspasi: ambil argumen berikutnya, kecuali ia flag lain.
+  const berikut = argv[i + 1];
+  if (berikut !== undefined && !berikut.startsWith('--')) return berikut;
+  return true;          // flag tanpa nilai — sah untuk --execute
 };
+
+/**
+ * Apa pun → string terpangkas. Satu-satunya cara nilai dari database atau
+ * dari argumen boleh masuk ke pemrosesan string.
+ *
+ * `.trim()` bukan kerapian: data warisan menyimpan "panti " dengan spasi di
+ * belakang, dan kunci pemetaan yang berbeda satu spasi tidak akan pernah
+ * cocok — seluruh berkas cabang itu jadi yatim tanpa satu pun galat.
+ */
+const teks = (v) => (v === null || v === undefined ? '' : String(v).trim());
 
 const CFG = {
-  dir: arg('dir', 'backup/storage'),
+  dir: teks(arg('dir', 'backup/storage')),
   execute: arg('execute', false) === true,
-  paralel: Math.max(1, parseInt(arg('paralel', '5'), 10)),
-  report: arg('report', './storage_report.json'),
-  dsn: arg('dsn', process.env.DB_DSN),
-  url: process.env.SUPABASE_URL,
-  key: process.env.SUPABASE_SERVICE_ROLE_KEY,
+  paralel: Math.max(1, parseInt(teks(arg('paralel', '5')), 10) || 5),
+  report: teks(arg('report', './storage_report.json')),
+  dsn: teks(arg('dsn', process.env.DB_DSN)),
+  url: teks(process.env.SUPABASE_URL),
+  key: teks(process.env.SUPABASE_SERVICE_ROLE_KEY),
 };
 
+// Flag yang WAJIB bernilai. `--dsn` tanpa nilai kini tertangkap di sini
+// dengan pesan yang menyebut flag-nya, bukan meledak di dalam pg.
+for (const [nama, nilai] of [['dir', CFG.dir], ['report', CFG.report]]) {
+  if (nilai === 'true' || !nilai) {
+    console.error(`FATAL: --${nama} butuh nilai. Contoh: --${nama}=<isi>`);
+    process.exit(2);
+  }
+}
+
 // DSN selalu wajib: seluruh pemetaan dibaca dari Postgres langsung.
-if (!CFG.dsn) {
-  console.error('FATAL: DSN Postgres tidak ada.');
+if (!CFG.dsn || CFG.dsn === 'true' || !/^postgres(ql)?:\/\//.test(CFG.dsn)) {
+  console.error('FATAL: DSN Postgres tidak ada atau bentuknya salah.');
+  console.error(`       diterima: ${JSON.stringify(CFG.dsn)}`);
+  console.error('       Harus diawali postgresql:// atau postgres://.');
   console.error('       export DB_DSN="postgresql://postgres:<pw>@<host>:5432/postgres"');
   console.error('       atau --dsn="…". PostgREST TIDAK dipakai lagi di sini —');
   console.error('       endpoint itu diblokir setelan "Disable legacy API keys".');
@@ -163,22 +203,45 @@ async function muatPemetaan() {
     // 001:193, jadi ini tetap tidak ambigu). Menyelamatkan berkas yang adminnya
     // sudah dipindah sejak foto diunggah.
     const perPelanggan = new Map();
+    // teks() di SETIAP nilai dari database. Dua alasan, keduanya nyata:
+    //   · data warisan menyimpan spasi di belakang ("panti " bukan "panti"),
+    //     dan kunci yang berbeda satu spasi tidak akan pernah cocok;
+    //   · kolom bisa NULL, dan `${null}/${null}` diam-diam menghasilkan
+    //     kunci "null/null" yang mencocokkan hal-hal yang salah.
+    let spasiLiar = 0;
+    const bersih = (v) => {
+      const t = teks(v);
+      if (t !== String(v ?? '')) spasiLiar++;
+      return t;
+    };
+
     for (const n of nasabah) {
-      if (n.legacy_admin_uid && n.legacy_pelanggan_id) {
-        perNasabah.set(`${n.legacy_admin_uid}/${n.legacy_pelanggan_id}`, n.id);
-      }
-      if (n.legacy_pelanggan_id) perPelanggan.set(n.legacy_pelanggan_id, n.id);
+      const adm = bersih(n.legacy_admin_uid);
+      const pel = bersih(n.legacy_pelanggan_id);
+      const id = teks(n.id);
+      if (adm && pel && id) perNasabah.set(`${adm}/${pel}`, id);
+      if (pel && id) perPelanggan.set(pel, id);
     }
 
     const perUser = new Map();
-    for (const u of appUser) perUser.set(u.legacy_uid, u.id);
+    for (const u of appUser) {
+      const lu = bersih(u.legacy_uid);
+      const id = teks(u.id);
+      if (lu && id) perUser.set(lu, id);
+    }
 
     const pinjamanTerbaru = new Map();
     for (const p of pinjaman) {
-      pinjamanTerbaru.set(p.nasabah_id, { id: p.id, ke: Number(p.pinjaman_ke) });
+      const nid = teks(p.nasabah_id);
+      const pid = teks(p.id);
+      if (nid && pid) pinjamanTerbaru.set(nid, { id: pid, ke: Number(p.pinjaman_ke) || 0 });
     }
 
-    const idKasirAda = new Set(kasir.map((k) => k.id));
+    const idKasirAda = new Set(kasir.map((k) => teks(k.id)).filter(Boolean));
+
+    if (spasiLiar) {
+      log(`   ⚠ ${spasiLiar} nilai legacy punya spasi liar — sudah dipangkas`);
+    }
 
     log(`   nasabah ${perNasabah.size} · staf ${perUser.size} ` +
         `· pinjaman ${pinjamanTerbaru.size} · kasir_entry ${idKasirAda.size}`);
@@ -216,14 +279,22 @@ const JENIS_KTP = {
   ktp_istri: 'ktp_istri',
 };
 
-/** Segmen path relatif, dinormalisasi ke pemisah '/'. */
-const segmen = (rel) => rel.split(path.sep).join('/').split('/');
+/**
+ * Segmen path relatif, dinormalisasi ke pemisah '/', tiap segmen dipangkas.
+ *
+ * Pemangkasan di SINI penting: nama folder dari Firebase bisa membawa spasi
+ * (kita sendiri sempat membuat "28 Agu " lewat bug slice() di Blok 5), dan
+ * segmen yang tidak dipangkas tidak akan cocok dengan kunci pemetaan yang
+ * sudah dipangkas — hasilnya berkas jadi yatim tanpa sebab yang terlihat.
+ */
+const segmen = (rel) => teks(rel).split(path.sep).join('/').split('/').map(teks);
 
 function petaFakturBu(seg, M) {
   // faktur_bu/{cabang}/{YYYY-MM}/{pushId}.jpg
   if (seg.length !== 4) return { yatim: 'bentuk path faktur_bu tidak dikenali' };
   const [, cabang, bulan, berkas] = seg;
-  const pushId = berkas.replace(/\.[^.]+$/, '');
+  if (!cabang || !bulan || !berkas) return { yatim: 'segmen faktur_bu kosong' };
+  const pushId = teks(berkas).replace(/\.[^.]+$/, '');
   const id = idKasir(cabang, bulan, pushId);
 
   // Nama asli dipertahankan bila entri kasirnya tidak ada di database —
@@ -242,9 +313,11 @@ function petaKtp(seg, M, pending) {
   // ktp_images[_pending]/{adminUid}/{pelangganId}/ktp_{jenis}.jpg
   if (seg.length !== 4) return { yatim: 'bentuk path ktp tidak dikenali' };
   const [, adminUid, pelangganId, berkas] = seg;
+  if (!adminUid || !pelangganId || !berkas) return { yatim: 'segmen ktp kosong' };
 
-  const dasar = berkas.replace(/\.[^.]+$/, '');
+  const dasar = teks(berkas).replace(/\.[^.]+$/, '');
   const jenis = JENIS_KTP[dasar] || dasar.replace(/^ktp_/, '');
+  if (!jenis) return { yatim: `nama berkas tidak dikenali: ${berkas}` };
 
   const nasabahId = M.perNasabah.get(`${adminUid}/${pelangganId}`)
     || M.perPelanggan.get(pelangganId);
@@ -278,9 +351,10 @@ function petaProfil(seg, M) {
   // profile_photos/{uid}/profile.jpg
   if (seg.length !== 3) return { yatim: 'bentuk path profile_photos tidak dikenali' };
   const [, uid, berkas] = seg;
+  if (!uid || !berkas) return { yatim: 'segmen profile_photos kosong' };
   const userId = M.perUser.get(uid);
   if (!userId) return { yatim: `app_user.legacy_uid tidak terpetakan: ${uid}` };
-  const ext = (berkas.match(/\.[^.]+$/) || ['.jpg'])[0];
+  const ext = (teks(berkas).match(/\.[^.]+$/) || ['.jpg'])[0];
   return { bucket: 'profil', tujuan: `${userId}/profile${ext}`, tertaut: true };
 }
 
@@ -355,7 +429,7 @@ const TIPE = { '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png',
   const galat = [];
 
   const kerjakan = async (r) => {
-    const ext = path.extname(r.tujuan).toLowerCase();
+    const ext = path.extname(teks(r.tujuan)).toLowerCase();
     const { error } = await storage.from(r.bucket).upload(
       r.tujuan, fs.readFileSync(r.abs),
       // ⚠ upsert:false WAJIB. Inilah yang membuat skrip ini idempoten dan
