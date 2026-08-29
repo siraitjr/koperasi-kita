@@ -56,3 +56,14 @@ Thumbs.db
 
 # Jangan commit file data besar
 data/koperasikitagodangulu-default-rtdb-export.json
+
+# Rahasia & keluaran migrasi — JANGAN di-commit.
+# reset_links.csv memuat tautan verifikasi Supabase yang bisa dipakai
+# mengambil alih akun selama tokennya berlaku.
+scripts/migration/reset_links.csv
+scripts/migration/*_report.json
+scripts/migration/*_final.json
+scripts/migration/investigasi.json
+scripts/migration/migration_checkpoint.json
+scripts/migration/node_modules/
+storage_report.json
