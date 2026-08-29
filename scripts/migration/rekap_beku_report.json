@@ -1,0 +1,113 @@
+{
+  "generatedAt": "2026-08-28T04:16:40.616Z",
+  "sourceFile": "C:\\Project\\KoperasiKitaGodangUlu\\data\\koperasikitagodangulu-default-rtdb-export.json",
+  "executed": true,
+  "baris": 1340,
+  "gagal": 0,
+  "adminYatim": 2,
+  "cabangKosong": 2,
+  "perAdmin": {
+    "3B1yKQMPZbdDIbhZ6eLFz3dr8wo2": {
+      "baris": 67,
+      "terdaftar": true,
+      "cabang": "panti"
+    },
+    "5MPnLCgJ7SVpwvrpOFcUyWDUNuh1": {
+      "baris": 67,
+      "terdaftar": true,
+      "cabang": "panti"
+    },
+    "6mMIX5UkreeZJbR4lUUOSr9OU4M2": {
+      "baris": 67,
+      "terdaftar": true,
+      "cabang": "simpang empat unit 2"
+    },
+    "C79qv2GmCAMUOqjEM4yiCBOBIPQ2": {
+      "baris": 67,
+      "terdaftar": true,
+      "cabang": "simpang empat unit 2"
+    },
+    "DqORkfc3zkOFgW4hl1P1b8USdVu1": {
+      "baris": 67,
+      "terdaftar": false,
+      "cabang": null
+    },
+    "GYpflU7tAIgQRTUgMmYZyIuW2qq1": {
+      "baris": 67,
+      "terdaftar": false,
+      "cabang": null
+    },
+    "HlgvmsIxOjMgxpM4kwD1GLIvcqQ2": {
+      "baris": 67,
+      "terdaftar": true,
+      "cabang": "simpang empat unit 1"
+    },
+    "Km915SdnHxfrg9Qz5sFoKrNNOBk1": {
+      "baris": 67,
+      "terdaftar": true,
+      "cabang": "payakumbuh"
+    },
+    "LB1SXhH0MOU1laCYLcm0FoekRNo2": {
+      "baris": 67,
+      "terdaftar": true,
+      "cabang": "panti"
+    },
+    "MjnJfW3yIFXj5qVw0iSklr4XLVo2": {
+      "baris": 67,
+      "terdaftar": true,
+      "cabang": "payakumbuh"
+    },
+    "QtrPy0376qR1InGGHWhqECj5WAg1": {
+      "baris": 67,
+      "terdaftar": true,
+      "cabang": "simpang empat unit 2"
+    },
+    "W8bOfOZzKdaaNhrDZpj4PPKW4zq2": {
+      "baris": 67,
+      "terdaftar": true,
+      "cabang": "simpang empat unit 1"
+    },
+    "WtI7HhStJsbXsskrqL5L4q6JsLh1": {
+      "baris": 67,
+      "terdaftar": true,
+      "cabang": "payakumbuh"
+    },
+    "bgoSXgPPofM3a4or3Fw5bnYHHqB2": {
+      "baris": 67,
+      "terdaftar": true,
+      "cabang": "simpang empat unit 1"
+    },
+    "mL9qUPvSwDgsEKK6opphRefMeD72": {
+      "baris": 67,
+      "terdaftar": true,
+      "cabang": "payakumbuh"
+    },
+    "pVoPdP4iUgaLt5IHDZsAgRLwZek2": {
+      "baris": 67,
+      "terdaftar": true,
+      "cabang": "payakumbuh"
+    },
+    "rvx9RSsrsjaH7s5HH1KnF04zQd02": {
+      "baris": 67,
+      "terdaftar": true,
+      "cabang": "simpang empat unit 1"
+    },
+    "ttKKRLISiOU1dYJApk28ZL5ubwA3": {
+      "baris": 67,
+      "terdaftar": true,
+      "cabang": "payakumbuh"
+    },
+    "vj9tT90Wwwfo6RigZStj3oRn9623": {
+      "baris": 67,
+      "terdaftar": true,
+      "cabang": "panti"
+    },
+    "yIUl519EJ0bD9vOT41VWDZhKb9h2": {
+      "baris": 67,
+      "terdaftar": true,
+      "cabang": "panti"
+    }
+  },
+  "issueCounts": {},
+  "issues": []
+}

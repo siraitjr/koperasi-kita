@@ -1,0 +1,22 @@
+{
+  "done": true,
+  "at": "2026-08-13T04:43:53.166Z",
+  "rows": {
+    "cabang": 4,
+    "app_user": 29,
+    "nasabah": 1806,
+    "pinjaman": 3026,
+    "pembayaran": 50970,
+    "jadwal_cicilan": 44549,
+    "pengajuan": 224,
+    "approval_step": 15,
+    "jurnal_transaksi": 78419,
+    "kasir_entry": 965,
+    "dokumen": 0,
+    "pinjaman_history": 5,
+    "biaya_awal": 61,
+    "pelanggan_ditolak": 56,
+    "koreksi_storting": 33,
+    "pelanggan_status_khusus": 94
+  }
+}

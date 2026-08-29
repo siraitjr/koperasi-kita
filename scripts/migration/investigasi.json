@@ -1,0 +1,4827 @@
+{
+  "pinjaman": {
+    "total": 3606,
+    "diimpor": 3026,
+    "dilewati": [
+      {
+        "pelangganId": "-OjZ8XNws7T8gEW_Y4Dy",
+        "adminUid": "3B1yKQMPZbdDIbhZ6eLFz3dr8wo2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OjZ8XNws7T8gEW_Y4Dy",
+        "adminUid": "3B1yKQMPZbdDIbhZ6eLFz3dr8wo2",
+        "pinjamanKe": 1,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Okb2j0mqIpATu2_aNMp",
+        "adminUid": "3B1yKQMPZbdDIbhZ6eLFz3dr8wo2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Okb5skRH2tUW59HbTOs",
+        "adminUid": "3B1yKQMPZbdDIbhZ6eLFz3dr8wo2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Okb5skRH2tUW59HbTOs",
+        "adminUid": "3B1yKQMPZbdDIbhZ6eLFz3dr8wo2",
+        "pinjamanKe": 1,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmhPYlM2wtBHqpnev5X",
+        "adminUid": "3B1yKQMPZbdDIbhZ6eLFz3dr8wo2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Omh_ovNf5_86yHCtzq4",
+        "adminUid": "3B1yKQMPZbdDIbhZ6eLFz3dr8wo2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmleW5_f_soHHAx8IUc",
+        "adminUid": "3B1yKQMPZbdDIbhZ6eLFz3dr8wo2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Omlx4d8Lh2wc4ddmvF7",
+        "adminUid": "3B1yKQMPZbdDIbhZ6eLFz3dr8wo2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Omly0QQ4YkigHIW8wcn",
+        "adminUid": "3B1yKQMPZbdDIbhZ6eLFz3dr8wo2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmtuiCv8CGmvBYV1S7G",
+        "adminUid": "3B1yKQMPZbdDIbhZ6eLFz3dr8wo2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Op7fCf8GGx68CslsUeN",
+        "adminUid": "3B1yKQMPZbdDIbhZ6eLFz3dr8wo2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OpCmQCEtTpFgqYiZyMV",
+        "adminUid": "3B1yKQMPZbdDIbhZ6eLFz3dr8wo2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OqAZPedTYxZSXXe_AnF",
+        "adminUid": "3B1yKQMPZbdDIbhZ6eLFz3dr8wo2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OqFVyy-2bGSctMqy3cO",
+        "adminUid": "3B1yKQMPZbdDIbhZ6eLFz3dr8wo2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OqQG6mJwc_lVJ99BCdO",
+        "adminUid": "3B1yKQMPZbdDIbhZ6eLFz3dr8wo2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Orav4frzBOPYqxQonq0",
+        "adminUid": "3B1yKQMPZbdDIbhZ6eLFz3dr8wo2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OiI-YeXm0P1EuBSbiWi",
+        "adminUid": "5MPnLCgJ7SVpwvrpOFcUyWDUNuh1",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OiI-YeXm0P1EuBSbiWi",
+        "adminUid": "5MPnLCgJ7SVpwvrpOFcUyWDUNuh1",
+        "pinjamanKe": 1,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OiWeljFeCArBhRWIyY-",
+        "adminUid": "5MPnLCgJ7SVpwvrpOFcUyWDUNuh1",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OiWeljFeCArBhRWIyY-",
+        "adminUid": "5MPnLCgJ7SVpwvrpOFcUyWDUNuh1",
+        "pinjamanKe": 1,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OkcAPBQyqAvXR6RhZ3i",
+        "adminUid": "5MPnLCgJ7SVpwvrpOFcUyWDUNuh1",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OkcAPBQyqAvXR6RhZ3i",
+        "adminUid": "5MPnLCgJ7SVpwvrpOFcUyWDUNuh1",
+        "pinjamanKe": 1,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Okl-MqWTXyX6LCZbpSx",
+        "adminUid": "5MPnLCgJ7SVpwvrpOFcUyWDUNuh1",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OlGW_zBK3v4sEw10XYB",
+        "adminUid": "5MPnLCgJ7SVpwvrpOFcUyWDUNuh1",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OlKxMLtqBlAGgEgYjtR",
+        "adminUid": "5MPnLCgJ7SVpwvrpOFcUyWDUNuh1",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmhL_P63HuQm8aStbwL",
+        "adminUid": "5MPnLCgJ7SVpwvrpOFcUyWDUNuh1",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Omnrmey-OZA1wDaehBZ",
+        "adminUid": "5MPnLCgJ7SVpwvrpOFcUyWDUNuh1",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmqxNhC9Ov6Uv_wVF05",
+        "adminUid": "5MPnLCgJ7SVpwvrpOFcUyWDUNuh1",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmrPt2EDqdX79sFPEmj",
+        "adminUid": "5MPnLCgJ7SVpwvrpOFcUyWDUNuh1",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmrPt2EDqdX79sFPEmj",
+        "adminUid": "5MPnLCgJ7SVpwvrpOFcUyWDUNuh1",
+        "pinjamanKe": 1,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmxW-a0OGMwg4FA4NM4",
+        "adminUid": "5MPnLCgJ7SVpwvrpOFcUyWDUNuh1",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmxWY8zX8u64vRMz6kE",
+        "adminUid": "5MPnLCgJ7SVpwvrpOFcUyWDUNuh1",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OnLo7DULk3DAm4apXFn",
+        "adminUid": "5MPnLCgJ7SVpwvrpOFcUyWDUNuh1",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Op66ww-55WZRIX9WVku",
+        "adminUid": "5MPnLCgJ7SVpwvrpOFcUyWDUNuh1",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OpbbU6gP0dyatWcraO_",
+        "adminUid": "5MPnLCgJ7SVpwvrpOFcUyWDUNuh1",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OpbzrTMiMS9UPlpfyAc",
+        "adminUid": "5MPnLCgJ7SVpwvrpOFcUyWDUNuh1",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Oq5uor5xrP3gQra9lCQ",
+        "adminUid": "5MPnLCgJ7SVpwvrpOFcUyWDUNuh1",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Om8t8Ae1QuW5sJGPKmP",
+        "adminUid": "6mMIX5UkreeZJbR4lUUOSr9OU4M2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Om8t8Ae1QuW5sJGPKmP",
+        "adminUid": "6mMIX5UkreeZJbR4lUUOSr9OU4M2",
+        "pinjamanKe": 1,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Om8t8Ae1QuW5sJGPKmP",
+        "adminUid": "6mMIX5UkreeZJbR4lUUOSr9OU4M2",
+        "pinjamanKe": 2,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Om8t8Ae1QuW5sJGPKmP",
+        "adminUid": "6mMIX5UkreeZJbR4lUUOSr9OU4M2",
+        "pinjamanKe": 3,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmDgXiPcDMkic13GYda",
+        "adminUid": "6mMIX5UkreeZJbR4lUUOSr9OU4M2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmDgXiPcDMkic13GYda",
+        "adminUid": "6mMIX5UkreeZJbR4lUUOSr9OU4M2",
+        "pinjamanKe": 1,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmDgXiPcDMkic13GYda",
+        "adminUid": "6mMIX5UkreeZJbR4lUUOSr9OU4M2",
+        "pinjamanKe": 2,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-On1YMdZF97QeMvapZSQ",
+        "adminUid": "6mMIX5UkreeZJbR4lUUOSr9OU4M2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OnGKaQ8jsZUNQB4gjNU",
+        "adminUid": "6mMIX5UkreeZJbR4lUUOSr9OU4M2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OnRApM9wv5LEu3j8s1F",
+        "adminUid": "6mMIX5UkreeZJbR4lUUOSr9OU4M2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OnaW4cWZK0C3YxORJM4",
+        "adminUid": "6mMIX5UkreeZJbR4lUUOSr9OU4M2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OnaW4cWZK0C3YxORJM4",
+        "adminUid": "6mMIX5UkreeZJbR4lUUOSr9OU4M2",
+        "pinjamanKe": 1,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OnaW4cWZK0C3YxORJM4",
+        "adminUid": "6mMIX5UkreeZJbR4lUUOSr9OU4M2",
+        "pinjamanKe": 2,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OnaW4cWZK0C3YxORJM4",
+        "adminUid": "6mMIX5UkreeZJbR4lUUOSr9OU4M2",
+        "pinjamanKe": 3,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Oneu81sZFDUdkAVyWAZ",
+        "adminUid": "6mMIX5UkreeZJbR4lUUOSr9OU4M2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Oneu81sZFDUdkAVyWAZ",
+        "adminUid": "6mMIX5UkreeZJbR4lUUOSr9OU4M2",
+        "pinjamanKe": 1,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Oneu81sZFDUdkAVyWAZ",
+        "adminUid": "6mMIX5UkreeZJbR4lUUOSr9OU4M2",
+        "pinjamanKe": 2,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OoOZ50iN_whEsHze5wp",
+        "adminUid": "6mMIX5UkreeZJbR4lUUOSr9OU4M2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OoPW4TOOyWmX1508UVg",
+        "adminUid": "6mMIX5UkreeZJbR4lUUOSr9OU4M2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OoTH3HCrNjXlTrVJ_l9",
+        "adminUid": "6mMIX5UkreeZJbR4lUUOSr9OU4M2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OoTUe_oKLCvAQgUULnN",
+        "adminUid": "6mMIX5UkreeZJbR4lUUOSr9OU4M2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Oot_nElkJfQtEfghLjD",
+        "adminUid": "6mMIX5UkreeZJbR4lUUOSr9OU4M2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Op7j8wSxzWLNqve9QOK",
+        "adminUid": "6mMIX5UkreeZJbR4lUUOSr9OU4M2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OpCP19HTF4b9F-78D4D",
+        "adminUid": "6mMIX5UkreeZJbR4lUUOSr9OU4M2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OpCP19HTF4b9F-78D4D",
+        "adminUid": "6mMIX5UkreeZJbR4lUUOSr9OU4M2",
+        "pinjamanKe": 1,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OpMdRN0m_r9ywI25JoI",
+        "adminUid": "6mMIX5UkreeZJbR4lUUOSr9OU4M2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OpX13snxBsqmNFvxfRV",
+        "adminUid": "6mMIX5UkreeZJbR4lUUOSr9OU4M2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OpX13snxBsqmNFvxfRV",
+        "adminUid": "6mMIX5UkreeZJbR4lUUOSr9OU4M2",
+        "pinjamanKe": 1,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OpX13snxBsqmNFvxfRV",
+        "adminUid": "6mMIX5UkreeZJbR4lUUOSr9OU4M2",
+        "pinjamanKe": 2,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OpaMeqmj3xF5SBl5zQW",
+        "adminUid": "6mMIX5UkreeZJbR4lUUOSr9OU4M2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OpgNwCSTJvpr5OZyjYc",
+        "adminUid": "6mMIX5UkreeZJbR4lUUOSr9OU4M2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Opqw5XPYl-M1a3LxgRu",
+        "adminUid": "6mMIX5UkreeZJbR4lUUOSr9OU4M2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OqAGYF6XL_BxYsUdJUr",
+        "adminUid": "6mMIX5UkreeZJbR4lUUOSr9OU4M2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OqQLawEKoEeD2JCGaDm",
+        "adminUid": "6mMIX5UkreeZJbR4lUUOSr9OU4M2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OqQR31XaTUXrccFmNv7",
+        "adminUid": "6mMIX5UkreeZJbR4lUUOSr9OU4M2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OqVeaeGyobh3DgdsNXi",
+        "adminUid": "6mMIX5UkreeZJbR4lUUOSr9OU4M2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OqeFXdFCcxq4496ixBk",
+        "adminUid": "6mMIX5UkreeZJbR4lUUOSr9OU4M2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OqilqDNLU0RsEDzENcV",
+        "adminUid": "6mMIX5UkreeZJbR4lUUOSr9OU4M2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OqjGXfgkCuB7p1A5jPE",
+        "adminUid": "6mMIX5UkreeZJbR4lUUOSr9OU4M2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OqjoYKhSfatpFJfMJuZ",
+        "adminUid": "6mMIX5UkreeZJbR4lUUOSr9OU4M2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Oqof6syAdMsMRvm5KKA",
+        "adminUid": "6mMIX5UkreeZJbR4lUUOSr9OU4M2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Oqu9UMWnqXvu_W0kmga",
+        "adminUid": "6mMIX5UkreeZJbR4lUUOSr9OU4M2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Or3R8xJiDZdXlvzcIvB",
+        "adminUid": "6mMIX5UkreeZJbR4lUUOSr9OU4M2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Or3R8xJiDZdXlvzcIvB",
+        "adminUid": "6mMIX5UkreeZJbR4lUUOSr9OU4M2",
+        "pinjamanKe": 2,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OrDgD7VL2i-Exp6unCz",
+        "adminUid": "6mMIX5UkreeZJbR4lUUOSr9OU4M2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OralZPINYhbpzDszAXH",
+        "adminUid": "6mMIX5UkreeZJbR4lUUOSr9OU4M2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OrcTwm4Pz9VlHguWZQr",
+        "adminUid": "6mMIX5UkreeZJbR4lUUOSr9OU4M2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OrwDTen0xOapd1IT09N",
+        "adminUid": "6mMIX5UkreeZJbR4lUUOSr9OU4M2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Os0l_PnQze3MelLSbnF",
+        "adminUid": "6mMIX5UkreeZJbR4lUUOSr9OU4M2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Os0l_PnQze3MelLSbnF",
+        "adminUid": "6mMIX5UkreeZJbR4lUUOSr9OU4M2",
+        "pinjamanKe": 1,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Os5iXLP1tmSGqAHmUcI",
+        "adminUid": "6mMIX5UkreeZJbR4lUUOSr9OU4M2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Os5iXLP1tmSGqAHmUcI",
+        "adminUid": "6mMIX5UkreeZJbR4lUUOSr9OU4M2",
+        "pinjamanKe": 1,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Os6G2ZynSwll9oZFYA2",
+        "adminUid": "6mMIX5UkreeZJbR4lUUOSr9OU4M2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OsBXdxxOkLJd1_H6_9l",
+        "adminUid": "6mMIX5UkreeZJbR4lUUOSr9OU4M2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OsQwDizvZJOch0Pia99",
+        "adminUid": "6mMIX5UkreeZJbR4lUUOSr9OU4M2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OsfDVG7C9bKFEHrziZg",
+        "adminUid": "6mMIX5UkreeZJbR4lUUOSr9OU4M2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OskEa5k5TmKAF6T3XD4",
+        "adminUid": "6mMIX5UkreeZJbR4lUUOSr9OU4M2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OskWvXCqRNn16diAl9J",
+        "adminUid": "6mMIX5UkreeZJbR4lUUOSr9OU4M2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Ostrea6LISyZXXFA6HG",
+        "adminUid": "6mMIX5UkreeZJbR4lUUOSr9OU4M2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OsumjpDxxH0U3aLLGmS",
+        "adminUid": "6mMIX5UkreeZJbR4lUUOSr9OU4M2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Ot-0g3ed-smEAlGXwI3",
+        "adminUid": "6mMIX5UkreeZJbR4lUUOSr9OU4M2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Ot4Aukz2e4Pw17Ffs0a",
+        "adminUid": "6mMIX5UkreeZJbR4lUUOSr9OU4M2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Ot4Aukz2e4Pw17Ffs0a",
+        "adminUid": "6mMIX5UkreeZJbR4lUUOSr9OU4M2",
+        "pinjamanKe": 1,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Ou5qhEh19525QaL6UQd",
+        "adminUid": "6mMIX5UkreeZJbR4lUUOSr9OU4M2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OuCFaG3no6ucAcCeHFy",
+        "adminUid": "6mMIX5UkreeZJbR4lUUOSr9OU4M2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OuG-gQpBdrZQnDvg4U0",
+        "adminUid": "6mMIX5UkreeZJbR4lUUOSr9OU4M2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OuM03VG1ZAOnzkShWxC",
+        "adminUid": "6mMIX5UkreeZJbR4lUUOSr9OU4M2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OuQC8KCCHyHIZLnTs1b",
+        "adminUid": "6mMIX5UkreeZJbR4lUUOSr9OU4M2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OuRleLNz2W1KGEaAIY1",
+        "adminUid": "6mMIX5UkreeZJbR4lUUOSr9OU4M2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OuRmBrtijRUboCBF79p",
+        "adminUid": "6mMIX5UkreeZJbR4lUUOSr9OU4M2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Oug14nLohhNCFutF1iq",
+        "adminUid": "6mMIX5UkreeZJbR4lUUOSr9OU4M2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Ouk6F1cWMJGR9gBkA7u",
+        "adminUid": "6mMIX5UkreeZJbR4lUUOSr9OU4M2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Ov-uNzzS3NTmyJfBtES",
+        "adminUid": "6mMIX5UkreeZJbR4lUUOSr9OU4M2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OvA5pvAQNpIwyhGPr4P",
+        "adminUid": "6mMIX5UkreeZJbR4lUUOSr9OU4M2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OvZn9zqE_LgMSVr4wLP",
+        "adminUid": "6mMIX5UkreeZJbR4lUUOSr9OU4M2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OwSb8dHAbsCPAifbAoE",
+        "adminUid": "6mMIX5UkreeZJbR4lUUOSr9OU4M2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OwShS-FXxVTgqciVINf",
+        "adminUid": "6mMIX5UkreeZJbR4lUUOSr9OU4M2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OwbuVa-1bbx9oim48QU",
+        "adminUid": "6mMIX5UkreeZJbR4lUUOSr9OU4M2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Owh3jy5TO1oLgkaJJyR",
+        "adminUid": "6mMIX5UkreeZJbR4lUUOSr9OU4M2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OwrHmf4rzq08nk0WlmP",
+        "adminUid": "6mMIX5UkreeZJbR4lUUOSr9OU4M2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Ox63LXDqPcbMXPWaIuc",
+        "adminUid": "6mMIX5UkreeZJbR4lUUOSr9OU4M2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OxBA846I6GjPAO7Fe0B",
+        "adminUid": "6mMIX5UkreeZJbR4lUUOSr9OU4M2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Om9ea4jDFNVmhFhh2u-",
+        "adminUid": "C79qv2GmCAMUOqjEM4yiCBOBIPQ2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Om9ea4jDFNVmhFhh2u-",
+        "adminUid": "C79qv2GmCAMUOqjEM4yiCBOBIPQ2",
+        "pinjamanKe": 1,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Om9rzlDP9JcC4pn7cXU",
+        "adminUid": "C79qv2GmCAMUOqjEM4yiCBOBIPQ2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Om9rzlDP9JcC4pn7cXU",
+        "adminUid": "C79qv2GmCAMUOqjEM4yiCBOBIPQ2",
+        "pinjamanKe": 1,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Om9rzlDP9JcC4pn7cXU",
+        "adminUid": "C79qv2GmCAMUOqjEM4yiCBOBIPQ2",
+        "pinjamanKe": 2,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Om9rzlDP9JcC4pn7cXU",
+        "adminUid": "C79qv2GmCAMUOqjEM4yiCBOBIPQ2",
+        "pinjamanKe": 3,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Om9rzlDP9JcC4pn7cXU",
+        "adminUid": "C79qv2GmCAMUOqjEM4yiCBOBIPQ2",
+        "pinjamanKe": 4,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Om9tC-RFH1ehcdvPXPs",
+        "adminUid": "C79qv2GmCAMUOqjEM4yiCBOBIPQ2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmEficDFQKtLRhQChpI",
+        "adminUid": "C79qv2GmCAMUOqjEM4yiCBOBIPQ2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmEficDFQKtLRhQChpI",
+        "adminUid": "C79qv2GmCAMUOqjEM4yiCBOBIPQ2",
+        "pinjamanKe": 1,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmEkHVno-zkfSAmvptq",
+        "adminUid": "C79qv2GmCAMUOqjEM4yiCBOBIPQ2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmEkHVno-zkfSAmvptq",
+        "adminUid": "C79qv2GmCAMUOqjEM4yiCBOBIPQ2",
+        "pinjamanKe": 1,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmEnUza0v2J2lSg2LyS",
+        "adminUid": "C79qv2GmCAMUOqjEM4yiCBOBIPQ2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmEnUza0v2J2lSg2LyS",
+        "adminUid": "C79qv2GmCAMUOqjEM4yiCBOBIPQ2",
+        "pinjamanKe": 1,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmEnUza0v2J2lSg2LyS",
+        "adminUid": "C79qv2GmCAMUOqjEM4yiCBOBIPQ2",
+        "pinjamanKe": 2,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmEnUza0v2J2lSg2LyS",
+        "adminUid": "C79qv2GmCAMUOqjEM4yiCBOBIPQ2",
+        "pinjamanKe": 3,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmI4Rt2IwXplOkA6S_5",
+        "adminUid": "C79qv2GmCAMUOqjEM4yiCBOBIPQ2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmI4Rt2IwXplOkA6S_5",
+        "adminUid": "C79qv2GmCAMUOqjEM4yiCBOBIPQ2",
+        "pinjamanKe": 1,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmI4Rt2IwXplOkA6S_5",
+        "adminUid": "C79qv2GmCAMUOqjEM4yiCBOBIPQ2",
+        "pinjamanKe": 2,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmI5wZj80iV8iX0jag5",
+        "adminUid": "C79qv2GmCAMUOqjEM4yiCBOBIPQ2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmI5wZj80iV8iX0jag5",
+        "adminUid": "C79qv2GmCAMUOqjEM4yiCBOBIPQ2",
+        "pinjamanKe": 1,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmI6vZ50xZ5-SN5ye-V",
+        "adminUid": "C79qv2GmCAMUOqjEM4yiCBOBIPQ2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmI6vZ50xZ5-SN5ye-V",
+        "adminUid": "C79qv2GmCAMUOqjEM4yiCBOBIPQ2",
+        "pinjamanKe": 1,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmI6vZ50xZ5-SN5ye-V",
+        "adminUid": "C79qv2GmCAMUOqjEM4yiCBOBIPQ2",
+        "pinjamanKe": 2,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmJdHQ3lB3qrGad_oGv",
+        "adminUid": "C79qv2GmCAMUOqjEM4yiCBOBIPQ2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmJdHQ3lB3qrGad_oGv",
+        "adminUid": "C79qv2GmCAMUOqjEM4yiCBOBIPQ2",
+        "pinjamanKe": 1,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmJdy8qsrCCCRYcFiHO",
+        "adminUid": "C79qv2GmCAMUOqjEM4yiCBOBIPQ2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmJdy8qsrCCCRYcFiHO",
+        "adminUid": "C79qv2GmCAMUOqjEM4yiCBOBIPQ2",
+        "pinjamanKe": 1,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmJf2maXD_DvXuhR5Co",
+        "adminUid": "C79qv2GmCAMUOqjEM4yiCBOBIPQ2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmJgFiNgJ0-BzjP2jdg",
+        "adminUid": "C79qv2GmCAMUOqjEM4yiCBOBIPQ2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmJm2H4sB32mPDkqhnu",
+        "adminUid": "C79qv2GmCAMUOqjEM4yiCBOBIPQ2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmJm2H4sB32mPDkqhnu",
+        "adminUid": "C79qv2GmCAMUOqjEM4yiCBOBIPQ2",
+        "pinjamanKe": 1,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmJm2H4sB32mPDkqhnu",
+        "adminUid": "C79qv2GmCAMUOqjEM4yiCBOBIPQ2",
+        "pinjamanKe": 2,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmgIDg4qP5PlA2W17pN",
+        "adminUid": "C79qv2GmCAMUOqjEM4yiCBOBIPQ2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmhWbCqTfuXg4QHDpww",
+        "adminUid": "C79qv2GmCAMUOqjEM4yiCBOBIPQ2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmhWbCqTfuXg4QHDpww",
+        "adminUid": "C79qv2GmCAMUOqjEM4yiCBOBIPQ2",
+        "pinjamanKe": 1,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmhWbCqTfuXg4QHDpww",
+        "adminUid": "C79qv2GmCAMUOqjEM4yiCBOBIPQ2",
+        "pinjamanKe": 2,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmhWbCqTfuXg4QHDpww",
+        "adminUid": "C79qv2GmCAMUOqjEM4yiCBOBIPQ2",
+        "pinjamanKe": 3,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Omi-nWKlXiGq1Ab2mP8",
+        "adminUid": "C79qv2GmCAMUOqjEM4yiCBOBIPQ2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmixUI7sEanlXIibbzS",
+        "adminUid": "C79qv2GmCAMUOqjEM4yiCBOBIPQ2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmixUI7sEanlXIibbzS",
+        "adminUid": "C79qv2GmCAMUOqjEM4yiCBOBIPQ2",
+        "pinjamanKe": 1,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Omj16YQVqDyxVKoD4tT",
+        "adminUid": "C79qv2GmCAMUOqjEM4yiCBOBIPQ2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Omj16YQVqDyxVKoD4tT",
+        "adminUid": "C79qv2GmCAMUOqjEM4yiCBOBIPQ2",
+        "pinjamanKe": 1,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmraQXxmiOjK65_8i7q",
+        "adminUid": "C79qv2GmCAMUOqjEM4yiCBOBIPQ2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmwuA4QZewsbBQq4OOR",
+        "adminUid": "C79qv2GmCAMUOqjEM4yiCBOBIPQ2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-On2Jm3g4FWQfmbj1YZi",
+        "adminUid": "C79qv2GmCAMUOqjEM4yiCBOBIPQ2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-On2Jm3g4FWQfmbj1YZi",
+        "adminUid": "C79qv2GmCAMUOqjEM4yiCBOBIPQ2",
+        "pinjamanKe": 1,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-On2Jm3g4FWQfmbj1YZi",
+        "adminUid": "C79qv2GmCAMUOqjEM4yiCBOBIPQ2",
+        "pinjamanKe": 2,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-On2Jm3g4FWQfmbj1YZi",
+        "adminUid": "C79qv2GmCAMUOqjEM4yiCBOBIPQ2",
+        "pinjamanKe": 3,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OnL_TH5gUhyEAy962Tx",
+        "adminUid": "C79qv2GmCAMUOqjEM4yiCBOBIPQ2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Onaxa0rU6YNnhQLk7af",
+        "adminUid": "C79qv2GmCAMUOqjEM4yiCBOBIPQ2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Onaxa0rU6YNnhQLk7af",
+        "adminUid": "C79qv2GmCAMUOqjEM4yiCBOBIPQ2",
+        "pinjamanKe": 1,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OoSzHtt6n8rUORxZ4b1",
+        "adminUid": "C79qv2GmCAMUOqjEM4yiCBOBIPQ2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OoT02OlIjK_Qa-rwn4o",
+        "adminUid": "C79qv2GmCAMUOqjEM4yiCBOBIPQ2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OoT02OlIjK_Qa-rwn4o",
+        "adminUid": "C79qv2GmCAMUOqjEM4yiCBOBIPQ2",
+        "pinjamanKe": 1,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OoT02OlIjK_Qa-rwn4o",
+        "adminUid": "C79qv2GmCAMUOqjEM4yiCBOBIPQ2",
+        "pinjamanKe": 2,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OoT02OlIjK_Qa-rwn4o",
+        "adminUid": "C79qv2GmCAMUOqjEM4yiCBOBIPQ2",
+        "pinjamanKe": 3,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OoiI779b3AMwPxConTa",
+        "adminUid": "C79qv2GmCAMUOqjEM4yiCBOBIPQ2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Op7BIFq-_kniUTpl0h5",
+        "adminUid": "C79qv2GmCAMUOqjEM4yiCBOBIPQ2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Op7NpmhWSPR-xY0s65n",
+        "adminUid": "C79qv2GmCAMUOqjEM4yiCBOBIPQ2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OpC6XAEU-nMAoBtxoVp",
+        "adminUid": "C79qv2GmCAMUOqjEM4yiCBOBIPQ2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OparEqkudgiIsBS_s2G",
+        "adminUid": "C79qv2GmCAMUOqjEM4yiCBOBIPQ2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Oplaq9-rAqf666lbF-E",
+        "adminUid": "C79qv2GmCAMUOqjEM4yiCBOBIPQ2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OpliKQGYQcXgVJW6Skf",
+        "adminUid": "C79qv2GmCAMUOqjEM4yiCBOBIPQ2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Opv01lKt5wTvFbX2oJd",
+        "adminUid": "C79qv2GmCAMUOqjEM4yiCBOBIPQ2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Opv1inqJNDXgTGW4Xxz",
+        "adminUid": "C79qv2GmCAMUOqjEM4yiCBOBIPQ2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Opw0fiJB_331Ew4GpYd",
+        "adminUid": "C79qv2GmCAMUOqjEM4yiCBOBIPQ2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OqElw82fKE2hNONWElx",
+        "adminUid": "C79qv2GmCAMUOqjEM4yiCBOBIPQ2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OqFKfTw-QPTl-fB2Zsz",
+        "adminUid": "C79qv2GmCAMUOqjEM4yiCBOBIPQ2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Oqe2gtraLlnbFQaZ6F9",
+        "adminUid": "C79qv2GmCAMUOqjEM4yiCBOBIPQ2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Oqny4rD0O_b4pdlxQZT",
+        "adminUid": "C79qv2GmCAMUOqjEM4yiCBOBIPQ2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OrbugK4LAT6EeXDjV03",
+        "adminUid": "C79qv2GmCAMUOqjEM4yiCBOBIPQ2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OrmOToJqHMDXj0_VOYW",
+        "adminUid": "C79qv2GmCAMUOqjEM4yiCBOBIPQ2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OrvxQBvWQyzsrITplKl",
+        "adminUid": "C79qv2GmCAMUOqjEM4yiCBOBIPQ2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OsL3CdXPL2zdHrT9pyh",
+        "adminUid": "C79qv2GmCAMUOqjEM4yiCBOBIPQ2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OsQM10awuppx7sPhN0I",
+        "adminUid": "C79qv2GmCAMUOqjEM4yiCBOBIPQ2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OsV41rbu1_1WotU2Pun",
+        "adminUid": "C79qv2GmCAMUOqjEM4yiCBOBIPQ2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OsVF1IZCh8CcxxC5XO2",
+        "adminUid": "C79qv2GmCAMUOqjEM4yiCBOBIPQ2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Osuvy3CAnbAj74iTvcX",
+        "adminUid": "C79qv2GmCAMUOqjEM4yiCBOBIPQ2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Ot-ATKFNbhWNiyGjHs8",
+        "adminUid": "C79qv2GmCAMUOqjEM4yiCBOBIPQ2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Ot3PXkhbCEmXum9UEUB",
+        "adminUid": "C79qv2GmCAMUOqjEM4yiCBOBIPQ2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Ou5eKzdaa3PyLx_JIP4",
+        "adminUid": "C79qv2GmCAMUOqjEM4yiCBOBIPQ2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OuLw0Of8H1JUf8-LxrJ",
+        "adminUid": "C79qv2GmCAMUOqjEM4yiCBOBIPQ2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OuR5mIiEVW4P9DI6thg",
+        "adminUid": "C79qv2GmCAMUOqjEM4yiCBOBIPQ2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OueR_7CxUeoVxXHHk_W",
+        "adminUid": "C79qv2GmCAMUOqjEM4yiCBOBIPQ2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OulGogZbMsgARwAVCzW",
+        "adminUid": "C79qv2GmCAMUOqjEM4yiCBOBIPQ2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Oup89Q3ZKVIGaWF9E7a",
+        "adminUid": "C79qv2GmCAMUOqjEM4yiCBOBIPQ2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Ouv8FJ3V5XFHlhsFJVy",
+        "adminUid": "C79qv2GmCAMUOqjEM4yiCBOBIPQ2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Ov-MX4z5hJ7Hd6C3Qzi",
+        "adminUid": "C79qv2GmCAMUOqjEM4yiCBOBIPQ2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Ov9FGQk5bP1H5-kr5lQ",
+        "adminUid": "C79qv2GmCAMUOqjEM4yiCBOBIPQ2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OvU87clhebSy1htfXr6",
+        "adminUid": "C79qv2GmCAMUOqjEM4yiCBOBIPQ2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Ovj7yXOCOi0IzTdT03B",
+        "adminUid": "C79qv2GmCAMUOqjEM4yiCBOBIPQ2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OwfeaOreYoLr-9zbkTl",
+        "adminUid": "C79qv2GmCAMUOqjEM4yiCBOBIPQ2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OxUlkCFSL96fDm1hay1",
+        "adminUid": "C79qv2GmCAMUOqjEM4yiCBOBIPQ2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OxZG7ABM-93JB7E5Ouu",
+        "adminUid": "C79qv2GmCAMUOqjEM4yiCBOBIPQ2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OxZGtLrHPD89AE8K0Jn",
+        "adminUid": "C79qv2GmCAMUOqjEM4yiCBOBIPQ2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmEY8jE95NHzHMAuc8-",
+        "adminUid": "HlgvmsIxOjMgxpM4kwD1GLIvcqQ2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmEY8jE95NHzHMAuc8-",
+        "adminUid": "HlgvmsIxOjMgxpM4kwD1GLIvcqQ2",
+        "pinjamanKe": 1,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmSrQpuHjvyM9gzooSA",
+        "adminUid": "HlgvmsIxOjMgxpM4kwD1GLIvcqQ2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmSrQpuHjvyM9gzooSA",
+        "adminUid": "HlgvmsIxOjMgxpM4kwD1GLIvcqQ2",
+        "pinjamanKe": 1,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmrfHXx6E4TcyZOvagk",
+        "adminUid": "HlgvmsIxOjMgxpM4kwD1GLIvcqQ2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmrfHXx6E4TcyZOvagk",
+        "adminUid": "HlgvmsIxOjMgxpM4kwD1GLIvcqQ2",
+        "pinjamanKe": 1,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmxRsiEyex3aow3oxNd",
+        "adminUid": "HlgvmsIxOjMgxpM4kwD1GLIvcqQ2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmxRsiEyex3aow3oxNd",
+        "adminUid": "HlgvmsIxOjMgxpM4kwD1GLIvcqQ2",
+        "pinjamanKe": 1,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-On1NohsU56Im-sOF9eq",
+        "adminUid": "HlgvmsIxOjMgxpM4kwD1GLIvcqQ2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-On1NohsU56Im-sOF9eq",
+        "adminUid": "HlgvmsIxOjMgxpM4kwD1GLIvcqQ2",
+        "pinjamanKe": 1,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-On1NohsU56Im-sOF9eq",
+        "adminUid": "HlgvmsIxOjMgxpM4kwD1GLIvcqQ2",
+        "pinjamanKe": 2,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OnHEywOir25D6SAPe31",
+        "adminUid": "HlgvmsIxOjMgxpM4kwD1GLIvcqQ2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OnHEywOir25D6SAPe31",
+        "adminUid": "HlgvmsIxOjMgxpM4kwD1GLIvcqQ2",
+        "pinjamanKe": 1,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OnM-IMcPtb3_9DumC0u",
+        "adminUid": "HlgvmsIxOjMgxpM4kwD1GLIvcqQ2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OnM-IMcPtb3_9DumC0u",
+        "adminUid": "HlgvmsIxOjMgxpM4kwD1GLIvcqQ2",
+        "pinjamanKe": 1,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OnVzlOn_Q-gPWUovW-x",
+        "adminUid": "HlgvmsIxOjMgxpM4kwD1GLIvcqQ2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OnVzlOn_Q-gPWUovW-x",
+        "adminUid": "HlgvmsIxOjMgxpM4kwD1GLIvcqQ2",
+        "pinjamanKe": 1,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-On_aTxiSq62sobCR89z",
+        "adminUid": "HlgvmsIxOjMgxpM4kwD1GLIvcqQ2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-On_aTxiSq62sobCR89z",
+        "adminUid": "HlgvmsIxOjMgxpM4kwD1GLIvcqQ2",
+        "pinjamanKe": 1,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OoPhGBi_YqDVkW0FF5P",
+        "adminUid": "HlgvmsIxOjMgxpM4kwD1GLIvcqQ2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OoPi2o9HlC52fdCs8ut",
+        "adminUid": "HlgvmsIxOjMgxpM4kwD1GLIvcqQ2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OoQ-aGDuZcvj6AEsFnL",
+        "adminUid": "HlgvmsIxOjMgxpM4kwD1GLIvcqQ2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OoQTwBcowR7WCjuOfOm",
+        "adminUid": "HlgvmsIxOjMgxpM4kwD1GLIvcqQ2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OoQVvR6KUZMx3gUvvJL",
+        "adminUid": "HlgvmsIxOjMgxpM4kwD1GLIvcqQ2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OohwigGeJMadhqpAj0F",
+        "adminUid": "HlgvmsIxOjMgxpM4kwD1GLIvcqQ2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OoiOyo-3ehJAvkdKIUu",
+        "adminUid": "HlgvmsIxOjMgxpM4kwD1GLIvcqQ2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OpM9QXOonn3Q1mbKyJf",
+        "adminUid": "HlgvmsIxOjMgxpM4kwD1GLIvcqQ2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OpasS5rWgcTSZzFi5Bh",
+        "adminUid": "HlgvmsIxOjMgxpM4kwD1GLIvcqQ2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Opk8_-r-PnA_h7WPQKH",
+        "adminUid": "HlgvmsIxOjMgxpM4kwD1GLIvcqQ2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Opklo1GfEHhrT3jpPxp",
+        "adminUid": "HlgvmsIxOjMgxpM4kwD1GLIvcqQ2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Opl37pC7KnB2lsYMkCB",
+        "adminUid": "HlgvmsIxOjMgxpM4kwD1GLIvcqQ2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OppxyLv35NYiAP81EYX",
+        "adminUid": "HlgvmsIxOjMgxpM4kwD1GLIvcqQ2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Oq4fgxfI3tIzYbsCoMG",
+        "adminUid": "HlgvmsIxOjMgxpM4kwD1GLIvcqQ2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OqA7UHHt7PI-iqOwDRG",
+        "adminUid": "HlgvmsIxOjMgxpM4kwD1GLIvcqQ2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OqA9lVPfwQD7dvczrG9",
+        "adminUid": "HlgvmsIxOjMgxpM4kwD1GLIvcqQ2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OqKJecw2uw9K657AWC7",
+        "adminUid": "HlgvmsIxOjMgxpM4kwD1GLIvcqQ2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OqOWVV0NgfcJooY4wjf",
+        "adminUid": "HlgvmsIxOjMgxpM4kwD1GLIvcqQ2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Oqefu8XVYZD02Cc6JNl",
+        "adminUid": "HlgvmsIxOjMgxpM4kwD1GLIvcqQ2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OqjJJRRzcaxRNC3bmHl",
+        "adminUid": "HlgvmsIxOjMgxpM4kwD1GLIvcqQ2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Or2nUat3v1Et9ihJA3U",
+        "adminUid": "HlgvmsIxOjMgxpM4kwD1GLIvcqQ2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OrUG0Vnp-0x1MB7eL6S",
+        "adminUid": "HlgvmsIxOjMgxpM4kwD1GLIvcqQ2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmEpyhc7LXnLwsyPnh1",
+        "adminUid": "Km915SdnHxfrg9Qz5sFoKrNNOBk1",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OnVYzhoL6TdVo5WGdgz",
+        "adminUid": "Km915SdnHxfrg9Qz5sFoKrNNOBk1",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OoPHATRJGV_gaBBQQem",
+        "adminUid": "Km915SdnHxfrg9Qz5sFoKrNNOBk1",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OoPKqllByYF1QjBw5iJ",
+        "adminUid": "Km915SdnHxfrg9Qz5sFoKrNNOBk1",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OpBbeHbcyGol6e0_JK7",
+        "adminUid": "Km915SdnHxfrg9Qz5sFoKrNNOBk1",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OiVdpA6xV8YoU66KWPn",
+        "adminUid": "LB1SXhH0MOU1laCYLcm0FoekRNo2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OlZ-STmW7VsHYeVfaoU",
+        "adminUid": "LB1SXhH0MOU1laCYLcm0FoekRNo2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OlzmNrZOYRotGnlhTuv",
+        "adminUid": "LB1SXhH0MOU1laCYLcm0FoekRNo2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmmPNFpQ3C31p2efcVT",
+        "adminUid": "LB1SXhH0MOU1laCYLcm0FoekRNo2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Omn-WMKmJ6gTveTCKwU",
+        "adminUid": "LB1SXhH0MOU1laCYLcm0FoekRNo2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmnpTchhO-CIbItS_E2",
+        "adminUid": "LB1SXhH0MOU1laCYLcm0FoekRNo2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OnM8sjhEWbLr3COuiLX",
+        "adminUid": "LB1SXhH0MOU1laCYLcm0FoekRNo2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Op69Qk9Oair6hhIY2ov",
+        "adminUid": "LB1SXhH0MOU1laCYLcm0FoekRNo2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OpS0z7Me-OqWO1ht5yj",
+        "adminUid": "LB1SXhH0MOU1laCYLcm0FoekRNo2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OpWaxOViXbwRtJVKAca",
+        "adminUid": "LB1SXhH0MOU1laCYLcm0FoekRNo2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OqBLRAHErSlm3Mx2MtH",
+        "adminUid": "LB1SXhH0MOU1laCYLcm0FoekRNo2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OkcyCN9qkNab5FRgJRP",
+        "adminUid": "MjnJfW3yIFXj5qVw0iSklr4XLVo2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OkcyCN9qkNab5FRgJRP",
+        "adminUid": "MjnJfW3yIFXj5qVw0iSklr4XLVo2",
+        "pinjamanKe": 1,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Okn3WbfRfDWZloJaiJg",
+        "adminUid": "MjnJfW3yIFXj5qVw0iSklr4XLVo2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Okn5x9L0WwC_XkVpdD8",
+        "adminUid": "MjnJfW3yIFXj5qVw0iSklr4XLVo2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Ol0ZaJMwPVn2Ei36sYp",
+        "adminUid": "MjnJfW3yIFXj5qVw0iSklr4XLVo2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OlBIAq-fdM5Howaqw-1",
+        "adminUid": "MjnJfW3yIFXj5qVw0iSklr4XLVo2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OlKdP7YnqCGmx3gLVlw",
+        "adminUid": "MjnJfW3yIFXj5qVw0iSklr4XLVo2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OlPj4UTr0v3QQAsJ8_f",
+        "adminUid": "MjnJfW3yIFXj5qVw0iSklr4XLVo2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OljyW5LCCfcq75Yvek1",
+        "adminUid": "MjnJfW3yIFXj5qVw0iSklr4XLVo2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OluBklB9Vk6vu7yhvOf",
+        "adminUid": "MjnJfW3yIFXj5qVw0iSklr4XLVo2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Om-OyaOeq7MBXfpegdN",
+        "adminUid": "MjnJfW3yIFXj5qVw0iSklr4XLVo2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmCZwGC848TfvhZg-hR",
+        "adminUid": "MjnJfW3yIFXj5qVw0iSklr4XLVo2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmiA3IeIPq1W4tJWCd5",
+        "adminUid": "MjnJfW3yIFXj5qVw0iSklr4XLVo2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Omir2pjLxVqA5tku3lf",
+        "adminUid": "MjnJfW3yIFXj5qVw0iSklr4XLVo2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmsAUYyJq2yHgT-yWVM",
+        "adminUid": "MjnJfW3yIFXj5qVw0iSklr4XLVo2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OnGBHE1HsVvDPzxppWr",
+        "adminUid": "MjnJfW3yIFXj5qVw0iSklr4XLVo2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OoPK-B7BMNyxBM8Uljw",
+        "adminUid": "MjnJfW3yIFXj5qVw0iSklr4XLVo2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OoPK-B7BMNyxBM8Uljw",
+        "adminUid": "MjnJfW3yIFXj5qVw0iSklr4XLVo2",
+        "pinjamanKe": 1,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Op6Zi2YvDRBRzWoKEhg",
+        "adminUid": "MjnJfW3yIFXj5qVw0iSklr4XLVo2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Op7VPZ5zUTvLQotxfAI",
+        "adminUid": "MjnJfW3yIFXj5qVw0iSklr4XLVo2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Op89KHVxtK2cxOXRTC9",
+        "adminUid": "MjnJfW3yIFXj5qVw0iSklr4XLVo2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OpCg1iolJDExGZO0rwP",
+        "adminUid": "MjnJfW3yIFXj5qVw0iSklr4XLVo2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OpDVrx44ontwEElE4mz",
+        "adminUid": "MjnJfW3yIFXj5qVw0iSklr4XLVo2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OpDX6vzbmXmXHeGllOg",
+        "adminUid": "MjnJfW3yIFXj5qVw0iSklr4XLVo2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OpX93XzoRNjNvI_HeIs",
+        "adminUid": "MjnJfW3yIFXj5qVw0iSklr4XLVo2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Opbkr4syuncK1ipEMdh",
+        "adminUid": "MjnJfW3yIFXj5qVw0iSklr4XLVo2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Opg_22jRtisS8zkwUiz",
+        "adminUid": "MjnJfW3yIFXj5qVw0iSklr4XLVo2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OpqmprCh1QBMJKqEZkY",
+        "adminUid": "MjnJfW3yIFXj5qVw0iSklr4XLVo2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OqLSxDw1iE-lx5FAhH2",
+        "adminUid": "MjnJfW3yIFXj5qVw0iSklr4XLVo2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Oqf--GQp_JaR-XpPIz5",
+        "adminUid": "MjnJfW3yIFXj5qVw0iSklr4XLVo2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmJk2LdM7i2mt3wkKV2",
+        "adminUid": "QtrPy0376qR1InGGHWhqECj5WAg1",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmJk2LdM7i2mt3wkKV2",
+        "adminUid": "QtrPy0376qR1InGGHWhqECj5WAg1",
+        "pinjamanKe": 1,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmJnXjCHOx2atQ4Seuz",
+        "adminUid": "QtrPy0376qR1InGGHWhqECj5WAg1",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmJvJL9EDBqD2iNUaY3",
+        "adminUid": "QtrPy0376qR1InGGHWhqECj5WAg1",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmJvJL9EDBqD2iNUaY3",
+        "adminUid": "QtrPy0376qR1InGGHWhqECj5WAg1",
+        "pinjamanKe": 1,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmJvJL9EDBqD2iNUaY3",
+        "adminUid": "QtrPy0376qR1InGGHWhqECj5WAg1",
+        "pinjamanKe": 2,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmJwHs3Pqz0TcopLUPq",
+        "adminUid": "QtrPy0376qR1InGGHWhqECj5WAg1",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmJwHs3Pqz0TcopLUPq",
+        "adminUid": "QtrPy0376qR1InGGHWhqECj5WAg1",
+        "pinjamanKe": 1,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmJwHs3Pqz0TcopLUPq",
+        "adminUid": "QtrPy0376qR1InGGHWhqECj5WAg1",
+        "pinjamanKe": 2,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Omi7qdRtBEWSHJrrKs3",
+        "adminUid": "QtrPy0376qR1InGGHWhqECj5WAg1",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmnHcSOfXLad7H9taq9",
+        "adminUid": "QtrPy0376qR1InGGHWhqECj5WAg1",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmnHcSOfXLad7H9taq9",
+        "adminUid": "QtrPy0376qR1InGGHWhqECj5WAg1",
+        "pinjamanKe": 2,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmnKQesiUi3fEXqoVtF",
+        "adminUid": "QtrPy0376qR1InGGHWhqECj5WAg1",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmqwXT6aH7avKY-Tqwr",
+        "adminUid": "QtrPy0376qR1InGGHWhqECj5WAg1",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmrHpzryuPH_WOOKE1R",
+        "adminUid": "QtrPy0376qR1InGGHWhqECj5WAg1",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmwqB-vO3S7KwYkaGrY",
+        "adminUid": "QtrPy0376qR1InGGHWhqECj5WAg1",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmxJzxsF1tPgdt97cxn",
+        "adminUid": "QtrPy0376qR1InGGHWhqECj5WAg1",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-On1nvZBK_zWV7mAR-FP",
+        "adminUid": "QtrPy0376qR1InGGHWhqECj5WAg1",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-On1nvZBK_zWV7mAR-FP",
+        "adminUid": "QtrPy0376qR1InGGHWhqECj5WAg1",
+        "pinjamanKe": 2,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-On1nvZBK_zWV7mAR-FP",
+        "adminUid": "QtrPy0376qR1InGGHWhqECj5WAg1",
+        "pinjamanKe": 3,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-On1nvZBK_zWV7mAR-FP",
+        "adminUid": "QtrPy0376qR1InGGHWhqECj5WAg1",
+        "pinjamanKe": 4,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-On1nvZBK_zWV7mAR-FP",
+        "adminUid": "QtrPy0376qR1InGGHWhqECj5WAg1",
+        "pinjamanKe": 5,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-On1xFj0fReJgup7qyjB",
+        "adminUid": "QtrPy0376qR1InGGHWhqECj5WAg1",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-On1xFj0fReJgup7qyjB",
+        "adminUid": "QtrPy0376qR1InGGHWhqECj5WAg1",
+        "pinjamanKe": 2,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-On5Anr5pfJcHTmMSmnc",
+        "adminUid": "QtrPy0376qR1InGGHWhqECj5WAg1",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-On5Anr5pfJcHTmMSmnc",
+        "adminUid": "QtrPy0376qR1InGGHWhqECj5WAg1",
+        "pinjamanKe": 2,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-On5P7RBh35oWrOJYJWk",
+        "adminUid": "QtrPy0376qR1InGGHWhqECj5WAg1",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-On5P7RBh35oWrOJYJWk",
+        "adminUid": "QtrPy0376qR1InGGHWhqECj5WAg1",
+        "pinjamanKe": 2,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-On5P7RBh35oWrOJYJWk",
+        "adminUid": "QtrPy0376qR1InGGHWhqECj5WAg1",
+        "pinjamanKe": 3,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-On6wIQkK8B2MhtWr8Cv",
+        "adminUid": "QtrPy0376qR1InGGHWhqECj5WAg1",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-On6wIQkK8B2MhtWr8Cv",
+        "adminUid": "QtrPy0376qR1InGGHWhqECj5WAg1",
+        "pinjamanKe": 2,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OnR5nBBPCUyakIs7hBW",
+        "adminUid": "QtrPy0376qR1InGGHWhqECj5WAg1",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OnR5nBBPCUyakIs7hBW",
+        "adminUid": "QtrPy0376qR1InGGHWhqECj5WAg1",
+        "pinjamanKe": 2,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OnR5nBBPCUyakIs7hBW",
+        "adminUid": "QtrPy0376qR1InGGHWhqECj5WAg1",
+        "pinjamanKe": 3,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OnWwAD7bulti-IxGpkC",
+        "adminUid": "QtrPy0376qR1InGGHWhqECj5WAg1",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OnWwdE3KbRsTo57JYKA",
+        "adminUid": "QtrPy0376qR1InGGHWhqECj5WAg1",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OnaKQfVgpFDYexuXBrn",
+        "adminUid": "QtrPy0376qR1InGGHWhqECj5WAg1",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OnaU559R2oo55lem_7O",
+        "adminUid": "QtrPy0376qR1InGGHWhqECj5WAg1",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OnepogN3MEkybxiA8gS",
+        "adminUid": "QtrPy0376qR1InGGHWhqECj5WAg1",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OoPfTVoA9MtDVYB4WT9",
+        "adminUid": "QtrPy0376qR1InGGHWhqECj5WAg1",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OoPfTVoA9MtDVYB4WT9",
+        "adminUid": "QtrPy0376qR1InGGHWhqECj5WAg1",
+        "pinjamanKe": 1,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OoPfTVoA9MtDVYB4WT9",
+        "adminUid": "QtrPy0376qR1InGGHWhqECj5WAg1",
+        "pinjamanKe": 2,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OoczaruNYFw1-kgNMDN",
+        "adminUid": "QtrPy0376qR1InGGHWhqECj5WAg1",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OpbP_oi40cW6Obocm2F",
+        "adminUid": "QtrPy0376qR1InGGHWhqECj5WAg1",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OpbVYf3wyWJTw09aX8a",
+        "adminUid": "QtrPy0376qR1InGGHWhqECj5WAg1",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Opbat82ucv7w0Ln90U8",
+        "adminUid": "QtrPy0376qR1InGGHWhqECj5WAg1",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OpwR0rkYxqoiBN-Wr-c",
+        "adminUid": "QtrPy0376qR1InGGHWhqECj5WAg1",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Oqp0fiaYwEZMQM7z4q5",
+        "adminUid": "QtrPy0376qR1InGGHWhqECj5WAg1",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Oqp6P3Qlr74zl9qhme-",
+        "adminUid": "QtrPy0376qR1InGGHWhqECj5WAg1",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OqteIihCUDfpznIIPDV",
+        "adminUid": "QtrPy0376qR1InGGHWhqECj5WAg1",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Orb-ryYULuEq4nHemNN",
+        "adminUid": "QtrPy0376qR1InGGHWhqECj5WAg1",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OrbZdq9IwFlVJ_6adGO",
+        "adminUid": "QtrPy0376qR1InGGHWhqECj5WAg1",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OrrRy7e8T-l6HGpbNLP",
+        "adminUid": "QtrPy0376qR1InGGHWhqECj5WAg1",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OsB_kleeb7uyv_6n8yP",
+        "adminUid": "QtrPy0376qR1InGGHWhqECj5WAg1",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OsBbjr9Ar0GljVRHvUM",
+        "adminUid": "QtrPy0376qR1InGGHWhqECj5WAg1",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OsR5F-AjIXOJT0a6qUF",
+        "adminUid": "QtrPy0376qR1InGGHWhqECj5WAg1",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OsRMPQ44yJZEm2sxLGn",
+        "adminUid": "QtrPy0376qR1InGGHWhqECj5WAg1",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Osuw63IZOm06z24AEyP",
+        "adminUid": "QtrPy0376qR1InGGHWhqECj5WAg1",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Ou6qnWW_dLwGaGYmY_r",
+        "adminUid": "QtrPy0376qR1InGGHWhqECj5WAg1",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Ou70mBIrUFzJ-HeSqNC",
+        "adminUid": "QtrPy0376qR1InGGHWhqECj5WAg1",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Ou7BRSgDba6LDWVrL3y",
+        "adminUid": "QtrPy0376qR1InGGHWhqECj5WAg1",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OuBzlTzC1I0dm-cV_xf",
+        "adminUid": "QtrPy0376qR1InGGHWhqECj5WAg1",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OuGJP0auvUQQTRfbChW",
+        "adminUid": "QtrPy0376qR1InGGHWhqECj5WAg1",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Oub5K1Xr5-Rq0L_H6Dc",
+        "adminUid": "QtrPy0376qR1InGGHWhqECj5WAg1",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OujZu_jSZLaOwvKZ66g",
+        "adminUid": "QtrPy0376qR1InGGHWhqECj5WAg1",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Ov089UnSLfhNV5T4qRF",
+        "adminUid": "QtrPy0376qR1InGGHWhqECj5WAg1",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OvAWkCLOU_c3kc2PnGr",
+        "adminUid": "QtrPy0376qR1InGGHWhqECj5WAg1",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OwrSXyEyjvM3lb6YQUG",
+        "adminUid": "QtrPy0376qR1InGGHWhqECj5WAg1",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Ox9mobq_Y_Pqf1RCEQ7",
+        "adminUid": "QtrPy0376qR1InGGHWhqECj5WAg1",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Om8B02La2jzKJBCJ9kf",
+        "adminUid": "W8bOfOZzKdaaNhrDZpj4PPKW4zq2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmCXFEtCy66K4V7yH9A",
+        "adminUid": "W8bOfOZzKdaaNhrDZpj4PPKW4zq2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmCdKKIWFatz4pQIUDy",
+        "adminUid": "W8bOfOZzKdaaNhrDZpj4PPKW4zq2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmE6ngpJLecSpG45MHx",
+        "adminUid": "W8bOfOZzKdaaNhrDZpj4PPKW4zq2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmE6ngpJLecSpG45MHx",
+        "adminUid": "W8bOfOZzKdaaNhrDZpj4PPKW4zq2",
+        "pinjamanKe": 1,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmEWBMtZAAxAmGJXzKm",
+        "adminUid": "W8bOfOZzKdaaNhrDZpj4PPKW4zq2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmEWBMtZAAxAmGJXzKm",
+        "adminUid": "W8bOfOZzKdaaNhrDZpj4PPKW4zq2",
+        "pinjamanKe": 1,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmK51pfxaCw3xFX1FvJ",
+        "adminUid": "W8bOfOZzKdaaNhrDZpj4PPKW4zq2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Omrxr-ydYaMIboAi4Sq",
+        "adminUid": "W8bOfOZzKdaaNhrDZpj4PPKW4zq2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-On5qrTdsbaUkRBeSwnj",
+        "adminUid": "W8bOfOZzKdaaNhrDZpj4PPKW4zq2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OnRT5Qu1j2fsXrhyvUx",
+        "adminUid": "W8bOfOZzKdaaNhrDZpj4PPKW4zq2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OoQTtKPoA2m0rwrEv_F",
+        "adminUid": "W8bOfOZzKdaaNhrDZpj4PPKW4zq2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OoUpjfO6Khb1hRLz02t",
+        "adminUid": "W8bOfOZzKdaaNhrDZpj4PPKW4zq2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Oq4g3AYUYImwk5FLDP3",
+        "adminUid": "W8bOfOZzKdaaNhrDZpj4PPKW4zq2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OqAownbPtIzbWy_jaqd",
+        "adminUid": "W8bOfOZzKdaaNhrDZpj4PPKW4zq2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OqJgzE3Lu4XlMhbv_X8",
+        "adminUid": "W8bOfOZzKdaaNhrDZpj4PPKW4zq2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OqKpWjxRCYtN7wLc88z",
+        "adminUid": "W8bOfOZzKdaaNhrDZpj4PPKW4zq2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OqU4i-I38fJQATT5pu3",
+        "adminUid": "W8bOfOZzKdaaNhrDZpj4PPKW4zq2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OqjAAL90FKhHlwx1kqq",
+        "adminUid": "W8bOfOZzKdaaNhrDZpj4PPKW4zq2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Oqy4XFcuQwtbzb3sX3v",
+        "adminUid": "W8bOfOZzKdaaNhrDZpj4PPKW4zq2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OrCO5rYdr34gjys3hdj",
+        "adminUid": "W8bOfOZzKdaaNhrDZpj4PPKW4zq2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmETsoACteExumIJlcI",
+        "adminUid": "bgoSXgPPofM3a4or3Fw5bnYHHqB2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmETsoACteExumIJlcI",
+        "adminUid": "bgoSXgPPofM3a4or3Fw5bnYHHqB2",
+        "pinjamanKe": 1,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmEux1qma-kd_iasXzg",
+        "adminUid": "bgoSXgPPofM3a4or3Fw5bnYHHqB2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmJpQr4X5o7FU5GI_hc",
+        "adminUid": "bgoSXgPPofM3a4or3Fw5bnYHHqB2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmNHjRagACKmPowqZGV",
+        "adminUid": "bgoSXgPPofM3a4or3Fw5bnYHHqB2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmPAS83LNvXqx3QE4-N",
+        "adminUid": "bgoSXgPPofM3a4or3Fw5bnYHHqB2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmPAS83LNvXqx3QE4-N",
+        "adminUid": "bgoSXgPPofM3a4or3Fw5bnYHHqB2",
+        "pinjamanKe": 1,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OnGZpUJPNcwWJ1P8V5R",
+        "adminUid": "bgoSXgPPofM3a4or3Fw5bnYHHqB2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OnGZpUJPNcwWJ1P8V5R",
+        "adminUid": "bgoSXgPPofM3a4or3Fw5bnYHHqB2",
+        "pinjamanKe": 1,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OnGsIRAz0MckkCFLL1l",
+        "adminUid": "bgoSXgPPofM3a4or3Fw5bnYHHqB2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OoVI80iTRYJV0iNrHhU",
+        "adminUid": "bgoSXgPPofM3a4or3Fw5bnYHHqB2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OoVMLPwNInM0wi3rab0",
+        "adminUid": "bgoSXgPPofM3a4or3Fw5bnYHHqB2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OoVMLPwNInM0wi3rab0",
+        "adminUid": "bgoSXgPPofM3a4or3Fw5bnYHHqB2",
+        "pinjamanKe": 1,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OoVN5jZiChwy3VBCTqU",
+        "adminUid": "bgoSXgPPofM3a4or3Fw5bnYHHqB2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OoVN5jZiChwy3VBCTqU",
+        "adminUid": "bgoSXgPPofM3a4or3Fw5bnYHHqB2",
+        "pinjamanKe": 1,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OoVRlbmv7L_SliPPOW0",
+        "adminUid": "bgoSXgPPofM3a4or3Fw5bnYHHqB2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OoVSRxG1qMhaeYasRLs",
+        "adminUid": "bgoSXgPPofM3a4or3Fw5bnYHHqB2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OoVSRxG1qMhaeYasRLs",
+        "adminUid": "bgoSXgPPofM3a4or3Fw5bnYHHqB2",
+        "pinjamanKe": 1,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OpCYHBXaWjiCFG-f647",
+        "adminUid": "bgoSXgPPofM3a4or3Fw5bnYHHqB2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OpCoRDLZjyTAJS5PucX",
+        "adminUid": "bgoSXgPPofM3a4or3Fw5bnYHHqB2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OpN54zkl76fnPbM3wdX",
+        "adminUid": "bgoSXgPPofM3a4or3Fw5bnYHHqB2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OpXSSaFQFTlwiIdaABS",
+        "adminUid": "bgoSXgPPofM3a4or3Fw5bnYHHqB2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OphE1RfMmt3q_2wzujn",
+        "adminUid": "bgoSXgPPofM3a4or3Fw5bnYHHqB2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OpkE7N40i7Vc0n9ia-W",
+        "adminUid": "bgoSXgPPofM3a4or3Fw5bnYHHqB2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Oq5-DNgoHn3jOpyPGH2",
+        "adminUid": "bgoSXgPPofM3a4or3Fw5bnYHHqB2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OqPrVf-8Yo3CP3K5VQm",
+        "adminUid": "bgoSXgPPofM3a4or3Fw5bnYHHqB2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OqozaHIpR47--xYToka",
+        "adminUid": "bgoSXgPPofM3a4or3Fw5bnYHHqB2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Oqp6wc1sSYaKJjskDBx",
+        "adminUid": "bgoSXgPPofM3a4or3Fw5bnYHHqB2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Or3K1A9Z3M7A9tx_3ja",
+        "adminUid": "bgoSXgPPofM3a4or3Fw5bnYHHqB2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OrDZ7mC0EGs9m-WEfAb",
+        "adminUid": "bgoSXgPPofM3a4or3Fw5bnYHHqB2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Ol5b1sF7wJ739Vl09sG",
+        "adminUid": "mL9qUPvSwDgsEKK6opphRefMeD72",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OlF_ozXL2Kr63zKcfsz",
+        "adminUid": "mL9qUPvSwDgsEKK6opphRefMeD72",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Om8w7ijD7BkZF83Mhj_",
+        "adminUid": "mL9qUPvSwDgsEKK6opphRefMeD72",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmKWbwyNK47zwKHbKkv",
+        "adminUid": "mL9qUPvSwDgsEKK6opphRefMeD72",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmU9gm44_uR1J8TiQ8J",
+        "adminUid": "mL9qUPvSwDgsEKK6opphRefMeD72",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmUV6rt9rQ0htBnq0l7",
+        "adminUid": "mL9qUPvSwDgsEKK6opphRefMeD72",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmsCxGDYiiwrWlAW_sO",
+        "adminUid": "mL9qUPvSwDgsEKK6opphRefMeD72",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Omsn4DvGyjDOVQRHdic",
+        "adminUid": "mL9qUPvSwDgsEKK6opphRefMeD72",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Omy7rcMIIR8szFsL9UZ",
+        "adminUid": "mL9qUPvSwDgsEKK6opphRefMeD72",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-On1uy5oyxeCT1kX0ity",
+        "adminUid": "mL9qUPvSwDgsEKK6opphRefMeD72",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-On6Qd80O4nW4unUZVSV",
+        "adminUid": "mL9qUPvSwDgsEKK6opphRefMeD72",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OnHrC9Z4ZFMgoU0wBey",
+        "adminUid": "mL9qUPvSwDgsEKK6opphRefMeD72",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OnM6IZc9sAMZu21IUMW",
+        "adminUid": "mL9qUPvSwDgsEKK6opphRefMeD72",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OnR_G5IWM_9_1Q0sRWQ",
+        "adminUid": "mL9qUPvSwDgsEKK6opphRefMeD72",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OnS0Ma9-eaxB2xN0lrJ",
+        "adminUid": "mL9qUPvSwDgsEKK6opphRefMeD72",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OnXGBrOsFAb_qN5v8Up",
+        "adminUid": "mL9qUPvSwDgsEKK6opphRefMeD72",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OoUt91CPPYy0cAYVCaU",
+        "adminUid": "mL9qUPvSwDgsEKK6opphRefMeD72",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OpNaS_19wfIf-bCkUon",
+        "adminUid": "mL9qUPvSwDgsEKK6opphRefMeD72",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OklFSUXuUaGddezydpg",
+        "adminUid": "pVoPdP4iUgaLt5IHDZsAgRLwZek2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OklFSUXuUaGddezydpg",
+        "adminUid": "pVoPdP4iUgaLt5IHDZsAgRLwZek2",
+        "pinjamanKe": 1,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Okn2Q8fob2HYzhk-ecg",
+        "adminUid": "pVoPdP4iUgaLt5IHDZsAgRLwZek2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Okn2Q8fob2HYzhk-ecg",
+        "adminUid": "pVoPdP4iUgaLt5IHDZsAgRLwZek2",
+        "pinjamanKe": 1,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OkqQxgjUS96oQuAoK-0",
+        "adminUid": "pVoPdP4iUgaLt5IHDZsAgRLwZek2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OkqQxgjUS96oQuAoK-0",
+        "adminUid": "pVoPdP4iUgaLt5IHDZsAgRLwZek2",
+        "pinjamanKe": 1,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Ol6Ijf4nysPHMWJRmD3",
+        "adminUid": "pVoPdP4iUgaLt5IHDZsAgRLwZek2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OlBUrjhAs4tPaZ6vUD6",
+        "adminUid": "pVoPdP4iUgaLt5IHDZsAgRLwZek2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OlBUrjhAs4tPaZ6vUD6",
+        "adminUid": "pVoPdP4iUgaLt5IHDZsAgRLwZek2",
+        "pinjamanKe": 1,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OlGQ7uLEpSsqF6Rfqt-",
+        "adminUid": "pVoPdP4iUgaLt5IHDZsAgRLwZek2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OlGd0udAzZOkfbjdpLw",
+        "adminUid": "pVoPdP4iUgaLt5IHDZsAgRLwZek2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OlGd0udAzZOkfbjdpLw",
+        "adminUid": "pVoPdP4iUgaLt5IHDZsAgRLwZek2",
+        "pinjamanKe": 1,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OlKnDInL6tE7x9OnZnw",
+        "adminUid": "pVoPdP4iUgaLt5IHDZsAgRLwZek2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OlKnDInL6tE7x9OnZnw",
+        "adminUid": "pVoPdP4iUgaLt5IHDZsAgRLwZek2",
+        "pinjamanKe": 1,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OlQSnBubPVKygevj0G1",
+        "adminUid": "pVoPdP4iUgaLt5IHDZsAgRLwZek2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OlQVX4spPLanH9Fxip1",
+        "adminUid": "pVoPdP4iUgaLt5IHDZsAgRLwZek2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OlQVX4spPLanH9Fxip1",
+        "adminUid": "pVoPdP4iUgaLt5IHDZsAgRLwZek2",
+        "pinjamanKe": 1,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OlkLJTM0kH2PuxoZjRX",
+        "adminUid": "pVoPdP4iUgaLt5IHDZsAgRLwZek2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OloBoe6tVT06qBy8xk_",
+        "adminUid": "pVoPdP4iUgaLt5IHDZsAgRLwZek2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Olu6r2MZVdhD2M7RM5a",
+        "adminUid": "pVoPdP4iUgaLt5IHDZsAgRLwZek2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OluBAl9NpMo3NzLUNHf",
+        "adminUid": "pVoPdP4iUgaLt5IHDZsAgRLwZek2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Om7xZw6Omdf32h0WIx0",
+        "adminUid": "pVoPdP4iUgaLt5IHDZsAgRLwZek2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Om8KjUnsEO0wSEc4s_p",
+        "adminUid": "pVoPdP4iUgaLt5IHDZsAgRLwZek2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Om8KjUnsEO0wSEc4s_p",
+        "adminUid": "pVoPdP4iUgaLt5IHDZsAgRLwZek2",
+        "pinjamanKe": 1,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmDf86i_DMchvyJlip8",
+        "adminUid": "pVoPdP4iUgaLt5IHDZsAgRLwZek2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmDxDoiWdUILVnZeIH0",
+        "adminUid": "pVoPdP4iUgaLt5IHDZsAgRLwZek2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmDxDoiWdUILVnZeIH0",
+        "adminUid": "pVoPdP4iUgaLt5IHDZsAgRLwZek2",
+        "pinjamanKe": 1,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Omii_XPtRzWZx9uBWCE",
+        "adminUid": "pVoPdP4iUgaLt5IHDZsAgRLwZek2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Omm7cQ0BaBlO2ScDnua",
+        "adminUid": "pVoPdP4iUgaLt5IHDZsAgRLwZek2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmmCY50ImC0Pzf_fC0F",
+        "adminUid": "pVoPdP4iUgaLt5IHDZsAgRLwZek2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmmF3rpr1T5HDs_DoLS",
+        "adminUid": "pVoPdP4iUgaLt5IHDZsAgRLwZek2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmmzptdzD3glfPCpDnp",
+        "adminUid": "pVoPdP4iUgaLt5IHDZsAgRLwZek2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmmzptdzD3glfPCpDnp",
+        "adminUid": "pVoPdP4iUgaLt5IHDZsAgRLwZek2",
+        "pinjamanKe": 1,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmrTnbNjTAf2ZdMQYeW",
+        "adminUid": "pVoPdP4iUgaLt5IHDZsAgRLwZek2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Oms8WsVp-F_bZRv1JJW",
+        "adminUid": "pVoPdP4iUgaLt5IHDZsAgRLwZek2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Oms8WsVp-F_bZRv1JJW",
+        "adminUid": "pVoPdP4iUgaLt5IHDZsAgRLwZek2",
+        "pinjamanKe": 1,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Oms9wGK4XkdfCKIb0yF",
+        "adminUid": "pVoPdP4iUgaLt5IHDZsAgRLwZek2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Oms9wGK4XkdfCKIb0yF",
+        "adminUid": "pVoPdP4iUgaLt5IHDZsAgRLwZek2",
+        "pinjamanKe": 1,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmwjnE68fSLEXKTnE_a",
+        "adminUid": "pVoPdP4iUgaLt5IHDZsAgRLwZek2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-On6otRwMQsHZSCahfFd",
+        "adminUid": "pVoPdP4iUgaLt5IHDZsAgRLwZek2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-On702e5sq83ULyVXh5U",
+        "adminUid": "pVoPdP4iUgaLt5IHDZsAgRLwZek2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-On702e5sq83ULyVXh5U",
+        "adminUid": "pVoPdP4iUgaLt5IHDZsAgRLwZek2",
+        "pinjamanKe": 1,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OnL5NN79zXRJoc0mrlo",
+        "adminUid": "pVoPdP4iUgaLt5IHDZsAgRLwZek2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OnQZ1e8CJciVQlxkUak",
+        "adminUid": "pVoPdP4iUgaLt5IHDZsAgRLwZek2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OoLAk7QVkWCUdS7tSUp",
+        "adminUid": "pVoPdP4iUgaLt5IHDZsAgRLwZek2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OoLGuQJVLCC0WmJ4yoQ",
+        "adminUid": "pVoPdP4iUgaLt5IHDZsAgRLwZek2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OoQ1ASbzr1N6V0JmwzZ",
+        "adminUid": "pVoPdP4iUgaLt5IHDZsAgRLwZek2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OoZRhXlvi3e9NkOa0qE",
+        "adminUid": "pVoPdP4iUgaLt5IHDZsAgRLwZek2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OoiE4okTt_7kbeJL3CQ",
+        "adminUid": "pVoPdP4iUgaLt5IHDZsAgRLwZek2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OojNNxq-D6ah0WPCnNg",
+        "adminUid": "pVoPdP4iUgaLt5IHDZsAgRLwZek2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Op7ddmZwcU-DKIAWdJq",
+        "adminUid": "pVoPdP4iUgaLt5IHDZsAgRLwZek2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Op86ShWCTwIMo8CETDR",
+        "adminUid": "pVoPdP4iUgaLt5IHDZsAgRLwZek2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Op8j67DoEnvz7tggpJT",
+        "adminUid": "pVoPdP4iUgaLt5IHDZsAgRLwZek2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Op8j67DoEnvz7tggpJT",
+        "adminUid": "pVoPdP4iUgaLt5IHDZsAgRLwZek2",
+        "pinjamanKe": 1,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OpCGyMr03M4_HCFnE3g",
+        "adminUid": "pVoPdP4iUgaLt5IHDZsAgRLwZek2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OpHdKkJQH-5VabdhmRc",
+        "adminUid": "pVoPdP4iUgaLt5IHDZsAgRLwZek2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OpMXu8qh84m-DZQBLSm",
+        "adminUid": "pVoPdP4iUgaLt5IHDZsAgRLwZek2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OpWTZC31otS1h8mWqFu",
+        "adminUid": "pVoPdP4iUgaLt5IHDZsAgRLwZek2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OpW_uqbMUIqVfxACxaX",
+        "adminUid": "pVoPdP4iUgaLt5IHDZsAgRLwZek2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OpXt7RrHVgXEOmXx94Z",
+        "adminUid": "pVoPdP4iUgaLt5IHDZsAgRLwZek2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Opa1b5S8oFRgigBS_Ss",
+        "adminUid": "pVoPdP4iUgaLt5IHDZsAgRLwZek2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OpaOnqbBF9QyclqXC1h",
+        "adminUid": "pVoPdP4iUgaLt5IHDZsAgRLwZek2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Opc0s6sOsJ0l0UUUfBp",
+        "adminUid": "pVoPdP4iUgaLt5IHDZsAgRLwZek2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OplLhxHmavPZZmwFu7N",
+        "adminUid": "pVoPdP4iUgaLt5IHDZsAgRLwZek2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OpwDAjhJkZoOzHFhQ2F",
+        "adminUid": "pVoPdP4iUgaLt5IHDZsAgRLwZek2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OqK_chnyHUZkSjPoT_8",
+        "adminUid": "pVoPdP4iUgaLt5IHDZsAgRLwZek2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OqKovteprMkVP7PsrBD",
+        "adminUid": "pVoPdP4iUgaLt5IHDZsAgRLwZek2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OqPLDHyqGc-pI0WbGot",
+        "adminUid": "pVoPdP4iUgaLt5IHDZsAgRLwZek2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OqPM5kQnC6nRFybetKW",
+        "adminUid": "pVoPdP4iUgaLt5IHDZsAgRLwZek2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OqQFBpjkOppGjDUk8iG",
+        "adminUid": "pVoPdP4iUgaLt5IHDZsAgRLwZek2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OqVn36I0yQOkUNKoSzB",
+        "adminUid": "pVoPdP4iUgaLt5IHDZsAgRLwZek2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OqdDEiNHB1hA-6555Uq",
+        "adminUid": "pVoPdP4iUgaLt5IHDZsAgRLwZek2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Oqe0in01CR4Ooq96FIN",
+        "adminUid": "pVoPdP4iUgaLt5IHDZsAgRLwZek2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OqzX-9fV4tMX_nNtYG0",
+        "adminUid": "pVoPdP4iUgaLt5IHDZsAgRLwZek2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmELjFjHck69W1PQbQl",
+        "adminUid": "ttKKRLISiOU1dYJApk28ZL5ubwA3",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmmOm8loz8e3xilTO2m",
+        "adminUid": "ttKKRLISiOU1dYJApk28ZL5ubwA3",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmmOm8loz8e3xilTO2m",
+        "adminUid": "ttKKRLISiOU1dYJApk28ZL5ubwA3",
+        "pinjamanKe": 1,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Omn3e3IpRppQ1sHBjxk",
+        "adminUid": "ttKKRLISiOU1dYJApk28ZL5ubwA3",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Omn3e3IpRppQ1sHBjxk",
+        "adminUid": "ttKKRLISiOU1dYJApk28ZL5ubwA3",
+        "pinjamanKe": 1,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OnLQU3elhEmiOAuJML0",
+        "adminUid": "ttKKRLISiOU1dYJApk28ZL5ubwA3",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OnLQU3elhEmiOAuJML0",
+        "adminUid": "ttKKRLISiOU1dYJApk28ZL5ubwA3",
+        "pinjamanKe": 3,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OnLQU3elhEmiOAuJML0",
+        "adminUid": "ttKKRLISiOU1dYJApk28ZL5ubwA3",
+        "pinjamanKe": 4,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OoUVHleWGmLItsfuBsb",
+        "adminUid": "ttKKRLISiOU1dYJApk28ZL5ubwA3",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OoUVHleWGmLItsfuBsb",
+        "adminUid": "ttKKRLISiOU1dYJApk28ZL5ubwA3",
+        "pinjamanKe": 1,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Ooegc-IjtXHg5Acr0z9",
+        "adminUid": "ttKKRLISiOU1dYJApk28ZL5ubwA3",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Ooegc-IjtXHg5Acr0z9",
+        "adminUid": "ttKKRLISiOU1dYJApk28ZL5ubwA3",
+        "pinjamanKe": 1,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OpXU89QjyiEynTGMUsy",
+        "adminUid": "ttKKRLISiOU1dYJApk28ZL5ubwA3",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OpXV-BLPKHZLAEWlEHe",
+        "adminUid": "ttKKRLISiOU1dYJApk28ZL5ubwA3",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OpmPgnklSdcQEpx89Da",
+        "adminUid": "ttKKRLISiOU1dYJApk28ZL5ubwA3",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Opw5hbOdY_01e67IxYO",
+        "adminUid": "ttKKRLISiOU1dYJApk28ZL5ubwA3",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OpzzerH-oQgI1JSE0Q7",
+        "adminUid": "ttKKRLISiOU1dYJApk28ZL5ubwA3",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Oq5DABBP5NskFQWONru",
+        "adminUid": "ttKKRLISiOU1dYJApk28ZL5ubwA3",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OqV8kgyJdXEzeHYAQzE",
+        "adminUid": "ttKKRLISiOU1dYJApk28ZL5ubwA3",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OivrIPwrX5QZTLXhp0U",
+        "adminUid": "vj9tT90Wwwfo6RigZStj3oRn9623",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Oj-wro9YgM3BHhOWpoI",
+        "adminUid": "vj9tT90Wwwfo6RigZStj3oRn9623",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Oj-wro9YgM3BHhOWpoI",
+        "adminUid": "vj9tT90Wwwfo6RigZStj3oRn9623",
+        "pinjamanKe": 1,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OkQtw9vxGPSdkMGPUwc",
+        "adminUid": "vj9tT90Wwwfo6RigZStj3oRn9623",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OkQtw9vxGPSdkMGPUwc",
+        "adminUid": "vj9tT90Wwwfo6RigZStj3oRn9623",
+        "pinjamanKe": 1,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OkWBnyHgTmvixORv3sv",
+        "adminUid": "vj9tT90Wwwfo6RigZStj3oRn9623",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OkWBnyHgTmvixORv3sv",
+        "adminUid": "vj9tT90Wwwfo6RigZStj3oRn9623",
+        "pinjamanKe": 1,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OkWt8Q5JeWfrs3_-cBR",
+        "adminUid": "vj9tT90Wwwfo6RigZStj3oRn9623",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OkWt8Q5JeWfrs3_-cBR",
+        "adminUid": "vj9tT90Wwwfo6RigZStj3oRn9623",
+        "pinjamanKe": 1,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OkXD0xlPucyyp0J0_vT",
+        "adminUid": "vj9tT90Wwwfo6RigZStj3oRn9623",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OkXD0xlPucyyp0J0_vT",
+        "adminUid": "vj9tT90Wwwfo6RigZStj3oRn9623",
+        "pinjamanKe": 1,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OljoboTDdxyA8S1EFoF",
+        "adminUid": "vj9tT90Wwwfo6RigZStj3oRn9623",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmhjtN-PA1PSwsbHWHV",
+        "adminUid": "vj9tT90Wwwfo6RigZStj3oRn9623",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmiDohtwGATG7iz4Mc6",
+        "adminUid": "vj9tT90Wwwfo6RigZStj3oRn9623",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmiRL8Xvf8QLtTJZxJO",
+        "adminUid": "vj9tT90Wwwfo6RigZStj3oRn9623",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Omn2Yh0a6F1_88uN0jd",
+        "adminUid": "vj9tT90Wwwfo6RigZStj3oRn9623",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-On29oGyUiYmH816H1_L",
+        "adminUid": "vj9tT90Wwwfo6RigZStj3oRn9623",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Op7TGyz3Wq5HACYZYsX",
+        "adminUid": "vj9tT90Wwwfo6RigZStj3oRn9623",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OpCmvL4BvQelEpqrKQ-",
+        "adminUid": "vj9tT90Wwwfo6RigZStj3oRn9623",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Opqi_3Ss361eISiwNqj",
+        "adminUid": "vj9tT90Wwwfo6RigZStj3oRn9623",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Oq44rZY305eNNcCpDAZ",
+        "adminUid": "vj9tT90Wwwfo6RigZStj3oRn9623",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OqAPdoqx-RqoyMOoH-P",
+        "adminUid": "vj9tT90Wwwfo6RigZStj3oRn9623",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OqUFnpE_PldkM3ejiRv",
+        "adminUid": "vj9tT90Wwwfo6RigZStj3oRn9623",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Oqdo5Boa7VeWFfD2zOQ",
+        "adminUid": "vj9tT90Wwwfo6RigZStj3oRn9623",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OqdoeNKV-n81350Qdon",
+        "adminUid": "vj9tT90Wwwfo6RigZStj3oRn9623",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OquG87RqgbMKCok5u03",
+        "adminUid": "vj9tT90Wwwfo6RigZStj3oRn9623",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OrcMICSO4ylJti4Xq2y",
+        "adminUid": "vj9tT90Wwwfo6RigZStj3oRn9623",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OrmQg-Kt9sRd0X1WnS6",
+        "adminUid": "vj9tT90Wwwfo6RigZStj3oRn9623",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OrmZKEXO6tPWzHz0MCy",
+        "adminUid": "vj9tT90Wwwfo6RigZStj3oRn9623",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OrmrheZlzGDxs8wMcKr",
+        "adminUid": "vj9tT90Wwwfo6RigZStj3oRn9623",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OrnQbKRba5WXlqlCZvn",
+        "adminUid": "vj9tT90Wwwfo6RigZStj3oRn9623",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OrryKhw-LivdsV9JMCy",
+        "adminUid": "vj9tT90Wwwfo6RigZStj3oRn9623",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Os6Vto1-1vt2s3r2jiP",
+        "adminUid": "vj9tT90Wwwfo6RigZStj3oRn9623",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Ol19ce6b-cQ8nQsV1ya",
+        "adminUid": "yIUl519EJ0bD9vOT41VWDZhKb9h2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Ol_V9hIcxzK2gqgAxcL",
+        "adminUid": "yIUl519EJ0bD9vOT41VWDZhKb9h2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OljUdakEzadaUFVJ1Xv",
+        "adminUid": "yIUl519EJ0bD9vOT41VWDZhKb9h2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OluLx_kts3Z3t_u7VUP",
+        "adminUid": "yIUl519EJ0bD9vOT41VWDZhKb9h2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OlyjJEwtg1qplWc9cc0",
+        "adminUid": "yIUl519EJ0bD9vOT41VWDZhKb9h2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OlyrhZmyJd3Uf26wwGj",
+        "adminUid": "yIUl519EJ0bD9vOT41VWDZhKb9h2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Om8TVhqlzx_fR2RZCC4",
+        "adminUid": "yIUl519EJ0bD9vOT41VWDZhKb9h2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OmmcM_zHohATsKlV6y4",
+        "adminUid": "yIUl519EJ0bD9vOT41VWDZhKb9h2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-Omx1TSpXCqInkEmR5UR",
+        "adminUid": "yIUl519EJ0bD9vOT41VWDZhKb9h2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-On6KH17Z72o1Leido8f",
+        "adminUid": "yIUl519EJ0bD9vOT41VWDZhKb9h2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OnRMcwLdY0d3kWY4xhR",
+        "adminUid": "yIUl519EJ0bD9vOT41VWDZhKb9h2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-On_yAWWWvWE8kJ2pqQv",
+        "adminUid": "yIUl519EJ0bD9vOT41VWDZhKb9h2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      },
+      {
+        "pelangganId": "-OqUc6cjkYxdOccaULAK",
+        "adminUid": "yIUl519EJ0bD9vOT41VWDZhKb9h2",
+        "pinjamanKe": 0,
+        "sebab": "node arsip bukan objek",
+        "nilai": "null",
+        "besarPinjaman": 0
+      }
+    ]
+  },
+  "pembayaran": {
+    "total": 50974,
+    "totalRp": 1711623510,
+    "diimpor": 50970,
+    "diimporRp": 1711623510,
+    "dilewati": [
+      {
+        "pelangganId": "-OjciHsG8vg5rufFsAsq",
+        "adminUid": "3B1yKQMPZbdDIbhZ6eLFz3dr8wo2",
+        "pinjamanKe": 4,
+        "indeks": "28",
+        "jenis": "cicilan",
+        "jumlah": 0,
+        "jumlahMentah": null,
+        "tanggalMentah": "",
+        "keterangan": "",
+        "sebab": "jumlah tidak sah"
+      },
+      {
+        "pelangganId": "-Oil95FMIno5ixtwQUpG",
+        "adminUid": "5MPnLCgJ7SVpwvrpOFcUyWDUNuh1",
+        "pinjamanKe": 7,
+        "indeks": "10",
+        "jenis": "cicilan",
+        "jumlah": 0,
+        "jumlahMentah": null,
+        "tanggalMentah": "",
+        "keterangan": "",
+        "sebab": "jumlah tidak sah"
+      },
+      {
+        "pelangganId": "-OmraQXxmiOjK65_8i7q",
+        "adminUid": "C79qv2GmCAMUOqjEM4yiCBOBIPQ2",
+        "pinjamanKe": 1,
+        "indeks": "10",
+        "jenis": "cicilan",
+        "jumlah": 0,
+        "jumlahMentah": 0,
+        "tanggalMentah": "",
+        "keterangan": "",
+        "sebab": "jumlah tidak sah"
+      },
+      {
+        "pelangganId": "-On1xFj0fReJgup7qyjB",
+        "adminUid": "QtrPy0376qR1InGGHWhqECj5WAg1",
+        "pinjamanKe": 4,
+        "indeks": "13",
+        "jenis": "cicilan",
+        "jumlah": 0,
+        "jumlahMentah": null,
+        "tanggalMentah": "",
+        "keterangan": "",
+        "sebab": "jumlah tidak sah"
+      }
+    ]
+  },
+  "biayaAwal": {
+    "total": 63,
+    "totalRp": 85100000,
+    "dilewati": [
+      {
+        "adminUid": "GYpflU7tAIgQRTUgMmYZyIuW2qq1",
+        "tanggal": "2026-02-07",
+        "jumlah": 1000000,
+        "sebab": "admin tidak terdaftar di metadata/admins"
+      },
+      {
+        "adminUid": "GYpflU7tAIgQRTUgMmYZyIuW2qq1",
+        "tanggal": "2026-02-09",
+        "jumlah": 1000000,
+        "sebab": "admin tidak terdaftar di metadata/admins"
+      }
+    ]
+  },
+  "arsipLebihTinggi": [
+    {
+      "pelangganId": "-OmwGZRq7fW8fCyhWeDV",
+      "adminUid": "6mMIX5UkreeZJbR4lUUOSr9OU4M2",
+      "keSekarang": 1,
+      "maxGen": 2
+    },
+    {
+      "pelangganId": "-OnHDkQAY_6H8-T78u74",
+      "adminUid": "6mMIX5UkreeZJbR4lUUOSr9OU4M2",
+      "keSekarang": 1,
+      "maxGen": 2
+    },
+    {
+      "pelangganId": "-OnRApM9wv5LEu3j8s1F",
+      "adminUid": "6mMIX5UkreeZJbR4lUUOSr9OU4M2",
+      "keSekarang": 1,
+      "maxGen": 3
+    },
+    {
+      "pelangganId": "-Op2q-ayBK96rzYWXA62",
+      "adminUid": "6mMIX5UkreeZJbR4lUUOSr9OU4M2",
+      "keSekarang": 1,
+      "maxGen": 10
+    },
+    {
+      "pelangganId": "-Op2sGuysGxuQqAoYBXK",
+      "adminUid": "6mMIX5UkreeZJbR4lUUOSr9OU4M2",
+      "keSekarang": 1,
+      "maxGen": 2
+    },
+    {
+      "pelangganId": "-Om9_JQERbNy9E6Bw0Dc",
+      "adminUid": "C79qv2GmCAMUOqjEM4yiCBOBIPQ2",
+      "keSekarang": 1,
+      "maxGen": 3
+    },
+    {
+      "pelangganId": "-Om9pJymcCr3DfWo25Qw",
+      "adminUid": "C79qv2GmCAMUOqjEM4yiCBOBIPQ2",
+      "keSekarang": 1,
+      "maxGen": 9
+    },
+    {
+      "pelangganId": "-OkrPJCJsgDnHAY3Tqi5",
+      "adminUid": "MjnJfW3yIFXj5qVw0iSklr4XLVo2",
+      "keSekarang": 1,
+      "maxGen": 4
+    },
+    {
+      "pelangganId": "-OmE-peNlHm3JRNaI51E",
+      "adminUid": "QtrPy0376qR1InGGHWhqECj5WAg1",
+      "keSekarang": 1,
+      "maxGen": 8
+    },
+    {
+      "pelangganId": "-OmJlCFVge1j6IZZgnVe",
+      "adminUid": "QtrPy0376qR1InGGHWhqECj5WAg1",
+      "keSekarang": 2,
+      "maxGen": 3
+    },
+    {
+      "pelangganId": "-OnPil9ym7Bx60MUbOWT",
+      "adminUid": "QtrPy0376qR1InGGHWhqECj5WAg1",
+      "keSekarang": 1,
+      "maxGen": 6
+    },
+    {
+      "pelangganId": "-Op8Gin8HawdotZUq1Xc",
+      "adminUid": "QtrPy0376qR1InGGHWhqECj5WAg1",
+      "keSekarang": 1,
+      "maxGen": 3
+    },
+    {
+      "pelangganId": "-OlZV4g7YXWvoWlICjEG",
+      "adminUid": "pVoPdP4iUgaLt5IHDZsAgRLwZek2",
+      "keSekarang": 1,
+      "maxGen": 5
+    },
+    {
+      "pelangganId": "-OjQ5Ry6H9dRWF1o5czZ",
+      "adminUid": "vj9tT90Wwwfo6RigZStj3oRn9623",
+      "keSekarang": 9,
+      "maxGen": 13
+    },
+    {
+      "pelangganId": "-OkBKhNgX_mCAs3r87qf",
+      "adminUid": "vj9tT90Wwwfo6RigZStj3oRn9623",
+      "keSekarang": 3,
+      "maxGen": 8
+    },
+    {
+      "pelangganId": "-Ol0yWc7Pjdx521TKHrp",
+      "adminUid": "vj9tT90Wwwfo6RigZStj3oRn9623",
+      "keSekarang": 9,
+      "maxGen": 10
+    },
+    {
+      "pelangganId": "-Ok2reTDDLSYiEwm5oWP",
+      "adminUid": "yIUl519EJ0bD9vOT41VWDZhKb9h2",
+      "keSekarang": 3,
+      "maxGen": 7
+    }
+  ],
+  "arsipStatusHidup": 629
+}
