@@ -9100,6 +9100,27 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     private suspend fun detectUserRoleFromMetadata(): UserRole {
+        // ── FASE 1 ───────────────────────────────────────────────────────
+        // Dengan jalur Supabase, peran SUDAH diketahui secara otoritatif dari
+        // `koperasi.app_user` saat login — tidak perlu ditebak lagi.
+        //
+        // Ini bukan sekadar pintasan: fungsi di bawah membaca
+        // `metadata/roles` dari RTDB. Tanpa sesi Firebase, pembacaan itu
+        // ditolak, peran jatuh ke UNKNOWN, dan `initializeRoleBasedListeners`
+        // tidak pernah memanggil pemuat nasabah sama sekali. Jadi dasbor akan
+        // tetap kosong walaupun seluruh jalur baca Supabase sudah benar —
+        // gejala yang identik dengan bug sebelumnya, tetapi sebabnya lain.
+        if (SesiAktif.pakaiSupabase) {
+            val peran = SesiAktif.peran()
+            // Cabang ikut diisi dari profil: cabang Pimpinan dibaca dari sini
+            // (initializeRoleBasedListeners), dan sumber lamanya juga RTDB.
+            SesiAktif.cabangId()?.takeIf { it.isNotBlank() }?.let {
+                _currentUserCabang.value = it
+            }
+            Log.d("RoleDetect", "Peran dari app_user (Supabase): $peran, cabang=${_currentUserCabang.value}")
+            return peran
+        }
+
         return try {
             val uid = SesiAktif.uidAktif() ?: return UserRole.UNKNOWN
             val metaRef = database.child("metadata")
@@ -9216,8 +9237,14 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
             _currentUserRole.value = role
             Log.d("RoleDetect", "Detected role = $role")
 
-            SesiAktif.uidAktif()?.let { uid ->
-                setupDataUpdateListener(uid)
+            // `setupDataUpdateListener` memasang listener RTDB. Dengan jalur
+            // Supabase ia hanya akan menghasilkan rentetan "Permission denied"
+            // di log tanpa pernah membuahkan data, jadi tidak dipasang. Muatan
+            // datanya sudah ditangani `muatDaftarPelangganSupabase()`.
+            if (!SesiAktif.pakaiSupabase) {
+                SesiAktif.uidAktif()?.let { uid ->
+                    setupDataUpdateListener(uid)
+                }
             }
 
             try {
@@ -9283,8 +9310,74 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
         Log.d("Cleanup", "Role-based listeners cleaned up")
     }
 
+    /**
+     * FASE 1 — muat daftar nasabah dari Supabase.
+     *
+     * Sengaja meniru URUTAN yang sama dengan cabang RTDB di bawah
+     * (`daftarPelanggan` diisi → `loadDashboardData()` → `_adminSummary` →
+     * `_isDataLoaded`), karena layar-layar itu bergantung pada urutan tersebut:
+     * ringkasan dihitung DARI daftar, jadi menghitungnya lebih dulu
+     * menghasilkan angka nol yang terlihat sah.
+     *
+     * Peran non-admin TIDAK difilter per admin — Pimpinan/Koordinator/Pengawas
+     * memang harus melihat lintas admin, dan RLS (002 §2) yang menentukan
+     * batasnya, bukan klien.
+     */
+    fun muatDaftarPelangganSupabase(onSelesai: (() -> Unit)? = null) {
+        viewModelScope.launch {
+            try {
+                isLoading.value = true
+
+                val idSupabase = if (SesiAktif.peran() == UserRole.ADMIN_LAPANGAN) {
+                    SesiAktif.uidSupabase()
+                } else {
+                    null
+                }
+
+                val hasil = SupabaseBaca.muatDaftarPelanggan(idSupabase)
+
+                hasil.onSuccess { data ->
+                    withContext(Dispatchers.Main) {
+                        daftarPelanggan.clear()
+                        daftarPelanggan.addAll(data.sortedBy { it.namaPanggilan })
+                    }
+                    Log.d("AdminListener", "✅ Loaded ${data.size} pelanggan dari Supabase")
+
+                    loadDashboardData()
+                    _adminSummary.value = calculateAdminSummary(daftarPelanggan)
+                    _isDataLoaded.value = true
+                }.onFailure { e ->
+                    // Dicatat dengan tag khusus supaya bisa disaring:
+                    //   adb logcat -s FASE1
+                    // ViewModel ini belum punya kanal galat yang dibaca layar
+                    // nasabah (cabang RTDB pun hanya mencatat log), dan
+                    // menambah StateFlow yang tidak dikonsumsi siapa pun hanya
+                    // menambah kode mati. Kalau galat ini perlu tampil di
+                    // layar, itu perubahan UI tersendiri yang harus diminta.
+                    Log.e("FASE1", "❌ Gagal memuat nasabah dari Supabase: ${e.message}", e)
+                }
+            } catch (e: Exception) {
+                Log.e("FASE1", "❌ Galat tak terduga saat memuat nasabah: ${e.message}", e)
+            } finally {
+                isLoading.value = false
+                onSelesai?.invoke()
+            }
+        }
+    }
+
     private fun initAdminLapanganListeners() {
         val uid = SesiAktif.uidAktif() ?: return
+
+        // ── FASE 1: jalur baca Supabase ──────────────────────────────────
+        // Dipisah sebagai cabang, bukan mengganti isi `smartLoader`, karena
+        // smartLoader membungkus tiga sumber sekaligus (Firebase, cache
+        // memori, penyimpanan lokal) yang semuanya berbicara RTDB. Menyulapnya
+        // dari dalam berarti mengubah tiga jalur sekaligus tanpa bisa diuji
+        // terpisah. Dengan flag mati, blok ini tidak pernah dijalankan.
+        if (SesiAktif.pakaiSupabase) {
+            muatDaftarPelangganSupabase()
+            return
+        }
 
         viewModelScope.launch {
             try {
