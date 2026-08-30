@@ -84,6 +84,11 @@ object SupabaseBaca {
             ?: (this[k] as? JsonPrimitive)?.contentOrNull?.toLongOrNull()
             ?: 0L).toInt()
 
+    private fun JsonObject.angkaPanjang(k: String): Long =
+        (this[k] as? JsonPrimitive)?.longOrNull
+            ?: (this[k] as? JsonPrimitive)?.contentOrNull?.toLongOrNull()
+            ?: 0L
+
     /**
      * ISO `2026-08-30` → `"30 Agu 2026"`. String kosong bila null/tak terbaca.
      *
@@ -133,6 +138,65 @@ object SupabaseBaca {
             Log.d(TAG, "✅ ${hasil.size} nasabah dimuat dari Supabase")
             hasil
         }.onFailure { Log.e(TAG, "❌ muatDaftarPelanggan gagal: ${it.message}") }
+
+    // =====================================================================
+    // FASE 3 — RINGKASAN PERAN PENGAWAS / PIMPINAN / KOORDINATOR
+    // =====================================================================
+    // Sengaja TIDAK memakai `muatDaftarPelanggan()` untuk peran-peran ini.
+    // Seorang admin memegang puluhan nasabah, tetapi Pengawas melihat seluruh
+    // koperasi — dan kueri FASE 1 menyertakan seluruh pembayaran tiap nasabah.
+    // Untuk lingkup global itu berarti puluhan ribu baris hanya demi menampilkan
+    // lima angka.
+    //
+    // `v_buku_pokok_summary` dan `v_pembayaran_hari_ini` (015) sudah
+    // mengagregasi di server dan sudah `security_invoker = on`, jadi RLS yang
+    // menentukan cabang mana yang terlihat — Pimpinan otomatis hanya mendapat
+    // cabangnya, Pengawas mendapat semuanya. Tidak ada penyaringan di klien
+    // yang bisa salah.
+
+    data class RingkasanCabang(
+        val cabangId: String,
+        val nasabahAktif: Int,
+        val nasabahLunas: Int,
+        val totalPinjamanAktif: Long,
+        val totalPiutang: Long,
+        val totalDibayar: Long,
+    )
+
+    suspend fun muatRingkasanCabang(): Result<List<RingkasanCabang>> = runCatching {
+        val mentah = db.from("v_buku_pokok_summary").select().data
+        val arr = json.parseToJsonElement(mentah) as? JsonArray
+            ?: throw IllegalStateException("v_buku_pokok_summary: balasan bukan array")
+        val hasil = arr.map { el ->
+            val o = el.jsonObject
+            RingkasanCabang(
+                cabangId = o.teks("cabang_id"),
+                nasabahAktif = o.angka("nasabah_aktif"),
+                nasabahLunas = o.angka("nasabah_lunas"),
+                totalPinjamanAktif = o.angkaPanjang("total_pinjaman_aktif"),
+                totalPiutang = o.angkaPanjang("total_piutang"),
+                totalDibayar = o.angkaPanjang("total_dibayar"),
+            )
+        }
+        Log.d(TAG, "✅ ringkasan ${hasil.size} cabang dimuat")
+        hasil
+    }.onFailure { Log.e(TAG, "❌ muatRingkasanCabang gagal: ${it.message}") }
+
+    /**
+     * Total pembayaran hari ini, dijumlahkan atas seluruh cabang yang terlihat.
+     *
+     * Tanggalnya ditentukan SERVER dengan zona Asia/Jakarta di dalam view —
+     * bukan jam perangkat. Perangkat yang zonanya meleset (atau disetel
+     * manual) karena itu tidak bisa menggeser angka hari ini.
+     */
+    suspend fun muatPembayaranHariIni(): Result<Long> = runCatching {
+        val mentah = db.from("v_pembayaran_hari_ini").select().data
+        val arr = json.parseToJsonElement(mentah) as? JsonArray
+            ?: throw IllegalStateException("v_pembayaran_hari_ini: balasan bukan array")
+        val total = arr.sumOf { it.jsonObject.angkaPanjang("total") }
+        Log.d(TAG, "✅ pembayaran hari ini (${arr.size} baris): $total")
+        total
+    }.onFailure { Log.e(TAG, "❌ muatPembayaranHariIni gagal: ${it.message}") }
 
     // ---------------------------------------------------------------------
     // Pemetaan baris → model

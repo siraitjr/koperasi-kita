@@ -1095,6 +1095,19 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
             try {
                 Log.d("Dashboard", "Loading dashboard data...")
 
+                // FASE 3: untuk peran non-admin, `dashboardData` sudah diisi
+                // `muatRingkasanPeranSupabase()`. Kedua fungsi di bawah membaca
+                // `_adminSummary` / `_globalSummary` yang bersumber RTDB —
+                // memanggilnya di sini akan menimpa angka yang sudah benar,
+                // dan khususnya mengubah targetHarian "—" menjadi "Rp 0" yang
+                // terbaca sebagai angka sungguhan.
+                if (SesiAktif.pakaiSupabase &&
+                    _currentUserRole.value != UserRole.ADMIN_LAPANGAN
+                ) {
+                    Log.d("FASE3", "loadDashboardData: dilewati, ringkasan Supabase yang berlaku")
+                    return@launch
+                }
+
                 when (_currentUserRole.value) {
                     UserRole.PIMPINAN -> {
                         // Pimpinan: Gunakan data dari summary
@@ -9318,9 +9331,88 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
+    /**
+     * FASE 3 — ringkasan dasbor Pimpinan / Koordinator / Pengawas.
+     *
+     * Mengisi `dashboardData` dan `_globalSummary` dari dua view Supabase.
+     * Lingkupnya ditentukan RLS, bukan klien: Pimpinan menerima cabangnya
+     * saja, Pengawas menerima seluruhnya, dari kueri yang sama persis.
+     */
+    fun muatRingkasanPeranSupabase(onSelesai: (() -> Unit)? = null) {
+        viewModelScope.launch {
+            try {
+                isLoading.value = true
+                Log.d("FASE3", "→ muatRingkasanPeranSupabase() mulai (peran=${SesiAktif.peran()})")
+
+                val ringkasan = SupabaseBaca.muatRingkasanCabang().getOrElse { e ->
+                    Log.e("FASE3", "❌ ringkasan cabang gagal: ${e.message}", e)
+                    emptyList()
+                }
+                val bayarHariIni = SupabaseBaca.muatPembayaranHariIni().getOrElse { e ->
+                    Log.e("FASE3", "❌ pembayaran hari ini gagal: ${e.message}", e)
+                    0L
+                }
+
+                val nasabahAktif = ringkasan.sumOf { it.nasabahAktif }
+                val pinjamanAktif = ringkasan.sumOf { it.totalPinjamanAktif }
+                val piutang = ringkasan.sumOf { it.totalPiutang }
+
+                _globalSummary.value = GlobalSummary(
+                    totalNasabah = ringkasan.sumOf { it.nasabahAktif + it.nasabahLunas },
+                    nasabahAktif = nasabahAktif,
+                    totalPinjamanAktif = pinjamanAktif,
+                    totalTunggakan = piutang,
+                    pembayaranHariIni = bayarHariIni,
+                    // targetHariIni sengaja 0 di sini — lihat catatan di
+                    // `dashboardData` di bawah.
+                    targetHariIni = 0L,
+                    lastUpdated = System.currentTimeMillis()
+                )
+
+                dashboardData.value = DashboardData(
+                    totalPinjaman = formatRupiah(pinjamanAktif),
+                    jumlahPelanggan = nasabahAktif.toString(),
+                    pembayaranHariIni = formatRupiah(bayarHariIni),
+                    totalTunggakan = formatRupiah(piutang),
+                    // ⚠ TIDAK diisi "Rp 0".
+                    //
+                    // Target harian dihitung per nasabah dari simulasi cicilan
+                    // (aturan H+1), dan tidak ada satu pun kolom di
+                    // v_buku_pokok_summary yang bisa menurunkannya. Menaruh
+                    // "Rp 0" akan tampak seperti angka sungguhan — target nol —
+                    // dan persentase performa yang dihitung darinya akan ikut
+                    // salah. Tanda hubung menyatakan "belum tersedia", yang
+                    // memang keadaan sebenarnya sampai perhitungannya
+                    // dipindahkan ke server.
+                    targetHarian = "—"
+                )
+
+                Log.d("FASE3", "✅ ${ringkasan.size} cabang | nasabahAktif=$nasabahAktif " +
+                    "| pinjamanAktif=$pinjamanAktif | piutang=$piutang | bayarHariIni=$bayarHariIni")
+
+                _isDataLoaded.value = true
+            } catch (e: Exception) {
+                Log.e("FASE3", "❌ Galat tak terduga: ${e.message}", e)
+            } finally {
+                isLoading.value = false
+                onSelesai?.invoke()
+            }
+        }
+    }
+
     private fun initializeRoleBasedListeners(role: UserRole) {
         Log.d("FASE1", "→ initializeRoleBasedListeners(role=$role)")
         cleanupRoleListeners()
+
+        // ── FASE 3 ───────────────────────────────────────────────────────
+        // Pimpinan/Koordinator/Pengawas: ringkasan dari view Supabase, bukan
+        // node `summary/*` RTDB. Admin Lapangan tidak lewat sini — ia memang
+        // menghitung dari daftar nasabahnya sendiri (FASE 1).
+        if (SesiAktif.pakaiSupabase && role != UserRole.ADMIN_LAPANGAN) {
+            muatRingkasanPeranSupabase()
+            return
+        }
+
         when (role) {
             UserRole.ADMIN_LAPANGAN -> {
                 initAdminLapanganListeners()
