@@ -129,7 +129,19 @@ fun AuthScreen(
                     return@LaunchedEffect
                 }
 
-                if (peran != UserRole.PENGAWAS && peran != UserRole.KOORDINATOR) {
+                // `checkForceLogoutOnStartup` dan `checkSessionLock` di bawah
+                // sama-sama membaca RTDB. Tanpa sesi Firebase keduanya hanya
+                // bisa gagal — bedanya, gagalnya DIAM: yang satu tertelan
+                // catch, yang satu kehabisan waktu 5 detik lalu mengembalikan
+                // null. Hasilnya bukan perlindungan, melainkan penundaan 5
+                // detik di setiap pembukaan aplikasi ditambah rasa aman palsu.
+                //
+                // Dilewati selama jalur Supabase. Kunci sesi TETAP dibutuhkan
+                // dan sudah ada rancangannya di 011_session_takeover.sql —
+                // memasangnya kembali di atas Supabase adalah pekerjaan
+                // tersendiri, bukan sesuatu yang boleh dianggap masih jalan.
+                if (!SesiAktif.pakaiSupabase &&
+                    peran != UserRole.PENGAWAS && peran != UserRole.KOORDINATOR) {
                     if (viewModel?.checkForceLogoutOnStartup() == true) {
                         LocationTrackingMonitor.stopMonitoring()
                         SesiAktif.keluar(context)
@@ -144,7 +156,7 @@ fun AuthScreen(
                     }
                 }
 
-                if (peran == UserRole.ADMIN_LAPANGAN) {
+                if (!SesiAktif.pakaiSupabase && peran == UserRole.ADMIN_LAPANGAN) {
                     val lockedByName = viewModel?.checkSessionLock(uidLegacy)
                     if (lockedByName != null) {
                         LocationTrackingMonitor.stopMonitoring()
@@ -160,6 +172,22 @@ fun AuthScreen(
                     }
                 }
 
+                // WAJIB, dan tidak ada padanannya di jalur Firebase.
+                //
+                // `PelangganViewModel.init{}` memanggil startRoleDetectionAndInit()
+                // saat ViewModel dibuat. Di jalur Firebase itu cukup, karena
+                // Firebase memulihkan sesinya SINKRON dari disk — jadi saat init
+                // berjalan, identitasnya sudah ada dan perannya terdeteksi.
+                //
+                // Supabase memuat sesinya ASINKRON (lihat awaitInitialization di
+                // SesiAktif). Saat ViewModel dibuat, profil masih null, peran
+                // terbaca UNKNOWN, dan tidak ada pemuat data yang dijalankan.
+                // Tanpa pemanggilan ulang di bawah, memulihkan sesi akan berujung
+                // di dasbor kosong — bug yang selama ini tertutup oleh gerbang
+                // login-ulang, dan baru akan muncul justru setelah gerbang itu
+                // dicabut.
+                viewModel?.startRoleDetectionAndInit(paksa = true)
+
                 when (peran) {
                     UserRole.PENGAWAS -> navController.navigate("pengawas_dashboard") { popUpTo("auth") { inclusive = true } }
                     UserRole.KOORDINATOR -> navController.navigate("koordinator_dashboard") { popUpTo("auth") { inclusive = true } }
@@ -167,18 +195,6 @@ fun AuthScreen(
                     UserRole.ADMIN_LAPANGAN, UserRole.UNKNOWN -> navController.navigate("dashboard") { popUpTo("auth") { inclusive = true } }
                 }
             } else {
-                // Bedakan "memang belum pernah masuk" dari "sesi Supabase ada
-                // tetapi sesi Firebase hilang". Tanpa penjelasan ini, yang
-                // kedua terlihat seperti sesi tidak persisten padahal
-                // sebabnya lain — dan itu menyesatkan saat menguji.
-                if (SesiAktif.statusJembatan == SesiAktif.StatusJembatan.PERLU_LOGIN_ULANG) {
-                    Toast.makeText(
-                        context,
-                        "Sesi Firebase untuk data RTDB sudah tidak ada. " +
-                            "Masuk sekali lagi untuk mengaktifkan kembali.",
-                        Toast.LENGTH_LONG
-                    ).show()
-                }
                 isCheckingAuth = false
                 isVisible = true
             }
@@ -468,7 +484,12 @@ fun AuthScreen(
                                             // dipakai adalah UID LEGACY, karena
                                             // node session_lock RTDB berkunci
                                             // itu.
-                                            if (p.peran == UserRole.ADMIN_LAPANGAN && p.uidLegacy.isNotBlank()) {
+                                            // Lihat catatan panjang di jalur
+                                            // pemulihan: pemeriksaan kunci sesi
+                                            // membaca RTDB dan kini selalu gagal
+                                            // diam-diam. Dinonaktifkan sampai
+                                            // dipasang ulang di atas Supabase.
+                                            if (!SesiAktif.pakaiSupabase && p.peran == UserRole.ADMIN_LAPANGAN && p.uidLegacy.isNotBlank()) {
                                                 val lockedByName = viewModel?.checkSessionLock(p.uidLegacy)
                                                 if (lockedByName != null) {
                                                     SesiAktif.keluar(context)
@@ -516,29 +537,6 @@ fun AuthScreen(
                                             }
 
                                             isLoading = false
-
-                                            // Jembatan RTDB gagal = dasbor akan
-                                            // kosong, karena setiap aturan RTDB
-                                            // menuntut `auth != null` (token
-                                            // Firebase). Dikatakan terang-terangan
-                                            // di sini; tanpa ini penguji hanya
-                                            // melihat layar kosong tanpa sebab.
-                                            when (SesiAktif.statusJembatan) {
-                                                SesiAktif.StatusJembatan.GAGAL_SANDI -> Toast.makeText(
-                                                    context,
-                                                    "Masuk Supabase berhasil, tetapi sesi Firebase gagal: " +
-                                                        "kata sandi Firebase berbeda. Data dasbor (masih di RTDB) " +
-                                                        "tidak akan tampil sampai kata sandi disamakan.",
-                                                    Toast.LENGTH_LONG
-                                                ).show()
-                                                SesiAktif.StatusJembatan.GAGAL_LAIN -> Toast.makeText(
-                                                    context,
-                                                    "Masuk Supabase berhasil, tetapi sesi Firebase gagal. " +
-                                                        "Data dasbor (masih di RTDB) kemungkinan tidak tampil.",
-                                                    Toast.LENGTH_LONG
-                                                ).show()
-                                                else -> Unit
-                                            }
 
                                             // Sengaja memakai `proceedWithLogin` yang
                                             // sama persis dengan jalur Firebase, bukan
@@ -873,7 +871,12 @@ private fun proceedWithLogin(
     // Pimpinan, Koordinator, DAN Pengawas.
     viewModel?.startSingleDeviceSession()
 
-    viewModel?.startRoleDetectionAndInit()
+    // `paksa` HANYA pada jalur Supabase, supaya perilaku build Firebase tidak
+    // ikut berubah. Jalur Firebase punya kelemahan yang sama (login kedua
+    // dalam satu proses akan melewati init ulang), tetapi itu bug lama yang
+    // di luar lingkup pekerjaan ini — dibiarkan apa adanya dengan sadar,
+    // bukan karena terlewat.
+    viewModel?.startRoleDetectionAndInit(paksa = SesiAktif.pakaiSupabase)
 
     android.widget.Toast.makeText(
         context,

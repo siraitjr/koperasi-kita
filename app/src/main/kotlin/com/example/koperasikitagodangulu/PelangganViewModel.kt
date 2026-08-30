@@ -9224,7 +9224,35 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
 
     private var isRoleInitStarted = false
 
-    fun startRoleDetectionAndInit() {
+    /**
+     * @param paksa abaikan penjaga "sudah pernah init" dan mulai ulang.
+     *
+     * KENAPA PARAMETER INI ADA (Masalah 2 di UAT FASE 1)
+     * -----------------------------------------------------------------
+     * ViewModel ini hidup selama Activity, jadi ia BERTAHAN melewati
+     * logout → login selama proses aplikasi tidak dimatikan. Pada login
+     * KEDUA, `isRoleInitStarted` masih true dan `_currentUserRole` masih
+     * ADMIN_LAPANGAN dari sesi sebelumnya, sehingga penjaga di bawah
+     * memulangkan fungsi ini lebih awal:
+     *
+     *     "⚠️ startRoleDetectionAndInit already completed with
+     *      role=ADMIN_LAPANGAN, skip"
+     *
+     * Akibatnya `initializeRoleBasedListeners` tidak pernah dipanggil,
+     * `initAdminLapanganListeners` tidak pernah dipanggil, dan pemuat
+     * nasabah Supabase tidak pernah jalan — persis kenapa tidak ada satu
+     * pun baris log FASE1/SupabaseBaca pada login kedua.
+     *
+     * Alur takeover sudah lama memakai pola yang sama (`isRoleInitStarted
+     * = false` tepat sebelum memanggil ulang, :7575 dan :7697); parameter
+     * ini hanya memberi nama pada pola itu supaya jalur login bisa
+     * memakainya tanpa menyentuh field privat.
+     */
+    fun startRoleDetectionAndInit(paksa: Boolean = false) {
+        if (paksa) {
+            isRoleInitStarted = false
+            Log.d("RoleDetect", "🔄 Init peran DIPAKSA ulang (login baru)")
+        }
         // Hanya blokir jika sudah running DAN role sudah terdeteksi (bukan UNKNOWN)
         // Jika role masih UNKNOWN, izinkan re-init (contoh: setelah login berhasil)
         if (isRoleInitStarted && _currentUserRole.value != UserRole.UNKNOWN) {
@@ -9259,6 +9287,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     private fun initializeRoleBasedListeners(role: UserRole) {
+        Log.d("FASE1", "→ initializeRoleBasedListeners(role=$role)")
         cleanupRoleListeners()
         when (role) {
             UserRole.ADMIN_LAPANGAN -> {
@@ -9327,6 +9356,8 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
         viewModelScope.launch {
             try {
                 isLoading.value = true
+                Log.d("FASE1", "→ muatDaftarPelangganSupabase() mulai " +
+                    "(peran=${SesiAktif.peran()}, uidSupabase=${SesiAktif.uidSupabase()})")
 
                 val idSupabase = if (SesiAktif.peran() == UserRole.ADMIN_LAPANGAN) {
                     SesiAktif.uidSupabase()
@@ -9366,7 +9397,16 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     private fun initAdminLapanganListeners() {
-        val uid = SesiAktif.uidAktif() ?: return
+        Log.d("FASE1", "→ initAdminLapanganListeners() dipanggil")
+        val uid = SesiAktif.uidAktif()
+        if (uid == null) {
+            // Dulu ini `?: return` tanpa jejak apa pun. Kalau uid null, daftar
+            // nasabah tidak pernah dimuat DAN tidak ada satu baris log pun yang
+            // menjelaskannya — bentuk kegagalan yang paling mahal ditelusuri.
+            Log.e("FASE1", "❌ uid null → pemuatan nasabah dibatalkan. " +
+                "pakaiSupabase=${SesiAktif.pakaiSupabase}, sudahMasuk=${SesiAktif.sudahMasuk()}")
+            return
+        }
 
         // ── FASE 1: jalur baca Supabase ──────────────────────────────────
         // Dipisah sebagai cabang, bukan mengganti isi `smartLoader`, karena
