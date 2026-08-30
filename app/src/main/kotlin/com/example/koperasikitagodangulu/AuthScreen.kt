@@ -167,6 +167,18 @@ fun AuthScreen(
                     UserRole.ADMIN_LAPANGAN, UserRole.UNKNOWN -> navController.navigate("dashboard") { popUpTo("auth") { inclusive = true } }
                 }
             } else {
+                // Bedakan "memang belum pernah masuk" dari "sesi Supabase ada
+                // tetapi sesi Firebase hilang". Tanpa penjelasan ini, yang
+                // kedua terlihat seperti sesi tidak persisten padahal
+                // sebabnya lain — dan itu menyesatkan saat menguji.
+                if (SesiAktif.statusJembatan == SesiAktif.StatusJembatan.PERLU_LOGIN_ULANG) {
+                    Toast.makeText(
+                        context,
+                        "Sesi Firebase untuk data RTDB sudah tidak ada. " +
+                            "Masuk sekali lagi untuk mengaktifkan kembali.",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
                 isCheckingAuth = false
                 isVisible = true
             }

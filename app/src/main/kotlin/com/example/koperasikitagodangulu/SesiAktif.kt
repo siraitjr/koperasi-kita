@@ -74,6 +74,8 @@ import kotlinx.serialization.json.jsonObject
 object SesiAktif {
 
     private const val TAG = "SesiAktif"
+    // Tag terpisah supaya jembatan bisa disaring sendiri: `adb logcat -s BRIDGE`
+    private const val TAG_JEMBATAN = "BRIDGE"
     private const val PREFS = "user_prefs"
 
     // Kunci "ingat saya" — disimpan di SharedPreferences yang sama dengan
@@ -265,7 +267,11 @@ object SesiAktif {
      * Status upaya masuk Firebase pendamping. Dibaca layar login untuk
      * memberi tahu penguji apa yang sebenarnya terjadi.
      */
-    enum class StatusJembatan { BELUM, BERHASIL, GAGAL_SANDI, GAGAL_LAIN, TIDAK_PERLU }
+    enum class StatusJembatan {
+        BELUM, BERHASIL, GAGAL_SANDI, GAGAL_LAIN, TIDAK_PERLU,
+        /** Sesi Supabase ada, sesi Firebase tidak — harus login ulang sekali. */
+        PERLU_LOGIN_ULANG,
+    }
 
     @Volatile var statusJembatan: StatusJembatan = StatusJembatan.BELUM
         private set
@@ -303,23 +309,64 @@ object SesiAktif {
      */
     private suspend fun jembatanRtdb(email: String, sandi: String) {
         if (!pakaiSupabase) { statusJembatan = StatusJembatan.TIDAK_PERLU; return }
+
+        Log.d(TAG_JEMBATAN, "── Memulai jembatan RTDB ──")
+        Log.d(TAG_JEMBATAN, "   UID Supabase : ${profil?.uidSupabase}")
+        Log.d(TAG_JEMBATAN, "   UID legacy   : ${profil?.uidLegacy}  ← yang dipakai path RTDB")
+        Log.d(TAG_JEMBATAN, "   Email        : ${email.trim()}")
+
+        // Firebase SDK harus benar-benar terinisialisasi sebelum ini dipanggil.
+        // Diperiksa eksplisit supaya kegagalan inisialisasi tidak menyamar
+        // sebagai kegagalan kata sandi.
+        val app = runCatching { com.google.firebase.FirebaseApp.getInstance() }.getOrNull()
+        if (app == null) {
+            Log.e(TAG_JEMBATAN, "❌ FirebaseApp belum terinisialisasi — jembatan dibatalkan.")
+            statusJembatan = StatusJembatan.GAGAL_LAIN
+            return
+        }
+        Log.d(TAG_JEMBATAN, "   FirebaseApp  : ${app.name} ✓")
+
+        // CATATAN: signInAnonymously() TIDAK bisa dipakai di sini. Aturan RTDB
+        // membandingkan `auth.uid === $adminUid` (rulesfirebase.txt:5) dan
+        // memeriksa `metadata/roles/{peran}/{auth.uid}`. UID anonim itu acak,
+        // jadi ia lolos `auth != null` tetapi tetap ditolak di node yang
+        // penting — sambil meninggalkan akun anonim sampah di project. Yang
+        // dibutuhkan adalah sesi Firebase milik AKUN YANG SAMA.
+        Log.d(TAG_JEMBATAN, "   Mencoba signInWithEmailAndPassword ke Firebase…")
+
         statusJembatan = try {
-            com.google.firebase.auth.FirebaseAuth.getInstance()
+            val hasil = com.google.firebase.auth.FirebaseAuth.getInstance()
                 .signInWithEmailAndPassword(email.trim(), sandi)
                 .await()
-            Log.d(TAG, "✅ jembatan RTDB: sesi Firebase ikut aktif")
+            val uidFb = hasil.user?.uid
+            Log.d(TAG_JEMBATAN, "✅ Firebase signIn BERHASIL — uid=$uidFb")
+
+            // Kalau UID Firebase tidak sama dengan legacy_uid, seluruh path
+            // RTDB yang dibangun dari legacy_uid menunjuk ke milik orang lain
+            // dan aturan akan menolaknya. Lebih baik ketahuan di sini.
+            val legacy = profil?.uidLegacy
+            if (!legacy.isNullOrBlank() && uidFb != null && legacy != uidFb) {
+                Log.e(TAG_JEMBATAN, "❌ TIDAK COCOK: legacy_uid=$legacy tetapi uid Firebase=$uidFb")
+                Log.e(TAG_JEMBATAN, "   app_user.legacy_uid untuk akun ini salah isi (lihat 022).")
+            }
             StatusJembatan.BERHASIL
         } catch (e: Exception) {
             val pesan = e.message.orEmpty()
-            Log.w(TAG, "⚠️ jembatan RTDB gagal: $pesan")
+            Log.e(TAG_JEMBATAN, "❌ Firebase signIn GAGAL: ${e.javaClass.simpleName}: $pesan")
             // Kata sandi Firebase dan Supabase bisa berbeda — kata sandi
             // Supabase diseragamkan saat migrasi, kata sandi Firebase tidak.
             // Dibedakan supaya pesannya bisa menyebut sebab yang benar.
             if (pesan.contains("password", true) ||
                 pesan.contains("credential", true) ||
                 pesan.contains("no user record", true)
-            ) StatusJembatan.GAGAL_SANDI else StatusJembatan.GAGAL_LAIN
+            ) {
+                Log.e(TAG_JEMBATAN, "   → Sebab: kata sandi Firebase berbeda dari yang diketik.")
+                StatusJembatan.GAGAL_SANDI
+            } else {
+                StatusJembatan.GAGAL_LAIN
+            }
         }
+        Log.d(TAG_JEMBATAN, "── Jembatan selesai: $statusJembatan ──")
     }
 
     /**
@@ -433,16 +480,49 @@ object SesiAktif {
                 simpan(context, p, ingatSaya(context))
                 saveUserRole(context, p.peran)
 
+                // =========================================================
+                // GERBANG JEMBATAN — kenapa di sini `false`, bukan `true`
+                // =========================================================
                 // Sesi Firebase bertahan sendiri lintas pembukaan aplikasi,
-                // jadi biasanya masih ada. Kalau ternyata hilang (mis. token
-                // dicabut), dasbor akan kosong lagi karena RTDB menolak tanpa
-                // `auth`. Statusnya dicatat supaya sebabnya terbaca.
-                statusJembatan = if (firebaseUser != null) {
-                    StatusJembatan.BERHASIL
-                } else {
-                    Log.w(TAG, "⚠️ sesi Supabase pulih tetapi sesi Firebase hilang — RTDB akan menolak")
-                    StatusJembatan.GAGAL_LAIN
+                // jadi normalnya masih ada di sini. Kalau hilang, RTDB akan
+                // menolak SEMUA pembacaan (`auth != null` di 81 aturan), dan
+                // dasbor pasti kosong.
+                //
+                // Versi sebelumnya mendeteksi keadaan ini, mencatat peringatan,
+                // lalu tetap mengembalikan `true` — mengantar pengguna ke
+                // dasbor yang sudah dipastikan tidak bisa memuat apa pun.
+                // Itulah yang terlihat di logcat 20:32:39: peringatan saya
+                // sendiri, disusul belasan "Permission denied".
+                //
+                // Jembatan TIDAK BISA dijalankan ulang di sini: ia butuh kata
+                // sandi, dan kata sandi sengaja tidak pernah disimpan (lihat
+                // bagian "Ingat saya"). Menyimpannya demi kemudahan ini berarti
+                // menaruh sandi seluruh staf dalam teks biasa di perangkat yang
+                // bisa hilang atau dipinjam — harga yang jauh lebih mahal
+                // daripada satu kali mengetik ulang sandi.
+                //
+                // Maka gerbangnya ditutup: kembalikan `false` supaya layar
+                // login muncul. Sekali pengguna masuk, `masuk()` menjalankan
+                // jembatan, Firebase menyimpan sesinya sendiri ke disk, dan
+                // pembukaan-pembukaan berikutnya lolos lewat cabang BERHASIL
+                // di atas tanpa perlu mengetik lagi.
+                if (firebaseUser == null) {
+                    Log.w(TAG_JEMBATAN, "❌ Sesi Supabase pulih, TETAPI sesi Firebase tidak ada.")
+                    Log.w(TAG_JEMBATAN, "   RTDB menolak tanpa token Firebase → dasbor pasti kosong.")
+                    Log.w(TAG_JEMBATAN, "   Jembatan tidak bisa diulang tanpa kata sandi (tidak disimpan).")
+                    Log.w(TAG_JEMBATAN, "   → Meminta login ulang sekali untuk membangun KEDUA sesi.")
+                    statusJembatan = StatusJembatan.PERLU_LOGIN_ULANG
+                    profil = null
+                    // Sesi Supabase ikut dibuang supaya tidak tertinggal
+                    // keadaan setengah masuk yang membingungkan di percobaan
+                    // berikutnya. `masuk()` akan membangun keduanya dari nol.
+                    runCatching { klien.auth.signOut() }
+                    bersihkan(context)
+                    return false
                 }
+
+                Log.d(TAG_JEMBATAN, "✅ Sesi Supabase & Firebase dua-duanya ada (uid=${firebaseUser?.uid})")
+                statusJembatan = StatusJembatan.BERHASIL
                 true
             }
         } catch (e: Exception) {
