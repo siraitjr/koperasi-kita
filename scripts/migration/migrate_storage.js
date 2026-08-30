@@ -23,6 +23,14 @@
  *   profile_photos/{uid}/profile.jpg
  *       → profil/{user_id}/profile.jpg
  *
+ *   YANG TIDAK PUNYA JEMBATAN PEMETAAN → bucket arsip (028), struktur asli
+ *   dipertahankan supaya bisa ditelusuri manual:
+ *       → ktp-yatim/{asal}/{adminUid}/{pushId}/{filename}
+ *       → profil-yatim/{uid}/{filename}
+ *     Dipindahkan, BUKAN dibuang: sesudah 1 September sumbernya di Firebase
+ *     ikut hilang, jadi keputusan simpan-atau-hapus harus bisa diambil
+ *     belakangan, bukan sekarang di bawah tenggat.
+ *
  * DUA JALUR YANG BERBEDA, DAN INI YANG SEMPAT SALAH
  *   Pemetaan dibaca lewat `pg` (koneksi Postgres LANGSUNG), bukan PostgREST.
  *   Versi pertama memakai supabase.from('nasabah').select(...) dan gagal
@@ -374,7 +382,7 @@ function petaFakturBu(seg, M) {
 function petaKtp(seg, M, pending) {
   // ktp_images[_pending]/{adminUid}/{pelangganId}/ktp_{jenis}.jpg
   if (seg.length !== 4) return { yatim: 'bentuk path ktp tidak dikenali' };
-  const [, adminUid, pelangganId, berkas] = seg;
+  const [asal, adminUid, pelangganId, berkas] = seg;
   if (!adminUid || !pelangganId || !berkas) return { yatim: 'segmen ktp kosong' };
 
   const dasar = teks(berkas).replace(/\.[^.]+$/, '');
@@ -383,14 +391,30 @@ function petaKtp(seg, M, pending) {
 
   const { id: nasabahId, lapisan } = cariNasabah(M, adminUid, pelangganId);
   if (!nasabahId) {
+    // ── ARSIP YATIM (028) ────────────────────────────────────────────────
+    // Tidak dibuang. Ini foto KTP, dan setelah 1 September sumbernya di
+    // Firebase ikut hilang — jadi memindahkannya lebih dulu membuat
+    // keputusan "simpan atau hapus" bisa diambil belakangan dengan tenang.
+    //
+    // ⚠ SEGMEN `asal` DITAMBAHKAN, dan ini menyimpang sedikit dari path yang
+    //   diminta (`ktp-yatim/{adminUid}/{pushId}/{filename}`). Alasannya
+    //   konkret: `ktp_images/ADM/PEL/ktp_ktp.jpg` dan
+    //   `ktp_images_pending/ADM/PEL/ktp_ktp.jpg` bisa ada bersamaan, dan
+    //   tanpa segmen pembeda keduanya menghasilkan path tujuan yang SAMA.
+    //   Yang kedua akan ditolak 409 lalu dihitung "dilewati" — tampak wajar,
+    //   padahal satu berkas hilang. Segmen ini juga yang membuat strukturnya
+    //   benar-benar utuh untuk ditelusuri manual, sesuai tujuannya.
     return {
-      yatim: lapisan === 'pelanggan_ditolak'
-        // Pemohon yang DITOLAK tidak pernah jadi nasabah, jadi tidak ada
-        // nasabah_id — dan path bucket `ktp` menuntutnya. Disebut apa adanya
-        // supaya tidak tercampur dengan "benar-benar tidak dikenal".
-        ? `pemohon ditolak (tidak punya nasabah_id): ${pelangganId}`
-        : `tidak ditemukan di lapisan mana pun: ${adminUid}/${pelangganId}`,
+      bucket: 'ktp-yatim',
+      tujuan: `${asal}/${adminUid}/${pelangganId}/${berkas}`,
+      tertaut: false,
       lapisan,
+      kategori: lapisan === 'pelanggan_ditolak' ? 'pemohon_ditolak' : 'yatim_sejati',
+      catatan: lapisan === 'pelanggan_ditolak'
+        // Pemohon yang DITOLAK tidak pernah jadi nasabah, jadi tidak ada
+        // nasabah_id — dan path bucket `ktp` menuntutnya.
+        ? 'pemohon ditolak (tidak punya nasabah_id)'
+        : 'tidak ditemukan di lapisan mana pun',
     };
   }
 
@@ -409,7 +433,19 @@ function petaKtp(seg, M, pending) {
   // pending berturut-turut, foto lama bisa menempel ke generasi yang salah.
   // Dicatat di laporan supaya bisa diperiksa, bukan disembunyikan.
   const pj = M.pinjamanTerbaru.get(nasabahId);
-  if (!pj) return { yatim: `nasabah ${nasabahId} belum punya baris pinjaman`, lapisan };
+  if (!pj) {
+    // Nasabahnya ketemu, tetapi belum punya satu pun baris pinjaman — path
+    // ktp-pending menuntut pinjaman_id, jadi tidak ada tempat yang benar.
+    // Diarsipkan juga, dengan alasannya sendiri supaya bisa dibedakan.
+    return {
+      bucket: 'ktp-yatim',
+      tujuan: `${asal}/${adminUid}/${pelangganId}/${berkas}`,
+      tertaut: false,
+      lapisan,
+      kategori: 'tanpa_pinjaman',
+      catatan: `nasabah ${nasabahId} belum punya baris pinjaman`,
+    };
+  }
   return {
     bucket: 'ktp-pending',
     tujuan: `${nasabahId}/${pj.id}/${jenis}.jpg`,
@@ -425,7 +461,15 @@ function petaProfil(seg, M) {
   const [, uid, berkas] = seg;
   if (!uid || !berkas) return { yatim: 'segmen profile_photos kosong' };
   const userId = M.perUser.get(uid);
-  if (!userId) return { yatim: `app_user.legacy_uid tidak terpetakan: ${uid}` };
+  if (!userId) {
+    return {
+      bucket: 'profil-yatim',
+      tujuan: `${uid}/${berkas}`,
+      tertaut: false,
+      kategori: 'profil_yatim',
+      catatan: `app_user.legacy_uid tidak terpetakan: ${uid}`,
+    };
+  }
   const ext = (teks(berkas).match(/\.[^.]+$/) || ['.jpg'])[0];
   return { bucket: 'profil', tujuan: `${userId}/profile${ext}`, tertaut: true };
 }
@@ -459,6 +503,8 @@ const TIPE = { '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png',
   const perLapisan = {};
   const perLapisanBucket = {};
   const contohYatim = {};
+  // Rincian isi bucket arsip (028), per alasan ia sampai ke sana.
+  const perKategori = {};
 
   for (const abs of berkas) {
     const rel = path.relative(CFG.dir, abs);
@@ -473,6 +519,13 @@ const TIPE = { '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png',
       continue;
     }
     perBucket[hasil.bucket] = (perBucket[hasil.bucket] || 0) + 1;
+    if (hasil.kategori) {
+      const kk = `${hasil.bucket} / ${hasil.kategori}`;
+      perKategori[kk] = (perKategori[kk] || 0) + 1;
+      // Contoh disimpan juga untuk yang diarsipkan — bukan cuma yang gagal.
+      (contohYatim[kk] ||= []);
+      if (contohYatim[kk].length < 5) contohYatim[kk].push(rel);
+    }
     if (hasil.lapisan) {
       perLapisan[hasil.lapisan] = (perLapisan[hasil.lapisan] || 0) + 1;
       const kb = `${hasil.bucket} ← ${hasil.lapisan}`;
@@ -493,11 +546,16 @@ const TIPE = { '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png',
       log(`   ${String(n).padStart(6)}  ${k}`);
     }
   }
+  if (Object.keys(perKategori).length) {
+    log(`\n▶ Arsip yatim (028) — dipindahkan, TIDAK dibuang`);
+    for (const [k, n] of Object.entries(perKategori).sort((a, b) => b[1] - a[1])) {
+      log(`   ${String(n).padStart(6)}  ${k}`);
+    }
+  }
   if (Object.keys(contohYatim).length) {
-    log(`\n▶ Contoh yatim per alasan (maksimal 5)`);
+    log(`\n▶ Contoh per kategori (maksimal 5)`);
     for (const [alasan, contoh] of Object.entries(contohYatim)) {
-      log(`   ${alasan} — ${yatim.filter((y) => y.alasan.startsWith(alasan)).length} berkas`);
-      for (const c of contoh) log(`      ${c}`);
+      for (const c of contoh) log(`   ${alasan.padEnd(34)} ${c}`);
     }
   }
 
@@ -509,6 +567,7 @@ const TIPE = { '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png',
       perBucket,
       perLapisan,
       perLapisanBucket,
+      perKategori,
       contohYatim,
       // Peta lengkap sumber→tujuan. Ini juga bahan mentah untuk mengisi
       // `koperasi.dokumen` nanti (003 §4) — belum dikerjakan skrip ini.
@@ -567,7 +626,21 @@ const TIPE = { '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png',
   log(`   terunggah : ${naik}`);
   log(`   dilewati  : ${lewat}   (sudah ada — aman, ini sifat idempotennya)`);
   log(`   gagal     : ${gagal}`);
-  log(`   yatim     : ${yatim.length}   (tidak diunggah, lihat laporan)`);
+  log(`   dilompati : ${yatim.length}   (bentuk path tidak dikenali, lihat laporan)`);
+
+  log(`\n▶ Per bucket (rencana; yang sudah ada terhitung "dilewati")`);
+  for (const [b, n] of Object.entries(perBucket).sort()) {
+    log(`   ${b.padEnd(14)} ${String(n).padStart(6)}`);
+  }
+  if (Object.keys(perKategori).length) {
+    log(`\n▶ Rincian arsip yatim`);
+    for (const [k, n] of Object.entries(perKategori).sort((a, b) => b[1] - a[1])) {
+      log(`   ${String(n).padStart(6)}  ${k}`);
+    }
+    log(`\n   Bucket arsip hanya bisa dibaca Pengawas (028). Retensinya BELUM`);
+    log(`   diputuskan — foto identitas tanpa pemilik adalah tanggungan, bukan`);
+    log(`   aset. Tetapkan jadwalnya sesudah evakuasi.`);
+  }
   log(`\n   Laporan → ${CFG.report}`);
   if (gagal) {
     log('\n   ⚠ Ada kegagalan. Jalankan ulang perintah yang SAMA — yang sudah');
