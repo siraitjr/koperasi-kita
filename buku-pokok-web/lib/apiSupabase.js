@@ -17,8 +17,8 @@
 // aplikasi seperti pada Cloud Functions.
 //
 // `getBukuPokok` ada di bagian PALING BAWAH berkas ini — ditulis terakhir
-// karena ia buku besar, dan tiga celahnya (G-1 rekapBeku, G-2 foto,
-// G-3 riwayat/top-up) harus diselesaikan lebih dulu. Lihat 025 §3 dan 027.
+// karena ia buku besar. Ketiga celahnya kini tertutup: G-1 rekapBeku (026),
+// G-2 foto (027/028 + migrate_dokumen.js), G-3 riwayat/top-up. Lihat 025 §3.
 // =========================================================================
 
 import { supabase } from './supabaseClient';
@@ -834,9 +834,9 @@ export async function getBukuPokok({ cabangId, adminUid, status, bulan }) {
       totalDiterima: Number(r.total_diterima || 0),
       pembayaran,
 
-      // G-2 — UTANG. Migrasi Firebase Storage belum selesai (021 §0), jadi
-      // seluruh URL foto dikosongkan. Halaman menampilkan placeholder, bukan
-      // gambar rusak. JANGAN diisi dengan URL Firebase: host itu ikut mati.
+      // G-2 — DITUTUP. Diisi di bawah dari `koperasi.dokumen` + signed URL,
+      // sesudah daftar nasabahnya lengkap, supaya penandatanganannya bisa
+      // sekali jalan untuk semua alih-alih satu per baris.
       fotoKtpUrl: '', fotoKtpSuamiUrl: '', fotoKtpIstriUrl: '',
       fotoNasabahUrl: '', fotoSerahTerimaUrl: '',
 
@@ -869,6 +869,63 @@ export async function getBukuPokok({ cabangId, adminUid, status, bulan }) {
     perSimpanan[s.nasabah_id] = (perSimpanan[s.nasabah_id] || 0) + Number(s.jumlah || 0);
   }
   for (const n of nasabahList) n.simpanan = perSimpanan[n.id] || 0;
+
+  // ── G-2: URL FOTO ────────────────────────────────────────────────────
+  // Registri `koperasi.dokumen` (diisi migrate_dokumen.js) menyimpan PATH,
+  // bukan URL — bucket `ktp` private (003 §2), jadi tidak ada URL permanen
+  // seperti getDownloadURL() Firebase. Pola ini sama persis dengan yang
+  // sudah dipakai getKasirEntries untuk nota.
+  //
+  // `is_pending = false`: foto pengajuan yang belum final punya kolom
+  // penandanya sendiri (001:905) dan TIDAK boleh tampil sebagai foto KTP
+  // resmi — keduanya berada di bucket berbeda dan artinya berbeda.
+  const MEDAN_FOTO = {
+    ktp: 'fotoKtpUrl',
+    ktp_suami: 'fotoKtpSuamiUrl',
+    ktp_istri: 'fotoKtpIstriUrl',
+    foto_nasabah: 'fotoNasabahUrl',
+    serah_terima: 'fotoSerahTerimaUrl',
+  };
+
+  const dok = await ambilBerkelompok(
+    'dokumen', 'nasabah_id', nasabahIds,
+    'nasabah_id, jenis, bucket_id, object_path',
+    (q) => q.eq('is_pending', false));
+
+  if (dok.length) {
+    // Ditandatangani per bucket, sekali panggil untuk seluruh path di bucket
+    // itu. Satu panggilan per nasabah akan berarti ratusan permintaan.
+    const perBucket = {};
+    for (const d of dok) {
+      if (!d.object_path || !MEDAN_FOTO[d.jenis]) continue;
+      (perBucket[d.bucket_id] ||= []).push(d.object_path);
+    }
+
+    const urlPer = {};
+    for (const [bucket, jalur] of Object.entries(perBucket)) {
+      const { data: ttd, error } = await supabase.storage
+        .from(bucket).createSignedUrls([...new Set(jalur)], 3600);
+      if (error) {
+        // Foto adalah pelengkap, bukan angka. Satu bucket bermasalah tidak
+        // boleh mengosongkan seluruh Buku Pokok — beda kebijakan dengan
+        // jalur tulis, dan disengaja.
+        console.error(`Gagal menandatangani URL foto (${bucket}):`, error.message);
+        continue;
+      }
+      for (const t of ttd || []) {
+        if (t?.path && t?.signedUrl) urlPer[`${bucket}/${t.path}`] = t.signedUrl;
+      }
+    }
+
+    const perNasabahFoto = {};
+    for (const d of dok) {
+      const medan = MEDAN_FOTO[d.jenis];
+      if (!medan) continue;
+      const url = urlPer[`${d.bucket_id}/${d.object_path}`];
+      if (url) (perNasabahFoto[d.nasabah_id] ||= {})[medan] = url;
+    }
+    for (const n of nasabahList) Object.assign(n, perNasabahFoto[n.id] || {});
+  }
 
   // ------------------------------------------------------------- total ---
   const todayIndo = tglIndo(today);
