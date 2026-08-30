@@ -16,6 +16,7 @@ import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.example.koperasikitagodangulu.MainActivity
 import com.example.koperasikitagodangulu.R
+import com.example.koperasikitagodangulu.SesiAktif
 import com.google.android.gms.location.*
 import com.google.firebase.auth.ktx.auth
 import com.google.firebase.database.ktx.database
@@ -89,7 +90,7 @@ class LocationTrackingService : Service() {
         val notification = createStealthNotification()
         startForeground(NOTIFICATION_ID, notification)
 
-        val uid = Firebase.auth.currentUser?.uid
+        val uid = SesiAktif.uidAktif()
         if (uid == null) {
             Log.e(TAG, "❌ User not authenticated, stopping service")
             stopSelf()
@@ -127,7 +128,7 @@ class LocationTrackingService : Service() {
         // Data lokasi terakhir harus tetap tampil di layar Pengawas.
         // Data hanya dihapus oleh Pengawas via deactivateTracking().
 
-        val uid = Firebase.auth.currentUser?.uid
+        val uid = SesiAktif.uidAktif()
         if (uid != null) {
             try {
                 LocationCheckWorker.scheduleImmediate(applicationContext)
@@ -149,7 +150,7 @@ class LocationTrackingService : Service() {
             return
         }
 
-        val uid = Firebase.auth.currentUser?.uid
+        val uid = SesiAktif.uidAktif()
         if (uid == null) {
             Log.e(TAG, "❌ User not authenticated")
             stopSelf()

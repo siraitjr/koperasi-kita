@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
+import com.example.koperasikitagodangulu.SesiAktif
 import com.example.koperasikitagodangulu.services.CicilanRecalculationService
 import com.google.firebase.auth.ktx.auth
 import com.google.firebase.ktx.Firebase
@@ -35,7 +36,7 @@ class HolidayUpdateWorker(
         return try {
             Log.d("HolidayUpdateWorker", "Memulai update jadwal cicilan...")
 
-            val adminUid = Firebase.auth.currentUser?.uid
+            val adminUid = SesiAktif.uidAktif()
             if (adminUid.isNullOrBlank()) {
                 Log.w("HolidayUpdateWorker", "Admin UID tidak ditemukan")
                 return Result.success()

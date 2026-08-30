@@ -4,6 +4,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.util.Log
+import com.example.koperasikitagodangulu.SesiAktif
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -51,7 +52,7 @@ class BootReceiver : BroadcastReceiver() {
                 }
                 // ✅ Re-start location monitoring setelah boot
                 try {
-                    val uid = FirebaseAuth.getInstance().currentUser?.uid
+                    val uid = SesiAktif.uidAktif()
                     if (uid != null) {
                         val sharedPref = context.getSharedPreferences("user_prefs", Context.MODE_PRIVATE)
                         val roleName = sharedPref.getString("user_role", "ADMIN_LAPANGAN")

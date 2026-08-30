@@ -1231,7 +1231,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
     suspend fun getNextNomorAnggota(): String {
         return withContext(Dispatchers.IO) {
             try {
-                val currentUid = Firebase.auth.currentUser?.uid ?: return@withContext "000001"
+                val currentUid = SesiAktif.uidAktif() ?: return@withContext "000001"
 
                 // 1. Ambil nomor terbesar dari database lokal (daftarPelanggan)
                 val maxFromLocal = daftarPelanggan
@@ -1308,7 +1308,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     fun saveManualNomorAnggota(nomorAnggota: String) {
-        val currentUid = Firebase.auth.currentUser?.uid ?: return
+        val currentUid = SesiAktif.uidAktif() ?: return
 
         try {
             val nomorInt = nomorAnggota.filter { it.isDigit() }.toIntOrNull() ?: return
@@ -1372,7 +1372,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     fun loadPelangganGroupedByAdmin() {
-        val currentUid = Firebase.auth.currentUser?.uid ?: return
+        val currentUid = SesiAktif.uidAktif() ?: return
 
         // Cegah multiple simultaneous loads
         if (_isLoadingInProgress.value) {
@@ -1510,7 +1510,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     fun loadAdminNotifications() {
-        val adminUid = Firebase.auth.currentUser?.uid ?: return
+        val adminUid = SesiAktif.uidAktif() ?: return
 
         // Jika listener sudah aktif untuk UID yang sama, skip
         if (adminNotificationListener != null && adminNotificationListenerUid == adminUid) {
@@ -1577,7 +1577,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
 
 
     fun markNotificationAsRead(notificationId: String) {
-        val adminUid = Firebase.auth.currentUser?.uid ?: return
+        val adminUid = SesiAktif.uidAktif() ?: return
 
         viewModelScope.launch {
             try {
@@ -1594,7 +1594,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     fun debugNotificationStructure() {
-        val adminUid = Firebase.auth.currentUser?.uid ?: return
+        val adminUid = SesiAktif.uidAktif() ?: return
 
         database.child("admin_notifications").child(adminUid)
             .addListenerForSingleValueEvent(object : ValueEventListener {
@@ -1618,7 +1618,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     fun deleteNotification(notificationId: String) {
-        val adminUid = Firebase.auth.currentUser?.uid ?: return
+        val adminUid = SesiAktif.uidAktif() ?: return
 
         database.child("admin_notifications").child(adminUid)
             .child(notificationId).removeValue()
@@ -1788,8 +1788,8 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
         onSuccess: () -> Unit = {},
         onFailure: (Exception) -> Unit = {}
     ) {
-        val currentUid = Firebase.auth.currentUser?.uid ?: return
-        val currentEmail = Firebase.auth.currentUser?.email ?: ""
+        val currentUid = SesiAktif.uidAktif() ?: return
+        val currentEmail = SesiAktif.emailAktif() ?: ""
 
         viewModelScope.launch {
             try {
@@ -1975,7 +1975,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
 //        onFailure: ((Exception) -> Unit)? = null,
 ////        createPengajuanApproval: Boolean = false
 //    ) {
-//        val currentUid = Firebase.auth.currentUser?.uid
+//        val currentUid = SesiAktif.uidAktif()
 //        val targetAdminUid = if (pelanggan.adminUid.isNotBlank()) pelanggan.adminUid else currentUid
 //
 //        if (targetAdminUid.isNullOrBlank()) {
@@ -2051,7 +2051,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
         // utk semua caller existing; offline-first sync queue TIDAK berubah).
         onQueued: (() -> Unit)? = null,
     ) {
-        val currentUid = Firebase.auth.currentUser?.uid
+        val currentUid = SesiAktif.uidAktif()
         val targetAdminUid = if (pelanggan.adminUid.isNotBlank()) pelanggan.adminUid else currentUid
 
         if (targetAdminUid.isNullOrBlank()) {
@@ -2387,7 +2387,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
         onSuccess: (() -> Unit)? = null,
         onFailure: ((Exception) -> Unit)? = null
     ) {
-        val currentUid = Firebase.auth.currentUser?.uid
+        val currentUid = SesiAktif.uidAktif()
         if (currentUid.isNullOrBlank()) {
             onFailure?.invoke(Exception("User not authenticated"))
             return
@@ -2705,7 +2705,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
             // ✅ PERBAIKAN: Simpan HANYA pembayaran baru ke path terpisah
             // Ini akan trigger Cloud Function onPembayaranAdded
             val pembayaranIndex = updatedPembayaranList.size - 1
-            val adminUid = pelanggan.adminUid.ifBlank { Firebase.auth.currentUser?.uid } ?: return
+            val adminUid = pelanggan.adminUid.ifBlank { SesiAktif.uidAktif() } ?: return
 
             viewModelScope.launch {
                 val pembayaranMap = mapOf(
@@ -3151,7 +3151,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
             return
         }
 
-        val adminUid = Firebase.auth.currentUser?.uid ?: run {
+        val adminUid = SesiAktif.uidAktif() ?: run {
             Log.e("Sync", "❌ Admin UID tidak ditemukan")
             return
         }
@@ -3432,7 +3432,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
 
                         // Step 4: Sync deleted items TERAKHIR
                         // (setelah data lokal sudah ter-upload semua)
-                        val uid = Firebase.auth.currentUser?.uid
+                        val uid = SesiAktif.uidAktif()
                         if (uid != null) {
                             Log.d("Network", "🗑️ Step 4: Syncing deleted items...")
                             syncDeletedItemsSafe(uid)
@@ -3467,7 +3467,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
     fun refreshDataFromFirebase() {
         viewModelScope.launch {
             try {
-                val currentUid = Firebase.auth.currentUser?.uid ?: return@launch
+                val currentUid = SesiAktif.uidAktif() ?: return@launch
                 val role = _currentUserRole.value
 
                 Log.d("RefreshData", "🔄 Refreshing data for role: $role")
@@ -3540,7 +3540,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                 return@launch
             }
 
-            val adminUid = Firebase.auth.currentUser?.uid ?: return@launch
+            val adminUid = SesiAktif.uidAktif() ?: return@launch
 
             // Cari pelanggan yang punya pending foto
             val pelangganWithPendingPhotos = daftarPelanggan.filter { pel ->
@@ -3739,7 +3739,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     fun getUnsyncedCount(): Int {
-        val adminUid = Firebase.auth.currentUser?.uid ?: return 0
+        val adminUid = SesiAktif.uidAktif() ?: return 0
         return daftarPelanggan.count {
             (!it.isSynced || it.id.startsWith("local-")) && it.adminUid == adminUid
         }
@@ -3890,7 +3890,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                 // Resolusi dilakukan di sini (dengan await) agar nilai sudah pasti tersedia saat
                 // disimpan ke updatedPelanggan — sehingga Prioritas 1 di simpanPelangganKeFirebase
                 // selalu berhasil dan simpanKePengajuanApproval selalu dipanggil.
-                val currentUidForCabang = existingPelanggan.adminUid.ifBlank { Firebase.auth.currentUser?.uid ?: "" }
+                val currentUidForCabang = existingPelanggan.adminUid.ifBlank { SesiAktif.uidAktif() ?: "" }
                 var resolvedCabangId = existingPelanggan.cabangId
                 if (resolvedCabangId.isBlank()) {
                     resolvedCabangId = _currentUserCabang.value ?: "" // Prioritas 2: StateFlow memory
@@ -4211,7 +4211,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
         simpanKeLokal()
 
         // Tulis via OfflineRepository (Room queue + SyncManager handle offline)
-        val adminUid = pelanggan.adminUid.ifBlank { Firebase.auth.currentUser?.uid } ?: return
+        val adminUid = pelanggan.adminUid.ifBlank { SesiAktif.uidAktif() } ?: return
         val subIndex = updatedSubList.size - 1
         val subMap = mapOf(
             "jumlah" to jumlah,
@@ -4372,7 +4372,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                 Log.d("Approval", "   TotalDiterima: ${existing.totalDiterima}")
                 Log.d("Approval", "   Status: ${existing.status}")
 
-                val adminUid = if (existing.adminUid.isNotBlank()) existing.adminUid else Firebase.auth.currentUser?.uid
+                val adminUid = if (existing.adminUid.isNotBlank()) existing.adminUid else SesiAktif.uidAktif()
                 if (adminUid.isNullOrBlank()) {
                     val error = Exception("Admin UID tidak valid untuk pelanggan: ${existing.namaPanggilan}")
                     Log.e("Approval", "❌ ${error.message}")
@@ -4484,11 +4484,11 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                 // Siapkan data approval
                 val dateFormat = SimpleDateFormat("dd MMM yyyy", Locale("in", "ID"))
                 val tanggalSekarang = dateFormat.format(Date())
-                val pimpinanUid = Firebase.auth.currentUser?.uid ?: ""
+                val pimpinanUid = SesiAktif.uidAktif() ?: ""
                 val pimpinanSnap = database.child("metadata/admins/$pimpinanUid/name").get().await()
                 val pimpinanName = pimpinanSnap.getValue(String::class.java)
-                    ?: Firebase.auth.currentUser?.displayName
-                    ?: Firebase.auth.currentUser?.email
+                    ?: SesiAktif.namaAktif()
+                    ?: SesiAktif.emailAktif()
                     ?: "Pimpinan"
                 val timestamp = System.currentTimeMillis()
 
@@ -5230,7 +5230,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     return@launch
                 }
 
-                val adminUid = pelanggan.adminUid.ifBlank { Firebase.auth.currentUser?.uid }
+                val adminUid = pelanggan.adminUid.ifBlank { SesiAktif.uidAktif() }
                 if (adminUid.isNullOrBlank()) {
                     onFailure?.invoke(Exception("Admin UID tidak valid"))
                     return@launch
@@ -5344,7 +5344,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     onError?.invoke(Exception("Status bukan Disetujui"))
                     return@launch
                 }
-                val adminUid = pelanggan.adminUid.ifBlank { Firebase.auth.currentUser?.uid }
+                val adminUid = pelanggan.adminUid.ifBlank { SesiAktif.uidAktif() }
                 if (adminUid.isNullOrBlank()) {
                     onError?.invoke(Exception("Admin UID tidak valid"))
                     return@launch
@@ -5495,7 +5495,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     return@launch
                 }
 
-                val adminUid = pelanggan.adminUid.ifBlank { Firebase.auth.currentUser?.uid }
+                val adminUid = pelanggan.adminUid.ifBlank { SesiAktif.uidAktif() }
                 if (adminUid.isNullOrBlank()) {
                     onFailure?.invoke(Exception("Admin UID tidak valid"))
                     return@launch
@@ -5645,7 +5645,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                 //     metadata current admin → metadata pelanggan.adminUid.
                 //   - Setiap read RTDB dibungkus withTimeoutOrNull 5 detik.
                 // ============================================================
-                val currentUid = Firebase.auth.currentUser?.uid ?: ""
+                val currentUid = SesiAktif.uidAktif() ?: ""
                 var cabangId = pelanggan.cabangId
 
                 // Fallback 1: _currentUserCabang (memory, no network)
@@ -6116,11 +6116,11 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     return@launch
                 }
 
-                val pimpinanUid = Firebase.auth.currentUser?.uid ?: ""
+                val pimpinanUid = SesiAktif.uidAktif() ?: ""
                 val pimpinanSnap = database.child("metadata/admins/$pimpinanUid/name").get().await()
                 val pimpinanName = pimpinanSnap.getValue(String::class.java)
-                    ?: Firebase.auth.currentUser?.displayName
-                    ?: Firebase.auth.currentUser?.email
+                    ?: SesiAktif.namaAktif()
+                    ?: SesiAktif.emailAktif()
                     ?: "Pimpinan"
                 val timestamp = System.currentTimeMillis()
                 val dateFormat = SimpleDateFormat("dd MMM yyyy", Locale("in", "ID"))
@@ -6402,7 +6402,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                         }
 
                         // Simpan ke Firebase
-                        val adminUidToUse = pelanggan.adminUid.ifBlank { Firebase.auth.currentUser?.uid ?: "" }
+                        val adminUidToUse = pelanggan.adminUid.ifBlank { SesiAktif.uidAktif() ?: "" }
                         val pelangganRef = database.child("pelanggan").child(adminUidToUse).child(pelangganId)
                         val writeTask = rollbackMapOptional?.let { pelangganRef.updateChildren(it) }
                             ?: pelangganRef.setValue(updatedPelanggan)
@@ -6425,7 +6425,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                                                             val pengawasApproverName = currentDualInfo.pengawasApproval.by
                                                             val pengawasRejectionNote = currentDualInfo.pengawasApproval.note.ifBlank { alasan }
 
-                                                            val adminUidForNotif = pelanggan.adminUid.ifBlank { Firebase.auth.currentUser?.uid ?: "" }
+                                                            val adminUidForNotif = pelanggan.adminUid.ifBlank { SesiAktif.uidAktif() ?: "" }
 
                                                             // ✅ PERBAIKAN: Hitung nilai pinjaman yang diajukan dan disetujui
                                                             val pinjamanYangDiajukan = if (pelanggan.besarPinjamanDiajukan > 0) pelanggan.besarPinjamanDiajukan else pelanggan.besarPinjaman
@@ -7172,7 +7172,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
     private fun simpanKeLokal() {
         viewModelScope.launch {
             try {
-                val adminUid = Firebase.auth.currentUser?.uid
+                val adminUid = SesiAktif.uidAktif()
                 if (adminUid.isNullOrBlank()) return@launch
                 // convert daftarPelanggan (SnapshotStateList) menjadi List<Pelanggan>
                 val copyList = daftarPelanggan.toList()
@@ -7357,7 +7357,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
     // DEVICE PRESENCE - untuk cek apakah HP admin online
     // =========================================================================
     fun startDevicePresence() {
-        val uid = Firebase.auth.currentUser?.uid ?: return
+        val uid = SesiAktif.uidAktif() ?: return
 
         // Jika sudah ada listener, skip
         if (devicePresenceListener != null) return
@@ -7424,7 +7424,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
 
                 _takeoverStatus.value = TakeoverStatus.CheckingOnline
 
-                val pimpinanUid = Firebase.auth.currentUser?.uid ?: return@launch
+                val pimpinanUid = SesiAktif.uidAktif() ?: return@launch
 
                 // Cek session lock oleh pimpinan LAIN
                 val existingLock = withTimeoutOrNull(5000L) {
@@ -7562,7 +7562,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                 // Sign in sebagai admin dengan custom token
                 Firebase.auth.signInWithCustomToken(token).await()
 
-                val newUid = Firebase.auth.currentUser?.uid
+                val newUid = SesiAktif.uidAktif()
                 Log.d("Takeover", "✅ Signed in as admin: $newUid")
 
                 // Set role ke ADMIN_LAPANGAN
@@ -7681,7 +7681,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
 
                 // Sign in kembali sebagai pimpinan
                 Firebase.auth.signInWithCustomToken(token).await()
-                Log.d("Takeover", "✅ Kembali sebagai Pimpinan: ${Firebase.auth.currentUser?.uid}")
+                Log.d("Takeover", "✅ Kembali sebagai Pimpinan: ${SesiAktif.uidAktif()}")
 
                 // Restore role
                 saveUserRole(context, UserRole.PIMPINAN)
@@ -7727,7 +7727,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
     fun startRemoteTakeoverListener(
         onForceLogout: () -> Unit
     ) {
-        val uid = Firebase.auth.currentUser?.uid ?: return
+        val uid = SesiAktif.uidAktif() ?: return
 
         // Jangan pasang listener jika sedang dalam mode takeover
         if (_isTakeoverMode.value) return
@@ -7914,7 +7914,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                 // Upload foto KTP baru jika dipilih
                 val resolvedFotoKtpUrl = if (newFotoKtpUri != null) {
                     val adminUid = existingPelanggan.adminUid.ifBlank {
-                        Firebase.auth.currentUser?.uid ?: ""
+                        SesiAktif.uidAktif() ?: ""
                     }
                     val uploadedUrl = uploadFotoKtp(newFotoKtpUri, adminUid, pelangganId, "utama")
                     if (uploadedUrl != null) {
@@ -7929,7 +7929,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                 }
 
                 val adminUid = existingPelanggan.adminUid.ifBlank {
-                    Firebase.auth.currentUser?.uid ?: ""
+                    SesiAktif.uidAktif() ?: ""
                 }
 
                 // ✅ PERBAIKAN KRITIS: Gunakan partial update (updateChildren) bukan full overwrite (setValue)
@@ -8360,7 +8360,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     return@launch
                 }
 
-                val adminUid = pelanggan.adminUid.ifBlank { Firebase.auth.currentUser?.uid }
+                val adminUid = pelanggan.adminUid.ifBlank { SesiAktif.uidAktif() }
                 if (adminUid.isNullOrBlank()) {
                     onFailure?.invoke(Exception("Admin UID tidak valid"))
                     return@launch
@@ -8715,7 +8715,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
         devicePresenceConnectedRef = null
 
         // Cleanup data update listener
-        Firebase.auth.currentUser?.uid?.let { uid ->
+        SesiAktif.uidAktif()?.let { uid ->
             dataUpdateListener?.let { listener ->
                 database.child("data_updates").child(uid).child("lastUpdate").removeEventListener(listener)
             }
@@ -8998,7 +8998,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
             daftarPelanggan[index] = updatedPelanggan
 
             // Simpan setiap pembayaran baru via offlineRepo
-            val adminUid = pelanggan.adminUid.ifBlank { Firebase.auth.currentUser?.uid } ?: return
+            val adminUid = pelanggan.adminUid.ifBlank { SesiAktif.uidAktif() } ?: return
 
             viewModelScope.launch {
                 var allSuccess = true
@@ -9101,7 +9101,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
 
     private suspend fun detectUserRoleFromMetadata(): UserRole {
         return try {
-            val uid = Firebase.auth.currentUser?.uid ?: return UserRole.UNKNOWN
+            val uid = SesiAktif.uidAktif() ?: return UserRole.UNKNOWN
             val metaRef = database.child("metadata")
 
             // ✅ PERBAIKAN: Tambah timeout 10 detik untuk mencegah hang
@@ -9216,7 +9216,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
             _currentUserRole.value = role
             Log.d("RoleDetect", "Detected role = $role")
 
-            Firebase.auth.currentUser?.uid?.let { uid ->
+            SesiAktif.uidAktif()?.let { uid ->
                 setupDataUpdateListener(uid)
             }
 
@@ -9272,7 +9272,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
 
         pelangganListener?.let {
             try {
-                val uid = Firebase.auth.currentUser?.uid
+                val uid = SesiAktif.uidAktif()
                 if (!uid.isNullOrBlank()) {
                     database.child("pelanggan").child(uid).removeEventListener(it)
                 }
@@ -9284,7 +9284,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     private fun initAdminLapanganListeners() {
-        val uid = Firebase.auth.currentUser?.uid ?: return
+        val uid = SesiAktif.uidAktif() ?: return
 
         viewModelScope.launch {
             try {
@@ -9381,7 +9381,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                                     refreshedNotificationIds.add(notifKey)
                                     val pelangganIdToRefresh = notification.pelangganId
                                     if (pelangganIdToRefresh.isNotBlank()) {
-                                        val currentUid = Firebase.auth.currentUser?.uid
+                                        val currentUid = SesiAktif.uidAktif()
                                         if (!currentUid.isNullOrBlank()) {
                                             try {
                                                 val freshSnap = database.child("pelanggan")
@@ -10218,7 +10218,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     fun loadPelangganPaginated(isInitialLoad: Boolean = false) {
-        val currentUid = Firebase.auth.currentUser?.uid ?: return
+        val currentUid = SesiAktif.uidAktif() ?: return
 
         if (isInitialLoad) {
             isLoading.value = true
@@ -10403,7 +10403,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
      * Hanya mencoba hapus untuk varian jenisKtp yang memang punya URL pending.
      */
     private fun deletePendingKtpFilesBestEffort(pelanggan: Pelanggan) {
-        val adminUid = pelanggan.adminUid.ifBlank { Firebase.auth.currentUser?.uid ?: return }
+        val adminUid = pelanggan.adminUid.ifBlank { SesiAktif.uidAktif() ?: return }
         val pelangganId = pelanggan.id.ifBlank { return }
         val jenisList = buildList {
             if (pelanggan.pendingFotoKtpUrl.isNotBlank()) add("ktp")
@@ -10460,7 +10460,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
         pelanggan: Pelanggan
     ): CommittedPhotoUrls = withContext(Dispatchers.IO) {
         val adminUid = pelanggan.adminUid.ifBlank {
-            Firebase.auth.currentUser?.uid ?: return@withContext CommittedPhotoUrls()
+            SesiAktif.uidAktif() ?: return@withContext CommittedPhotoUrls()
         }
         val pelangganId = pelanggan.id.ifBlank { return@withContext CommittedPhotoUrls() }
         val storageRef = Firebase.storage.reference
@@ -10802,7 +10802,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                 _pendingApprovals.clear()
 
                 // Clear local file storage
-                val adminUid = Firebase.auth.currentUser?.uid
+                val adminUid = SesiAktif.uidAktif()
                 if (adminUid != null) {
                     LocalStorage.hapusDataPelanggan(getApplication(), adminUid)
                 }
@@ -10840,7 +10840,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     fun refreshAdminData() {
-        val uid = Firebase.auth.currentUser?.uid ?: return
+        val uid = SesiAktif.uidAktif() ?: return
 
         viewModelScope.launch {
             try {
@@ -10883,7 +10883,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     fun syncOfflineDataToFirebase() {
-        val uid = Firebase.auth.currentUser?.uid ?: return
+        val uid = SesiAktif.uidAktif() ?: return
 
         if (!smartLoader.isOnline()) {
             Log.w("Sync", "⚠️ Cannot sync: Device is offline")
@@ -11254,7 +11254,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     fun markRelatedNotificationsAsRead(pelangganId: String) {
-        val pimpinanUid = Firebase.auth.currentUser?.uid ?: return
+        val pimpinanUid = SesiAktif.uidAktif() ?: return
 
         viewModelScope.launch {
             try {
@@ -11303,7 +11303,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     fun markAllPengajuanNotificationsAsRead() {
-        val pimpinanUid = Firebase.auth.currentUser?.uid ?: return
+        val pimpinanUid = SesiAktif.uidAktif() ?: return
 
         viewModelScope.launch {
             try {
@@ -11426,7 +11426,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
         viewModelScope.launch {
             _isSyncing.value = true
             try {
-                val currentUid = Firebase.auth.currentUser?.uid ?: return@launch
+                val currentUid = SesiAktif.uidAktif() ?: return@launch
                 val role = _currentUserRole.value
 
                 Log.d("ForceRefresh", "🔄 Force full refresh started for role: $role")
@@ -11499,7 +11499,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
         onSuccess: () -> Unit,
         onFailure: (Exception) -> Unit
     ) {
-        val currentUid = Firebase.auth.currentUser?.uid
+        val currentUid = SesiAktif.uidAktif()
         if (currentUid.isNullOrBlank()) {
             onFailure(Exception("User not authenticated"))
             return
@@ -12087,7 +12087,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
      * Load notifikasi serah terima untuk Pimpinan
      */
     fun loadSerahTerimaNotifications() {
-        val currentUid = Firebase.auth.currentUser?.uid ?: return
+        val currentUid = SesiAktif.uidAktif() ?: return
 
         viewModelScope.launch {
             try {
@@ -12171,7 +12171,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
     private var serahTerimaListener: ValueEventListener? = null
 
     fun startSerahTerimaRealtimeListener() {
-        val currentUid = Firebase.auth.currentUser?.uid ?: return
+        val currentUid = SesiAktif.uidAktif() ?: return
 
         // Remove existing listener
         stopSerahTerimaRealtimeListener()
@@ -12202,7 +12202,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     fun stopSerahTerimaRealtimeListener() {
-        val currentUid = Firebase.auth.currentUser?.uid ?: return
+        val currentUid = SesiAktif.uidAktif() ?: return
         serahTerimaListener?.let {
             database.child("serah_terima_notifications")
                 .child(currentUid)
@@ -12215,7 +12215,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
      * Mark notifikasi serah terima sebagai sudah dibaca
      */
     fun markSerahTerimaNotificationAsRead(notificationId: String) {
-        val currentUid = Firebase.auth.currentUser?.uid ?: return
+        val currentUid = SesiAktif.uidAktif() ?: return
 
         viewModelScope.launch {
             try {
@@ -12237,7 +12237,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
      * Mark semua notifikasi serah terima sebagai sudah dibaca
      */
     fun markAllSerahTerimaAsRead() {
-        val currentUid = Firebase.auth.currentUser?.uid ?: return
+        val currentUid = SesiAktif.uidAktif() ?: return
 
         viewModelScope.launch {
             try {
@@ -12670,7 +12670,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     return@launch
                 }
 
-                val currentUserUid = Firebase.auth.currentUser?.uid
+                val currentUserUid = SesiAktif.uidAktif()
                 if (currentUserUid.isNullOrBlank()) {
                     onResult(NikSearchResult(
                         found = false,
@@ -13568,11 +13568,11 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     return@launch
                 }
 
-                val koordinatorUid = Firebase.auth.currentUser?.uid ?: ""
+                val koordinatorUid = SesiAktif.uidAktif() ?: ""
                 val koordinatorSnap = database.child("metadata/admins/${koordinatorUid}/name").get().await()
                 val koordinatorName = koordinatorSnap.getValue(String::class.java)
-                    ?: Firebase.auth.currentUser?.displayName
-                    ?: Firebase.auth.currentUser?.email
+                    ?: SesiAktif.namaAktif()
+                    ?: SesiAktif.emailAktif()
                     ?: "Koordinator"
                 val timestamp = System.currentTimeMillis()
 
@@ -13616,7 +13616,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     lastUpdated = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
                 )
 
-                val adminUid = pelanggan.adminUid.ifBlank { Firebase.auth.currentUser?.uid ?: "" }
+                val adminUid = pelanggan.adminUid.ifBlank { SesiAktif.uidAktif() ?: "" }
 
                 database.child("pelanggan").child(adminUid).child(pelangganId)
                     .setValue(updatedPelanggan)
@@ -13678,11 +13678,11 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     return@launch
                 }
 
-                val koordinatorUid = Firebase.auth.currentUser?.uid ?: ""
+                val koordinatorUid = SesiAktif.uidAktif() ?: ""
                 val koordinatorSnap = database.child("metadata/admins/${koordinatorUid}/name").get().await()
                 val koordinatorName = koordinatorSnap.getValue(String::class.java)
-                    ?: Firebase.auth.currentUser?.displayName
-                    ?: Firebase.auth.currentUser?.email
+                    ?: SesiAktif.namaAktif()
+                    ?: SesiAktif.emailAktif()
                     ?: "Koordinator"
                 val timestamp = System.currentTimeMillis()
 
@@ -13706,7 +13706,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     rejectionReason = alasan
                 )
 
-                val adminUid = pelanggan.adminUid.ifBlank { Firebase.auth.currentUser?.uid ?: "" }
+                val adminUid = pelanggan.adminUid.ifBlank { SesiAktif.uidAktif() ?: "" }
                 val tanggalSekarang = SimpleDateFormat("dd MMM yyyy", Locale("in", "ID")).format(Date())
                 val isTopUp = pelanggan.pinjamanKe > 1
 
@@ -13863,7 +13863,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     return@launch
                 }
 
-                val koordinatorUid = Firebase.auth.currentUser?.uid ?: ""
+                val koordinatorUid = SesiAktif.uidAktif() ?: ""
                 val timestamp = System.currentTimeMillis()
 
                 val currentDualInfo = pelanggan.dualApprovalInfo ?: DualApprovalInfo(requiresDualApproval = true)
@@ -13952,7 +13952,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     lastUpdated = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
                 )
 
-                val adminUid = pelanggan.adminUid.ifBlank { Firebase.auth.currentUser?.uid ?: "" }
+                val adminUid = pelanggan.adminUid.ifBlank { SesiAktif.uidAktif() ?: "" }
 
                 database.child("pelanggan").child(adminUid).child(pelangganId)
                     .setValue(updatedPelanggan)
@@ -14019,11 +14019,11 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     return@launch
                 }
 
-                val pengawasUid = Firebase.auth.currentUser?.uid ?: ""
+                val pengawasUid = SesiAktif.uidAktif() ?: ""
                 val pengawasSnap = database.child("metadata/admins/$pengawasUid/name").get().await()
                 val pengawasName = pengawasSnap.getValue(String::class.java)
-                    ?: Firebase.auth.currentUser?.displayName
-                    ?: Firebase.auth.currentUser?.email
+                    ?: SesiAktif.namaAktif()
+                    ?: SesiAktif.emailAktif()
                     ?: "Pengawas"
                 val timestamp = System.currentTimeMillis()
 
@@ -14039,7 +14039,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     note = catatan
                 )
 
-                val adminUid = pelanggan.adminUid.ifBlank { Firebase.auth.currentUser?.uid ?: "" }
+                val adminUid = pelanggan.adminUid.ifBlank { SesiAktif.uidAktif() ?: "" }
 
                 // =========================================================================
                 // ✅ PERBAIKAN: SELALU PINDAH KE PHASE 3 (AWAITING_PIMPINAN_FINAL)
@@ -14144,11 +14144,11 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     return@launch
                 }
 
-                val pengawasUid = Firebase.auth.currentUser?.uid ?: ""
+                val pengawasUid = SesiAktif.uidAktif() ?: ""
                 val pengawasSnap = database.child("metadata/admins/$pengawasUid/name").get().await()
                 val pengawasName = pengawasSnap.getValue(String::class.java)
-                    ?: Firebase.auth.currentUser?.displayName
-                    ?: Firebase.auth.currentUser?.email
+                    ?: SesiAktif.namaAktif()
+                    ?: SesiAktif.emailAktif()
                     ?: "Pengawas"
                 val timestamp = System.currentTimeMillis()
 
@@ -14187,7 +14187,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     lastUpdated = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
                 )
 
-                val adminUid = pelanggan.adminUid.ifBlank { Firebase.auth.currentUser?.uid ?: "" }
+                val adminUid = pelanggan.adminUid.ifBlank { SesiAktif.uidAktif() ?: "" }
                 database.child("pelanggan").child(adminUid).child(pelangganId)
                     .setValue(updatedPelanggan)
                     .addOnSuccessListener {
@@ -14323,7 +14323,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
     fun markAllPengawasPengajuanNotificationsAsRead() {
         viewModelScope.launch {
             try {
-                val pengawasUid = Firebase.auth.currentUser?.uid ?: return@launch
+                val pengawasUid = SesiAktif.uidAktif() ?: return@launch
 
                 val notifSnap = database.child("pengawas_notifications/$pengawasUid")
                     .orderByChild("read")
@@ -14477,7 +14477,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
      * Path: pengawas_serah_terima_notifications/{pengawasUid}
      */
     fun loadSerahTerimaNotificationsForPengawas() {
-        val currentUid = Firebase.auth.currentUser?.uid ?: return
+        val currentUid = SesiAktif.uidAktif() ?: return
 
         viewModelScope.launch {
             try {
@@ -14556,7 +14556,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     fun markPengawasSerahTerimaNotificationAsRead(notificationId: String) {
-        val currentUid = Firebase.auth.currentUser?.uid ?: return
+        val currentUid = SesiAktif.uidAktif() ?: return
 
         viewModelScope.launch {
             try {
@@ -14585,7 +14585,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     fun markAllPengawasSerahTerimaAsRead() {
-        val currentUid = Firebase.auth.currentUser?.uid ?: return
+        val currentUid = SesiAktif.uidAktif() ?: return
 
         viewModelScope.launch {
             try {
@@ -14862,7 +14862,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     return@launch
                 }
 
-                val adminUid = pelanggan.adminUid.ifBlank { Firebase.auth.currentUser?.uid }
+                val adminUid = pelanggan.adminUid.ifBlank { SesiAktif.uidAktif() }
                 if (adminUid.isNullOrBlank()) {
                     onFailure?.invoke(Exception("Admin UID tidak valid"))
                     return@launch
@@ -14880,7 +14880,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     onFailure?.invoke(Exception("Gagal mendapatkan konteks cabang. Silakan coba lagi."))
                     return@launch
                 }
-                val currentEmail = Firebase.auth.currentUser?.email ?: ""
+                val currentEmail = SesiAktif.emailAktif() ?: ""
 
                 // Hitung sisa utang — exclude entry "Bunga..." (konsisten dengan Cloud Functions)
                 val totalDibayar = pelanggan.pembayaranList
@@ -15155,7 +15155,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
 
                 // Cek apakah sudah lunas
                 if (totalBayar >= pelanggan.totalPelunasan.toLong() && pelanggan.statusPencairanSimpanan.isBlank()) {
-                    val adminUid = pelanggan.adminUid.ifBlank { Firebase.auth.currentUser?.uid } ?: return@launch
+                    val adminUid = pelanggan.adminUid.ifBlank { SesiAktif.uidAktif() } ?: return@launch
                     val dateFormat = SimpleDateFormat("dd MMM yyyy", Locale("in", "ID"))
                     val tanggalSekarang = dateFormat.format(Date())
 
@@ -15275,7 +15275,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
         onSuccess: () -> Unit = {},
         onFailure: (Exception) -> Unit = {}
     ) {
-        val currentUid = Firebase.auth.currentUser?.uid ?: return
+        val currentUid = SesiAktif.uidAktif() ?: return
 
         viewModelScope.launch {
             try {
@@ -15310,7 +15310,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
         onSuccess: () -> Unit = {},
         onFailure: (Exception) -> Unit = {}
     ) {
-        val currentUid = Firebase.auth.currentUser?.uid ?: return
+        val currentUid = SesiAktif.uidAktif() ?: return
 
         viewModelScope.launch {
             try {
@@ -15354,7 +15354,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
     ) {
         viewModelScope.launch {
             try {
-                val currentUser = Firebase.auth.currentUser
+                val currentUser = SesiAktif.penggunaAktif()
                 if (currentUser == null) {
                     onFailure(Exception("User belum login"))
                     return@launch
@@ -15524,7 +15524,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
     ) {
         viewModelScope.launch {
             try {
-                val currentUser = Firebase.auth.currentUser
+                val currentUser = SesiAktif.penggunaAktif()
                 if (currentUser == null) {
                     onFailure(Exception("User belum login"))
                     return@launch
@@ -15712,7 +15712,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
     ) {
         viewModelScope.launch {
             try {
-                val currentUser = Firebase.auth.currentUser
+                val currentUser = SesiAktif.penggunaAktif()
                 if (currentUser == null) {
                     onFailure(Exception("User belum login"))
                     return@launch
@@ -15850,7 +15850,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
     ) {
         viewModelScope.launch {
             try {
-                val currentUser = Firebase.auth.currentUser
+                val currentUser = SesiAktif.penggunaAktif()
                 if (currentUser == null) {
                     onFailure(Exception("User belum login"))
                     return@launch
@@ -15981,7 +15981,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
     ) {
         viewModelScope.launch {
             try {
-                val currentUser = Firebase.auth.currentUser
+                val currentUser = SesiAktif.penggunaAktif()
                 if (currentUser == null) {
                     onFailure(Exception("User belum login"))
                     return@launch
@@ -16193,7 +16193,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
     val trackingStartTime: StateFlow<Long> = _trackingStartTime
 
     fun activateTracking(target: UserInfo) {
-        val pengawasUid = FirebaseAuth.getInstance().currentUser?.uid ?: return
+        val pengawasUid = SesiAktif.uidAktif() ?: return
 
         viewModelScope.launch {
             try {
@@ -16492,7 +16492,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
      * HANYA trigger logout jika ONLINE dan node benar-benar ada di server
      */
     fun startForceLogoutListener(onForceLogout: () -> Unit) {
-        val uid = Firebase.auth.currentUser?.uid ?: return
+        val uid = SesiAktif.uidAktif() ?: return
 
         // Simpan waktu login
         loginTimestamp = System.currentTimeMillis()
@@ -16578,7 +16578,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
      * active_sessions/{uid}/sessionId → device ini ter-kick.
      */
     fun startSingleDeviceSession() {
-        val uid = Firebase.auth.currentUser?.uid ?: return
+        val uid = SesiAktif.uidAktif() ?: return
         val sessionId = UUID.randomUUID().toString()
         // Simpan LOKAL dulu (synchronous) supaya listener tidak salah kick diri sendiri.
         sharedPrefs.edit().putString("current_session_id", sessionId).apply()
@@ -16604,7 +16604,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
      * fitur ini), generate sekali & klaim. Lalu pasang listener.
      */
     fun resumeSessionLockListener() {
-        val uid = Firebase.auth.currentUser?.uid ?: return
+        val uid = SesiAktif.uidAktif() ?: return
         var sessionId = sharedPrefs.getString("current_session_id", null)
         if (sessionId.isNullOrBlank()) {
             // Sesi lama tanpa sessionId → klaim device ini sebagai pemegang sesi.
@@ -16662,7 +16662,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
      * ✅ PERBAIKAN: HANYA cek jika ONLINE
      */
     suspend fun checkForceLogoutOnStartup(): Boolean {
-        val currentUser = Firebase.auth.currentUser ?: return false
+        val currentUser = SesiAktif.penggunaAktif() ?: return false
 
         // ✅ PERBAIKAN: Jangan cek jika offline (cache bisa unreliable)
         if (!isOnline()) {
@@ -16725,7 +16725,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
     fun simpanBiayaAwal(jumlah: Int, onResult: (Boolean, String) -> Unit) {
         viewModelScope.launch {
             try {
-                val adminUid = Firebase.auth.currentUser?.uid ?: run {
+                val adminUid = SesiAktif.uidAktif() ?: run {
                     onResult(false, "User tidak terautentikasi")
                     return@launch
                 }
@@ -16763,7 +16763,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
     fun loadBiayaAwalHariIni() {
         viewModelScope.launch {
             try {
-                val adminUid = Firebase.auth.currentUser?.uid ?: return@launch
+                val adminUid = SesiAktif.uidAktif() ?: return@launch
                 val tanggalHariIni = SimpleDateFormat("yyyy-MM-dd", Locale("id")).format(Date())
 
                 database.child("biaya_awal")
@@ -16788,7 +16788,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
     fun loadKasirUangKasHariIni() {
         viewModelScope.launch {
             try {
-                val adminUid = Firebase.auth.currentUser?.uid?.trim().orEmpty()
+                val adminUid = SesiAktif.uidAktif()?.trim().orEmpty()
                 if (adminUid.isBlank()) {
                     Log.w("KasirUangKas", "⚠️ currentUser null, skip load")
                     return@launch
@@ -16981,7 +16981,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                 // hanya entri milik admin lapangan yang sedang login yang dihitung
                 // (kasus sah = pelunasan nasabah SENDIRI yang sudah dihapus via
                 // cairkanSimpanan). Sejajar dengan fix orphan sisi Web (commit 6dea90e).
-                val sessionAdminUid = Firebase.auth.currentUser?.uid.orEmpty()
+                val sessionAdminUid = SesiAktif.uidAktif().orEmpty()
                 if (sessionAdminUid.isBlank()) {
                     _pelunasanEksternalHariIni.value = emptyList()
                     return@launch
@@ -17033,7 +17033,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
     fun refreshSinglePelanggan(pelangganId: String) {
         viewModelScope.launch {
             try {
-                val currentAdminUid = Firebase.auth.currentUser?.uid ?: return@launch
+                val currentAdminUid = SesiAktif.uidAktif() ?: return@launch
 
                 val snapshot = database.child("pelanggan")
                     .child(currentAdminUid)
@@ -17078,7 +17078,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
     ) {
         viewModelScope.launch {
             try {
-                val currentUser = Firebase.auth.currentUser
+                val currentUser = SesiAktif.penggunaAktif()
                 if (currentUser == null) {
                     onFailure(Exception("User belum login"))
                     return@launch
@@ -17231,7 +17231,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
     ) {
         viewModelScope.launch {
             try {
-                val currentUser = Firebase.auth.currentUser
+                val currentUser = SesiAktif.penggunaAktif()
                 if (currentUser == null) {
                     onFailure(Exception("User belum login"))
                     return@launch
@@ -17329,7 +17329,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
     ) {
         viewModelScope.launch {
             try {
-                val currentUser = Firebase.auth.currentUser ?: throw Exception("User belum login")
+                val currentUser = SesiAktif.penggunaAktif() ?: throw Exception("User belum login")
 
                 // ✅ STEP 1: Ambil data pelanggan untuk mendapatkan totalPelunasan dan tanggalDaftar
                 val pelangganSnapshot = database.child("pelanggan/${request.adminUid}/${request.pelangganId}")
@@ -17440,7 +17440,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
     ) {
         viewModelScope.launch {
             try {
-                val currentUser = Firebase.auth.currentUser ?: throw Exception("User belum login")
+                val currentUser = SesiAktif.penggunaAktif() ?: throw Exception("User belum login")
 
                 // Hapus request
                 database.child("tenor_change_requests/${request.cabangId}/${request.id}")
@@ -17501,7 +17501,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
     fun loadAdminPhotoUrl() {
         viewModelScope.launch {
             try {
-                val uid = Firebase.auth.currentUser?.uid ?: return@launch
+                val uid = SesiAktif.uidAktif() ?: return@launch
                 val context = getApplication<Application>().applicationContext
                 val prefs = context.getSharedPreferences("admin_profile", Context.MODE_PRIVATE)
 
@@ -17539,7 +17539,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
     ) {
         viewModelScope.launch {
             try {
-                val uid = Firebase.auth.currentUser?.uid ?: throw Exception("User belum login")
+                val uid = SesiAktif.uidAktif() ?: throw Exception("User belum login")
                 val context = getApplication<Application>().applicationContext
 
                 withContext(Dispatchers.IO) {
@@ -17669,7 +17669,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
     fun clearAdminPhotoCache() {
         viewModelScope.launch {
             try {
-                val uid = Firebase.auth.currentUser?.uid ?: return@launch
+                val uid = SesiAktif.uidAktif() ?: return@launch
                 val context = getApplication<Application>().applicationContext
                 val prefs = context.getSharedPreferences("admin_profile", Context.MODE_PRIVATE)
                 prefs.edit().remove("photo_url_$uid").apply()
@@ -17723,7 +17723,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
     ) {
         viewModelScope.launch {
             try {
-                val currentUser = Firebase.auth.currentUser
+                val currentUser = SesiAktif.penggunaAktif()
                 if (currentUser == null) {
                     onFailure(Exception("User belum login"))
                     return@launch
@@ -17842,7 +17842,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
     ) {
         viewModelScope.launch {
             try {
-                val currentUser = Firebase.auth.currentUser
+                val currentUser = SesiAktif.penggunaAktif()
                 if (currentUser == null) {
                     onFailure(Exception("User belum login"))
                     return@launch
@@ -18065,7 +18065,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
     ) {
         viewModelScope.launch {
             try {
-                val currentUser = Firebase.auth.currentUser
+                val currentUser = SesiAktif.penggunaAktif()
                 if (currentUser == null) {
                     onFailure(Exception("User belum login"))
                     return@launch
@@ -18147,7 +18147,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                             pelanggan.statusPencairanSimpanan == "Menunggu Pencairan"
 
                     if (sudahLanjut && masihKotor) {
-                        val adminUid = pelanggan.adminUid.ifBlank { Firebase.auth.currentUser?.uid ?: "" }
+                        val adminUid = pelanggan.adminUid.ifBlank { SesiAktif.uidAktif() ?: "" }
                         if (adminUid.isBlank()) continue
 
                         val updates = mapOf<String, Any?>(
@@ -18214,7 +18214,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     onFailure?.invoke(Exception("Pelanggan tidak ditemukan"))
                     return@launch
                 }
-                val adminUid = pelanggan.adminUid.ifBlank { Firebase.auth.currentUser?.uid }
+                val adminUid = pelanggan.adminUid.ifBlank { SesiAktif.uidAktif() }
                 if (adminUid.isNullOrBlank()) {
                     onFailure?.invoke(Exception("Admin UID tidak valid"))
                     return@launch
@@ -18225,10 +18225,10 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     onFailure?.invoke(Exception("Cabang ID tidak ditemukan"))
                     return@launch
                 }
-                val pencairUid = Firebase.auth.currentUser?.uid ?: ""
+                val pencairUid = SesiAktif.uidAktif() ?: ""
                 val adminNameSnap = database.child("metadata/admins/$pencairUid/name").get().await()
                 val adminName = adminNameSnap.getValue(String::class.java)
-                    ?: Firebase.auth.currentUser?.email ?: "Admin"
+                    ?: SesiAktif.emailAktif() ?: "Admin"
                 val dateFormat = SimpleDateFormat("dd MMM yyyy", Locale("in", "ID"))
                 val requestDate = dateFormat.format(Date())
                 val request = mapOf(
@@ -18303,10 +18303,10 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
     ) {
         viewModelScope.launch {
             try {
-                val koordinatorUid = Firebase.auth.currentUser?.uid ?: ""
+                val koordinatorUid = SesiAktif.uidAktif() ?: ""
                 val koordinatorNameSnap = database.child("metadata/admins/$koordinatorUid/name").get().await()
                 val koordinatorName = koordinatorNameSnap.getValue(String::class.java)
-                    ?: Firebase.auth.currentUser?.email ?: "Koordinator"
+                    ?: SesiAktif.emailAktif() ?: "Koordinator"
                 val dateFormat = SimpleDateFormat("dd MMM yyyy", Locale("in", "ID"))
                 val tanggalSekarang = dateFormat.format(Date())
 
@@ -18395,7 +18395,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                             "namaKtp" to pelanggan.namaKtp,
                             "adminUid" to item.adminUid,
                             "adminName" to koordinatorName,
-                            "adminEmail" to (Firebase.auth.currentUser?.email ?: ""),
+                            "adminEmail" to (SesiAktif.emailAktif() ?: ""),
                             "jumlah" to sisaUtang,
                             "jenis" to "pelunasan_tabungan",
                             "tanggal" to tanggalSekarang,
@@ -18470,10 +18470,10 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
     ) {
         viewModelScope.launch {
             try {
-                val koordinatorUid = Firebase.auth.currentUser?.uid ?: ""
+                val koordinatorUid = SesiAktif.uidAktif() ?: ""
                 val koordinatorNameSnap = database.child("metadata/admins/$koordinatorUid/name").get().await()
                 val koordinatorName = koordinatorNameSnap.getValue(String::class.java)
-                    ?: Firebase.auth.currentUser?.email ?: "Koordinator"
+                    ?: SesiAktif.emailAktif() ?: "Koordinator"
                 val dateFormat = SimpleDateFormat("dd MMM yyyy", Locale("in", "ID"))
                 val tanggalSekarang = dateFormat.format(Date())
                 database.child("pengajuan_pencairan_simpanan")
@@ -18506,7 +18506,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
      * Jika data ditemukan dan tanggalnya cocok dengan hari ini, set absensiSendiri.
      */
     fun loadAbsensiSendiri() {
-        val uid = Firebase.auth.currentUser?.uid ?: return
+        val uid = SesiAktif.uidAktif() ?: return
         val wibZone = java.util.TimeZone.getTimeZone("Asia/Jakarta")
         val todayKey = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale("id", "ID")).apply { timeZone = wibZone }.format(java.util.Date())
         isLoadingAbsensi.value = true
@@ -18552,7 +18552,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
         onSuccess: () -> Unit,
         onFailure: (String) -> Unit
     ) {
-        val uid = Firebase.auth.currentUser?.uid ?: run { onFailure("Sesi login tidak ditemukan"); return }
+        val uid = SesiAktif.uidAktif() ?: run { onFailure("Sesi login tidak ditemukan"); return }
         val wibZone = java.util.TimeZone.getTimeZone("Asia/Jakarta")
         val todayKey = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale("id", "ID")).apply { timeZone = wibZone }.format(java.util.Date())
         val jam = java.text.SimpleDateFormat("HH:mm", java.util.Locale("id", "ID")).apply { timeZone = wibZone }.format(java.util.Date())
@@ -18565,7 +18565,7 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
         viewModelScope.launch {
             try {
                 val namaSnap = database.child("metadata/admins/$uid/name").get().await()
-                val nama = namaSnap.getValue(String::class.java) ?: Firebase.auth.currentUser?.email ?: "Tidak Diketahui"
+                val nama = namaSnap.getValue(String::class.java) ?: SesiAktif.emailAktif() ?: "Tidak Diketahui"
 
                 val record = AbsensiRecord(
                     uid = uid,

@@ -2,6 +2,7 @@ package com.example.koperasikitagodangulu.services
 
 import android.content.Context
 import android.util.Log
+import com.example.koperasikitagodangulu.SesiAktif
 import com.google.firebase.auth.ktx.auth
 import com.google.firebase.database.DataSnapshot
 import com.google.firebase.database.DatabaseError
@@ -43,7 +44,7 @@ object LocationTrackingMonitor {
      * HANYA dipanggil untuk role: ADMIN_LAPANGAN, PIMPINAN, KOORDINATOR
      */
     fun startMonitoring(context: Context) {
-        val uid = Firebase.auth.currentUser?.uid ?: return
+        val uid = SesiAktif.uidAktif() ?: return
 
         // Jika sudah monitoring UID yang sama DAN listener masih ada, skip
         if (isMonitoring && currentUid == uid && listener != null) {
@@ -94,7 +95,7 @@ object LocationTrackingMonitor {
      * Hentikan monitoring (saat logout)
      */
     fun stopMonitoring() {
-        val uid = currentUid ?: Firebase.auth.currentUser?.uid
+        val uid = currentUid ?: SesiAktif.uidAktif()
         if (uid != null && listener != null) {
             try {
                 val database = Firebase.database(

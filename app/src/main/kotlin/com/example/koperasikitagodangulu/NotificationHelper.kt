@@ -11,6 +11,7 @@ import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import com.example.koperasikitagodangulu.R
+import com.example.koperasikitagodangulu.SesiAktif
 import com.google.firebase.auth.ktx.auth
 import com.google.firebase.database.ktx.database
 import com.google.firebase.ktx.Firebase
@@ -132,7 +133,7 @@ object NotificationHelper {
      * Simpan FCM token ke Firebase Database
      */
     fun saveTokenToDatabase(token: String) {
-        val currentUser = Firebase.auth.currentUser
+        val currentUser = SesiAktif.penggunaAktif()
         if (currentUser != null) {
             val uid = currentUser.uid
             val database = Firebase.database("https://koperasikitagodangulu-default-rtdb.asia-southeast1.firebasedatabase.app").reference
@@ -166,7 +167,7 @@ object NotificationHelper {
      * benar-benar dihapus dulu sebelum login berikutnya fetch token baru.
      */
     suspend fun clearTokenOnLogout() {
-        val currentUser = Firebase.auth.currentUser
+        val currentUser = SesiAktif.penggunaAktif()
         if (currentUser != null) {
             val uid = currentUser.uid
             val database = Firebase.database("https://koperasikitagodangulu-default-rtdb.asia-southeast1.firebasedatabase.app").reference

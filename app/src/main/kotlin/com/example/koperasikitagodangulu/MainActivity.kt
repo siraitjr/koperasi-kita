@@ -187,7 +187,7 @@ class MainActivity : ComponentActivity() {
 
                     try {
                         withContext(Dispatchers.IO) {
-                            val uid = Firebase.auth.currentUser?.uid
+                            val uid = SesiAktif.uidAktif()
                             if (!uid.isNullOrBlank()) {
                                 Log.d(TAG, "📄 Loading data for UID: $uid")
                                 vm.muatDariLokal(uid)
@@ -718,8 +718,13 @@ class MainActivity : ComponentActivity() {
         // 2. Ada koneksi internet
         // 3. Belum pernah dicek dalam session ini
 
-        val currentUser = Firebase.auth.currentUser
-        currentUser?.getIdToken(false)?.addOnFailureListener {
+        val currentUser = SesiAktif.penggunaAktif()
+        // Penyegaran token Firebase dipertahankan apa adanya: ia hanya
+        // memanaskan token dan mencatat peringatan bila gagal — tidak ada
+        // cabang lain yang bergantung padanya. Dengan flag Supabase menyala
+        // tidak ada sesi Firebase untuk disegarkan, jadi `?.` di depan membuat
+        // baris ini diam begitu saja, bukan gagal.
+        Firebase.auth.currentUser?.getIdToken(false)?.addOnFailureListener {
             Log.w(TAG, "⚠️ Token refresh failed: ${it.message}")
         }
         if (currentUser == null) {

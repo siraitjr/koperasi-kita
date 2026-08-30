@@ -7,6 +7,7 @@ import io.github.jan.supabase.gotrue.auth
 import io.github.jan.supabase.gotrue.providers.builtin.Email
 import io.github.jan.supabase.postgrest.postgrest
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -142,6 +143,52 @@ object SesiAktif {
     // seluruh node, bukan ke satu admin.
     fun uid(): String? = profil?.uidLegacy?.takeIf { it.isNotBlank() }
 
+    // =====================================================================
+    // AKSESOR NETRAL-BACKEND — pengganti `Firebase.auth.currentUser?.…`
+    // =====================================================================
+    // Inilah yang dipanggil ratusan tempat setelah sapuan. Kontraknya:
+    //
+    //   flag MATI  → persis `Firebase.auth.currentUser?.uid`, tanpa selisih
+    //   flag NYALA → UID legacy dari app_user.legacy_uid
+    //
+    // Karena cabang "flag mati" mengembalikan ekspresi yang sama persis
+    // dengan yang digantikannya, sapuan ini TIDAK mengubah perilaku build
+    // produksi sama sekali. Itu yang membuatnya aman untuk di-merge sebelum
+    // cut-over benar-benar dinyalakan.
+
+    private val firebaseUser get() = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser
+
+    fun uidAktif(): String? = if (pakaiSupabase) uid() else firebaseUser?.uid
+
+    fun emailAktif(): String? =
+        if (pakaiSupabase) profil?.email?.takeIf { it.isNotBlank() } else firebaseUser?.email
+
+    fun namaAktif(): String? =
+        if (pakaiSupabase) profil?.nama?.takeIf { it.isNotBlank() } else firebaseUser?.displayName
+
+    /** Ada sesi yang sah? Pengganti `Firebase.auth.currentUser != null`. */
+    fun adaSesi(): Boolean = if (pakaiSupabase) uid() != null else firebaseUser != null
+
+    /**
+     * Pengganti OBJEK `Firebase.auth.currentUser`, untuk tempat-tempat yang
+     * menyimpannya ke variabel lokal lalu memakai `.uid` / `.email`.
+     *
+     * Nama propertinya sengaja `uid` dan `email` — sama persis dengan
+     * `FirebaseUser`. Dengan begitu deklarasinya saja yang berubah:
+     *
+     *     val currentUser = Firebase.auth.currentUser      // sebelum
+     *     val currentUser = SesiAktif.penggunaAktif()      // sesudah
+     *
+     * dan seluruh badan fungsi (`currentUser.uid`, `currentUser.email`, serta
+     * penjagaan `if (currentUser == null)`) tetap utuh tanpa disentuh. Untuk
+     * 35 pemakaian di PelangganViewModel.kt, tidak menyentuh badan fungsi jauh
+     * lebih aman daripada mengganti nama variabel di tiap tempat.
+     */
+    data class PenggunaAktif(val uid: String, val email: String?)
+
+    fun penggunaAktif(): PenggunaAktif? =
+        uidAktif()?.let { PenggunaAktif(it, emailAktif()) }
+
     /** uuid Supabase, untuk RPC dan apa pun yang tunduk RLS. */
     fun uidSupabase(): String? = profil?.uidSupabase
 
@@ -204,7 +251,75 @@ object SesiAktif {
         simpan(context, p, ingatSaya)
         saveUserRole(context, p.peran)          // kompatibilitas: UserRole.kt
         Log.d(TAG, "✅ masuk sebagai ${p.email} (${p.peran})")
+
+        // Jembatan RTDB — lihat penjelasan panjang di `jembatanRtdb()`.
+        jembatanRtdb(email, sandi)
+
         return p
+    }
+
+    // =====================================================================
+    // JEMBATAN RTDB — kenapa login Supabase saja membuat dasbor kosong
+    // =====================================================================
+    /**
+     * Status upaya masuk Firebase pendamping. Dibaca layar login untuk
+     * memberi tahu penguji apa yang sebenarnya terjadi.
+     */
+    enum class StatusJembatan { BELUM, BERHASIL, GAGAL_SANDI, GAGAL_LAIN, TIDAK_PERLU }
+
+    @Volatile var statusJembatan: StatusJembatan = StatusJembatan.BELUM
+        private set
+
+    /**
+     * Masuk ke Firebase Auth SEKALIGUS, memakai kredensial yang sama.
+     *
+     * KENAPA INI ADA — DAN KENAPA MENGGANTI 141 PEMANGGILAN UID SAJA TIDAK
+     * AKAN PERNAH MEMPERBAIKI DASBOR KOSONG:
+     *
+     * Lapisan data Android masih sepenuhnya RTDB — 360 pemanggilan RTDB di
+     * PelangganViewModel.kt saja, dan `SupabaseDataSource` belum tersambung
+     * ke ViewModel mana pun. Setiap aturan RTDB diawali `auth != null`
+     * (81 kemunculan di data/rulesfirebase.txt), dan aturan `pelanggan`
+     * bahkan menuntut `auth.uid === $adminUid` (baris 5).
+     *
+     * `auth` di sana adalah token FIREBASE. Tanpa sesi Firebase, `auth`
+     * bernilai null dan SETIAP pembacaan ditolak — berapa pun benarnya string
+     * UID yang dikirim kode Kotlin. Jadi dasbor kosong itu bukan gejala UID
+     * null; UID null hanyalah gejala kedua yang kebetulan muncul bersamaan.
+     * Sapuan UID tetap perlu dan sudah dikerjakan, tetapi ia memperbaiki
+     * PATH-nya, bukan IZIN-nya.
+     *
+     * Selama Firebase masih hidup (sampai 1 Sep 2026), masuk ke keduanya
+     * adalah satu-satunya cara membuat dasbor bekerja tanpa memindahkan
+     * seluruh lapisan data lebih dulu.
+     *
+     * ⚠ INI JEMBATAN SEMENTARA, BUKAN RANCANGAN AKHIR. Ia mati sendiri
+     *   pada 1 Sep 2026 bersama RTDB. Sesudah itu dasbor hanya bisa hidup
+     *   kalau lapisan bacanya sudah pindah ke Supabase.
+     *
+     * Kegagalannya TIDAK menggagalkan login: sesi Supabase tetap sah, dan
+     * layar login melaporkan apa adanya lewat `statusJembatan` supaya
+     * hasilnya terbaca, bukan jadi layar kosong tanpa sebab.
+     */
+    private suspend fun jembatanRtdb(email: String, sandi: String) {
+        if (!pakaiSupabase) { statusJembatan = StatusJembatan.TIDAK_PERLU; return }
+        statusJembatan = try {
+            com.google.firebase.auth.FirebaseAuth.getInstance()
+                .signInWithEmailAndPassword(email.trim(), sandi)
+                .await()
+            Log.d(TAG, "✅ jembatan RTDB: sesi Firebase ikut aktif")
+            StatusJembatan.BERHASIL
+        } catch (e: Exception) {
+            val pesan = e.message.orEmpty()
+            Log.w(TAG, "⚠️ jembatan RTDB gagal: $pesan")
+            // Kata sandi Firebase dan Supabase bisa berbeda — kata sandi
+            // Supabase diseragamkan saat migrasi, kata sandi Firebase tidak.
+            // Dibedakan supaya pesannya bisa menyebut sebab yang benar.
+            if (pesan.contains("password", true) ||
+                pesan.contains("credential", true) ||
+                pesan.contains("no user record", true)
+            ) StatusJembatan.GAGAL_SANDI else StatusJembatan.GAGAL_LAIN
+        }
     }
 
     /**
@@ -287,6 +402,23 @@ object SesiAktif {
         if (!pakaiSupabase) return false
         return try {
             val klien = SupabaseClientProvider.client()
+
+            // ⚠ BARIS PALING PENTING DI BERKAS INI.
+            //
+            // Pemuatan sesi dari penyimpanan berjalan ASINKRON. Tepat setelah
+            // klien dibuat, `sessionStatus` masih `SessionStatus.LoadingFromStorage`
+            // dan `currentUserOrNull()` mengembalikan null — bukan karena tidak
+            // ada sesi, tetapi karena sesinya BELUM SELESAI DIBACA.
+            //
+            // Tanpa penantian ini, `pulihkan()` di pembukaan aplikasi selalu
+            // membaca null, mengembalikan false, dan layar login muncul padahal
+            // sesinya tersimpan rapi di SharedPreferences. Itulah Bug 2.
+            //
+            // Diverifikasi dari gotrue-kt-android-2.2.3.aar:
+            //   io.github.jan.supabase.gotrue.Auth.awaitInitialization(...)
+            //   io.github.jan.supabase.gotrue.SessionStatus$LoadingFromStorage
+            klien.auth.awaitInitialization()
+
             if (klien.auth.currentUserOrNull() == null) {
                 profil = null
                 return false
@@ -300,6 +432,17 @@ object SesiAktif {
                 profil = p
                 simpan(context, p, ingatSaya(context))
                 saveUserRole(context, p.peran)
+
+                // Sesi Firebase bertahan sendiri lintas pembukaan aplikasi,
+                // jadi biasanya masih ada. Kalau ternyata hilang (mis. token
+                // dicabut), dasbor akan kosong lagi karena RTDB menolak tanpa
+                // `auth`. Statusnya dicatat supaya sebabnya terbaca.
+                statusJembatan = if (firebaseUser != null) {
+                    StatusJembatan.BERHASIL
+                } else {
+                    Log.w(TAG, "⚠️ sesi Supabase pulih tetapi sesi Firebase hilang — RTDB akan menolak")
+                    StatusJembatan.GAGAL_LAIN
+                }
                 true
             }
         } catch (e: Exception) {

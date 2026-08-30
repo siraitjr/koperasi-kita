@@ -134,7 +134,7 @@ fun AdminHomeScreen(
     val isTakeoverMode by viewModel.isTakeoverMode.collectAsState()
     val takeoverAdminName by viewModel.takeoverAdminName.collectAsState()
     val takeoverStatus by viewModel.takeoverStatus.collectAsState()
-    val email = auth.currentUser?.email ?: "Tidak ada email"
+    val email = SesiAktif.emailAktif() ?: "Tidak ada email"
     val context = LocalContext.current
 
     val isOnline by viewModel.isOnline.collectAsState()

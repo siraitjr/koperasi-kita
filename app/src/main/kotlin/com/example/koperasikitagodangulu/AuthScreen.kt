@@ -505,6 +505,29 @@ fun AuthScreen(
 
                                             isLoading = false
 
+                                            // Jembatan RTDB gagal = dasbor akan
+                                            // kosong, karena setiap aturan RTDB
+                                            // menuntut `auth != null` (token
+                                            // Firebase). Dikatakan terang-terangan
+                                            // di sini; tanpa ini penguji hanya
+                                            // melihat layar kosong tanpa sebab.
+                                            when (SesiAktif.statusJembatan) {
+                                                SesiAktif.StatusJembatan.GAGAL_SANDI -> Toast.makeText(
+                                                    context,
+                                                    "Masuk Supabase berhasil, tetapi sesi Firebase gagal: " +
+                                                        "kata sandi Firebase berbeda. Data dasbor (masih di RTDB) " +
+                                                        "tidak akan tampil sampai kata sandi disamakan.",
+                                                    Toast.LENGTH_LONG
+                                                ).show()
+                                                SesiAktif.StatusJembatan.GAGAL_LAIN -> Toast.makeText(
+                                                    context,
+                                                    "Masuk Supabase berhasil, tetapi sesi Firebase gagal. " +
+                                                        "Data dasbor (masih di RTDB) kemungkinan tidak tampil.",
+                                                    Toast.LENGTH_LONG
+                                                ).show()
+                                                else -> Unit
+                                            }
+
                                             // Sengaja memakai `proceedWithLogin` yang
                                             // sama persis dengan jalur Firebase, bukan
                                             // navigasi sendiri. Fungsi itu bukan sekadar

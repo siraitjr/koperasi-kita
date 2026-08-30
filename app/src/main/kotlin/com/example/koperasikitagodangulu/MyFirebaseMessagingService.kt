@@ -11,6 +11,7 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.example.koperasikitagodangulu.MainActivity
 import com.example.koperasikitagodangulu.R
+import com.example.koperasikitagodangulu.SesiAktif
 import com.google.firebase.auth.ktx.auth
 import com.google.firebase.database.ktx.database
 import com.google.firebase.ktx.Firebase
@@ -521,7 +522,7 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
     }
 
     private fun saveTokenToDatabase(token: String) {
-        val currentUser = Firebase.auth.currentUser ?: return
+        val currentUser = SesiAktif.penggunaAktif() ?: return
 
         val tokenData = mapOf(
             "token" to token,

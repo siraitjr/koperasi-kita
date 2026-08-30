@@ -1607,7 +1607,7 @@ fun TambahPelangganScreen(
                                             // ========== NIK VALID - LANJUTKAN PROSES SIMPAN ==========
                                             isUploading = true
 
-                                            val currentUid = Firebase.auth.currentUser?.uid
+                                            val currentUid = SesiAktif.uidAktif()
                                             if (currentUid.isNullOrBlank()) {
                                                 Toast.makeText(
                                                     context,
@@ -1678,9 +1678,9 @@ fun TambahPelangganScreen(
                                                     isPinjamanDiubah = false,
                                                     tanggalPengajuan = tanggalPengajuan,
                                                     hasilSimulasiCicilan = simulasiCicilan,
-                                                    adminEmail = auth.currentUser?.email ?: "",
-                                                    adminUid = auth.currentUser?.uid ?: "",
-                                                    adminName = auth.currentUser?.displayName ?: "",
+                                                    adminEmail = SesiAktif.emailAktif() ?: "",
+                                                    adminUid = SesiAktif.uidAktif() ?: "",
+                                                    adminName = SesiAktif.namaAktif() ?: "",
                                                     catatan = catatan.trim(),
                                                     isSynced = false
                                                 )
@@ -1718,9 +1718,9 @@ fun TambahPelangganScreen(
                                                     isPinjamanDiubah = false,
                                                     tanggalPengajuan = tanggalPengajuan,
                                                     hasilSimulasiCicilan = simulasiCicilan,
-                                                    adminEmail = auth.currentUser?.email ?: "",
-                                                    adminUid = auth.currentUser?.uid ?: "",
-                                                    adminName = auth.currentUser?.displayName ?: "",
+                                                    adminEmail = SesiAktif.emailAktif() ?: "",
+                                                    adminUid = SesiAktif.uidAktif() ?: "",
+                                                    adminName = SesiAktif.namaAktif() ?: "",
                                                     catatan = catatan.trim(),
                                                     isSynced = false
                                                 )

@@ -74,7 +74,24 @@ object SupabaseClientProvider {
         // Auth wajib: seluruh tabel ber-RLS. Tanpa JWT pengguna, PostgREST
         // mengeksekusi query sebagai `anon` yang tidak punya policy apa pun
         // (002_rls_policies.sql §0) → hasil selalu kosong, bukan error jelas.
-        install(Auth)
+        //
+        // Ketiga nilai di bawah SUDAH menjadi default supabase-kt 2.2.3;
+        // ditulis eksplisit karena persistensi sesi bergantung padanya dan
+        // default yang tak terlihat sulit diperiksa saat menelusuri bug.
+        //
+        // `sessionManager` dibiarkan default = `SettingsSessionManager()`,
+        // yang di Android menulis ke SharedPreferences. Context aplikasinya
+        // didapat otomatis lewat androidx.startup: AAR gotrue-kt mendaftarkan
+        // `io.github.jan.supabase.gotrue.SupabaseInitializer` pada
+        // `androidx.startup.InitializationProvider` di manifesnya sendiri, dan
+        // manifes aplikasi ini tidak menghapusnya (tidak ada node="remove").
+        // Jadi TIDAK perlu Storage(memory)/Storage(file) apa pun di sini —
+        // sesi memang sudah tersimpan ke disk.
+        install(Auth) {
+            autoLoadFromStorage = true
+            autoSaveToStorage = true
+            alwaysAutoRefresh = true
+        }
         install(Postgrest) {
             defaultSchema = SCHEMA
         }

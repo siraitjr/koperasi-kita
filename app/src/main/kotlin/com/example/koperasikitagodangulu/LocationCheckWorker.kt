@@ -9,6 +9,7 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.work.*
 import com.example.koperasikitagodangulu.R
+import com.example.koperasikitagodangulu.SesiAktif
 import com.google.firebase.auth.ktx.auth
 import com.google.firebase.database.ktx.database
 import com.google.firebase.ktx.Firebase
@@ -105,7 +106,7 @@ class LocationCheckWorker(
 
     override suspend fun doWork(): Result {
         return try {
-            val uid = Firebase.auth.currentUser?.uid
+            val uid = SesiAktif.uidAktif()
             if (uid == null) {
                 Log.d(TAG, "⚠️ Not authenticated, skip")
                 return Result.success()

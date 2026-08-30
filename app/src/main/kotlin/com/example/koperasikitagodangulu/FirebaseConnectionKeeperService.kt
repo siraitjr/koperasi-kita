@@ -15,6 +15,7 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.example.koperasikitagodangulu.MainActivity
 import com.example.koperasikitagodangulu.R
+import com.example.koperasikitagodangulu.SesiAktif
 import com.google.firebase.auth.ktx.auth
 import com.google.firebase.database.DataSnapshot
 import com.google.firebase.database.DatabaseError
@@ -96,7 +97,7 @@ class FirebaseConnectionKeeperService : Service() {
         val notification = createStealthNotification()
         startForeground(NOTIFICATION_ID, notification)
 
-        val uid = Firebase.auth.currentUser?.uid
+        val uid = SesiAktif.uidAktif()
         if (uid == null) {
             Log.e(TAG, "❌ Not authenticated, stopping")
             stopSelf()
