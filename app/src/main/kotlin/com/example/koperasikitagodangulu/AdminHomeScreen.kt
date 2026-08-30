@@ -241,7 +241,7 @@ fun AdminHomeScreen(
                 // ✅ Fix 3B: bersihkan FCM token akun admin (await) sebelum signOut,
                 // supaya token lama tak menyangkut saat pimpinan login balik ke akunnya.
                 viewModel.logoutWithCleanup {
-                    auth.signOut()
+                    SesiAktif.keluarSerentak(context)
                     Toast.makeText(
                         context,
                         "Pimpinan mengambil alih akun Anda. Anda akan logout otomatis.",
@@ -495,7 +495,7 @@ fun AdminHomeScreen(
                         LocationCheckWorker.cancel(context)
                         // ✅ Fix 3B: hapus FCM token (await) sebelum signOut.
                         viewModel.logoutWithCleanup {
-                            auth.signOut()
+                            SesiAktif.keluarSerentak(context)
                             Toast.makeText(context, "Logout sukses", Toast.LENGTH_SHORT).show()
                             navController.navigate("auth") {
                                 popUpTo("dashboard") { inclusive = true }

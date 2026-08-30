@@ -99,7 +99,7 @@ fun PimpinanDashboardScreen(
             if (shouldLogout) {
                 // ✅ Fix 3B: hapus FCM token pimpinan (await) sebelum signOut.
                 viewModel.logoutWithCleanup {
-                    Firebase.auth.signOut()
+                    SesiAktif.keluarSerentak(context)
                     navController.navigate("auth") {
                         popUpTo(0) { inclusive = true }
                     }

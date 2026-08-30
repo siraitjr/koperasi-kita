@@ -340,7 +340,7 @@ fun PengawasTopBar(
                     // Profile/Logout Button
                     IconButton(onClick = {
                         viewModel.clearAllCaches()
-                        Firebase.auth.signOut()
+                        SesiAktif.keluarSerentak(context)
                         try {
                             navController.navigate("auth") {
                                 popUpTo(0) { inclusive = true }

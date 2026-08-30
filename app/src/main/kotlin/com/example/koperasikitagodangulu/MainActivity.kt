@@ -349,7 +349,7 @@ class MainActivity : ComponentActivity() {
                         } catch (_: Exception) {}
                         try { vm.stopForceLogoutListener() } catch (_: Exception) {}
                         try { vm.clearLocalData() } catch (_: Exception) {}
-                        Firebase.auth.signOut()
+                        SesiAktif.keluarSerentak(this@MainActivity.applicationContext)
                         android.widget.Toast.makeText(
                             this@MainActivity,
                             "Akun Anda baru saja login di perangkat lain. Anda keluar otomatis.",
@@ -805,7 +805,7 @@ class MainActivity : ComponentActivity() {
                         sharedPrefs.edit().remove("last_check_${uid}").apply()
 
                         // Sign out
-                        Firebase.auth.signOut()
+                        SesiAktif.keluarSerentak(this@MainActivity.applicationContext)
 
                         // Stop location tracking sebelum logout
                         FirebaseConnectionKeeperService.stop(this@MainActivity)

@@ -78,7 +78,12 @@ fun AuthScreen(
     val auth = Firebase.auth
     val focusManager = LocalFocusManager.current
 
-    var email by remember { mutableStateOf("") }
+    // Bagian "ingat saya" yang terlihat: email terakhir diisikan kembali agar
+    // staf tidak perlu mengetiknya tiap kali. Hanya email — sandinya tidak
+    // pernah disimpan. Dengan flag mati, nilainya "" persis seperti semula.
+    var email by remember {
+        mutableStateOf(if (SesiAktif.pakaiSupabase) SesiAktif.emailTersimpan(context) else "")
+    }
     var password by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
     var isLoading by remember { mutableStateOf(false) }
@@ -102,6 +107,72 @@ fun AuthScreen(
     // Auto login
     LaunchedEffect(Unit) {
         android.util.Log.d("AuthScreen", "🔍 viewModel is null: ${viewModel == null}")
+
+        // ── A-1 CUT-OVER AUTH — pemulihan sesi saat aplikasi dibuka ─────────
+        // Cermin dari jalur Firebase di bawah, dengan urutan pemeriksaan yang
+        // sama: force-logout → session lock → navigasi. Sengaja TIDAK memanggil
+        // proceedWithLogin, karena jalur auto-login Firebase pun tidak
+        // memanggilnya — listener dipasang di tempat lain saat aplikasi hidup.
+        if (SesiAktif.pakaiSupabase) {
+            if (SesiAktif.pulihkan(context)) {
+                val peran = SesiAktif.peran()
+                val uidLegacy = SesiAktif.uid().orEmpty()
+
+                // Peran tanpa layar Android, atau akun tanpa legacy_uid: sesi
+                // dibuang dan form login ditampilkan. Alasannya sama dengan di
+                // tombol login — lebih baik ditolak terang-terangan daripada
+                // masuk ke layar yang tidak bisa dipakai.
+                if (peran == UserRole.UNKNOWN || uidLegacy.isBlank()) {
+                    SesiAktif.keluar(context)
+                    isCheckingAuth = false
+                    isVisible = true
+                    return@LaunchedEffect
+                }
+
+                if (peran != UserRole.PENGAWAS && peran != UserRole.KOORDINATOR) {
+                    if (viewModel?.checkForceLogoutOnStartup() == true) {
+                        LocationTrackingMonitor.stopMonitoring()
+                        SesiAktif.keluar(context)
+                        Toast.makeText(
+                            context,
+                            "Password Anda telah diubah oleh Pengawas. Silakan login dengan password baru.",
+                            Toast.LENGTH_LONG
+                        ).show()
+                        isCheckingAuth = false
+                        isVisible = true
+                        return@LaunchedEffect
+                    }
+                }
+
+                if (peran == UserRole.ADMIN_LAPANGAN) {
+                    val lockedByName = viewModel?.checkSessionLock(uidLegacy)
+                    if (lockedByName != null) {
+                        LocationTrackingMonitor.stopMonitoring()
+                        SesiAktif.keluar(context)
+                        Toast.makeText(
+                            context,
+                            "Akun Anda sedang digunakan oleh $lockedByName. Silakan tunggu hingga selesai.",
+                            Toast.LENGTH_LONG
+                        ).show()
+                        isCheckingAuth = false
+                        isVisible = true
+                        return@LaunchedEffect
+                    }
+                }
+
+                when (peran) {
+                    UserRole.PENGAWAS -> navController.navigate("pengawas_dashboard") { popUpTo("auth") { inclusive = true } }
+                    UserRole.KOORDINATOR -> navController.navigate("koordinator_dashboard") { popUpTo("auth") { inclusive = true } }
+                    UserRole.PIMPINAN -> navController.navigate("pimpinan_dashboard") { popUpTo("auth") { inclusive = true } }
+                    UserRole.ADMIN_LAPANGAN, UserRole.UNKNOWN -> navController.navigate("dashboard") { popUpTo("auth") { inclusive = true } }
+                }
+            } else {
+                isCheckingAuth = false
+                isVisible = true
+            }
+            return@LaunchedEffect
+        }
+
         val currentUser = auth.currentUser
         if (currentUser != null && currentUser.providerData.any { it.providerId == "password" }) {
             val userRole = getUserRole(context)
@@ -359,6 +430,111 @@ fun AuthScreen(
                                 }
 
                                 isLoading = true
+
+                                // ── A-1 CUT-OVER AUTH ────────────────────
+                                // Jalur Supabase HANYA aktif bila flag build
+                                // AUTH_SUPABASE menyala. Default mati, jadi
+                                // APK produksi tetap lewat Firebase persis
+                                // seperti sebelumnya — commit ini tidak
+                                // mengubah apa pun sampai dinyalakan sadar.
+                                if (SesiAktif.pakaiSupabase) {
+                                    kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main).launch {
+                                        try {
+                                            // `true`: layar ini tidak punya kotak
+                                            // centang "ingat saya", dan Firebase
+                                            // selama ini memang selalu menyimpan
+                                            // sesi. Menyalakannya di sini menjaga
+                                            // perilaku itu 1:1. Yang disimpan hanya
+                                            // email + penanda, tidak pernah sandi
+                                            // (SesiAktif §"Ingat saya").
+                                            val p = SesiAktif.masuk(context, email, password, true)
+
+                                            // Session lock tetap diperiksa —
+                                            // aturannya soal siapa yang boleh
+                                            // memakai akun, bukan soal sistem
+                                            // auth mana yang dipakai. UID yang
+                                            // dipakai adalah UID LEGACY, karena
+                                            // node session_lock RTDB berkunci
+                                            // itu.
+                                            if (p.peran == UserRole.ADMIN_LAPANGAN && p.uidLegacy.isNotBlank()) {
+                                                val lockedByName = viewModel?.checkSessionLock(p.uidLegacy)
+                                                if (lockedByName != null) {
+                                                    SesiAktif.keluar(context)
+                                                    isLoading = false
+                                                    Toast.makeText(
+                                                        context,
+                                                        "Akun Anda sedang digunakan oleh $lockedByName. Silakan tunggu hingga selesai.",
+                                                        Toast.LENGTH_LONG
+                                                    ).show()
+                                                    return@launch
+                                                }
+                                            }
+
+                                            // Tanpa legacy_uid, seluruh path
+                                            // RTDB dan kunci warisan tidak
+                                            // punya nilai yang benar. Ditolak
+                                            // di sini alih-alih dibiarkan
+                                            // masuk lalu menampilkan layar
+                                            // kosong tanpa sebab yang terlihat.
+                                            if (p.uidLegacy.isBlank()) {
+                                                SesiAktif.keluar(context)
+                                                isLoading = false
+                                                Toast.makeText(
+                                                    context,
+                                                    "Akun ini belum punya legacy_uid (022). Hubungi Pengawas.",
+                                                    Toast.LENGTH_LONG
+                                                ).show()
+                                                return@launch
+                                            }
+
+                                            // Peran yang belum punya layar Android
+                                            // (kasir_unit, sekretaris, …). Ditolak
+                                            // dengan jelas, bukan dilempar ke layar
+                                            // admin yang setiap tindakannya akan
+                                            // ditolak RLS.
+                                            if (p.peran == UserRole.UNKNOWN) {
+                                                SesiAktif.keluar(context)
+                                                isLoading = false
+                                                Toast.makeText(
+                                                    context,
+                                                    "Peran Anda belum didukung di aplikasi Android. Gunakan web.",
+                                                    Toast.LENGTH_LONG
+                                                ).show()
+                                                return@launch
+                                            }
+
+                                            isLoading = false
+
+                                            // Sengaja memakai `proceedWithLogin` yang
+                                            // sama persis dengan jalur Firebase, bukan
+                                            // navigasi sendiri. Fungsi itu bukan sekadar
+                                            // berpindah layar: ia memasang listener
+                                            // force-logout, listener remote-takeover,
+                                            // sesi single-device, dan inisialisasi peran.
+                                            // Menavigasi langsung akan menghasilkan login
+                                            // yang TAMPAK berhasil dengan seluruh
+                                            // subsistem sesi mati diam-diam.
+                                            //
+                                            // ⚠ Keempat pemanggilan di dalamnya membaca
+                                            //   `Firebase.auth.currentUser?.uid` dan
+                                            //   ber-`?: return` (PelangganViewModel.kt
+                                            //   :16581, :16495, :7730). Selama flag menyala
+                                            //   tetapi sapuan 27 berkas (030 §3) belum
+                                            //   dikerjakan, keempatnya no-op TANPA galat.
+                                            //   Ini alasan konkret kenapa flag ini belum
+                                            //   boleh menyala di produksi.
+                                            proceedWithLogin(
+                                                context, auth, navController, viewModel,
+                                                p.email, p.peran, p.uidLegacy
+                                            )
+                                        } catch (e: Exception) {
+                                            isLoading = false
+                                            Toast.makeText(context, e.message ?: "Gagal masuk", Toast.LENGTH_LONG).show()
+                                        }
+                                    }
+                                    return@Button
+                                }
+
                                 auth.signInWithEmailAndPassword(email, password)
                                     .addOnCompleteListener { task ->
                                         if (task.isSuccessful) {

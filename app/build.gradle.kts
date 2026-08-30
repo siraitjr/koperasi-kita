@@ -44,6 +44,20 @@ android {
             "String", "SUPABASE_URL",
             "\"${project.findProperty("SUPABASE_URL") ?: System.getenv("SUPABASE_URL") ?: ""}\""
         )
+        // SAKELAR CUT-OVER AUTH ANDROID (A-1).
+        // Default FALSE: build produksi tetap memakai Firebase Auth, jadi
+        // menarik commit ini TIDAK mengubah perilaku APK yang dirilis.
+        // Nyalakan untuk build uji:
+        //   ./gradlew assembleDebug -PAUTH_SUPABASE=true
+        // Dinormalkan ke "true"/"false": nilai apa pun selain "true" dianggap
+        // mati. Tanpa ini, `-PAUTH_SUPABASE=ya` akan disisipkan apa adanya ke
+        // BuildConfig dan menggagalkan kompilasi dengan pesan yang tidak
+        // menyebut flag ini sama sekali.
+        buildConfigField(
+            "boolean", "AUTH_SUPABASE",
+            (project.findProperty("AUTH_SUPABASE") ?: System.getenv("AUTH_SUPABASE") ?: "false")
+                .toString().trim().equals("true", ignoreCase = true).toString()
+        )
         buildConfigField(
             "String", "SUPABASE_ANON_KEY",
             "\"${project.findProperty("SUPABASE_ANON_KEY") ?: System.getenv("SUPABASE_ANON_KEY") ?: ""}\""

@@ -527,7 +527,7 @@ fun PimpinanTopBar(
                             viewModel.clearAdminPhotoCache()
                             LocationTrackingMonitor.stopMonitoring()
                             LocationCheckWorker.cancel(context)
-                            Firebase.auth.signOut()
+                            SesiAktif.keluarSerentak(context)
                             try {
                                 navController.navigate("auth") {
                                     popUpTo(0) { inclusive = true }
