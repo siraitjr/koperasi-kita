@@ -73,6 +73,8 @@ import kotlinx.serialization.json.jsonObject
 object SesiAktif {
 
     private const val TAG = "SesiAktif"
+    // `adb logcat -s KELUAR` untuk menelusuri alur logout langkah demi langkah.
+    private const val TAG_KELUAR = "KELUAR"
     private const val PREFS = "user_prefs"
 
     // Kunci "ingat saya" — disimpan di SharedPreferences yang sama dengan
@@ -101,6 +103,29 @@ object SesiAktif {
     // Keadaan dalam memori. Diisi saat masuk / pulihkan, dibaca 141 tempat.
     // ---------------------------------------------------------------------
     @Volatile private var profil: Profil? = null
+
+    /**
+     * Menandai bahwa logout sedang berjalan tetapi `signOut()` di jaringan
+     * BELUM selesai.
+     *
+     * KENAPA PERLU (logout nyangkut di dasbor kosong)
+     * ---------------------------------------------------------------------
+     * `keluarSerentak()` membersihkan keadaan memori secara sinkron, lalu
+     * memanggil `auth.signOut()` di latar. Pemanggilnya langsung
+     * `navigate("auth")`. AuthScreen kemudian menjalankan `pulihkan()` —
+     * dan pada saat itu sesi Supabase MASIH ADA di penyimpanan, karena
+     * signOut-nya belum selesai. Jadi `pulihkan()` mengembalikan true dan
+     * layar login memantulkan pengguna KEMBALI ke dasbor.
+     *
+     * Dasbornya kosong karena keadaan ViewModel sudah dibersihkan. Itulah
+     * gejala "logout tidak langsung ke login screen", dan itu pula sebabnya
+     * swipe-close menyembuhkannya: saat aplikasi dibuka lagi, signOut sudah
+     * lama selesai.
+     *
+     * Batas waktu 4 detik di `logoutWithCleanup` tidak menyentuh ini sama
+     * sekali — balapannya terjadi SESUDAH callback itu berjalan.
+     */
+    @Volatile private var sedangKeluar = false
 
     data class Profil(
         val uidSupabase: String,
@@ -207,6 +232,8 @@ object SesiAktif {
      * Melempar Exception berpesan Indonesia agar bisa langsung ditampilkan.
      */
     suspend fun masuk(context: Context, email: String, sandi: String, ingatSaya: Boolean): Profil {
+        // Login baru mengakhiri logout mana pun yang masih tercatat berjalan.
+        sedangKeluar = false
         val klien = SupabaseClientProvider.client()
 
         try {
@@ -357,6 +384,16 @@ object SesiAktif {
      */
     suspend fun pulihkan(context: Context): Boolean {
         if (!pakaiSupabase) return false
+
+        // Logout sedang berjalan: jangan pulihkan apa pun, walau sesinya masih
+        // terbaca di penyimpanan. Tanpa ini, layar login memantulkan pengguna
+        // kembali ke dasbor yang baru saja ditinggalkannya.
+        if (sedangKeluar) {
+            Log.d(TAG_KELUAR, "↩︎ pulihkan() ditolak: logout masih berjalan")
+            profil = null
+            return false
+        }
+
         return try {
             val klien = SupabaseClientProvider.client()
 
@@ -430,20 +467,37 @@ object SesiAktif {
      * produksi persis sama seperti sebelum commit ini.
      */
     fun keluarSerentak(context: Context) {
+        Log.d(TAG_KELUAR, "1) keluarSerentak dipanggil (pakaiSupabase=$pakaiSupabase)")
         runCatching { com.google.firebase.auth.FirebaseAuth.getInstance().signOut() }
             .onFailure { Log.e(TAG, "signOut Firebase gagal: ${it.message}") }
 
         if (!pakaiSupabase) return
+
+        // Ditandai SEBELUM apa pun yang asinkron, dan sebelum pemanggil
+        // sempat bernavigasi. Inilah yang menutup balapan.
+        sedangKeluar = true
 
         // Keadaan dalam memori dibersihkan SEKARANG (sinkron), supaya tidak ada
         // celah waktu di mana layar sudah pindah ke login tetapi `uid()` masih
         // mengembalikan nilai. Panggilan jaringan menyusul di latar.
         profil = null
         bersihkan(context)
+        Log.d(TAG_KELUAR, "2) keadaan memori dibersihkan, signOut Supabase dimulai di latar")
+
         kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
-            runCatching { SupabaseClientProvider.client().auth.signOut() }
-                .onFailure { Log.e(TAG, "signOut Supabase gagal: ${it.message}") }
-            SupabaseClientProvider.reset()
+            try {
+                runCatching { SupabaseClientProvider.client().auth.signOut() }
+                    .onFailure { Log.e(TAG, "signOut Supabase gagal: ${it.message}") }
+                SupabaseClientProvider.reset()
+                Log.d(TAG_KELUAR, "3) signOut Supabase selesai, klien di-reset")
+            } finally {
+                // `finally`: kalau signOut gagal, penanda ini TETAP dilepas.
+                // Membiarkannya menyala akan membuat pengguna tidak pernah bisa
+                // memulihkan sesi lagi sampai aplikasi dimatikan — menukar satu
+                // bug dengan bug yang lebih buruk.
+                sedangKeluar = false
+                Log.d(TAG_KELUAR, "4) penanda sedangKeluar dilepas")
+            }
         }
     }
 
