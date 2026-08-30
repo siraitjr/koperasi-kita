@@ -169,7 +169,12 @@ fun TambahPelangganScreen(
         systemUiController.setNavigationBarColor(bgColor, darkIcons = !isDark)
     }
 
-    val currentUser = auth.currentUser
+    // Bukan `auth.currentUser`: dengan jalur Supabase tidak ada sesi Firebase,
+    // sehingga nilainya selalu null dan penjagaan di bawah menutup layar ini
+    // sekitar 2 detik setelah dibuka. Itulah "tambah nasabah crash" di UAT —
+    // tidak ada crash, tidak ada hubungannya dengan jalur tulis; layarnya
+    // memang memulangkan diri sendiri.
+    val currentUser = SesiAktif.penggunaAktif()
     var tipePinjaman by remember { mutableStateOf("dibawah_3jt") }
     var namaKtpSuami by remember { mutableStateOf("") }
     var namaKtpIstri by remember { mutableStateOf("") }
@@ -369,7 +374,7 @@ fun TambahPelangganScreen(
             // Jangan langsung redirect - coba tunggu token refresh dulu
             kotlinx.coroutines.delay(2000)
             // Re-check setelah delay
-            if (com.google.firebase.ktx.Firebase.auth.currentUser == null) {
+            if (!SesiAktif.adaSesi()) {
                 navController.popBackStack() // Kembali ke screen sebelumnya, JANGAN ke auth
             }
         } else {

@@ -66,6 +66,7 @@ import com.google.firebase.functions.ktx.functions
 import com.google.firebase.database.ServerValue
 import android.content.SharedPreferences
 import com.example.koperasikitagodangulu.offline.OfflineRepository
+import com.example.koperasikitagodangulu.offline.SupabaseIds
 import com.example.koperasikitagodangulu.offline.UserManagementApi
 import com.example.koperasikitagodangulu.offline.SyncWorker
 import com.example.koperasikitagodangulu.offline.SyncStatus
@@ -1261,7 +1262,12 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                 // PENTING: Agar optimal di server, tambahkan .indexOn: ["nomorAnggota"] di rules
                 //          pada path pelanggan/$uid
                 var maxFromFirebase = 0
-                if (isOnline()) {
+                // Langkah RTDB dilewati pada jalur Supabase: tanpa sesi Firebase
+                // ia hanya menghabiskan jatah 5 detik lalu mengembalikan 0.
+                // Kebenarannya tidak bergantung padanya — `maxFromLocal` dihitung
+                // dari `daftarPelanggan` yang kini berisi seluruh nasabah dari
+                // Supabase, jadi maxOf() di bawah tetap benar.
+                if (!SesiAktif.pakaiSupabase && isOnline()) {
                     try {
                         maxFromFirebase = kotlinx.coroutines.withTimeoutOrNull(5000L) {
                             val snapshot = database.child("pelanggan").child(currentUid)
@@ -8366,6 +8372,32 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     return@launch
                 }
 
+                // ── FASE 2: hapus lewat antrean, bukan RTDB langsung ────────
+                // `removeValue()` di bawah menembak RTDB langsung — melewati
+                // antrean offline. Tanpa sesi Firebase ia tidak gagal cepat:
+                // SDK mengantrekannya dan terus mencoba, jadi KEDUA listener di
+                // bawah tidak pernah dipanggil dan penghapusan menggantung
+                // tanpa pesan apa pun.
+                //
+                // Jalur antrean memutar operasi ini ke `arsipkanNasabah` —
+                // SOFT DELETE lewat RPC (007), bukan DELETE baris. Itu memang
+                // yang benar dan bukan kompromi: `pembayaran` dan
+                // `jurnal_transaksi` menunjuk ke nasabah dengan FK
+                // `on delete restrict`, jadi menghapus barisnya berarti
+                // menghapus jejak keuangan yang justru wajib disimpan.
+                if (SesiAktif.pakaiSupabase) {
+                    offlineRepo.removePelanggan(adminUid, pelangganId)
+
+                    val index = daftarPelanggan.indexOfFirst { it.id == pelangganId }
+                    if (index != -1) daftarPelanggan.removeAt(index)
+                    loadDashboardData()
+                    simpanKeLokal()
+
+                    Log.d("FASE2", "✅ Hapus nasabah diantrekan (soft delete): $pelangganId")
+                    onSuccess?.invoke()
+                    return@launch
+                }
+
                 // Hapus dari Firebase
                 database.child("pelanggan").child(adminUid).child(pelangganId)
                     .removeValue()
@@ -9358,6 +9390,23 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                 isLoading.value = true
                 Log.d("FASE1", "→ muatDaftarPelangganSupabase() mulai " +
                     "(peran=${SesiAktif.peran()}, uidSupabase=${SesiAktif.uidSupabase()})")
+
+                // Pemeriksaan sekali jalan yang murah, dipasang demi jalur TULIS.
+                // `SupabaseMappers.barisNasabah` mengisi `admin_id` dengan
+                // SupabaseIds.user(legacyUid) — uuidv5, rumus yang sama dengan
+                // migrate.js:97. Bila hasilnya tidak sama dengan id GoTrue yang
+                // sedang masuk, setiap INSERT nasabah baru akan ditolak sebagai
+                // pelanggaran foreign key ke app_user — galat yang bunyinya
+                // sama sekali tidak menyebut sebab ini.
+                val legacy = SesiAktif.uid()
+                val sb = SesiAktif.uidSupabase()
+                if (!legacy.isNullOrBlank() && !sb.isNullOrBlank()) {
+                    val turunan = SupabaseIds.user(legacy)
+                    if (turunan != sb) {
+                        Log.e("FASE2", "❌ admin_id turunan ($turunan) ≠ id GoTrue ($sb). " +
+                            "INSERT nasabah baru akan ditolak FK. Periksa app_user.legacy_uid.")
+                    }
+                }
 
                 val idSupabase = if (SesiAktif.peran() == UserRole.ADMIN_LAPANGAN) {
                     SesiAktif.uidSupabase()
@@ -11146,17 +11195,37 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
      */
     fun logoutWithCleanup(onComplete: () -> Unit) {
         viewModelScope.launch {
-            try {
-                NotificationHelper.clearTokenOnLogout()
-                Log.d("FCM", "✅ FCM token cleared (logoutWithCleanup)")
-            } catch (e: Exception) {
-                Log.e("FCM", "❌ Error clearing FCM token: ${e.message}")
-            }
-            try {
-                clearCachesInternal()
-            } catch (e: Exception) {
-                Log.e("Cache", "❌ Error clearing caches: ${e.message}")
-            }
+            // ⏱ SELURUH pembersihan dibatasi waktu, dan `onComplete` dijamin
+            // tetap dipanggil. Ini yang memperbaiki "logout intermittent".
+            //
+            // Sebabnya: `clearTokenOnLogout()` memanggil
+            // `fcm_tokens/{uid}.removeValue().await()`. Tulis RTDB tanpa
+            // autentikasi TIDAK gagal cepat — SDK Firebase mengantrekannya
+            // secara lokal dan terus mencoba, dan Task-nya baru selesai bila
+            // server mengakui. Tanpa sesi Firebase pengakuan itu tidak akan
+            // pernah datang, jadi `await()` menggantung SELAMANYA dan
+            // `onComplete()` — yang berisi navigasi ke layar login — tidak
+            // pernah dijalankan. Pengguna tertinggal di dasbor kosong.
+            //
+            // Kadang-kadang saja karena kadang server sempat menolak dengan
+            // cepat (tersambung) dan kadang tidak (terputus → antre selamanya).
+            //
+            // Pembersihan yang gagal bukan alasan menahan seseorang tetap
+            // masuk: batas waktunya berlaku untuk KEDUA jalur.
+            withTimeoutOrNull(4000L) {
+                try {
+                    NotificationHelper.clearTokenOnLogout()
+                    Log.d("FCM", "✅ FCM token cleared (logoutWithCleanup)")
+                } catch (e: Exception) {
+                    Log.e("FCM", "❌ Error clearing FCM token: ${e.message}")
+                }
+                try {
+                    clearCachesInternal()
+                } catch (e: Exception) {
+                    Log.e("Cache", "❌ Error clearing caches: ${e.message}")
+                }
+            } ?: Log.w("Logout", "⚠️ Pembersihan logout melewati 4 detik — dilanjutkan agar tidak menggantung")
+
             withContext(Dispatchers.Main) { onComplete() }
         }
     }

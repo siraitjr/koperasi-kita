@@ -167,7 +167,12 @@ object NotificationHelper {
      * benar-benar dihapus dulu sebelum login berikutnya fetch token baru.
      */
     suspend fun clearTokenOnLogout() {
-        val currentUser = SesiAktif.penggunaAktif()
+        // Jalur Supabase: node `fcm_tokens` ada di RTDB dan tidak bisa ditulis
+        // tanpa sesi Firebase. Bukan cuma sia-sia — tulis RTDB tanpa autentikasi
+        // DIANTREKAN oleh SDK, bukan ditolak cepat, sehingga `await()` di bawah
+        // bisa menggantung selamanya dan menahan seluruh alur logout.
+        // (Pemanggilnya kini juga berbatas waktu; ini menutup sumbernya.)
+        val currentUser = if (SesiAktif.pakaiSupabase) null else SesiAktif.penggunaAktif()
         if (currentUser != null) {
             val uid = currentUser.uid
             val database = Firebase.database("https://koperasikitagodangulu-default-rtdb.asia-southeast1.firebasedatabase.app").reference

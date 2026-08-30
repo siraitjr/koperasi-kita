@@ -2,6 +2,7 @@ package com.example.koperasikitagodangulu.offline
 
 import android.content.Context
 import android.util.Log
+import com.example.koperasikitagodangulu.BuildConfig
 
 /**
  * =========================================================================
@@ -43,6 +44,25 @@ object SyncBackend {
 
     fun aktif(context: Context): Tujuan {
         cache?.let { return it }
+        // ── FASE 2 ────────────────────────────────────────────────────────
+        // Bila login sudah lewat Supabase, tujuan tulis TIDAK BOLEH Firebase.
+        // Alasan rollback yang melahirkan sakelar SharedPreferences ini
+        // (rollback_plan.md §3.4) sudah tidak berlaku: tanpa sesi Firebase,
+        // RTDB tidak bisa ditulis sama sekali, jadi tidak ada tujuan lama untuk
+        // dituju kembali. Membiarkan default FIREBASE berarti setiap operasi
+        // mengantre selamanya di Room tanpa pernah sampai ke mana pun —
+        // gagal diam-diam, bentuk kegagalan paling mahal.
+        if (BuildConfig.AUTH_SUPABASE) {
+            val efektifAuth = if (SupabaseClientProvider.isConfigured) {
+                Tujuan.SUPABASE
+            } else {
+                Log.e(TAG, "❌ AUTH_SUPABASE menyala tetapi endpoint belum dikonfigurasi")
+                Tujuan.FIREBASE
+            }
+            cache = efektifAuth
+            return efektifAuth
+        }
+
         val prefs = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val nama = prefs.getString(KEY, Tujuan.FIREBASE.name) ?: Tujuan.FIREBASE.name
         val hasil = runCatching { Tujuan.valueOf(nama) }.getOrDefault(Tujuan.FIREBASE)
