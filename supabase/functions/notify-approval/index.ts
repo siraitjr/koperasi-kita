@@ -157,9 +157,14 @@ Deno.serve(async (req) => {
             // Semua nilai WAJIB string di FCM v1.
             data: {
               type: 'approval',
+              // `screen` dibaca Android untuk memutuskan layar tujuan saat
+              // notifikasi disentuh. Dipisah dari `type` supaya penambahan
+              // jenis notifikasi lain nanti tidak perlu mengubah navigasinya.
+              screen: 'approval',
               phase: String(phase),
               pengajuan_id: String(pengajuan_id ?? ''),
               pinjaman_id: String(pinjaman_id ?? ''),
+              cabang_id: String(cabang_id ?? ''),
               final_decision: String(final_decision ?? ''),
             },
             android: { priority: 'HIGH' },

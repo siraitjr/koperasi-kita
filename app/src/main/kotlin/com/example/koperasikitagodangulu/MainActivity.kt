@@ -568,6 +568,38 @@ class MainActivity : ComponentActivity() {
         Log.d(TAG, "   pelangganId: '$pelangganId'")
 
         // =====================================================================
+        // DEEP LINK APPROVAL (notifikasi dari Edge Function notify-approval)
+        // =====================================================================
+        // Dipisah dari `notificationType` di bawah dan diperiksa LEBIH DULU.
+        // Notifikasi lama memakai kode tipe (`NEW_PENGAJUAN`, dst) yang
+        // berbeda per peran; notifikasi Supabase membawa `phase`, yang sudah
+        // menentukan layar DAN tab-nya tanpa perlu menebak peran penerima.
+        // Memetakan dari `phase` berarti satu aturan, bukan lima kode tipe
+        // yang harus dijaga tetap selaras dengan rantai approval.
+        val screen = intent.getStringExtra("screen") ?: ""
+        val phase = intent.getStringExtra("phase") ?: ""
+        if (screen == "approval" && phase.isNotEmpty()) {
+            val tujuan = when (phase) {
+                "awaiting_pimpinan" -> "pimpinan_approvals" to 0
+                "awaiting_pimpinan_final" -> "pimpinan_approvals" to 1
+                "awaiting_koordinator" -> "koordinator_approvals" to 0
+                "awaiting_koordinator_final" -> "koordinator_approvals" to 1
+                "awaiting_pengawas" -> "pengawas_approvals" to 0
+                else -> null
+            }
+            if (tujuan != null) {
+                Log.d(TAG, "🎯 Deep link approval: phase=$phase → ${tujuan.first} (tab ${tujuan.second})")
+                pendingPelangganId = pelangganId
+                pendingTab = tujuan.second
+                pendingNavigationRoute = tujuan.first
+                return
+            }
+            // `completed` atau fase tak dikenal: tidak ada layar tujuan.
+            // Dibiarkan jatuh ke logika lama alih-alih memaksa navigasi.
+            Log.d(TAG, "ℹ️ Deep link approval tanpa tujuan untuk phase=$phase")
+        }
+
+        // =====================================================================
         // TENTUKAN NOTIFICATION TYPE
         // Prioritas: FCM data payload > PendingIntent
         // =====================================================================

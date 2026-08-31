@@ -107,6 +107,27 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
 
         when (type) {
             // =========================================================================
+            // NOTIFIKASI DARI EDGE FUNCTION notify-approval (Supabase)
+            // =========================================================================
+            // Tanpa cabang ini, `type = "approval"` tidak cocok dengan satu pun
+            // kode lama, sehingga saat aplikasi TERBUKA tidak ada notifikasi
+            // yang ditampilkan sama sekali. Saat aplikasi di latar, sistem
+            // menampilkannya sendiri dari blok `notification` — perbedaan yang
+            // mudah menyesatkan waktu menguji.
+            "approval" -> {
+                showNotification(
+                    title = data["title"] ?: "Pengajuan menunggu tindakan",
+                    body = message.ifBlank { "Buka untuk meninjau pengajuan." },
+                    type = type,
+                    pelangganId = pelangganId,
+                    pelangganNama = pelangganNama,
+                    channelId = CHANNEL_PENGAJUAN,
+                    screen = data["screen"] ?: "",
+                    phase = data["phase"] ?: ""
+                )
+            }
+
+            // =========================================================================
             // NOTIFIKASI UNTUK PIMPINAN
             // =========================================================================
             "NEW_PENGAJUAN" -> {
@@ -355,7 +376,11 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
         type: String,
         pelangganId: String,
         pelangganNama: String,
-        channelId: String = CHANNEL_GENERAL
+        channelId: String = CHANNEL_GENERAL,
+        // Deep link approval. Berdefault kosong supaya seluruh pemanggil lama
+        // tidak berubah perilakunya sama sekali.
+        screen: String = "",
+        phase: String = ""
     ) {
         Log.d(TAG, "🔔 Creating notification:")
         Log.d(TAG, "   Title: $title")
@@ -374,6 +399,14 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
             putExtra("type", type)  // Juga set "type" untuk konsistensi
             putExtra("pelangganId", pelangganId)
             putExtra("pelangganNama", pelangganNama)
+
+            // Diteruskan apa adanya untuk deep link approval. Saat aplikasi di
+            // latar, sistem menaruh data payload langsung ke extras; saat di
+            // depan, PendingIntent inilah satu-satunya pembawanya — tanpa dua
+            // baris ini notifikasi yang tiba saat aplikasi terbuka tidak akan
+            // membuka layar apa pun.
+            if (screen.isNotEmpty()) putExtra("screen", screen)
+            if (phase.isNotEmpty()) putExtra("phase", phase)
         }
 
         val requestCode = System.currentTimeMillis().toInt()
