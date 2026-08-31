@@ -9,6 +9,7 @@ import io.github.jan.supabase.createSupabaseClient
 // baru ada sejak 3.x — memakainya di sini akan gagal resolve.
 // Diverifikasi dari isi gotrue-kt-android-2.2.3.aar:
 //   io/github/jan/supabase/gotrue/Auth.class
+import io.github.jan.supabase.functions.Functions
 import io.github.jan.supabase.gotrue.Auth
 import io.github.jan.supabase.postgrest.Postgrest
 import io.github.jan.supabase.realtime.Realtime
@@ -97,6 +98,13 @@ object SupabaseClientProvider {
         }
         install(Storage)
         install(Realtime)
+        // WAJIB untuk Kelola User: UserManagementApi memanggil
+        // `client().functions(...)`, dan accessor plugin di supabase-kt
+        // melempar bila pluginnya tidak dipasang. Dependensi `functions-kt`
+        // sudah ada di build.gradle sejak awal (baris 246) — yang tertinggal
+        // hanya pemasangannya di sini, sehingga SETIAP aksi Kelola User
+        // gagal sebelum sempat mengirim permintaan.
+        install(Functions)
     }
 
     /** Untuk logout / ganti akun: paksa klien dibuat ulang. */

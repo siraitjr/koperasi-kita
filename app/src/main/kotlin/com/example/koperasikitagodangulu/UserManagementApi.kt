@@ -2,6 +2,7 @@ package com.example.koperasikitagodangulu.offline
 
 import android.content.Context
 import android.util.Log
+import com.example.koperasikitagodangulu.SesiAktif
 import com.google.firebase.functions.FirebaseFunctions
 import com.google.gson.Gson
 import io.github.jan.supabase.functions.functions
@@ -102,6 +103,14 @@ object UserManagementApi {
         aksi: String,
         payload: Map<String, Any?>
     ): Map<String, Any>? {
+        // Tanpa sesi yang siap, SDK melampirkan kunci anon alih-alih JWT
+        // pengguna, dan Edge Function menolaknya sebagai bukan-Pengawas —
+        // pesannya akan berbunyi "permission denied", seolah wewenangnya
+        // kurang padahal tokennya yang belum siap.
+        if (!SesiAktif.pastikanSesiSiap()) {
+            throw Exception("internal: sesi belum siap, coba lagi sesaat lagi")
+        }
+
         val body = buildJsonObject {
             put("action", JsonPrimitive(aksi))
             payload.forEach { (k, v) ->
