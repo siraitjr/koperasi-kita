@@ -12,6 +12,12 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import com.example.koperasikitagodangulu.R
 import com.example.koperasikitagodangulu.SesiAktif
+import kotlinx.serialization.json.put
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.coroutines.launch
+import io.github.jan.supabase.postgrest.postgrest
+import com.example.koperasikitagodangulu.offline.SupabaseClientProvider
 import com.google.firebase.auth.ktx.auth
 import com.google.firebase.database.ktx.database
 import com.google.firebase.ktx.Firebase
@@ -133,6 +139,45 @@ object NotificationHelper {
      * Simpan FCM token ke Firebase Database
      */
     fun saveTokenToDatabase(token: String) {
+        // ── BUG 7(c) ─────────────────────────────────────────────────────
+        // Node RTDB `fcm_tokens` tidak bisa ditulis tanpa sesi Firebase, dan
+        // kegagalannya DIAM: tulis RTDB tanpa auth diantrekan SDK, bukan
+        // ditolak. Akibatnya token tidak pernah tersimpan dan tidak ada satu
+        // pun notifikasi yang bisa dikirim — tanpa gejala di layar.
+        if (SesiAktif.pakaiSupabase) {
+            val uid = SesiAktif.uidSupabase()
+            if (uid.isNullOrBlank()) {
+                Log.w(TAG, "⚠️ Belum ada uid Supabase — token belum disimpan")
+                return
+            }
+            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                try {
+                    if (!SesiAktif.pastikanSesiSiap()) {
+                        Log.w(TAG, "⚠️ Sesi belum siap — token belum disimpan")
+                        return@launch
+                    }
+                    // upsert: satu baris per (user, token). Perangkat kedua
+                    // TIDAK menghapus token perangkat pertama — di RTDB itu
+                    // terjadi diam-diam dan membuat perangkat lama berhenti
+                    // menerima notifikasi.
+                    SupabaseClientProvider.client().postgrest
+                        .from("fcm_token")
+                        .upsert(
+                            buildJsonObject {
+                                put("user_id", JsonPrimitive(uid))
+                                put("token", JsonPrimitive(token))
+                                put("platform", JsonPrimitive("android"))
+                            },
+                            onConflict = "user_id,token"
+                        )
+                    Log.d(TAG, "✅ FCM token tersimpan di Supabase untuk $uid")
+                } catch (e: Exception) {
+                    Log.e(TAG, "❌ Gagal menyimpan FCM token ke Supabase: ${e.message}")
+                }
+            }
+            return
+        }
+
         val currentUser = SesiAktif.penggunaAktif()
         if (currentUser != null) {
             val uid = currentUser.uid
