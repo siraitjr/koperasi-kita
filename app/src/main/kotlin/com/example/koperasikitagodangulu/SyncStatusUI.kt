@@ -159,6 +159,7 @@ fun SyncStatusBar(
     // Ditampilkan terpisah dgn penjelasan + aksi "Buang". Default 0 = back-compat.
     rejectedCount: Int = 0,
     onDiscardRejectedClick: (() -> Unit)? = null,
+    onRequeueRejectedClick: (() -> Unit)? = null,
     // Aksi manual user di project ini HANYA "Coba Lagi" (untuk FAILED). PENDING
     // diserahkan ke auto-sync (WorkManager + NetworkChangeWorker +
     // SyncForegroundService) — tidak ada parameter onSyncClick di sini.
@@ -258,8 +259,14 @@ fun SyncStatusBar(
 
                 if (rejectedCount > 0) {
                     Text(
-                        text = "Data lama tidak lolos aturan keamanan (versi aplikasi lama). " +
-                               "Perbarui aplikasi, lalu tekan Buang. Data nasabah di server tidak terpengaruh.",
+                        // Teks lama menyuruh menekan "Buang" — dan itu MENGHAPUS
+                        // pembayaran nyata yang sudah dicatat di lapangan.
+                        // Penolakan ternyata bisa juga disebabkan token yang
+                        // kedaluwarsa (PGRST301) yang dulu salah digolongkan
+                        // permanen, jadi "coba lagi" harus dicoba LEBIH DULU.
+                        text = "$rejectedCount data ditolak server. Tekan \"Coba Lagi\" dulu — " +
+                               "penolakan bisa disebabkan sesi kedaluwarsa, bukan datanya. " +
+                               "Gunakan \"Buang\" hanya bila Coba Lagi tetap gagal.",
                         color = textColor.copy(alpha = 0.75f),
                         fontSize = 11.sp
                     )
@@ -283,6 +290,16 @@ fun SyncStatusBar(
             // project: tidak ada manual sync untuk tugas latar umum).
             // REJECTED tidak punya "Coba Lagi" (server pasti menolak lagi) —
             // hanya "Buang" agar antrean bersih & badge tidak merah selamanya.
+            if (rejectedCount > 0 && onRequeueRejectedClick != null) {
+                TextButton(onClick = onRequeueRejectedClick) {
+                    Text(
+                        text = "Coba Lagi",
+                        color = textColor,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+
             if (rejectedCount > 0 && onDiscardRejectedClick != null) {
                 TextButton(onClick = onDiscardRejectedClick) {
                     Text(
@@ -651,7 +668,15 @@ fun SyncStatusBlock(modifier: Modifier = Modifier) {
         // Klik bar (di luar tombol aksi) → buka dialog detail.
         modifier = modifier.clickable { openDialog() },
         onRetryFailedClick = openDialog,
-        onDiscardRejectedClick = requestDiscard
+        onDiscardRejectedClick = requestDiscard,
+        onRequeueRejectedClick = {
+            scope.launch {
+                val n = offlineRepo.requeueRejectedOperations()
+                Log.d("SyncStatusBlock", "♻️ $n op REJECTED dikembalikan ke antrean")
+                rejectedOps = offlineRepo.getRejectedOperations()
+                failedOps = offlineRepo.getFailedOperations()
+            }
+        }
     )
 
     if (showDialog) {

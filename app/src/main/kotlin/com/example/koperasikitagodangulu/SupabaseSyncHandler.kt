@@ -1,6 +1,7 @@
 package com.example.koperasikitagodangulu.offline
 
 import android.util.Log
+import com.example.koperasikitagodangulu.SesiAktif
 import com.google.gson.Gson
 
 /**
@@ -81,6 +82,19 @@ class SupabaseSyncHandler(private val ds: SupabaseDataSource = SupabaseDataSourc
 
     suspend fun putar(op: PendingOperation): Hasil {
         val p = payload(op)
+
+        // Tanpa sesi yang sah, SETIAP permintaan akan ditolak — dan menolaknya
+        // di sini sebagai "sementara" jauh lebih aman daripada membiarkannya
+        // pergi ke server dan pulang membawa galat auth yang bisa salah
+        // diklasifikasi sebagai permanen. Antrean menunggu; tidak ada yang
+        // hilang.
+        if (!SesiAktif.sudahMasuk()) {
+            return Hasil.GagalSementara("belum ada sesi aktif — sinkronisasi ditunda")
+        }
+
+        Log.d(TAG, "📤 ${op.operationType} path=${op.firebasePath} " +
+            "kunci=${p.keys.sorted()} clientOpId=${p["clientOpId"]} " +
+            "guardPinjamanKe=${p["_guardPinjamanKe"]}")
 
         return when (op.operationType) {
 

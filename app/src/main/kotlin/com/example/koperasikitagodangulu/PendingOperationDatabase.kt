@@ -120,6 +120,17 @@ interface PendingOperationDao {
     @Query("DELETE FROM pending_operations WHERE status = 'REJECTED'")
     suspend fun discardRejected(): Int
 
+    // Kembalikan op REJECTED ke antrean dengan jatah percobaan baru.
+    //
+    // Dibutuhkan karena penolakan bisa saja BUKAN kesalahan datanya: sebelum
+    // perbaikan klasifikasi galat, token yang kedaluwarsa (PGRST301) ditandai
+    // ditolak permanen. Tanpa jalan ini, satu-satunya tindakan yang tersedia
+    // untuk admin adalah "Buang" — yang akan MENGHAPUS pembayaran nyata yang
+    // sudah dicatat di lapangan.
+    @Query("UPDATE pending_operations SET status = 'PENDING', retryCount = 0, " +
+           "errorMessage = NULL WHERE status = 'REJECTED'")
+    suspend fun requeueRejected(): Int
+
     // Reset semua entry FAILED ke PENDING + retryCount=0 + errorMessage=null,
     // memberi budget retry segar saat user menekan "Coba Lagi". Berbeda dari
     // updateStatus() yang masih meng-increment retryCount via SQL CASE-WHEN.

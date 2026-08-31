@@ -285,20 +285,70 @@ class SupabaseDataSource private constructor() {
      * (PendingOperationDatabase.kt:110-121); Milestone 3 memetakan
      * Hasil.Ditolak ke status yang sama.
      */
+    /**
+     * Klasifikasi galat: PERMANEN (jangan diulang) vs SEMENTARA (ulangi).
+     *
+     * ⚠ SEJARAH BUG — DIBACA DULU SEBELUM MENGUBAH DAFTAR DI BAWAH.
+     *
+     * Versi sebelumnya memasukkan `"PGRST"` ke daftar permanen. `PGRST` adalah
+     * awalan SELURUH kode galat PostgREST, termasuk yang justru sementara:
+     *
+     *   PGRST301 — JWT kedaluwarsa
+     *   PGRST000 — PostgREST tidak bisa menghubungi database
+     *
+     * Akibatnya, operasi yang dibuat saat luring lalu disinkronkan setelah
+     * jaringan kembali akan menemui token yang sudah basi (aplikasi lama
+     * ditutup, token lewat masa berlakunya), menerima PGRST301, dan ditandai
+     * DITOLAK PERMANEN — tidak pernah diulang, padahal cukup menunggu token
+     * disegarkan. Pembayaran yang sudah dicatat admin di lapangan hilang, dan
+     * pesannya menyalahkan "versi aplikasi lama".
+     *
+     * ATURAN SEKARANG: yang sementara diperiksa LEBIH DULU, dan yang permanen
+     * dieja satu per satu. Bila sebuah galat tidak dikenali, ia dianggap
+     * SEMENTARA — antrean yang mengulang terlalu sering hanya boros; antrean
+     * yang membuang terlalu cepat menghilangkan uang.
+     */
+    private fun klasifikasi(pesan: String): Hasil {
+        val sementara = listOf(
+            "PGRST301", "PGRST000", "PGRST002",          // JWT basi / DB tak terjangkau
+            "jwt", "expired", "token",                    // varian pesan auth
+            "401", "503", "504", "502",
+            "timeout", "timed out", "network", "unreachable",
+            "connection", "host", "unresolved", "socket",
+        ).any { pesan.contains(it, ignoreCase = true) }
+        if (sementara) return Hasil.GagalSementara(pesan)
+
+        // Pelanggaran UNIQUE = operasi ini SUDAH pernah masuk. Untuk antrean
+        // yang idempoten lewat client_op_id, itu keberhasilan yang datang
+        // terlambat — bukan penolakan. Menandainya gagal membuat operasi
+        // menumpuk selamanya dan membuat admin mengira uangnya belum tercatat.
+        if (pesan.contains("23505", true) || pesan.contains("duplicate key", true)) {
+            Log.w(TAG, "↩︎ sudah pernah tercatat (unique) — dianggap sukses")
+            return Hasil.Sukses
+        }
+
+        val permanen = listOf(
+            "row-level security", "permission denied", "42501",  // hak akses
+            "23503",   // FK tidak ada
+            "23514",   // check constraint
+            "22P02",   // sintaks nilai salah (mis. tanggal tidak sah)
+            "PGRST204", // kolom tidak ada di skema
+            "PGRST202", // fungsi RPC tidak ada
+        ).any { pesan.contains(it, ignoreCase = true) }
+
+        return if (permanen) Hasil.Ditolak(pesan) else Hasil.GagalSementara(pesan)
+    }
+
     private suspend inline fun jalankan(label: String, blok: () -> Hasil): Hasil = try {
         blok()
     } catch (e: Exception) {
         val pesan = e.message.orEmpty()
-        val permanen = listOf(
-            "row-level security", "violates", "duplicate key", "permission denied",
-            "42501", "23503", "23514", "PGRST"
-        ).any { pesan.contains(it, ignoreCase = true) }
-        if (permanen) {
-            Log.e(TAG, "⛔ $label ditolak permanen: $pesan")
-            Hasil.Ditolak(pesan)
-        } else {
-            Log.w(TAG, "⏳ $label gagal sementara: $pesan")
-            Hasil.GagalSementara(pesan)
+        val hasil = klasifikasi(pesan)
+        when (hasil) {
+            is Hasil.Ditolak -> Log.e(TAG, "⛔ $label ditolak permanen: $pesan")
+            is Hasil.Sukses -> Log.w(TAG, "✅ $label: $pesan (idempoten)")
+            is Hasil.GagalSementara -> Log.w(TAG, "⏳ $label gagal sementara: $pesan")
         }
+        hasil
     }
 }

@@ -1734,6 +1734,22 @@ class SyncManager private constructor(private val context: Context) {
     }
 
     /**
+     * Kembalikan seluruh op REJECTED ke antrean untuk dicoba lagi.
+     *
+     * Dipakai setelah sebab penolakannya diperbaiki di aplikasi — mis.
+     * kesalahan klasifikasi yang menandai token kedaluwarsa sebagai penolakan
+     * permanen. Aman diulang: setiap operasi idempoten (`client_op_id` UNIQUE
+     * untuk pembayaran, `onConflict=id` untuk nasabah), jadi yang terlanjur
+     * masuk tidak akan tercatat dua kali.
+     */
+    suspend fun requeueRejectedOperations(): Int = withContext(Dispatchers.IO) {
+        val n = dao.requeueRejected()
+        Log.w(TAG, "♻️ $n op REJECTED dikembalikan ke antrean")
+        if (n > 0) syncPendingOperations()
+        n
+    }
+
+    /**
      * REPAIR SEMANTIK untuk op warisan APK lama yang ditolak rules.
      *
      * Kasus yang ditangani: UPDATE_PELANGGAN dgn `status="Lunas"` TANPA marker
