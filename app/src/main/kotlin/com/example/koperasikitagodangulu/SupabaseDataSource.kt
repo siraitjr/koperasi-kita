@@ -142,6 +142,10 @@ class SupabaseDataSource private constructor() {
             "pembayaran tidak valid (jumlah/tanggal/clientOpId kosong)"
         )
 
+        val opId = SupabaseMappers.str(pembayaran["clientOpId"])
+        val idBaris = SupabaseIds.pembayaranDariOpId(opId)
+        val idPinjaman = SupabaseIds.pinjaman(adminUid, pelangganId, pinjamanKe)
+
         /* ignoreDuplicates: replay antrean atas pembayaran yang sudah masuk
          * BUKAN kegagalan — client_op_id UNIQUE (001 §4) sudah menjamin uang
          * tidak dobel. Tanpa ini, retry akan dilaporkan sebagai error dan
@@ -151,6 +155,33 @@ class SupabaseDataSource private constructor() {
             onConflict = "client_op_id",
             ignoreDuplicates = true
         )
+
+        /* ⚠ PEMBACAAN ULANG — WAJIB, DAN INI BUKAN KEHATI-HATIAN BERLEBIHAN.
+         *
+         * `ignoreDuplicates = true` berarti ON CONFLICT DO NOTHING. Bila
+         * baris tidak jadi ditulis, PostgREST TIDAK mengembalikan galat: ia
+         * membalas sukses dengan nol baris. Jadi jalur ini bisa melaporkan
+         * "tersinkronisasi" untuk pembayaran yang tidak pernah mendarat —
+         * antrean dibersihkan, admin melihat centang hijau, dan uangnya tidak
+         * ada di server. Untuk data keuangan, kegagalan senyap seperti itu
+         * lebih buruk daripada kegagalan yang berisik.
+         *
+         * Dibaca ulang berdasarkan client_op_id. Bila tidak ketemu,
+         * dikembalikan sebagai GagalSementara supaya antrean MENAHAN operasi
+         * dan mencobanya lagi — bukan membuangnya. */
+        val cek = db.from(T_PEMBAYARAN).select(Columns.raw("id")) {
+            filter { eq("client_op_id", idBaris) }
+        }.data
+
+        if (!cek.contains(idBaris, ignoreCase = true)) {
+            Log.e(TAG, "❌ Pembayaran TIDAK ditemukan setelah upsert. " +
+                "pinjaman_id=$idPinjaman pinjaman_ke=$pinjamanKe client_op_id=$idBaris")
+            return@jalankan Hasil.GagalSementara(
+                "pembayaran tidak tercatat di server (dibaca ulang tidak ketemu) — akan dicoba lagi"
+            )
+        }
+
+        Log.d(TAG, "✅ Pembayaran tercatat: pinjaman_id=$idPinjaman ke=$pinjamanKe")
         Hasil.Sukses
     }
 
