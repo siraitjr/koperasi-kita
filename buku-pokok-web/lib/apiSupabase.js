@@ -182,10 +182,23 @@ function rentangBulan(bulan) {
 const BATAS_ID_PER_PERMINTAAN = 80;
 
 /**
+ * ⚠ PostgREST memotong balasan pada 1.000 baris SECARA DIAM-DIAM: tidak ada
+ * galat, hanya baris ke-1001 dan seterusnya yang tidak ikut terkirim.
+ *
+ * `ambilBerkelompok` dulu memecah permintaan menurut JUMLAH ID (80 per
+ * permintaan) tetapi tidak pernah memecah menurut JUMLAH BARIS. Untuk
+ * `pembayaran`, 80 pinjaman dengan puluhan cicilan masing-masing dengan mudah
+ * melewati 1.000 baris — dan karena tidak ada ORDER BY, baris mana yang
+ * terkirim pun tidak menentu. Akibatnya pembayaran yang baru masuk bisa tidak
+ * pernah muncul di Buku Pokok meskipun barisnya ada di database.
+ */
+const BATAS_BARIS_PER_PERMINTAAN = 1000;
+
+/**
  * Ambil baris berdasarkan daftar id, dipotong-potong agar URL tidak meledak.
  * Daftarnya di-dedupe lebih dulu — itu sering memangkasnya cukup banyak.
  */
-async function ambilBerkelompok(tabel, kolom, ids, kolomPilih, penyaring) {
+async function ambilBerkelompok(tabel, kolom, ids, kolomPilih, penyaring, urutan) {
   const unik = [...new Set((ids || []).filter(Boolean))];
   if (!unik.length) return [];
 
@@ -194,12 +207,35 @@ async function ambilBerkelompok(tabel, kolom, ids, kolomPilih, penyaring) {
     potongan.push(unik.slice(i, i + BATAS_ID_PER_PERMINTAAN));
   }
 
+  // Kolom pengurut WAJIB deterministik: paginasi tanpa ORDER BY membuat
+  // Postgres bebas mengembalikan urutan berbeda antar-permintaan, sehingga
+  // baris bisa terlewat ATAU terhitung dua kali. Default ke kolom penyaring
+  // hanya sebagai jaring; setiap pemanggil di bawah menyebut kunci uniknya.
+  const kolomUrut = (urutan && urutan.length) ? urutan : [kolom];
+
   const hasil = await Promise.all(potongan.map(async (bagian, n) => {
-    let q = supabase.from(tabel).select(kolomPilih).in(kolom, bagian);
-    if (penyaring) q = penyaring(q);
-    const { data, error } = await q;
-    if (error) lempar(error, `${tabel}/kelompok ${n + 1} dari ${potongan.length}`);
-    return data || [];
+    const kumpulan = [];
+    let mulai = 0;
+
+    for (;;) {
+      let q = supabase.from(tabel).select(kolomPilih).in(kolom, bagian);
+      if (penyaring) q = penyaring(q);
+      for (const c of kolomUrut) q = q.order(c, { ascending: true });
+      q = q.range(mulai, mulai + BATAS_BARIS_PER_PERMINTAAN - 1);
+
+      const { data, error } = await q;
+      if (error) lempar(error, `${tabel}/kelompok ${n + 1} dari ${potongan.length}`);
+      const halaman = data || [];
+      kumpulan.push(...halaman);
+
+      if (halaman.length < BATAS_BARIS_PER_PERMINTAAN) break;
+      mulai += BATAS_BARIS_PER_PERMINTAAN;
+      if (mulai > 200000) {
+        console.error(`[apiSupabase] ${tabel}: berhenti di ${mulai} baris — melebihi batas wajar`);
+        break;
+      }
+    }
+    return kumpulan;
   }));
 
   return hasil.flat();
@@ -705,7 +741,8 @@ export async function getBukuPokok({ cabangId, adminUid, status, bulan }) {
   const pinjamanIds = rows.map((r) => r.pinjaman_id);
   const pj = await ambilBerkelompok(
     'pinjaman', 'id', pinjamanIds,
-    'id, sisa_utang_lama_sebelum_top_up, besar_pinjaman_lama_sebelum_top_up');
+    'id, sisa_utang_lama_sebelum_top_up, besar_pinjaman_lama_sebelum_top_up',
+    null, ['id']);
   const topUp = Object.fromEntries(pj.map((p) => [p.id, p]));
 
   // --------------------------------------------------------- pembayaran ---
@@ -717,7 +754,8 @@ export async function getBukuPokok({ cabangId, adminUid, status, bulan }) {
   // akan berselang-seling antar kelompok.
   const bayar = (await ambilBerkelompok(
     'pembayaran', 'pinjaman_id', pinjamanIds,
-    'pinjaman_id, tanggal, jumlah, jenis, keterangan'))
+    'pinjaman_id, tanggal, jumlah, jenis, keterangan',
+    null, ['id']))
     .sort((a, b) => String(a.tanggal).localeCompare(String(b.tanggal)));
 
   const bayarPer = {};   // pinjaman_id → { "dd MMM yyyy": {total, entries[]} }
@@ -743,7 +781,8 @@ export async function getBukuPokok({ cabangId, adminUid, status, bulan }) {
   // tidak ada satu pun `in()` telanjang tersisa untuk disalin nanti.
   const beku = await ambilBerkelompok(
     'v_rekap_harian_beku', 'admin_id', adminIds,
-    'admin_id, tanggal_indo, target, storting');
+    'admin_id, tanggal_indo, target, storting',
+    null, ['admin_id', 'tanggal_indo']);
   for (const r of beku) {
     (rekapBeku[r.admin_id] ||= {})[r.tanggal_indo] = {
       target: Number(r.target || 0),
@@ -863,7 +902,8 @@ export async function getBukuPokok({ cabangId, adminUid, status, bulan }) {
   // Simpanan per nasabah — satu query, bukan N.
   const nasabahIds = nasabahList.map((n) => n.id);
   const simp = await ambilBerkelompok(
-    'simpanan', 'nasabah_id', nasabahIds, 'nasabah_id, jumlah');
+    'simpanan', 'nasabah_id', nasabahIds, 'nasabah_id, jumlah',
+    null, ['id']);
   const perSimpanan = {};
   for (const s of simp) {
     perSimpanan[s.nasabah_id] = (perSimpanan[s.nasabah_id] || 0) + Number(s.jumlah || 0);
@@ -890,7 +930,7 @@ export async function getBukuPokok({ cabangId, adminUid, status, bulan }) {
   const dok = await ambilBerkelompok(
     'dokumen', 'nasabah_id', nasabahIds,
     'nasabah_id, jenis, bucket_id, object_path',
-    (q) => q.eq('is_pending', false));
+    (q) => q.eq('is_pending', false), ['id']);
 
   if (dok.length) {
     // Ditandatangani per bucket, sekali panggil untuk seluruh path di bucket
@@ -937,7 +977,7 @@ export async function getBukuPokok({ cabangId, adminUid, status, bulan }) {
   // tentu identik — lihat 026 §VERIFIKASI no. 4.
   const jd = await ambilBerkelompok(
     'jadwal_cicilan', 'pinjaman_id', pinjamanIds, 'jumlah',
-    (q) => q.eq('tanggal', today));
+    (q) => q.eq('tanggal', today), ['pinjaman_id', 'urutan']);
   const targetHarianHariIni = jd.reduce((s, x) => s + Number(x.jumlah || 0), 0);
 
   // orphanPaymentsByDate — pembayaran milik nasabah yang sudah DIARSIPKAN
@@ -955,7 +995,8 @@ export async function getBukuPokok({ cabangId, adminUid, status, bulan }) {
       const op = await ambilBerkelompok(
         'v_pembayaran_harian', 'nasabah_id', arsip.map((a) => a.id),
         'tanggal, jumlah, nasabah_id',
-        (q) => q.gte('tanggal', rentangOrphan.awal).lte('tanggal', rentangOrphan.akhir));
+        (q) => q.gte('tanggal', rentangOrphan.awal).lte('tanggal', rentangOrphan.akhir),
+        ['pinjaman_id', 'tanggal', 'jenis']);
       for (const p of op) {
         const t = tglIndo(p.tanggal);
         orphanPaymentsByDate[t] = (orphanPaymentsByDate[t] || 0) + Number(p.jumlah || 0);
