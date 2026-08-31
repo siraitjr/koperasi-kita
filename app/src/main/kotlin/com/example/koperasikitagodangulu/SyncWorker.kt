@@ -1,7 +1,12 @@
 package com.example.koperasikitagodangulu.offline
 
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.content.Context
+import android.content.pm.ServiceInfo
+import android.os.Build
 import android.util.Log
+import androidx.core.app.NotificationCompat
 import androidx.work.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -30,6 +35,10 @@ class SyncWorker(
         private const val TAG = "SyncWorker"
         const val WORK_NAME_PERIODIC = "firebase_sync_periodic"
         const val WORK_NAME_IMMEDIATE = "firebase_sync_immediate"
+        // Kanal yang sama dengan SyncForegroundService, supaya notifikasinya
+        // tidak muncul sebagai dua kanal berbeda di setelan pengguna.
+        private const val CHANNEL_ID = "sync_channel"
+        private const val NOTIFICATION_ID_SYNC = 4321
 
         /**
          * Schedule periodic sync setiap 15 menit
@@ -73,6 +82,14 @@ class SyncWorker(
 
             val immediateWork = OneTimeWorkRequestBuilder<SyncWorker>()
                 .setConstraints(constraints)
+                // Log lama sudah menulis "(EXPEDITED)" padahal setExpedited()
+                // tidak pernah dipanggil. Sekarang benar-benar dipanggil.
+                //
+                // RUN_AS_NON_EXPEDITED_WORK_REQUEST: bila kuota expedited
+                // perangkat habis, pekerjaan TETAP berjalan sebagai pekerjaan
+                // biasa alih-alih ditolak. Untuk antrean berisi pembayaran,
+                // "terlambat" jauh lebih baik daripada "tidak pernah".
+                .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
                 .setBackoffCriteria(
                     BackoffPolicy.LINEAR,
                     30, TimeUnit.SECONDS
@@ -97,6 +114,52 @@ class SyncWorker(
             WorkManager.getInstance(context).cancelAllWorkByTag("firebase_sync")
             WorkManager.getInstance(context).cancelAllWorkByTag("firebase_sync_immediate")
             Log.d(TAG, "❌ All sync work cancelled")
+        }
+    }
+
+    /**
+     * WAJIB ada begitu `setExpedited()` dipakai.
+     *
+     * Di Android 11 ke bawah, pekerjaan expedited dijalankan sebagai layanan
+     * latar depan; bila worker tidak menyediakan ForegroundInfo, WorkManager
+     * melempar IllegalStateException dan pekerjaannya gagal — bukan tertunda.
+     * Karena tujuan seluruh perubahan ini justru agar antrean TIDAK berhenti,
+     * kelalaian di sini akan membalik hasilnya.
+     *
+     * Kanal notifikasi dibuat di sini juga: kanal milik SyncForegroundService
+     * baru ada bila service itu pernah dijalankan, sedangkan worker bisa
+     * dibangunkan sistem lebih dulu di proses yang baru.
+     */
+    override suspend fun getForegroundInfo(): ForegroundInfo {
+        val ctx = applicationContext
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val mgr = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            if (mgr.getNotificationChannel(CHANNEL_ID) == null) {
+                mgr.createNotificationChannel(
+                    NotificationChannel(
+                        CHANNEL_ID,
+                        "Sinkronisasi Data",
+                        NotificationManager.IMPORTANCE_LOW
+                    )
+                )
+            }
+        }
+
+        val notif = NotificationCompat.Builder(ctx, CHANNEL_ID)
+            .setContentTitle("Menyinkronkan data")
+            .setContentText("Mengirim data yang tertunda ke server")
+            .setSmallIcon(android.R.drawable.ic_popup_sync)
+            .setOngoing(true)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .build()
+
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            // Android 14 mewajibkan tipe layanan disebutkan. `dataSync` sudah
+            // dideklarasikan di manifest untuk SystemForegroundService, dan
+            // izin FOREGROUND_SERVICE_DATA_SYNC sudah diminta (baris 22).
+            ForegroundInfo(NOTIFICATION_ID_SYNC, notif, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+        } else {
+            ForegroundInfo(NOTIFICATION_ID_SYNC, notif)
         }
     }
 
