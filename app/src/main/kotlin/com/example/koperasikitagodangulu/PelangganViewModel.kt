@@ -1131,6 +1131,10 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     private fun loadDashboardFromGlobalSummary() {
+        if (SesiAktif.pakaiSupabase) {
+            Log.d("FASE3", "loadDashboardFromGlobalSummary: dilewati (jalur Supabase)")
+            return
+        }
         val global = _globalSummary.value
 
         if (global == null) {
@@ -1169,6 +1173,15 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     private fun loadDashboardFromSummary() {
+        // Penjaga dipasang DI SINI, bukan hanya di `loadDashboardData()`.
+        // `refreshPimpinanData()` memanggil fungsi ini LANGSUNG, jadi penjaga
+        // di pemanggil yang satu lagi terlewati begitu saja — itulah yang
+        // menimpa angka FASE 3 dengan nol pada UAT (Refresh ✅ tercatat 19 ms
+        // sesudah SupabaseBaca ✅).
+        if (SesiAktif.pakaiSupabase) {
+            Log.d("FASE3", "loadDashboardFromSummary: dilewati (jalur Supabase)")
+            return
+        }
         val adminSummaries = _adminSummary.value
 
         if (adminSummaries.isEmpty()) {
@@ -9353,6 +9366,17 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     0L
                 }
 
+                // Inilah yang membuat layarnya berisi: kartu per admin.
+                // `dashboardData` saja tidak cukup — PimpinanDashboardScreen
+                // menentukan keadaan kosong dari `adminSummary.isEmpty()`.
+                val perAdmin = SupabaseBaca.muatRingkasanAdmin().getOrElse { e ->
+                    Log.e("FASE3", "❌ ringkasan per admin gagal: ${e.message}", e)
+                    emptyList()
+                }
+                _adminSummary.value = perAdmin
+                Log.d("FASE3", "→ _adminSummary diisi ${perAdmin.size} admin: " +
+                    perAdmin.joinToString { "${it.adminName}(aktif=${it.nasabahAktif})" })
+
                 val nasabahAktif = ringkasan.sumOf { it.nasabahAktif }
                 val pinjamanAktif = ringkasan.sumOf { it.totalPinjamanAktif }
                 val piutang = ringkasan.sumOf { it.totalPiutang }
@@ -11187,6 +11211,15 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     fun refreshPimpinanData() {
+        // Jalur Supabase: seluruh isi fungsi ini membaca RTDB (summary cache,
+        // pending approvals) dan akan gagal dengan "Permission denied", lalu
+        // menimpa keadaan yang sudah benar. Diarahkan ke sumber yang sama
+        // dengan pemuatan awal supaya tarik-segarkan dan muat-awal tidak
+        // pernah berbeda hasilnya.
+        if (SesiAktif.pakaiSupabase) {
+            muatRingkasanPeranSupabase()
+            return
+        }
         val cabangId = _currentUserCabang.value ?: return
 
         if (!smartLoader.isOnline()) {
@@ -13597,6 +13630,15 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     fun refreshPengawasData() {
+        // Jalur Supabase: seluruh isi fungsi ini membaca RTDB (summary cache,
+        // pending approvals) dan akan gagal dengan "Permission denied", lalu
+        // menimpa keadaan yang sudah benar. Diarahkan ke sumber yang sama
+        // dengan pemuatan awal supaya tarik-segarkan dan muat-awal tidak
+        // pernah berbeda hasilnya.
+        if (SesiAktif.pakaiSupabase) {
+            muatRingkasanPeranSupabase()
+            return
+        }
         if (!smartLoader.isOnline()) {
             Log.w("Refresh", "⚠️ Pengawas refresh requires internet")
             return

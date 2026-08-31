@@ -1,6 +1,7 @@
 package com.example.koperasikitagodangulu
 
 import android.util.Log
+import com.example.koperasikitagodangulu.models.AdminSummary
 import com.example.koperasikitagodangulu.offline.SupabaseClientProvider
 import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.postgrest.query.Columns
@@ -83,6 +84,9 @@ object SupabaseBaca {
         ((this[k] as? JsonPrimitive)?.longOrNull
             ?: (this[k] as? JsonPrimitive)?.contentOrNull?.toLongOrNull()
             ?: 0L).toInt()
+
+    private fun JsonObject.benar(k: String): Boolean =
+        (this[k] as? JsonPrimitive)?.contentOrNull?.equals("true", true) == true
 
     private fun JsonObject.angkaPanjang(k: String): Long =
         (this[k] as? JsonPrimitive)?.longOrNull
@@ -197,6 +201,73 @@ object SupabaseBaca {
         Log.d(TAG, "✅ pembayaran hari ini (${arr.size} baris): $total")
         total
     }.onFailure { Log.e(TAG, "❌ muatPembayaranHariIni gagal: ${it.message}") }
+
+    /**
+     * Ringkasan PER ADMIN — inilah yang sebenarnya dirender layar Pimpinan.
+     *
+     * KENAPA INI PERLU, PADAHAL SUDAH ADA `muatRingkasanCabang()`
+     * ---------------------------------------------------------------------
+     * `dashboardData` bukan pengikat utama layar itu. PimpinanDashboardScreen
+     * merender kartu per admin dari `adminSummary`, menghitung totalnya
+     * sendiri dari daftar itu (:408-411), dan menentukan keadaan kosong dengan
+     * `adminSummary.isEmpty()` (:368). Jadi selama `_adminSummary` kosong,
+     * layarnya tetap kosong betapapun benarnya angka ringkasan cabang.
+     *
+     * Agregasinya di klien, bukan di server, karena `v_buku_pokok_summary`
+     * mengelompokkan per CABANG sementara yang dibutuhkan per ADMIN. Kolom
+     * yang ditarik dibatasi seperlunya, dan baris historis dibuang di server
+     * lewat filter — jadi yang datang satu baris per nasabah aktif, bukan
+     * seluruh riwayat pembayarannya.
+     */
+    suspend fun muatRingkasanAdmin(): Result<List<AdminSummary>> = runCatching {
+        val kolom = "admin_id,admin_nama,cabang_id,is_aktif,is_lunas," +
+            "besar_pinjaman,sisa_utang,total_dibayar"
+
+        val mentah = db.from("v_buku_pokok").select(Columns.raw(kolom)) {
+            filter { eq("is_historis", false) }
+        }.data
+        val arr = json.parseToJsonElement(mentah) as? JsonArray
+            ?: throw IllegalStateException("v_buku_pokok: balasan bukan array")
+
+        // Pembayaran hari ini per admin — dari view yang zona waktunya
+        // ditentukan server (Asia/Jakarta), bukan jam perangkat.
+        val bayarPerAdmin = runCatching {
+            val m = db.from("v_pembayaran_hari_ini").select(Columns.raw("admin_id,total")).data
+            (json.parseToJsonElement(m) as? JsonArray).orEmpty()
+                .groupBy { it.jsonObject.teks("admin_id") }
+                .mapValues { (_, v) -> v.sumOf { it.jsonObject.angkaPanjang("total") } }
+        }.getOrElse {
+            Log.e(TAG, "pembayaran hari ini per admin gagal: ${it.message}")
+            emptyMap()
+        }
+
+        val hasil = arr.map { it.jsonObject }
+            .groupBy { it.teks("admin_id") }
+            .map { (adminId, baris) ->
+                val aktif = baris.filter { it.benar("is_aktif") }
+                AdminSummary(
+                    adminId = adminId,
+                    adminName = baris.firstOrNull { it.teks("admin_nama").isNotEmpty() }
+                        ?.teks("admin_nama").orEmpty().ifBlank { "(tanpa nama)" },
+                    cabang = baris.firstOrNull()?.teks("cabang_id").orEmpty(),
+                    totalPelanggan = baris.size,
+                    nasabahAktif = aktif.size,
+                    nasabahLunas = baris.count { it.benar("is_lunas") },
+                    totalPinjamanAktif = aktif.sumOf { it.angkaPanjang("besar_pinjaman") },
+                    totalPiutang = aktif.sumOf { it.angkaPanjang("sisa_utang") },
+                    pembayaranHariIni = bayarPerAdmin[adminId] ?: 0L,
+                    // Target harian butuh simulasi cicilan per nasabah (aturan
+                    // H+1) dan tidak bisa diturunkan dari kolom mana pun di
+                    // view ini. Dibiarkan 0 — lihat catatan di commit FASE 3.
+                    targetHariIni = 0L,
+                    lastUpdated = System.currentTimeMillis(),
+                )
+            }
+            .sortedByDescending { it.totalPinjamanAktif }
+
+        Log.d(TAG, "✅ ringkasan ${hasil.size} admin dimuat (${arr.size} baris nasabah)")
+        hasil
+    }.onFailure { Log.e(TAG, "❌ muatRingkasanAdmin gagal: ${it.message}") }
 
     // ---------------------------------------------------------------------
     // Pemetaan baris → model

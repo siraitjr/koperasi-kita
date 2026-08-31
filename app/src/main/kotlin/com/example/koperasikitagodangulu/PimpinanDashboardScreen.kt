@@ -129,6 +129,13 @@ fun PimpinanDashboardScreen(
 
     // ✅ FIX: Tampilkan data segera setelah tersedia (dari initPimpinanListeners di ViewModel init)
     LaunchedEffect(isDataLoaded, adminSummary) {
+        // Jejak lapisan UI: kalau data ada di ViewModel tetapi layar kosong,
+        // baris ini yang membedakan "state tidak terisi" dari "state terisi
+        // tetapi tidak dirender".
+        Log.d("FASE3", "UI membaca state: isDataLoaded=$isDataLoaded, " +
+            "adminSummary=${adminSummary.size} baris, " +
+            "nasabahAktif=${adminSummary.sumOf { it.nasabahAktif }}, " +
+            "pinjamanAktif=${adminSummary.sumOf { it.totalPinjamanAktif }}")
         if (isDataLoaded || adminSummary.isNotEmpty()) {
             isVisible = true
         }
