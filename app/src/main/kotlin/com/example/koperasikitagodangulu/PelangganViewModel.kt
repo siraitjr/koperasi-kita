@@ -9584,6 +9584,12 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     }
                     Log.d("AdminListener", "✅ Loaded ${data.size} pelanggan dari Supabase")
 
+                    // ⬇ INTI FASE 5. Tanpa baris ini, cache lokal tidak pernah
+                    // terisi sejak jalur RTDB berhenti dipakai — dan justru
+                    // itulah yang membuat mode pesawat menampilkan
+                    // "Memuat 0 data dari lokal".
+                    simpanKeLokal()
+
                     loadDashboardData()
                     _adminSummary.value = calculateAdminSummary(daftarPelanggan)
                     _isDataLoaded.value = true
@@ -9596,13 +9602,52 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     // menambah kode mati. Kalau galat ini perlu tampil di
                     // layar, itu perubahan UI tersendiri yang harus diminta.
                     Log.e("FASE1", "❌ Gagal memuat nasabah dari Supabase: ${e.message}", e)
+
+                    // Gagal baca dari server → pakai simpanan lokal. Kegagalan
+                    // jaringan bagi admin lapangan adalah keadaan NORMAL, bukan
+                    // luar biasa: menampilkan daftar kosong berarti ia tidak
+                    // bisa bekerja sampai sinyal kembali.
+                    muatDariSimpananLokal()
                 }
             } catch (e: Exception) {
                 Log.e("FASE1", "❌ Galat tak terduga saat memuat nasabah: ${e.message}", e)
+                muatDariSimpananLokal()
             } finally {
                 isLoading.value = false
                 onSelesai?.invoke()
             }
+        }
+    }
+
+    /**
+     * Isi daftar nasabah dari simpanan lokal (LocalStorage) — jalur luring.
+     *
+     * Dipanggil hanya ketika pembacaan server gagal. Daftar yang sudah ada
+     * TIDAK ditimpa bila cache kebetulan kosong: lebih baik menahan data lama
+     * yang benar daripada menggantinya dengan kosong.
+     */
+    private suspend fun muatDariSimpananLokal() {
+        try {
+            val uid = SesiAktif.uidAktif()
+            if (uid.isNullOrBlank()) {
+                Log.w("FASE5", "📴 uid kosong — tidak bisa membaca simpanan lokal")
+                return
+            }
+            val lokal = LocalStorage.ambilDataPelanggan(getApplication(), uid)
+            if (lokal.isEmpty()) {
+                Log.w("FASE5", "📴 Simpanan lokal kosong untuk $uid — daftar dibiarkan apa adanya")
+                return
+            }
+            withContext(Dispatchers.Main) {
+                daftarPelanggan.clear()
+                daftarPelanggan.addAll(lokal.sortedBy { it.namaPanggilan })
+            }
+            _adminSummary.value = calculateAdminSummary(daftarPelanggan)
+            loadDashboardData()
+            _isDataLoaded.value = true
+            Log.d("FASE5", "📴 Mode luring: ${lokal.size} nasabah dipulihkan dari simpanan lokal")
+        } catch (e: Exception) {
+            Log.e("FASE5", "❌ Gagal membaca simpanan lokal: ${e.message}", e)
         }
     }
 

@@ -127,6 +127,14 @@ object SesiAktif {
      */
     @Volatile private var sedangKeluar = false
 
+    /**
+     * true bila profil yang sedang dipakai berasal dari simpanan lokal karena
+     * server tidak bisa ditanya. Dibaca lapisan data untuk memutuskan membaca
+     * cache alih-alih jaringan, dan bisa dipakai UI sebagai penanda luring.
+     */
+    @Volatile var luring: Boolean = false
+        private set
+
     data class Profil(
         val uidSupabase: String,
         val uidLegacy: String,
@@ -234,6 +242,7 @@ object SesiAktif {
     suspend fun masuk(context: Context, email: String, sandi: String, ingatSaya: Boolean): Profil {
         // Login baru mengakhiri logout mana pun yang masih tercatat berjalan.
         sedangKeluar = false
+        luring = false
         val klien = SupabaseClientProvider.client()
 
         try {
@@ -263,8 +272,16 @@ object SesiAktif {
             )
         }
 
-        val p = muatProfil()
-            ?: run {
+        val p = when (val h = muatProfil()) {
+            is HasilProfil.Ada -> h.profil
+            HasilProfil.GagalJaringan -> {
+                // Saat LOGIN (bukan pemulihan) kita memang tidak bisa
+                // melanjutkan tanpa profil: peran menentukan layar mana yang
+                // dibuka, dan menebaknya berarti membuka layar yang salah.
+                runCatching { klien.auth.signOut() }
+                throw Exception("Tidak bisa memuat profil. Periksa jaringan lalu coba lagi.")
+            }
+            HasilProfil.TidakAda -> {
                 // Sesi terbentuk tetapi tidak ada barisnya di app_user, atau
                 // akunnya nonaktif. Sesi dibuang supaya tidak tersangkut di
                 // keadaan setengah masuk — dan supaya galatnya jelas alih-alih
@@ -272,6 +289,7 @@ object SesiAktif {
                 runCatching { klien.auth.signOut() }
                 throw Exception("Akun ini belum terdaftar sebagai staf, atau sudah dinonaktifkan. Hubungi Pengawas.")
             }
+        }
 
         profil = p
         simpan(context, p, ingatSaya)
@@ -316,31 +334,53 @@ object SesiAktif {
      *   klien. Wewenang sungguhan memang tetap dijaga RLS di server, tetapi
      *   menebak peran dari email tidak punya alasan untuk dipertahankan.
      */
-    private suspend fun muatProfil(): Profil? {
+    /**
+     * Hasil pembacaan profil, DIBEDAKAN dengan sengaja.
+     *
+     * Sebelumnya fungsi ini mengembalikan `null` untuk segala kegagalan, dan
+     * pemanggilnya menjawab null dengan `signOut()`. Artinya kehilangan sinyal
+     * di lapangan MENGHAPUS sesi — bukan menundanya. Admin yang masuk ke
+     * daerah tanpa jaringan akan dipaksa login ulang, dan karena kata sandi
+     * tidak pernah disimpan, ia tidak bisa masuk sampai jaringan kembali.
+     * Untuk aplikasi yang dipakai berkeliling menagih, itu kegagalan yang
+     * paling mahal dari semuanya.
+     *
+     * "Tidak ada barisnya" dan "tidak bisa bertanya" adalah dua hal yang
+     * berbeda dan harus dijawab berbeda.
+     */
+    private sealed interface HasilProfil {
+        data class Ada(val profil: Profil) : HasilProfil
+        /** Barisnya memang tidak ada, atau akunnya nonaktif. Sesi harus dibuang. */
+        object TidakAda : HasilProfil
+        /** Tidak bisa bertanya ke server. Sesi TIDAK boleh dibuang. */
+        object GagalJaringan : HasilProfil
+    }
+
+    private suspend fun muatProfil(): HasilProfil {
         val klien = SupabaseClientProvider.client()
-        val pengguna = klien.auth.currentUserOrNull() ?: return null
+        val pengguna = klien.auth.currentUserOrNull() ?: return HasilProfil.TidakAda
 
         val mentah = try {
             klien.postgrest.from("app_user").select {
                 filter { eq("id", pengguna.id) }
             }.data
         } catch (e: Exception) {
-            Log.e(TAG, "gagal membaca app_user: ${e.message}")
-            return null
+            Log.w(TAG, "tidak bisa membaca app_user (dianggap gangguan jaringan): ${e.message}")
+            return HasilProfil.GagalJaringan
         }
 
         val baris = try {
             json.parseToJsonElement(mentah).jsonArray.firstOrNull()?.jsonObject
         } catch (e: Exception) {
             Log.e(TAG, "app_user bukan JSON yang bisa dibaca: ${e.message}")
-            return null
-        } ?: return null
+            return HasilProfil.GagalJaringan
+        } ?: return HasilProfil.TidakAda
 
         // `aktif` boleh tidak ada; yang ditolak hanya bila TEGAS false.
         val aktif = (baris["aktif"] as? JsonPrimitive)?.booleanOrNull ?: true
-        if (!aktif) return null
+        if (!aktif) return HasilProfil.TidakAda
 
-        return Profil(
+        return HasilProfil.Ada(Profil(
             uidSupabase = baris.teks("id") ?: pengguna.id,
             // Tanpa legacy_uid, seluruh path RTDB dan kunci warisan tidak
             // punya nilai yang benar. Dikosongkan alih-alih diisi uuid —
@@ -351,6 +391,29 @@ object SesiAktif {
             nama = baris.teks("nama").orEmpty(),
             peran = keUserRole(baris.teks("role")),
             cabangId = baris.teks("cabang_id"),
+        ))
+    }
+
+    /**
+     * Profil dari SharedPreferences — dipakai saat jaringan tidak bisa
+     * ditanya. Nilainya ditulis `simpan()` pada login/pemulihan terakhir yang
+     * berhasil, jadi ia mencerminkan keadaan sah terakhir yang diketahui.
+     *
+     * Null bila belum pernah ada login yang berhasil di perangkat ini — di
+     * situ layar login memang jawaban yang benar.
+     */
+    private fun profilDariPrefs(context: Context): Profil? {
+        val pr = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val legacy = pr.getString(K_UID_LEGACY, "").orEmpty()
+        val sb = pr.getString(K_UID_SB, "").orEmpty()
+        if (legacy.isBlank() || sb.isBlank()) return null
+        return Profil(
+            uidSupabase = sb,
+            uidLegacy = legacy,
+            email = pr.getString(K_EMAIL, "").orEmpty(),
+            nama = pr.getString(K_NAMA, "").orEmpty(),
+            peran = getUserRole(context),
+            cabangId = pr.getString(K_CABANG, "").orEmpty().takeIf { it.isNotBlank() },
         )
     }
 
@@ -417,12 +480,31 @@ object SesiAktif {
                 profil = null
                 return false
             }
-            val p = muatProfil()
+            val hasil = muatProfil()
+
+            if (hasil is HasilProfil.GagalJaringan) {
+                // LURING. Sesi Supabase tetap sah (refresh token ada di
+                // penyimpanan); yang gagal cuma bertanya siapa dia. Profil
+                // diambil dari login sah terakhir supaya aplikasi tetap bisa
+                // dipakai di lapangan tanpa sinyal.
+                val cadangan = profilDariPrefs(context)
+                if (cadangan != null) {
+                    profil = cadangan
+                    luring = true
+                    Log.w(TAG, "📴 Mode luring: profil dipulihkan dari simpanan lokal (${cadangan.email})")
+                    return true
+                }
+                Log.w(TAG, "📴 Luring dan belum pernah ada login berhasil di perangkat ini")
+                return false
+            }
+
+            val p = (hasil as? HasilProfil.Ada)?.profil
             if (p == null) {
                 runCatching { klien.auth.signOut() }
                 bersihkan(context)
                 false
             } else {
+                luring = false
                 profil = p
                 simpan(context, p, ingatSaya(context))
                 saveUserRole(context, p.peran)
