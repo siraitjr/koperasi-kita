@@ -71,7 +71,9 @@ object SupabaseBaca {
 
     // Satu tempat untuk bentuk kueri, supaya baca-daftar dan baca-satu tidak
     // bisa berbeda diam-diam.
-    private const val KOLOM = "*,pinjaman(*,pembayaran(*))"
+    // `jadwal_cicilan` ikut disematkan: itulah sumber "referensi cicilan" di
+    // layar riwayat. Lihat catatan di pemetaan `hasilSimulasiCicilan`.
+    private const val KOLOM = "*,pinjaman(*,pembayaran(*),jadwal_cicilan(*))"
 
     // ---------------------------------------------------------------------
     // Konversi nilai
@@ -409,6 +411,36 @@ object SupabaseBaca {
                 totalPelunasanLamaSebelumTopUp = p?.angka("total_pelunasan_lama_sebelum_top_up") ?: 0,
 
                 pembayaranList = bayar,
+
+                // ── FASE 7: referensi cicilan ────────────────────────────
+                // Diambil dari `jadwal_cicilan` yang SUDAH ada di server dan
+                // sudah ikut dimigrasikan (migrate.js:655, 1814), BUKAN
+                // dihitung ulang di klien.
+                //
+                // Menghitung ulang akan menghasilkan jadwal yang berbeda dari
+                // yang tersimpan: tanggal cicilan digeser bila jatuh pada hari
+                // libur, dan pergeseran itu dikelola HolidayUpdateWorker +
+                // CicilanRecalculationService lalu disimpan. Layar ini
+                // bernama "referensi" justru karena menampilkan jadwal yang
+                // DISEPAKATI, bukan hasil hitungan sesaat — dua nasabah dengan
+                // pinjaman identik bisa punya tanggal berbeda karena liburnya
+                // berbeda.
+                //
+                // Diurutkan `urutan`: penyematan PostgREST tidak menjamin
+                // urutan, sedangkan layar menomori barisnya "Hari 1, 2, 3…"
+                // menurut posisi di daftar.
+                hasilSimulasiCicilan = (p?.get("jadwal_cicilan") as? JsonArray)
+                    ?.map { it.jsonObject }
+                    ?.sortedBy { it.angka("urutan") }
+                    ?.map {
+                        SimulasiCicilan(
+                            tanggal = tanggalTampil(it.teks("tanggal")),
+                            jumlah = it.angka("jumlah"),
+                            isHariKerja = it.benar("is_hari_kerja"),
+                            isCompleted = it.benar("is_completed"),
+                        )
+                    }
+                    .orEmpty(),
 
                 // Data yang datang dari server menurut definisinya sudah
                 // tersinkron; menandainya false akan membuat SyncManager
