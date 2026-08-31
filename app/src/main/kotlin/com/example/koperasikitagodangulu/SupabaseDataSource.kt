@@ -309,9 +309,23 @@ class SupabaseDataSource private constructor() {
      * yang membuang terlalu cepat menghilangkan uang.
      */
     private fun klasifikasi(pesan: String): Hasil {
+        // ⚠ "permission denied … TO anon" HARUS diperiksa SEBELUM daftar
+        // permanen di bawah, karena kalimatnya memuat "permission denied".
+        //
+        // Bunyinya seperti masalah hak akses, tetapi sebenarnya masalah WAKTU:
+        // klien belum memegang sesi pengguna, sehingga supabase-kt memakai
+        // kunci anon dan server menolak peran `anon`. Beberapa detik kemudian,
+        // dengan token yang sama-sama sah, permintaan yang persis sama
+        // berhasil — terbukti di UAT (14:52:02 gagal sebagai anon, 14:52:19
+        // berhasil). Menggolongkannya permanen berarti membuang pembayaran
+        // hanya karena token telat siap.
+        if (pesan.contains("anon", ignoreCase = true)) {
+            return Hasil.GagalSementara("sesi belum siap (permintaan terkirim sebagai anon): $pesan")
+        }
+
         val sementara = listOf(
             "PGRST301", "PGRST000", "PGRST002",          // JWT basi / DB tak terjangkau
-            "jwt", "expired", "token",                    // varian pesan auth
+            "jwt", "expired", "token", "unauthorized",    // varian pesan auth
             "401", "503", "504", "502",
             "timeout", "timed out", "network", "unreachable",
             "connection", "host", "unresolved", "socket",

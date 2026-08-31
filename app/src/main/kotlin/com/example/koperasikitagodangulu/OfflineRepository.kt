@@ -345,7 +345,8 @@ class OfflineRepository private constructor(context: Context) {
     fun observeRejectedCount(): Flow<Int> = syncManager.observeRejectedCount()
     suspend fun getRejectedOperations(): List<PendingOperation> = syncManager.getRejectedOperations()
     suspend fun discardRejectedOperations(): Int = syncManager.discardRejectedOperations()
-    suspend fun requeueRejectedOperations(): Int = syncManager.requeueRejectedOperations()
+    suspend fun requeueRejectedOperations(picuSync: Boolean = true): Int =
+        syncManager.requeueRejectedOperations(picuSync)
 
     suspend fun syncNow(): SyncResult {
         Log.d(TAG, "🔄 syncNow() called")

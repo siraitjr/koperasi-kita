@@ -75,6 +75,8 @@ object SesiAktif {
     private const val TAG = "SesiAktif"
     // `adb logcat -s KELUAR` untuk menelusuri alur logout langkah demi langkah.
     private const val TAG_KELUAR = "KELUAR"
+    // `adb logcat -s SESI` untuk menelusuri kesiapan token saat sinkronisasi.
+    private const val TAG_SESI = "SESI"
     private const val PREFS = "user_prefs"
 
     // Kunci "ingat saya" — disimpan di SharedPreferences yang sama dengan
@@ -523,6 +525,77 @@ object SesiAktif {
             }
         } catch (e: Exception) {
             Log.e(TAG, "pulihkan gagal: ${e.message}")
+            false
+        }
+    }
+
+    // =====================================================================
+    // KESIAPAN SESI UNTUK SINKRONISASI
+    // =====================================================================
+    /**
+     * Pastikan klien Supabase memegang token pengguna yang masih hidup,
+     * SEBELUM antrean diputar. Mengembalikan false bila belum bisa.
+     *
+     * KENAPA PERLU — DAN KENAPA `sudahMasuk()` SAJA TIDAK CUKUP
+     * ---------------------------------------------------------------------
+     * `sudahMasuk()` hanya memeriksa profil di MEMORI aplikasi. Token yang
+     * dipakai memanggil PostgREST dipegang klien supabase-kt, dan keduanya
+     * bisa tidak sinkron: profil sudah terisi sementara sesi klien belum
+     * selesai dimuat dari penyimpanan (pemuatannya asinkron).
+     *
+     * Bila itu terjadi, supabase-kt TIDAK gagal — ia jatuh ke kunci anon dan
+     * mengirim `Authorization: Bearer sb_publishable_…`. Server menjawab
+     * "permission denied for table pembayaran … GRANT … TO anon", yang
+     * terbaca seperti masalah hak akses padahal sebenarnya masalah waktu.
+     * Persis yang terekam di UAT: sinkronisasi otomatis memakai kunci anon,
+     * lalu "Coba Lagi" 17 detik kemudian berhasil karena token sudah siap.
+     *
+     * `refreshCurrentSession()` dipanggil tanpa memeriksa masa berlaku lebih
+     * dulu. Itu satu permintaan tambahan per BATCH (bukan per operasi), dan
+     * menukarnya dengan kepastian: tidak ada aritmetika kedaluwarsa yang bisa
+     * meleset, dan tidak ada jendela di mana token kebetulan mati beberapa
+     * detik setelah diperiksa.
+     */
+    /**
+     * Pemeriksaan MURAH: apakah klien sudah memegang sesi pengguna?
+     *
+     * Dipakai per-operasi. Tidak menyegarkan token — penyegaran dilakukan
+     * sekali per batch oleh `pastikanSesiSiap()`. Memanggil penyegaran di
+     * setiap operasi berarti satu permintaan jaringan tambahan per baris
+     * antrean, yang justru memperlambat sinkronisasi yang sedang diperbaiki.
+     */
+    suspend fun adaSesiKlien(): Boolean {
+        if (!pakaiSupabase) return true
+        return try {
+            val klien = SupabaseClientProvider.client()
+            klien.auth.awaitInitialization()
+            klien.auth.currentSessionOrNull() != null
+        } catch (e: Exception) {
+            Log.w(TAG_SESI, "⏳ tidak bisa memeriksa sesi klien: ${e.message}")
+            false
+        }
+    }
+
+    suspend fun pastikanSesiSiap(): Boolean {
+        if (!pakaiSupabase) return true
+        return try {
+            val klien = SupabaseClientProvider.client()
+            klien.auth.awaitInitialization()
+
+            if (klien.auth.currentSessionOrNull() == null) {
+                Log.w(TAG_SESI, "⏳ Belum ada sesi pengguna — sinkronisasi ditunda")
+                return false
+            }
+
+            runCatching { klien.auth.refreshCurrentSession() }
+                .onSuccess { Log.d(TAG_SESI, "🔑 Token disegarkan sebelum sinkronisasi") }
+                .onFailure { Log.w(TAG_SESI, "⚠️ Gagal menyegarkan token: ${it.message}") }
+
+            val siap = klien.auth.currentSessionOrNull() != null
+            if (!siap) Log.w(TAG_SESI, "⏳ Sesi hilang setelah upaya penyegaran")
+            siap
+        } catch (e: Exception) {
+            Log.w(TAG_SESI, "⏳ Sesi belum siap: ${e.message}")
             false
         }
     }

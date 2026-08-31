@@ -106,6 +106,24 @@ class SyncWorker(
                 Log.d(TAG, "🔄 SyncWorker starting...")
 
                 val syncManager = SyncManager.getInstance(applicationContext)
+
+                // Kembalikan op DITOLAK ke antrean SEBELUM menghitung.
+                // `getPendingCount()` menghitung PENDING/FAILED/SYNCING dan
+                // TIDAK menghitung REJECTED — jadi bila seluruh antrean
+                // berstatus REJECTED, worker akan pulang lebih awal dengan
+                // "tidak ada yang perlu disinkronkan" dan operasi itu tidak
+                // pernah pulih selama aplikasi tidak dibuka. Justru keadaan
+                // aplikasi-tertutup inilah yang paling butuh pemulihan
+                // otomatis. `picuSync=false`: worker menyinkronkan sendiri di
+                // bawah, dan menyalakan foreground service dari latar dilarang
+                // sejak Android 12.
+                val dipulihkan = try {
+                    syncManager.requeueRejectedOperations(picuSync = false)
+                } catch (e: Exception) {
+                    Log.e(TAG, "❌ Gagal mengembalikan op REJECTED: ${e.message}"); 0
+                }
+                if (dipulihkan > 0) Log.w(TAG, "♻️ $dipulihkan op REJECTED dikembalikan ke antrean")
+
                 val pendingCount = syncManager.getPendingCount()
 
                 if (pendingCount == 0) {

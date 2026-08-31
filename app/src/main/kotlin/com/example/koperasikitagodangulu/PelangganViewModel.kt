@@ -3436,6 +3436,21 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                     delay(2000) // Tunggu koneksi stabil
 
                     try {
+                        // Step 0: kembalikan operasi yang tertandai DITOLAK ke
+                        // antrean. Penolakan bisa disebabkan token yang belum
+                        // siap saat percobaan sebelumnya — bukan datanya. Tanpa
+                        // langkah ini, satu-satunya jalan pulih adalah admin
+                        // menekan "Coba Lagi" sendiri, dan admin lapangan tidak
+                        // punya alasan untuk tahu bahwa tombol itu perlu
+                        // ditekan. Aman diulang: seluruh operasi idempoten
+                        // (client_op_id UNIQUE / onConflict=id).
+                        try {
+                            val n = offlineRepo.requeueRejectedOperations()
+                            if (n > 0) Log.w("Network", "♻️ Step 0: $n operasi DITOLAK dikembalikan ke antrean")
+                        } catch (e: Exception) {
+                            Log.e("Network", "❌ Step 0 gagal: ${e.message}")
+                        }
+
                         // ✅ PERBAIKAN #2C: Jalankan BERURUTAN, bukan paralel
                         // Step 1: Upload data lokal ke Firebase (SEKARANG SUSPEND, ditunggu)
                         Log.d("Network", "📤 Step 1: Syncing offline data...")

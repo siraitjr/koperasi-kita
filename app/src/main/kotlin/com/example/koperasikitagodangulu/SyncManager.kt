@@ -9,6 +9,7 @@ import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.Uri
 import android.util.Log
+import com.example.koperasikitagodangulu.SesiAktif
 import com.google.firebase.database.DataSnapshot
 import com.google.firebase.database.DatabaseError
 import com.google.firebase.database.FirebaseDatabase
@@ -1647,6 +1648,15 @@ class SyncManager private constructor(private val context: Context) {
                 return@withContext SyncResult(0, 0, 0)
             }
 
+            // Token disegarkan SEKALI per batch, sebelum operasi pertama.
+            // Tanpa ini, supabase-kt jatuh ke kunci anon saat sesi belum siap
+            // dan server menjawab "permission denied … TO anon" — terbaca
+            // seperti masalah hak akses, padahal masalah waktu.
+            if (SyncBackend.pakaiSupabase(context) && !SesiAktif.pastikanSesiSiap()) {
+                Log.w(TAG, "⏳ Sesi belum siap — ${pending.size} operasi ditahan, akan dicoba lagi")
+                return@withContext SyncResult(0, 0, pending.size)
+            }
+
             var success = 0
             var failed = 0
 
@@ -1742,13 +1752,19 @@ class SyncManager private constructor(private val context: Context) {
      * untuk pembayaran, `onConflict=id` untuk nasabah), jadi yang terlanjur
      * masuk tidak akan tercatat dua kali.
      */
-    suspend fun requeueRejectedOperations(): Int = withContext(Dispatchers.IO) {
+    /**
+     * @param picuSync jalankan pemicu sinkronisasi setelah requeue.
+     *   Pemanggil dari WORKER harus mengirim `false`: worker akan menyinkronkan
+     *   sendiri sesudahnya, dan menyalakan foreground service dari latar
+     *   dilarang sejak Android 12 (ForegroundServiceStartNotAllowedException).
+     */
+    suspend fun requeueRejectedOperations(picuSync: Boolean = true): Int = withContext(Dispatchers.IO) {
         val n = dao.requeueRejected()
-        Log.w(TAG, "♻️ $n op REJECTED dikembalikan ke antrean")
+        if (n > 0) Log.w(TAG, "♻️ $n op REJECTED dikembalikan ke antrean")
         // Pemicu yang sama dengan `retryAllFailed()` (:1703-1710) — bukan
         // memanggil syncAllPending() langsung, supaya pemutaran antrean tetap
         // berjalan di service latar dan tidak menahan pemanggil UI.
-        if (n > 0) SyncForegroundService.startSync(context)
+        if (n > 0 && picuSync) SyncForegroundService.startSync(context)
         n
     }
 

@@ -88,8 +88,11 @@ class SupabaseSyncHandler(private val ds: SupabaseDataSource = SupabaseDataSourc
         // pergi ke server dan pulang membawa galat auth yang bisa salah
         // diklasifikasi sebagai permanen. Antrean menunggu; tidak ada yang
         // hilang.
-        if (!SesiAktif.sudahMasuk()) {
-            return Hasil.GagalSementara("belum ada sesi aktif — sinkronisasi ditunda")
+        // `sudahMasuk()` hanya memeriksa profil di MEMORI; yang menentukan
+        // permintaan ini memakai token pengguna atau kunci anon adalah sesi
+        // milik klien supabase-kt. Keduanya bisa tidak sinkron.
+        if (!SesiAktif.adaSesiKlien()) {
+            return Hasil.GagalSementara("sesi/token belum siap — sinkronisasi ditunda")
         }
 
         Log.d(TAG, "📤 ${op.operationType} path=${op.firebasePath} " +
