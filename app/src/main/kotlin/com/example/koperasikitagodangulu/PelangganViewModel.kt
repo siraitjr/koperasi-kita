@@ -9666,6 +9666,20 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
+    /** BUG 7(a) — satu pemuat untuk ketiga peran; hasilnya disalurkan pemanggil. */
+    private fun muatPengajuanSupabase(peran: UserRole, terima: (List<Pelanggan>) -> Unit) {
+        viewModelScope.launch {
+            SupabaseBaca.muatPengajuan(peran)
+                .onSuccess { daftar ->
+                    withContext(Dispatchers.Main) { terima(daftar) }
+                    Log.d("BUG7", "✅ ${daftar.size} pengajuan dimuat untuk $peran")
+                }
+                .onFailure { e ->
+                    Log.e("BUG7", "❌ Gagal memuat pengajuan untuk $peran: ${e.message}", e)
+                }
+        }
+    }
+
     private fun initAdminLapanganListeners() {
         Log.d("FASE1", "→ initAdminLapanganListeners() dipanggil")
         val uid = SesiAktif.uidAktif()
@@ -10155,6 +10169,12 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     fun setupRealtimePendingApprovals(cabangId: String) {
+        // Listener RTDB tidak bisa bekerja tanpa sesi Firebase; pemuatannya
+        // ditangani `loadPendingApprovalsOptimized` lewat Supabase.
+        if (SesiAktif.pakaiSupabase) {
+            loadPendingApprovalsOptimized(cabangId)
+            return
+        }
         // ✅ OPTIMASI: Cegah setup duplikat
         if (_isPendingApprovalListenerActive) {
             Log.d("PendingApproval", "⚠️ Listener already active, skipping setup")
@@ -10399,6 +10419,18 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     fun loadPendingApprovalsOptimized(cabangId: String) {
+        // ── BUG 7(a) ─────────────────────────────────────────────────────
+        // Sumbernya `koperasi.pengajuan`, bukan node RTDB. Lingkup cabang
+        // ditentukan RLS (`pengajuan_baca`), jadi `cabangId` tidak dipakai
+        // sebagai penyaring — Pimpinan hanya melihat cabangnya sendiri dari
+        // kueri yang sama, tanpa filter klien yang bisa keliru.
+        if (SesiAktif.pakaiSupabase) {
+            muatPengajuanSupabase(UserRole.PIMPINAN) { daftar ->
+                _pendingApprovals.clear(); _pendingApprovals.addAll(daftar)
+            }
+            return
+        }
+
         viewModelScope.launch {
             try {
                 _pendingApprovals.clear()
@@ -13803,6 +13835,10 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     fun loadPendingApprovalsForPengawas() {
+        if (SesiAktif.pakaiSupabase) {
+            muatPengajuanSupabase(UserRole.PENGAWAS) { _pendingApprovalsPengawas.value = it }
+            return
+        }
         viewModelScope.launch {
             try {
                 Log.d("PengawasApproval", "🔄 Loading pending approvals for Pengawas...")
@@ -13866,6 +13902,10 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
      * Load pengajuan yang menunggu review Koordinator (Phase 2: AWAITING_KOORDINATOR)
      */
     fun loadPendingApprovalsForKoordinator() {
+        if (SesiAktif.pakaiSupabase) {
+            muatPengajuanSupabase(UserRole.KOORDINATOR) { _pendingApprovalsKoordinator.value = it }
+            return
+        }
         viewModelScope.launch {
             try {
                 Log.d("KoordinatorApproval", "🔄 Loading pending approvals for Koordinator...")

@@ -9,6 +9,10 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.add
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.longOrNull
@@ -309,6 +313,78 @@ object SupabaseBaca {
         arr.associate { it.jsonObject.teks("id") to it.jsonObject.teks("nama") }
             .also { Log.d(TAG, "✅ ${it.size} cabang dimuat") }
     }.onFailure { Log.e(TAG, "❌ muatCabang gagal: ${it.message}") }
+
+    // =====================================================================
+    // BUG 7 (a) — DAFTAR PENGAJUAN PER PERAN
+    // =====================================================================
+    /**
+     * Fase yang menjadi tanggung jawab tiap peran. Aturannya sama dengan
+     * DualApprovalModels: <3jt hanya Pimpinan (`requires_dual = false`,
+     * fase berhenti di awaiting_pimpinan); >=3jt melewati rantai penuh.
+     *
+     * Pimpinan mengurus DUA fase — pembuka dan penutup. Menyebut satu saja
+     * akan membuat pengajuan >=3jt lenyap dari layarnya di langkah terakhir,
+     * dan tidak ada yang tahu ia menunggu di sana.
+     */
+    fun fasePeran(peran: UserRole): List<String> = when (peran) {
+        UserRole.PIMPINAN -> listOf("awaiting_pimpinan", "awaiting_pimpinan_final")
+        UserRole.KOORDINATOR -> listOf("awaiting_koordinator", "awaiting_koordinator_final")
+        UserRole.PENGAWAS -> listOf("awaiting_pengawas")
+        else -> emptyList()
+    }
+
+    /**
+     * Pengajuan yang menunggu keputusan peran ini.
+     *
+     * Lingkup cabang ditentukan RLS (`pengajuan_baca`, 002:397), bukan klien —
+     * Pimpinan hanya melihat cabangnya sendiri dari kueri yang sama.
+     *
+     * Bentuk kembaliannya `Pelanggan` supaya layar approval yang sudah ada
+     * tidak perlu diubah sama sekali.
+     */
+    suspend fun muatPengajuan(peran: UserRole): Result<List<Pelanggan>> = runCatching {
+        val fase = fasePeran(peran)
+        if (fase.isEmpty()) return@runCatching emptyList()
+
+        val mentah = db.from("pengajuan").select(
+            Columns.raw("id,phase,requires_dual,rejection_reason,created_at," +
+                "pinjaman(*,nasabah(*),pembayaran(*),jadwal_cicilan(*))")
+        ) {
+            filter { isIn("phase", fase) }
+            order("created_at", io.github.jan.supabase.postgrest.query.Order.ASCENDING)
+        }.data
+
+        val arr = json.parseToJsonElement(mentah) as? JsonArray
+            ?: throw IllegalStateException("pengajuan: balasan bukan array")
+
+        val hasil = arr.mapNotNull { el ->
+            runCatching {
+                val pg = el.jsonObject
+                val pj = pg["pinjaman"]?.jsonObject
+                    ?: throw IllegalStateException("pengajuan tanpa pinjaman")
+                val ns = pj["nasabah"]?.jsonObject
+                    ?: throw IllegalStateException("pinjaman tanpa nasabah")
+
+                // Bentuk penyematannya TERBALIK dari `muatDaftarPelanggan`
+                // (di sana nasabah→pinjaman, di sini pengajuan→pinjaman→
+                // nasabah). Disusun ulang menjadi bentuk nasabah-berisi-
+                // pinjaman supaya `Peta.pelanggan` yang sudah teruji dipakai
+                // apa adanya — satu pemeta, bukan dua yang bisa berbeda diam.
+                val disusun = buildJsonObject {
+                    ns.forEach { (k, v) -> put(k, v) }
+                    put("pinjaman", buildJsonArray {
+                        add(buildJsonObject {
+                            pj.forEach { (k, v) -> if (k != "nasabah") put(k, v) }
+                        })
+                    })
+                }
+                Peta.pelanggan(disusun)
+            }.onFailure { Log.e(TAG, "gagal memetakan satu pengajuan: ${it.message}") }
+                .getOrNull()
+        }
+        Log.d(TAG, "✅ ${hasil.size} pengajuan untuk $peran (fase: ${fase.joinToString()})")
+        hasil
+    }.onFailure { Log.e(TAG, "❌ muatPengajuan gagal: ${it.message}") }
 
     // ---------------------------------------------------------------------
     // Pemetaan baris → model
