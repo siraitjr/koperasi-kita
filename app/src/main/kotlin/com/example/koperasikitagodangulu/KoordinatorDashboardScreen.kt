@@ -114,6 +114,12 @@ fun KoordinatorDashboardScreen(
 
     // ✅ FIX #4: isVisible berdasarkan data yang sudah loaded
     LaunchedEffect(koordinatorDataLoaded, allCabangSummaries) {
+        // Jejak lapisan UI: memisahkan "state tidak terisi" dari
+        // "state terisi tetapi tidak dirender".
+        Log.d("FASE3", "UI Koordinator membaca state: koordinatorDataLoaded=$koordinatorDataLoaded, " +
+            "allCabangSummaries=${allCabangSummaries.size} cabang, " +
+            "nasabahAktif=${allCabangSummaries.values.sumOf { it.nasabahAktif }}, " +
+            "pinjamanAktif=${allCabangSummaries.values.sumOf { it.totalPinjamanAktif }}")
         if (koordinatorDataLoaded && allCabangSummaries.isNotEmpty()) {
             isVisible = true
         }

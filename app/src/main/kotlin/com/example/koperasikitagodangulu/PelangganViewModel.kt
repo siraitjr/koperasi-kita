@@ -9377,6 +9377,51 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
                 Log.d("FASE3", "→ _adminSummary diisi ${perAdmin.size} admin: " +
                     perAdmin.joinToString { "${it.adminName}(aktif=${it.nasabahAktif})" })
 
+                // ── Layar Pengawas & Koordinator membaca state yang BERBEDA ──
+                // PimpinanDashboardScreen membaca `adminSummary`, tetapi
+                // PengawasDashboardScreen membaca `allCabangSummaries` (Map),
+                // `allAdminSummaries` (Map), `allCabangList`, dan menutup
+                // layar dengan `allCabangSummaries.isEmpty()` (:204).
+                // Mengisi `_adminSummary` saja karena itu memperbaiki Pimpinan
+                // dan membiarkan dua layar lain tetap kosong — persis yang
+                // terjadi di UAT.
+                val namaCabang = SupabaseBaca.muatCabang().getOrElse { e ->
+                    Log.e("FASE3", "❌ daftar cabang gagal: ${e.message}", e)
+                    emptyMap()
+                }
+
+                _allAdminSummaries.value = perAdmin.associateBy { it.adminId }
+
+                _allCabangList.value = ringkasan.map { r ->
+                    CabangMetadata(
+                        cabangId = r.cabangId,
+                        name = namaCabang[r.cabangId] ?: r.cabangId,
+                        pimpinanUid = "",
+                        adminList = perAdmin.filter { it.cabang == r.cabangId }.map { it.adminId }
+                    )
+                }
+
+                _allCabangSummaries.value = ringkasan.associate { r ->
+                    val adminCabang = perAdmin.filter { it.cabang == r.cabangId }
+                    r.cabangId to PengawasCabangSummary(
+                        cabangId = r.cabangId,
+                        cabangName = namaCabang[r.cabangId] ?: r.cabangId,
+                        totalNasabah = r.nasabahAktif + r.nasabahLunas,
+                        nasabahAktif = r.nasabahAktif,
+                        nasabahLunas = r.nasabahLunas,
+                        totalPinjamanAktif = r.totalPinjamanAktif,
+                        totalPiutang = r.totalPiutang,
+                        pembayaranHariIni = adminCabang.sumOf { it.pembayaranHariIni },
+                        // targetHariIni tetap 0 — lihat catatan FASE 3.
+                        targetHariIni = 0L,
+                        adminCount = adminCabang.size,
+                        lastUpdated = System.currentTimeMillis(),
+                    )
+                }
+                _pengawasDataLoaded.value = true
+                Log.d("FASE3", "→ _allCabangSummaries diisi ${_allCabangSummaries.value.size} cabang, " +
+                    "_allAdminSummaries ${_allAdminSummaries.value.size} admin")
+
                 val nasabahAktif = ringkasan.sumOf { it.nasabahAktif }
                 val pinjamanAktif = ringkasan.sumOf { it.totalPinjamanAktif }
                 val piutang = ringkasan.sumOf { it.totalPiutang }
@@ -13267,6 +13312,18 @@ class PelangganViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     fun loadPengawasAllCabangData() {
+        // Dipanggil LANGSUNG oleh PengawasDashboardScreen:112 dan
+        // KoordinatorDashboardScreen:104 — bukan lewat ViewModel — sehingga
+        // penjaga mana pun di jalur peran tidak menyentuhnya. Isinya membaca
+        // `metadata/cabang` dari RTDB, gagal "Permission denied", lalu
+        // menimpa keadaan yang sudah benar. Itulah baris
+        // "Loading all cabang data for Pengawas..." di UAT Anda.
+        if (SesiAktif.pakaiSupabase) {
+            Log.d("FASE3", "loadPengawasAllCabangData: dialihkan ke Supabase")
+            muatRingkasanPeranSupabase()
+            return
+        }
+
         // Cegah multiple loading
         if (_pengawasDataLoaded.value && _allCabangSummaries.value.isNotEmpty()) {
             Log.d(TAG, "📊 Pengawas data already loaded, skipping...")

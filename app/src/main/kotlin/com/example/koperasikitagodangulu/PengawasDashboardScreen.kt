@@ -120,6 +120,12 @@ fun PengawasDashboardScreen(
 
     // ✅ FIX #4: isVisible berdasarkan data yang sudah loaded
     LaunchedEffect(pengawasDataLoaded, allCabangSummaries) {
+        // Jejak lapisan UI: memisahkan "state tidak terisi" dari
+        // "state terisi tetapi tidak dirender".
+        Log.d("FASE3", "UI Pengawas membaca state: pengawasDataLoaded=$pengawasDataLoaded, " +
+            "allCabangSummaries=${allCabangSummaries.size} cabang, " +
+            "nasabahAktif=${allCabangSummaries.values.sumOf { it.nasabahAktif }}, " +
+            "pinjamanAktif=${allCabangSummaries.values.sumOf { it.totalPinjamanAktif }}")
         if (pengawasDataLoaded && allCabangSummaries.isNotEmpty()) {
             isVisible = true
         }

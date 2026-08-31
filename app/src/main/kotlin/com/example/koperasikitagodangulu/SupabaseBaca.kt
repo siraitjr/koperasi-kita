@@ -223,11 +223,41 @@ object SupabaseBaca {
         val kolom = "admin_id,admin_nama,cabang_id,is_aktif,is_lunas," +
             "besar_pinjaman,sisa_utang,total_dibayar"
 
-        val mentah = db.from("v_buku_pokok").select(Columns.raw(kolom)) {
-            filter { eq("is_historis", false) }
-        }.data
-        val arr = json.parseToJsonElement(mentah) as? JsonArray
-            ?: throw IllegalStateException("v_buku_pokok: balasan bukan array")
+        // ⚠ HALAMAN PER HALAMAN — WAJIB, bukan optimasi.
+        //
+        // PostgREST membatasi balasan pada 1.000 baris secara default, DIAM-DIAM:
+        // tidak ada galat, hanya baris ke-1001 dan seterusnya yang tidak ikut.
+        // UAT Pengawas menangkapnya: "18 admin dimuat (1000 baris nasabah)"
+        // sementara ringkasan cabang yang diagregasi di server menyebut 1.354
+        // nasabah aktif. Selisih itu bukan beda definisi — 354 nasabah memang
+        // hilang dari hitungan per admin, dan angkanya akan tampak wajar di
+        // layar. Persis jenis kesalahan yang tidak akan pernah dilaporkan
+        // siapa pun karena tidak terlihat salah.
+        val baris = mutableListOf<JsonObject>()
+        val ukuranHalaman = 1000L
+        var mulai = 0L
+        while (true) {
+            val potongan = db.from("v_buku_pokok").select(Columns.raw(kolom)) {
+                filter { eq("is_historis", false) }
+                // Urutan stabil wajib saat memberi halaman: tanpa ORDER BY,
+                // Postgres tidak menjamin urutan antar-permintaan, sehingga
+                // baris bisa terlewat ATAU terhitung dua kali.
+                order("nasabah_id", io.github.jan.supabase.postgrest.query.Order.ASCENDING)
+                range(mulai, mulai + ukuranHalaman - 1)
+            }.data
+            val hal = json.parseToJsonElement(potongan) as? JsonArray
+                ?: throw IllegalStateException("v_buku_pokok: balasan bukan array")
+            baris += hal.map { it.jsonObject }
+            if (hal.size < ukuranHalaman) break
+            mulai += ukuranHalaman
+            // Pagar pengaman: jangan pernah berputar tanpa batas kalau server
+            // terus mengembalikan halaman penuh karena sebab tak terduga.
+            if (mulai > 200_000L) {
+                Log.e(TAG, "❌ berhenti di $mulai baris — melebihi batas wajar")
+                break
+            }
+        }
+        val arr = baris
 
         // Pembayaran hari ini per admin — dari view yang zona waktunya
         // ditentukan server (Asia/Jakarta), bukan jam perangkat.
@@ -241,7 +271,7 @@ object SupabaseBaca {
             emptyMap()
         }
 
-        val hasil = arr.map { it.jsonObject }
+        val hasil = arr
             .groupBy { it.teks("admin_id") }
             .map { (adminId, baris) ->
                 val aktif = baris.filter { it.benar("is_aktif") }
@@ -268,6 +298,15 @@ object SupabaseBaca {
         Log.d(TAG, "✅ ringkasan ${hasil.size} admin dimuat (${arr.size} baris nasabah)")
         hasil
     }.onFailure { Log.e(TAG, "❌ muatRingkasanAdmin gagal: ${it.message}") }
+
+    /** id → nama cabang, untuk pilihan cabang di layar Pengawas. */
+    suspend fun muatCabang(): Result<Map<String, String>> = runCatching {
+        val mentah = db.from("cabang").select(Columns.raw("id,nama")).data
+        val arr = json.parseToJsonElement(mentah) as? JsonArray
+            ?: throw IllegalStateException("cabang: balasan bukan array")
+        arr.associate { it.jsonObject.teks("id") to it.jsonObject.teks("nama") }
+            .also { Log.d(TAG, "✅ ${it.size} cabang dimuat") }
+    }.onFailure { Log.e(TAG, "❌ muatCabang gagal: ${it.message}") }
 
     // ---------------------------------------------------------------------
     // Pemetaan baris → model
