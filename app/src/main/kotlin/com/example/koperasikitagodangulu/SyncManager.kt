@@ -1745,7 +1745,10 @@ class SyncManager private constructor(private val context: Context) {
     suspend fun requeueRejectedOperations(): Int = withContext(Dispatchers.IO) {
         val n = dao.requeueRejected()
         Log.w(TAG, "♻️ $n op REJECTED dikembalikan ke antrean")
-        if (n > 0) syncPendingOperations()
+        // Pemicu yang sama dengan `retryAllFailed()` (:1703-1710) — bukan
+        // memanggil syncAllPending() langsung, supaya pemutaran antrean tetap
+        // berjalan di service latar dan tidak menahan pemanggil UI.
+        if (n > 0) SyncForegroundService.startSync(context)
         n
     }
 
