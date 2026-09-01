@@ -2,7 +2,6 @@ package com.example.koperasikitagodangulu.offline
 
 import android.content.Context
 import android.util.Log
-import com.example.koperasikitagodangulu.BuildConfig
 
 /**
  * =========================================================================
@@ -44,41 +43,41 @@ object SyncBackend {
 
     fun aktif(context: Context): Tujuan {
         cache?.let { return it }
-        // ── FASE 2 ────────────────────────────────────────────────────────
-        // Bila login sudah lewat Supabase, tujuan tulis TIDAK BOLEH Firebase.
-        // Alasan rollback yang melahirkan sakelar SharedPreferences ini
-        // (rollback_plan.md §3.4) sudah tidak berlaku: tanpa sesi Firebase,
-        // RTDB tidak bisa ditulis sama sekali, jadi tidak ada tujuan lama untuk
-        // dituju kembali. Membiarkan default FIREBASE berarti setiap operasi
-        // mengantre selamanya di Room tanpa pernah sampai ke mana pun —
-        // gagal diam-diam, bentuk kegagalan paling mahal.
-        if (BuildConfig.AUTH_SUPABASE) {
-            val efektifAuth = if (SupabaseClientProvider.isConfigured) {
-                Tujuan.SUPABASE
-            } else {
-                Log.e(TAG, "❌ AUTH_SUPABASE menyala tetapi endpoint belum dikonfigurasi")
-                Tujuan.FIREBASE
-            }
-            cache = efektifAuth
-            return efektifAuth
-        }
-
-        val prefs = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        val nama = prefs.getString(KEY, Tujuan.FIREBASE.name) ?: Tujuan.FIREBASE.name
-        val hasil = runCatching { Tujuan.valueOf(nama) }.getOrDefault(Tujuan.FIREBASE)
-
-        // Konfigurasi belum diisi → paksa Firebase. Lebih baik tetap di jalur
-        // lama daripada gagal total karena SUPABASE_URL kosong.
-        val efektif = if (hasil == Tujuan.SUPABASE && !SupabaseClientProvider.isConfigured) {
-            Log.w(TAG, "⚠️ Sakelar=SUPABASE tapi endpoint belum dikonfigurasi → jatuh ke FIREBASE")
+        // ⚠ TIDAK ADA LAGI PILIHAN. Firebase Auth sudah dicabut (4b3a03c),
+        // sehingga RTDB tidak bisa ditulis sama sekali — setiap setValue
+        // dijawab "Permission denied". Mengembalikan FIREBASE di sini berarti
+        // seluruh operasi mengantre selamanya di Room tanpa pernah sampai ke
+        // mana pun.
+        //
+        // Versi sebelumnya masih membaca `BuildConfig.AUTH_SUPABASE`. Itu flag
+        // yang sama yang membuat login gagal: APK yang dibangun tanpa
+        // `-PAUTH_SUPABASE=true` jatuh ke cabang SharedPreferences di bawah,
+        // yang berdefault FIREBASE. Jadi jalur tulis Supabase yang SUDAH ADA
+        // sejak FASE 2 tidak pernah terpilih — bukan karena belum dibuat,
+        // melainkan karena tidak pernah dipanggil.
+        //
+        // Sakelar SharedPreferences dan flag build sengaja tidak dibaca lagi:
+        // keduanya hanya menyediakan cara untuk salah.
+        val efektif = if (SupabaseClientProvider.isConfigured) {
+            Tujuan.SUPABASE
+        } else {
+            // Endpoint kosong bukan alasan menulis ke RTDB (yang pasti gagal),
+            // melainkan alasan berhenti. Antrean menahan operasinya.
+            Log.e(TAG, "❌ SUPABASE_URL/ANON_KEY belum diisi — tidak ada tujuan tulis yang sah")
             Tujuan.FIREBASE
-        } else hasil
-
+        }
         cache = efektif
         return efektif
     }
 
+    /**
+     * ⚠ TIDAK LAGI BERPENGARUH pada tujuan tulis. Dipertahankan supaya
+     * pemanggil lama tetap terkompilasi, tetapi `aktif()` sudah tidak membaca
+     * SharedPreferences. Dibiarkan diam-diam "berhasil" akan lebih buruk:
+     * seseorang bisa mengira ia sudah memindahkan tujuan padahal tidak.
+     */
     fun setAktif(context: Context, tujuan: Tujuan) {
+        Log.w(TAG, "⚠️ setAktif($tujuan) diabaikan — tujuan tulis kini selalu Supabase")
         context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .edit().putString(KEY, tujuan.name).apply()
         cache = null // baca ulang, sekalian lewati validasi konfigurasi
