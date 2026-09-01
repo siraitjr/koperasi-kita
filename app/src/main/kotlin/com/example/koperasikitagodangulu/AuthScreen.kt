@@ -36,14 +36,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
-import com.google.firebase.auth.ktx.auth
-import com.google.firebase.ktx.Firebase
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import com.google.firebase.FirebaseNetworkException
-import com.google.firebase.auth.FirebaseAuthInvalidUserException
-import com.google.firebase.auth.FirebaseAuthInvalidCredentialsException
-import com.google.firebase.auth.FirebaseAuthException
 import com.example.koperasikitagodangulu.services.LocationTrackingMonitor
 import com.example.koperasikitagodangulu.services.LocationCheckWorker
 import com.google.accompanist.systemuicontroller.rememberSystemUiController
@@ -75,14 +69,13 @@ fun AuthScreen(
     viewModel: PelangganViewModel? = null
 ) {
     val context = LocalContext.current
-    val auth = Firebase.auth
     val focusManager = LocalFocusManager.current
 
     // Bagian "ingat saya" yang terlihat: email terakhir diisikan kembali agar
     // staf tidak perlu mengetiknya tiap kali. Hanya email — sandinya tidak
     // pernah disimpan. Dengan flag mati, nilainya "" persis seperti semula.
     var email by remember {
-        mutableStateOf(if (SesiAktif.pakaiSupabase) SesiAktif.emailTersimpan(context) else "")
+        mutableStateOf(SesiAktif.emailTersimpan(context))
     }
     var password by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
@@ -140,8 +133,7 @@ fun AuthScreen(
                 // dan sudah ada rancangannya di 011_session_takeover.sql —
                 // memasangnya kembali di atas Supabase adalah pekerjaan
                 // tersendiri, bukan sesuatu yang boleh dianggap masih jalan.
-                if (!SesiAktif.pakaiSupabase &&
-                    peran != UserRole.PENGAWAS && peran != UserRole.KOORDINATOR) {
+                if (false) {   // force-logout & kunci sesi masih RTDB — lihat 011
                     if (viewModel?.checkForceLogoutOnStartup() == true) {
                         LocationTrackingMonitor.stopMonitoring()
                         SesiAktif.keluar(context)
@@ -156,7 +148,7 @@ fun AuthScreen(
                     }
                 }
 
-                if (!SesiAktif.pakaiSupabase && peran == UserRole.ADMIN_LAPANGAN) {
+                if (false) {   // kunci sesi masih RTDB — lihat 011
                     val lockedByName = viewModel?.checkSessionLock(uidLegacy)
                     if (lockedByName != null) {
                         LocationTrackingMonitor.stopMonitoring()
@@ -201,67 +193,10 @@ fun AuthScreen(
             return@LaunchedEffect
         }
 
-        val currentUser = auth.currentUser
-        if (currentUser != null && currentUser.providerData.any { it.providerId == "password" }) {
-            val userRole = getUserRole(context)
-
-            // CEK FORCE LOGOUT SEBELUM AUTO-LOGIN (kecuali Pengawas)
-            if (userRole != UserRole.PENGAWAS && userRole != UserRole.KOORDINATOR) {
-                val shouldForceLogout = viewModel?.checkForceLogoutOnStartup() ?: false
-                if (shouldForceLogout) {
-                    // Password sudah direset, paksa logout
-                    LocationTrackingMonitor.stopMonitoring()
-                    auth.signOut()
-                    Toast.makeText(
-                        context,
-                        "Password Anda telah diubah oleh Pengawas. Silakan login dengan password baru.",
-                        Toast.LENGTH_LONG
-                    ).show()
-                    // ✅ Tampilkan form login
-                    isCheckingAuth = false
-                    isVisible = true
-                    return@LaunchedEffect  // Tetap di halaman auth
-                }
-            }
-
-            // ✅ CEK SESSION LOCK - akun admin sedang diambil alih pimpinan?
-            if (userRole == UserRole.ADMIN_LAPANGAN || userRole == UserRole.UNKNOWN) {
-                val lockedByName = viewModel?.checkSessionLock(currentUser.uid)
-                if (lockedByName != null) {
-                    LocationTrackingMonitor.stopMonitoring()
-                    auth.signOut()
-                    Toast.makeText(
-                        context,
-                        "Akun Anda sedang digunakan oleh $lockedByName. Silakan tunggu hingga selesai.",
-                        Toast.LENGTH_LONG
-                    ).show()
-                    isCheckingAuth = false
-                    isVisible = true
-                    return@LaunchedEffect
-                }
-            }
-
-            // ✅ User sudah login dan valid — langsung ke dashboard
-            // isCheckingAuth tetap true (layar tetap hitam hingga navigasi selesai)
-            when (userRole) {
-                UserRole.PENGAWAS -> navController.navigate("pengawas_dashboard") {
-                    popUpTo("auth") { inclusive = true }
-                }
-                UserRole.KOORDINATOR -> navController.navigate("koordinator_dashboard") {
-                    popUpTo("auth") { inclusive = true }
-                }
-                UserRole.PIMPINAN -> navController.navigate("pimpinan_dashboard") {
-                    popUpTo("auth") { inclusive = true }
-                }
-                UserRole.ADMIN_LAPANGAN, UserRole.UNKNOWN -> navController.navigate("dashboard") {
-                    popUpTo("auth") { inclusive = true }
-                }
-            }
-        } else {
-            // ✅ User belum login — tampilkan form login
-            isCheckingAuth = false
-            isVisible = true
-        }
+        // Tidak ada lagi pemulihan sesi Firebase. Bila cabang Supabase di
+        // atas tidak memulihkan apa pun, form login yang ditampilkan.
+        isCheckingAuth = false
+        isVisible = true
     }
 
     if (isCheckingAuth) {
@@ -489,7 +424,7 @@ fun AuthScreen(
                                             // membaca RTDB dan kini selalu gagal
                                             // diam-diam. Dinonaktifkan sampai
                                             // dipasang ulang di atas Supabase.
-                                            if (!SesiAktif.pakaiSupabase && p.peran == UserRole.ADMIN_LAPANGAN && p.uidLegacy.isNotBlank()) {
+                                            if (false) {   // kunci sesi masih RTDB — lihat 011
                                                 val lockedByName = viewModel?.checkSessionLock(p.uidLegacy)
                                                 if (lockedByName != null) {
                                                     SesiAktif.keluar(context)
@@ -557,7 +492,7 @@ fun AuthScreen(
                                             //   Ini alasan konkret kenapa flag ini belum
                                             //   boleh menyala di produksi.
                                             proceedWithLogin(
-                                                context, auth, navController, viewModel,
+                                                context, navController, viewModel,
                                                 p.email, p.peran, p.uidLegacy
                                             )
                                         } catch (e: Exception) {
@@ -568,69 +503,10 @@ fun AuthScreen(
                                     return@Button
                                 }
 
-                                auth.signInWithEmailAndPassword(email, password)
-                                    .addOnCompleteListener { task ->
-                                        if (task.isSuccessful) {
-                                            val loggedInUid = auth.currentUser?.uid
-                                            val userEmail = email.trim()
-                                            val userRole = determineUserRole(userEmail)
-
-                                            // CEK SESSION LOCK (hanya untuk admin lapangan)
-                                            if (loggedInUid != null && userRole == UserRole.ADMIN_LAPANGAN) {
-                                                kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main).launch {
-                                                    val lockedByName = viewModel?.checkSessionLock(loggedInUid)
-                                                    if (lockedByName != null) {
-                                                        // Akun sedang digunakan pimpinan
-                                                        auth.signOut()
-                                                        isLoading = false
-                                                        Toast.makeText(
-                                                            context,
-                                                            "Akun Anda sedang digunakan oleh $lockedByName. Silakan tunggu hingga selesai.",
-                                                            Toast.LENGTH_LONG
-                                                        ).show()
-                                                        return@launch
-                                                    }
-                                                    // Session tidak di-lock, lanjut login normal
-                                                    proceedWithLogin(context, auth, navController, viewModel, userEmail, userRole, loggedInUid)
-                                                }
-                                            } else {
-                                                // Bukan admin lapangan, langsung lanjut
-                                                proceedWithLogin(context, auth, navController, viewModel, userEmail, userRole, loggedInUid)
-                                            }
-                                        } else {
-                                            isLoading = false
-                                            val errorMessage = when (val exception = task.exception) {
-                                                is com.google.firebase.auth.FirebaseAuthInvalidUserException,
-                                                is com.google.firebase.auth.FirebaseAuthInvalidCredentialsException -> {
-                                                    "Email atau password yang Anda masukkan salah"
-                                                }
-                                                is com.google.firebase.FirebaseNetworkException -> {
-                                                    "Tidak ada koneksi internet. Periksa jaringan Anda lalu coba lagi."
-                                                }
-                                                is com.google.firebase.auth.FirebaseAuthException -> {
-                                                    when (exception.errorCode) {
-                                                        "ERROR_USER_NOT_FOUND",
-                                                        "ERROR_WRONG_PASSWORD",
-                                                        "ERROR_INVALID_EMAIL",
-                                                        "ERROR_INVALID_CREDENTIAL" -> "Email atau password yang Anda masukkan salah"
-                                                        "ERROR_USER_DISABLED" -> "Akun Anda telah dinonaktifkan. Hubungi admin."
-                                                        "ERROR_TOO_MANY_REQUESTS" -> "Terlalu banyak percobaan login. Coba lagi nanti."
-                                                        else -> "Login gagal. Silakan coba lagi."
-                                                    }
-                                                }
-                                                else -> {
-                                                    if (exception?.message?.contains("network", ignoreCase = true) == true ||
-                                                        exception?.message?.contains("internet", ignoreCase = true) == true ||
-                                                        exception?.message?.contains("connection", ignoreCase = true) == true) {
-                                                        "Tidak ada koneksi internet. Periksa jaringan Anda lalu coba lagi."
-                                                    } else {
-                                                        "Login gagal. Silakan coba lagi."
-                                                    }
-                                                }
-                                            }
-                                            Toast.makeText(context, errorMessage, Toast.LENGTH_LONG).show()
-                                        }
-                                    }
+                                // Firebase Auth DIHAPUS. Satu-satunya gerbang
+                                // login adalah cabang Supabase di atas, yang
+                                // selalu `return@Button`. Tidak ada lagi jalur
+                                // kedua yang bisa terpilih diam-diam.
                             },
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -808,7 +684,6 @@ private fun determineUserRole(email: String): UserRole {
 
 private fun proceedWithLogin(
     context: Context,
-    auth: com.google.firebase.auth.FirebaseAuth,
     navController: NavController,
     viewModel: PelangganViewModel?,
     userEmail: String,
@@ -835,7 +710,7 @@ private fun proceedWithLogin(
         viewModel?.startForceLogoutListener {
             com.example.koperasikitagodangulu.services.LocationTrackingMonitor.stopMonitoring()
             com.example.koperasikitagodangulu.services.LocationCheckWorker.cancel(context)
-            auth.signOut()
+            SesiAktif.keluarSerentak(context)
             android.widget.Toast.makeText(
                 context,
                 "Password Anda telah diubah. Silakan login kembali.",
@@ -852,7 +727,7 @@ private fun proceedWithLogin(
         viewModel?.startRemoteTakeoverListener {
             com.example.koperasikitagodangulu.services.LocationTrackingMonitor.stopMonitoring()
             com.example.koperasikitagodangulu.services.LocationCheckWorker.cancel(context)
-            auth.signOut()
+            SesiAktif.keluarSerentak(context)
             android.widget.Toast.makeText(
                 context,
                 "Pimpinan mengambil alih akun Anda. Anda akan logout otomatis.",

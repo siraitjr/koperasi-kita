@@ -19,55 +19,34 @@ import kotlinx.serialization.json.jsonObject
  * =========================================================================
  * SESI AKTIF — lapisan tunggal identitas pengguna (Android v2, A-1)
  * =========================================================================
- * Menggantikan `FirebaseAuth` sebagai GERBANG LOGIN. Firebase TIDAK dihapus:
- * lihat `AUTH_SUPABASE` di bawah.
+ * SATU-SATUNYA sumber identitas pengguna. Firebase Auth sudah DIHAPUS dari
+ * aplikasi ini — yang tersisa dari Firebase hanyalah FCM (Messaging), produk
+ * terpisah yang tidak punya penggantinya.
  *
- * KENAPA ADA LAPISAN INI, BUKAN LANGSUNG MEMANGGIL supabase.auth
+ * KENAPA HYBRID DIBUANG
  * -------------------------------------------------------------------------
- * Ada 141 pemanggilan `auth.currentUser?.uid` (hitungan per 30 Agu 2026), dan
- * hampir semuanya membangun PATH RTDB (`pelanggan/{adminUid}/…`) atau kunci
- * warisan. Nilai yang mereka butuhkan adalah **UID Firebase**, bukan uuid
- * Supabase — dua ruang id yang berbeda.
+ * Selama dua gerbang login hidup berdampingan, ada satu keadaan yang tidak
+ * pernah terlihat sampai ia menggigit: bila sakelar build tidak menyala,
+ * aplikasi diam-diam jatuh ke Firebase — dan Firebase menolak build yang
+ * SHA-1-nya tidak terdaftar, sehingga SEMUA peran gagal masuk. Gejalanya
+ * "login rusak", padahal jalur Supabase-nya baik-baik saja.
  *
- * Sebarannya TIDAK merata, dan ini kabar baik untuk sapuannya:
+ * Dengan satu gerbang, keadaan itu tidak bisa ada.
  *
- *     PelangganViewModel.kt           120   (85%)
- *     TambahPelangganScreen.kt          3
- *     MainActivity.kt                   3
- *     LocationTrackingService.kt        3
- *     AuthScreen.kt                     3   (jalur cadangan Firebase)
- *     NotificationHelper.kt             2
- *     LocationTrackingMonitor.kt        2
- *     MyFirebaseMessagingService.kt     1
- *     LocationCheckWorker.kt            1
- *     HolidayUpdateWorker.kt            1
- *     FirebaseConnectionKeeperService.kt 1
- *     BootReceiver.kt                   1
+ * DUA RUANG ID YANG MASIH HIDUP BERDAMPINGAN
+ * -------------------------------------------------------------------------
+ * `uid()` mengembalikan UID WARISAN (dulu UID Firebase) dari
+ * `app_user.legacy_uid`. Itu BUKAN sisa Firebase Auth: nilainya kini sekadar
+ * kunci teks yang menata data lama — path RTDB yang belum dimigrasi, dan id
+ * turunan uuidv5 yang dipakai seluruh jalur tulis Supabase
+ * (SupabaseIds.nasabah/pinjaman). Selama data itu masih ada, kuncinya masih
+ * dibutuhkan.
  *
- * Artinya sapuan itu pada dasarnya adalah menyentuh SATU berkas, bukan 27.
+ * `uidSupabase()` mengembalikan uuid GoTrue — dipakai RLS dan RPC.
  *
- * `SesiAktif.uid()` mengembalikan UID Firebase itu, diambil dari
- * `app_user.legacy_uid` (kolom yang ditambahkan 022 justru untuk jembatan
- * ini). Jadi pemanggil lama bisa berpindah ke sini satu baris per tempat,
- * tanpa mengubah satu pun path.
- *
- * `uidSupabase()` mengembalikan uuid untuk jalur Supabase (RPC, RLS).
- *
- * ⚠ BELUM SELESAI, DAN INI HARUS DISADARI SEBELUM MENYALAKAN FLAG DI PRODUKSI:
- *   berkas-berkas di atas MASIH memanggil `auth.currentUser?.uid` langsung.
- *   Dengan AUTH_SUPABASE menyala, Firebase tidak pernah di-sign-in, jadi
- *   panggilan itu mengembalikan null.
- *
- *   Yang membuatnya berbahaya: hampir semuanya berpola `?: return` — mis.
- *   PelangganViewModel.kt:16581 (startSingleDeviceSession), :16495
- *   (startForceLogoutListener), :7730 (startRemoteTakeoverListener). Mereka
- *   TIDAK melempar galat; mereka diam saja dan tidak melakukan apa-apa. Jadi
- *   gejalanya adalah layar kosong dan sesi single-device yang tidak aktif,
- *   BUKAN pesan kesalahan yang menunjuk sebabnya.
- *
- *   Sapuannya sengaja dipisah ke commit tersendiri supaya bisa ditinjau dan
- *   diuji terpisah dari perubahan login. Sampai itu selesai, flag ini hanya
- *   untuk build uji.
+ * ⚠ Sejumlah berkas masih membaca RTDB (laporan Pimpinan, kunci sesi,
+ *   force-logout). Itu bukan ketergantungan Auth, melainkan ketergantungan
+ *   DATA, dan hilang bersama migrasi layar-layar tersebut.
  * =========================================================================
  */
 object SesiAktif {
@@ -98,8 +77,16 @@ object SesiAktif {
      * DAN sapuan 27 berkas selesai, nilainya dibalik jadi true dan jalur
      * Firebase di AuthScreen boleh dihapus.
      */
+    // Firebase Auth SUDAH DIHAPUS dari aplikasi. Flag `AUTH_SUPABASE` karena
+    // itu tidak lagi bermakna dan sengaja TIDAK dibaca lagi: selama ia masih
+    // ikut menentukan, satu build yang lupa menyertakan `-PAUTH_SUPABASE=true`
+    // akan menghasilkan aplikasi TANPA jalur login sama sekali. Itu persis
+    // kegagalan yang baru saja terjadi — bedanya dulu ada jalur Firebase yang
+    // menampung, sekarang tidak ada.
+    //
+    // Yang tersisa hanyalah syarat yang memang harus benar: endpoint terisi.
     val pakaiSupabase: Boolean
-        get() = BuildConfig.AUTH_SUPABASE && SupabaseClientProvider.isConfigured
+        get() = SupabaseClientProvider.isConfigured
 
     // ---------------------------------------------------------------------
     // Keadaan dalam memori. Diisi saat masuk / pulihkan, dibaca 141 tempat.
@@ -190,18 +177,15 @@ object SesiAktif {
     // produksi sama sekali. Itu yang membuatnya aman untuk di-merge sebelum
     // cut-over benar-benar dinyalakan.
 
-    private val firebaseUser get() = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser
+    // Tidak ada lagi cabang Firebase: sesi Supabase adalah satu-satunya
+    // sumber kebenaran identitas.
+    fun uidAktif(): String? = uid()
 
-    fun uidAktif(): String? = if (pakaiSupabase) uid() else firebaseUser?.uid
+    fun emailAktif(): String? = profil?.email?.takeIf { it.isNotBlank() }
 
-    fun emailAktif(): String? =
-        if (pakaiSupabase) profil?.email?.takeIf { it.isNotBlank() } else firebaseUser?.email
+    fun namaAktif(): String? = profil?.nama?.takeIf { it.isNotBlank() }
 
-    fun namaAktif(): String? =
-        if (pakaiSupabase) profil?.nama?.takeIf { it.isNotBlank() } else firebaseUser?.displayName
-
-    /** Ada sesi yang sah? Pengganti `Firebase.auth.currentUser != null`. */
-    fun adaSesi(): Boolean = if (pakaiSupabase) uid() != null else firebaseUser != null
+    fun adaSesi(): Boolean = uid() != null
 
     /**
      * Pengganti OBJEK `Firebase.auth.currentUser`, untuk tempat-tempat yang
@@ -622,11 +606,7 @@ object SesiAktif {
      * produksi persis sama seperti sebelum commit ini.
      */
     fun keluarSerentak(context: Context) {
-        Log.d(TAG_KELUAR, "1) keluarSerentak dipanggil (pakaiSupabase=$pakaiSupabase)")
-        runCatching { com.google.firebase.auth.FirebaseAuth.getInstance().signOut() }
-            .onFailure { Log.e(TAG, "signOut Firebase gagal: ${it.message}") }
-
-        if (!pakaiSupabase) return
+        Log.d(TAG_KELUAR, "1) keluarSerentak dipanggil")
 
         // Ditandai SEBELUM apa pun yang asinkron, dan sebelum pemanggil
         // sempat bernavigasi. Inilah yang menutup balapan.

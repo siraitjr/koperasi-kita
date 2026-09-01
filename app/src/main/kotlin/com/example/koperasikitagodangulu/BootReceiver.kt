@@ -9,7 +9,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import com.example.koperasikitagodangulu.services.LocationTrackingMonitor
-import com.google.firebase.auth.FirebaseAuth
 import com.example.koperasikitagodangulu.services.LocationCheckWorker
 import com.example.koperasikitagodangulu.services.FirebaseConnectionKeeperService
 
