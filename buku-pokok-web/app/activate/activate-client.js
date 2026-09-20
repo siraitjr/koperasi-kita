@@ -113,7 +113,7 @@ export default function ActivateClient({ code, initialStatus, businessName }) {
               </button>
             </>
           )}
-          <div className="pk-foot">© 2026 Proyekita • koperasi-kita.com</div>
+          <div className="pk-foot">© 2026 Proyekita</div>
         </div>
       </div>
     </div>
