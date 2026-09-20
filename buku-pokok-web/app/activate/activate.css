@@ -1,0 +1,36 @@
+.pk-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px 16px;background:linear-gradient(160deg,#0f2027,#203a43 55%,#2c5364);font-family:'Segoe UI',system-ui,-apple-system,sans-serif;box-sizing:border-box}
+.pk-wrap *{box-sizing:border-box}
+.pk-card{width:100%;max-width:440px;background:#fff;border-radius:20px;box-shadow:0 24px 60px rgba(0,0,0,.35);overflow:hidden;animation:pkIn .45s ease}
+@keyframes pkIn{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+.pk-head{padding:26px 26px 20px;background:linear-gradient(135deg,#1a73e8,#0d47a1);color:#fff}
+.pk-brand{font-size:11px;letter-spacing:3px;text-transform:uppercase;opacity:.85;font-weight:700}
+.pk-title{font-size:22px;font-weight:700;margin:6px 0 0}
+.pk-code{display:inline-block;margin-top:10px;padding:4px 14px;border-radius:999px;background:rgba(255,255,255,.18);font-size:13px;font-weight:600;letter-spacing:1px}
+.pk-body{padding:22px 26px 20px}
+.pk-label{font-size:13px;font-weight:600;color:#44505c;margin-bottom:8px}
+.pk-inputwrap{position:relative}
+.pk-input{width:100%;padding:13px 40px 13px 14px;font-size:15px;border:1.5px solid #dfe3e8;border-radius:12px;outline:none;transition:border .2s,box-shadow .2s}
+.pk-input:focus{border-color:#1a73e8;box-shadow:0 0 0 3px rgba(26,115,232,.15)}
+.pk-spin{position:absolute;right:12px;top:50%;width:18px;height:18px;margin-top:-9px;border:2.5px solid #cfd8e3;border-top-color:#1a73e8;border-radius:50%;animation:pkRot .7s linear infinite}
+@keyframes pkRot{to{transform:rotate(360deg)}}
+.pk-list{margin-top:10px;display:flex;flex-direction:column;gap:8px;max-height:220px;overflow:auto}
+.pk-item{display:flex;align-items:flex-start;gap:10px;width:100%;text-align:left;padding:12px 14px;border:1.5px solid #e6e9ee;border-radius:12px;background:#fafbfc;cursor:pointer;font-size:14px;line-height:1.45;transition:all .15s;color:#202124}
+.pk-item:hover{border-color:#b6c6dd;background:#f2f6fb}
+.pk-item.sel{border-color:#1a73e8;background:#eef4fe;box-shadow:0 0 0 3px rgba(26,115,232,.12)}
+.pk-dot{flex:0 0 10px;width:10px;height:10px;margin-top:4px;border-radius:50%;border:2px solid #b9c4d2;background:#fff}
+.pk-item.sel .pk-dot{border-color:#1a73e8;background:#1a73e8}
+.pk-btn{margin-top:18px;width:100%;padding:14px;border:none;border-radius:12px;background:linear-gradient(135deg,#1a73e8,#0d47a1);color:#fff;font-size:16px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:10px;transition:filter .2s,transform .05s;box-shadow:0 8px 20px rgba(26,115,232,.35)}
+.pk-btn:disabled{filter:grayscale(.65) brightness(.98);cursor:not-allowed;box-shadow:none}
+.pk-btn:not(:disabled):active{transform:scale(.985)}
+.pk-btnspin{width:18px;height:18px;border:2.5px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;animation:pkRot .7s linear infinite}
+.pk-err{margin-top:14px;padding:12px 14px;border-radius:12px;background:#fdecea;color:#b3261e;font-size:13.5px;line-height:1.5}
+.pk-info{padding:14px 16px;border-radius:12px;background:#e8f0fe;color:#174ea6;font-size:14px;line-height:1.6}
+.pk-info p{margin:6px 0 0;color:#3c5a8f}
+.pk-ok{text-align:center;padding:6px 0 2px}
+.pk-check{width:74px;height:74px;margin:6px auto 14px;border-radius:50%;background:linear-gradient(135deg,#34a853,#1e8e3e);display:flex;align-items:center;justify-content:center;box-shadow:0 10px 26px rgba(52,168,83,.4);animation:pkPop .5s cubic-bezier(.2,1.4,.4,1)}
+@keyframes pkPop{from{transform:scale(.4);opacity:0}to{transform:scale(1);opacity:1}}
+.pk-check svg{width:38px;height:38px;stroke:#fff;stroke-width:3;fill:none;stroke-linecap:round;stroke-linejoin:round}
+.pk-okname{font-size:16px;font-weight:700;color:#202124;margin:4px 0 10px}
+.pk-note{font-size:13px;color:#5f6368;line-height:1.6;margin:0}
+.pk-link{display:inline-block;margin-top:16px;padding:12px 22px;border-radius:12px;background:#fff;border:1.5px solid #1a73e8;color:#1a73e8;font-weight:700;text-decoration:none;font-size:14.5px}
+.pk-foot{margin-top:20px;text-align:center;font-size:11.5px;color:#9aa0a6}
