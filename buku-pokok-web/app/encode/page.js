@@ -34,23 +34,31 @@ export default function EncodePage() {
   }
 
   async function apiGet(c) {
-    const res = await fetch('/api/encode?code=' + encodeURIComponent(c), { headers: { 'x-encode-key': pass } });
-    if (res.status === 401) { sessionStorage.removeItem('encode_key'); setPass(''); setStage('pass'); return null; }
-    if (res.status === 404) { setMsg('Kode ' + c + ' tidak ada di database.'); return null; }
-    const json = await res.json();
-    return json.card || null;
+    try {
+      const res = await fetch('/api/encode?code=' + encodeURIComponent(c), { headers: { 'x-encode-key': pass } });
+      if (res.status === 401) { sessionStorage.removeItem('encode_key'); setPass(''); setStage('pass'); setMsg('Sesi berakhir. Masukkan passcode lagi.'); return null; }
+      if (res.status === 404) { setMsg('Kode ' + c + ' tidak ada di database.'); return null; }
+      const json = await res.json();
+      return json.card || null;
+    } catch (e) {
+      setMsg('Jaringan gagal saat memeriksa kode ' + c + '. Coba lagi.');
+      return null;
+    }
   }
 
   async function submitPass() {
-    const res = await fetch('/api/encode?code=PING', { headers: { 'x-encode-key': passInput } });
-    if (res.ok) { sessionStorage.setItem('encode_key', passInput); setPass(passInput); setStage('idle'); setMsg(''); }
-    else setMsg('Passcode salah.');
+    try {
+      const res = await fetch('/api/encode?code=PING', { headers: { 'x-encode-key': passInput } });
+      if (res.ok) { sessionStorage.setItem('encode_key', passInput); setPass(passInput); setStage('idle'); setMsg(''); }
+      else setMsg('Passcode salah.');
+    } catch (e) { setMsg('Jaringan gagal. Coba lagi.'); }
   }
 
   async function loadCard(c) {
-    setMsg('');
+    setMsg('QR terbaca: #' + c + ' — memeriksa database…');
     const cardData = await apiGet(c);
     if (cardData) { setCode(c); setCard(cardData); setStage('card'); }
+    else { setStage('idle'); }
   }
 
   function startScan() { setMsg(''); setStage('scanning'); }
@@ -65,13 +73,15 @@ export default function EncodePage() {
         if (!alive) return;
         const h = new Html5Qrcode('encode-reader');
         scannerRef.current = h;
-        await h.start({ facingMode: 'environment' }, { fps: 10, qrbox: { width: 220, height: 220 } }, (text) => {
+        await h.start({ facingMode: 'environment' }, { fps: 15, qrbox: (vw, vh) => { const side = Math.floor(Math.min(vw, vh) * 0.85); return { width: side, height: side }; } }, (text) => {
           if (!alive) return;
           alive = false;
           stopScanner();
-          const m = String(text).match(BASE_PATTERN);
+          const t = String(text).trim();
+          const m = t.match(BASE_PATTERN);
           if (m) loadCard(m[1].toUpperCase());
-          else { setStage('idle'); setMsg('QR ini bukan QR kartu Proyekita.'); }
+          else if (/^[A-Za-z0-9]{4,10}$/.test(t)) loadCard(t.toUpperCase());
+          else { setStage('idle'); setMsg('QR ini bukan QR kartu Proyekita. Isinya: ' + t.slice(0, 60)); }
         }, () => {});
       } catch (e) {
         if (alive) { alive = false; setStage('idle'); setMsg('Kamera tidak bisa dibuka: ' + (e && e.message ? e.message : 'izin ditolak')); }
@@ -94,19 +104,24 @@ export default function EncodePage() {
   }
 
   async function finishOk(foundUrl) {
-    const res = await fetch('/api/encode', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-encode-key': pass },
-      body: JSON.stringify({ code, verified_url: foundUrl }),
-    });
-    if (res.ok) {
-      setCount(c => c + 1);
-      setLastDone(code);
-      if (navigator.vibrate) navigator.vibrate(90);
-      setStage('done');
-    } else {
+    try {
+      const res = await fetch('/api/encode', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-encode-key': pass },
+        body: JSON.stringify({ code, verified_url: foundUrl }),
+      });
+      if (res.ok) {
+        setCount(c => c + 1);
+        setLastDone(code);
+        if (navigator.vibrate) navigator.vibrate(90);
+        setStage('done');
+      } else {
+        setStage('card');
+        setMsg('Gagal mencatat ke database (kode ' + res.status + '). Chip sudah terisi tapi belum tercatat — ulangi verifikasi.');
+      }
+    } catch (e) {
       setStage('card');
-      setMsg('Gagal mencatat ke database (kode ' + res.status + '). Chip sudah terisi tapi belum tercatat — ulangi verifikasi.');
+      setMsg('Jaringan gagal saat mencatat. Chip sudah terisi — ulangi verifikasi setelah koneksi stabil.');
     }
   }
 
@@ -172,6 +187,7 @@ export default function EncodePage() {
             <>
               <div id="encode-reader" className="en-reader" />
               <div className="en-msg">Arahkan kamera ke QR code yang tercetak di kartu…</div>
+              {msg ? <div className="en-msg err">{msg}</div> : null}
               <button className="en-big ghost" onClick={() => setStage('idle')}>BATAL</button>
             </>
           )}
