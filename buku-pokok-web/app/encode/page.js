@@ -16,6 +16,7 @@ export default function EncodePage() {
   const [manual, setManual] = useState('');
   const [lastDone, setLastDone] = useState('');
   const scannerRef = useRef(null);
+  const fileRef = useRef(null);
   const handledRef = useRef(false);
   const nfcOk = typeof window !== 'undefined' && 'NDEFReader' in window;
 
@@ -63,6 +64,26 @@ export default function EncodePage() {
 
   function startScan() { setMsg(''); setStage('scanning'); }
 
+  async function onPhoto(e) {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    setMsg('Membaca foto QR…');
+    try {
+      const mod = await import('html5-qrcode');
+      const Html5Qrcode = mod.Html5Qrcode || mod.default;
+      const h = new Html5Qrcode('photo-reader');
+      const text = await h.scanFile(file, false);
+      const t = String(text).trim();
+      const m = t.match(BASE_PATTERN);
+      if (m) loadCard(m[1].toUpperCase());
+      else if (/^[A-Za-z0-9]{4,10}$/.test(t)) loadCard(t.toUpperCase());
+      else { setMsg('Foto ini bukan QR kartu Proyekita. Isinya: ' + t.slice(0, 60)); }
+    } catch (err) {
+      setMsg('QR tidak terbaca dari foto. Ambil foto lebih dekat dan terang.');
+    }
+    e.target.value = '';
+  }
+
   useEffect(() => {
     if (stage !== 'scanning') return;
     let alive = true;
@@ -73,7 +94,7 @@ export default function EncodePage() {
         if (!alive) return;
         const h = new Html5Qrcode('encode-reader');
         scannerRef.current = h;
-        await h.start({ facingMode: 'environment' }, { fps: 15, qrbox: (vw, vh) => { const side = Math.floor(Math.min(vw, vh) * 0.85); return { width: side, height: side }; } }, (text) => {
+                await h.start({ facingMode: 'environment' }, { fps: 10 }, (text) => {
           if (!alive) return;
           alive = false;
           stopScanner();
@@ -178,7 +199,10 @@ export default function EncodePage() {
             <>
               <button className="en-big" onClick={startScan}>SCAN QR KARTU</button>
               <input className="en-input" placeholder="atau ketik kode manual, mis. PK0012" value={manual} onChange={e => setManual(e.target.value)} />
-              <button className="en-big ghost" onClick={() => { if (manual.trim()) loadCard(manual.trim().toUpperCase()); }}>PAKAI KODE MANUAL</button>
+                            <button className="en-big ghost" onClick={() => { if (manual.trim()) loadCard(manual.trim().toUpperCase()); }}>PAKAI KODE MANUAL</button>
+              <div id="photo-reader" style={{ display: 'none' }} />
+              <input ref={fileRef} type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={onPhoto} />
+              <button className="en-big ghost" onClick={() => { if (fileRef.current) fileRef.current.click(); }}>PAKAI FOTO QR (jika kamera rewel)</button>
               {!nfcOk ? <div className="en-msg err">Perangkat ini tidak punya Web NFC. Penulisan chip harus dari Chrome di HP Android.</div> : null}
               {msg ? <div className="en-msg err">{msg}</div> : null}
             </>
