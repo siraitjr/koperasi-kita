@@ -11,12 +11,11 @@ export default function EncodePage() {
   const [code, setCode] = useState('');
   const [card, setCard] = useState(null);
   const [msg, setMsg] = useState('');
+  const [camStatus, setCamStatus] = useState('');
   const [count, setCount] = useState(0);
   const [alarm, setAlarm] = useState(null);
   const [manual, setManual] = useState('');
   const [lastDone, setLastDone] = useState('');
-  const scannerRef = useRef(null);
-  const fileRef = useRef(null);
   const handledRef = useRef(false);
   const nfcOk = typeof window !== 'undefined' && 'NDEFReader' in window;
 
@@ -24,15 +23,6 @@ export default function EncodePage() {
     const saved = sessionStorage.getItem('encode_key');
     if (saved) { setPass(saved); setStage('idle'); }
   }, []);
-
-  function stopScanner() {
-    if (scannerRef.current) {
-      const s = scannerRef.current;
-      scannerRef.current = null;
-      s.stop().catch(() => {});
-      s.clear().catch(() => {});
-    }
-  }
 
   async function apiGet(c) {
     try {
@@ -62,53 +52,63 @@ export default function EncodePage() {
     else { setStage('idle'); }
   }
 
-  function startScan() { setMsg(''); setStage('scanning'); }
-
-  async function onPhoto(e) {
-    const file = e.target.files && e.target.files[0];
-    if (!file) return;
-    setMsg('Membaca foto QR…');
-    try {
-      const mod = await import('html5-qrcode');
-      const Html5Qrcode = mod.Html5Qrcode || mod.default;
-      const h = new Html5Qrcode('photo-reader');
-      const text = await h.scanFile(file, false);
-      const t = String(text).trim();
-      const m = t.match(BASE_PATTERN);
-      if (m) loadCard(m[1].toUpperCase());
-      else if (/^[A-Za-z0-9]{4,10}$/.test(t)) loadCard(t.toUpperCase());
-      else { setMsg('Foto ini bukan QR kartu Proyekita. Isinya: ' + t.slice(0, 60)); }
-    } catch (err) {
-      setMsg('QR tidak terbaca dari foto. Ambil foto lebih dekat dan terang.');
-    }
-    e.target.value = '';
-  }
+  function startScan() { setMsg(''); setCamStatus(''); setStage('scanning'); }
 
   useEffect(() => {
     if (stage !== 'scanning') return;
     let alive = true;
+    let stream = null;
+    let timer = null;
     (async () => {
       try {
-        const mod = await import('html5-qrcode');
-        const Html5Qrcode = mod.Html5Qrcode || mod.default;
+        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+        if (!alive) { stream.getTracks().forEach(t => t.stop()); return; }
+        const video = document.getElementById('en-video');
+        if (!video) { setStage('idle'); setMsg('Elemen video tidak ditemukan. Coba ulang.'); return; }
+        video.srcObject = stream;
+        await video.play();
         if (!alive) return;
-        const h = new Html5Qrcode('encode-reader');
-        scannerRef.current = h;
-                await h.start({ facingMode: 'environment' }, { fps: 10 }, (text) => {
+        setCamStatus('Kamera hidup — arahkan ke QR kartu…');
+        const track = stream.getVideoTracks()[0];
+        if (track) track.addEventListener('ended', () => {
           if (!alive) return;
           alive = false;
-          stopScanner();
-          const t = String(text).trim();
-          const m = t.match(BASE_PATTERN);
-          if (m) loadCard(m[1].toUpperCase());
-          else if (/^[A-Za-z0-9]{4,10}$/.test(t)) loadCard(t.toUpperCase());
-          else { setStage('idle'); setMsg('QR ini bukan QR kartu Proyekita. Isinya: ' + t.slice(0, 60)); }
-        }, () => {});
+          setStage('idle');
+          setMsg('Kamera mati mendadak. Tutup aplikasi kamera lain yang mungkin terbuka, lalu coba lagi.');
+        });
+        if (!('BarcodeDetector' in window)) {
+          stream.getTracks().forEach(t => t.stop());
+          setStage('idle');
+          setMsg('Chrome di HP ini tidak mendukung pemindai bawaan. Perbarui aplikasi Chrome, atau ketik kode manual.');
+          return;
+        }
+        const det = new BarcodeDetector({ formats: ['qr_code'] });
+        timer = setInterval(async () => {
+          if (!alive) return;
+          try {
+            const codes = await det.detect(video);
+            if (!alive) return;
+            if (codes && codes.length) {
+              alive = false;
+              clearInterval(timer);
+              stream.getTracks().forEach(t => t.stop());
+              const t = String(codes[0].rawValue).trim();
+              const m = t.match(BASE_PATTERN);
+              if (m) loadCard(m[1].toUpperCase());
+              else if (/^[A-Za-z0-9]{4,10}$/.test(t)) loadCard(t.toUpperCase());
+              else { setStage('idle'); setMsg('QR ini bukan QR kartu Proyekita. Isinya: ' + t.slice(0, 60)); }
+            }
+          } catch (e) {}
+        }, 250);
       } catch (e) {
-        if (alive) { alive = false; setStage('idle'); setMsg('Kamera tidak bisa dibuka: ' + (e && e.message ? e.message : 'izin ditolak')); }
+        if (alive) { setStage('idle'); setMsg('Kamera tidak bisa dibuka: ' + (e && e.message ? e.message : 'izin ditolak')); }
       }
     })();
-    return () => { alive = false; stopScanner(); };
+    return () => {
+      alive = false;
+      if (timer) clearInterval(timer);
+      if (stream) stream.getTracks().forEach(t => t.stop());
+    };
   }, [stage]);
 
   function parseTagUrl(message) {
@@ -199,18 +199,15 @@ export default function EncodePage() {
             <>
               <button className="en-big" onClick={startScan}>SCAN QR KARTU</button>
               <input className="en-input" placeholder="atau ketik kode manual, mis. PK0012" value={manual} onChange={e => setManual(e.target.value)} />
-                            <button className="en-big ghost" onClick={() => { if (manual.trim()) loadCard(manual.trim().toUpperCase()); }}>PAKAI KODE MANUAL</button>
-              <div id="photo-reader" style={{ display: 'none' }} />
-              <input ref={fileRef} type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={onPhoto} />
-              <button className="en-big ghost" onClick={() => { if (fileRef.current) fileRef.current.click(); }}>PAKAI FOTO QR (jika kamera rewel)</button>
+              <button className="en-big ghost" onClick={() => { if (manual.trim()) loadCard(manual.trim().toUpperCase()); }}>PAKAI KODE MANUAL</button>
               {!nfcOk ? <div className="en-msg err">Perangkat ini tidak punya Web NFC. Penulisan chip harus dari Chrome di HP Android.</div> : null}
               {msg ? <div className="en-msg err">{msg}</div> : null}
             </>
           )}
           {stage === 'scanning' && (
             <>
-              <div id="encode-reader" className="en-reader" />
-              <div className="en-msg">Arahkan kamera ke QR code yang tercetak di kartu…</div>
+              <video id="en-video" className="en-video" playsInline muted autoPlay />
+              <div className="en-msg">{camStatus || 'Menyalakan kamera…'}</div>
               {msg ? <div className="en-msg err">{msg}</div> : null}
               <button className="en-big ghost" onClick={() => setStage('idle')}>BATAL</button>
             </>
