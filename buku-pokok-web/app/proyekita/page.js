@@ -1,119 +1,197 @@
 import './landing.css';
 
-const WA_NUMBER = '628XXXXXXXXXX';
-const DEMO_VIDEO_READY = false;
-const IG_HANDLE = 'proyekita';
-
+const WA_NUMBER = '6285210221082';
 const wa = (text) => `https://wa.me/${WA_NUMBER}?text=${encodeURIComponent(text)}`;
 
 export const metadata = {
-  title: 'Proyekita — Kartu Ulasan Google NFC | Satu Tap, Langsung Form Ulasan',
-  description: 'Kartu NFC + QR untuk usaha lokal: pelanggan tap sekali, langsung masuk form ulasan Google. Tanpa langganan, tanpa ribet, bekerja di semua HP.',
+  title: 'Proyekita Partner — Jadilah Reseller Kartu NFC Review Google',
+  description: 'Program reseller resmi Kartu NFC Review Google Proyekita. Modal kecil, margin tinggi, produk terbukti laku di bisnis lokal seluruh Indonesia.',
 };
 
-export default function ProyekitaLanding() {
+export default function ProyekitaReseller() {
   return (
     <div className="ld-wrap">
-      <div className="ld-bar">Harga pelopor Rp 50.000 untuk 10 outlet pertama — setelah itu Rp 69.000</div>
+      <div className="ld-bar">
+        <span className="ld-dot" /> Pendaftaran Reseller Batch 1 — Slot Kota Terbatas
+      </div>
 
       <header className="ld-hero">
-        <div className="ld-brand">PROYEKITA</div>
-        <h1>Satu Tap, Pelanggan Langsung Kasih Ulasan Google</h1>
-        <p className="ld-sub">Kartu NFC + QR untuk cafe, salon, klinik, dan usaha lokal. Tanpa langganan, tanpa ribet, bekerja di semua HP.</p>
-        <div className="ld-cta">
-          <a className="ld-btn wa" href={wa('Halo Proyekita, saya mau pesan kartu ulasan Google.')}>Pesan via WhatsApp</a>
-          <a className="ld-btn ghost" href="#pesan">Lihat Cara Pemesanan</a>
+        <div className="ld-hero-glow" />
+        <div className="ld-hero-inner">
+          <span className="ld-pill">Program Reseller Resmi</span>
+          <h1>Jual Kartu Review Google.<br /><span className="ld-grad">Modal Kecil. Untung Besar.</span></h1>
+          <p className="ld-sub">Bantu bisnis lokal naik rating Google-nya. Produk premium, sistem anti-error, margin Rp 40.000–Rp 115.000 per kartu.</p>
+          <div className="ld-cta">
+            <a className="ld-btn primary" href={wa('Halo Proyekita, saya mau daftar jadi reseller.')}>Daftar Jadi Reseller</a>
+            <a className="ld-btn ghost" href="#cuan">Lihat Potensi Cuan</a>
+          </div>
         </div>
       </header>
 
-      <section className="ld-sec" id="cara">
-        <h2>Cara Kerjanya — 3 Langkah</h2>
+      <section className="ld-stats">
+        <div className="ld-stat">
+          <div className="ld-stat-num">100%</div>
+          <div className="ld-stat-lbl">Anti-Error di WhatsApp / IG / HP Lama</div>
+        </div>
+        <div className="ld-stat">
+          <div className="ld-stat-num">Akrilik</div>
+          <div className="ld-stat-lbl">Bahan Premium, Bukan Stiker Murahan</div>
+        </div>
+        <div className="ld-stat">
+          <div className="ld-stat-num">Rp 0</div>
+          <div className="ld-stat-lbl">Biaya Bulanan untuk Klien</div>
+        </div>
+        <div className="ld-stat">
+          <div className="ld-stat-num">24 jam</div>
+          <div className="ld-stat-lbl">Support via WhatsApp</div>
+        </div>
+      </section>
+
+      <section className="ld-sec" id="mengapa">
+        <span className="ld-eyebrow">Mengapa Proyekita</span>
+        <h2>Bukan Produk Pasaran yang Bikin Anda Kena Komplain</h2>
+        <p className="ld-lead">Reseller kami tidak pernah dikomplain karena kartu gagal di-aktivasi atau link error di WhatsApp. Sistem kami dibangun dengan standar yang tidak dimiliki supplier kartu NFC murah manapun.</p>
         <div className="ld-grid">
-          <div className="ld-card"><div className="ld-num">1</div><h3>Tempel di meja kasir</h3><p>Kartu akrilik premium dengan chip NFC dan QR code. Elegan dilihat pelanggan.</p></div>
-          <div className="ld-card"><div className="ld-num">2</div><h3>Pelanggan tap atau scan</h3><p>Satu tap di HP Android atau iPhone, atau scan QR — langsung terbuka form ulasan Google usaha Anda.</p></div>
-          <div className="ld-card"><div className="ld-num">3</div><h3>Rating naik, pelanggan baru datang</h3><p>Ulasan masuk otomatis setiap hari. Posisi usaha Anda naik di Google Maps.</p></div>
-        </div>
-        {DEMO_VIDEO_READY ? (
-          <video className="ld-video" controls src="/demo-tap.mp4" />
-        ) : (
-          <a className="ld-btn wa center" href={wa('Halo Proyekita, kirim video demo kartu ulasan ya.')}>Minta Video Demo via WA</a>
-        )}
-      </section>
-
-      <section className="ld-sec alt">
-        <h2>Kenapa Bukan Kartu NFC Pasaran?</h2>
-        <div className="ld-grid two">
-          <div className="ld-card good"><h3>Proyekita</h3><ul>
-            <li>Langsung ke form bintang — tanpa klik tambahan</li>
-            <li>Bekerja di HP Android lama maupun iPhone</li>
-            <li>Tidak error saat scan dari WhatsApp / Instagram</li>
-            <li>Akrilik premium + stiker anti air</li>
-            <li>Dibantu aktivasi sampai kartu hidup</li>
-            <li>Support lokal via WhatsApp</li>
-          </ul></div>
-          <div className="ld-card bad"><h3>Kartu pasaran</h3><ul>
-            <li>Mampir dulu ke halaman Maps, pelanggan bingung</li>
-            <li>Sering gagal di HP Android lama</li>
-            <li>Error saat scan dari WhatsApp / Instagram</li>
-            <li>Stiker tipis mudah mengelupas</li>
-            <li>Pasang sendiri tanpa panduan</li>
-            <li>Tidak ada yang bisa dihubungi saat rusak</li>
-          </ul></div>
-        </div>
-      </section>
-
-      <section className="ld-sec" id="harga">
-        <h2>Harga Sederhana — Tanpa Paket-paket</h2>
-        <div className="ld-single">
-          <div className="ld-rp">Rp 50.000 <span>/ kartu</span></div>
-          <p className="ld-strike">harga normal Rp 69.000</p>
-          <ul>
-            <li>Kartu akrilik premium + stiker anti air</li>
-            <li>Chip NFC + QR code terisi link ulasan usaha Anda</li>
-            <li>Dibantu aktivasi sampai kartu hidup</li>
-            <li>Garansi ganti 30 hari untuk cacat produksi</li>
-            <li>Support WhatsApp, tanpa biaya bulanan</li>
-          </ul>
-          <a className="ld-btn wa" href={wa('Halo Proyekita, saya mau pesan kartu ulasan Google.')}>Pesan Sekarang</a>
+          <div className="ld-feat">
+            <div className="ld-feat-ico">⚡</div>
+            <h3>App Link Resmi Google</h3>
+            <p>Pelanggan tap — langsung form bintang. Tidak mampir ke halaman Maps, tidak ada klik tambahan.</p>
+          </div>
+          <div className="ld-feat">
+            <div className="ld-feat-ico">🛡️</div>
+            <h3>Perisai In-App Browser</h3>
+            <p>Scan dari WhatsApp, Instagram, atau TikTok tetap bekerja — bukan cuma dari Chrome biasa.</p>
+          </div>
+          <div className="ld-feat">
+            <div className="ld-feat-ico">📱</div>
+            <h3>Android Baru, Lama, iPhone</h3>
+            <p>Satu kartu untuk semua HP pelanggan. Tidak perlu tanya-tanya "HP-nya apa dulu?"</p>
+          </div>
+          <div className="ld-feat">
+            <div className="ld-feat-ico">🏛️</div>
+            <h3>Akrilik + Stiker Anti-Air</h3>
+            <p>Bahan tahan lama, tidak mengelupas, elegan di meja kasir. Klien bangga memajang.</p>
+          </div>
+          <div className="ld-feat">
+            <div className="ld-feat-ico">🔧</div>
+            <h3>Alat Encode Gratis</h3>
+            <p>Anda dapat akses ke sistem encoder web kami. Satu tap di HP Anda, chip langsung terisi.</p>
+          </div>
+          <div className="ld-feat">
+            <div className="ld-feat-ico">📚</div>
+            <h3>Training & Script Jualan</h3>
+            <p>Panduan lengkap dari cara pendekatan owner cafe sampai handling keberatan "kemahalan".</p>
+          </div>
         </div>
       </section>
 
-      <section className="ld-sec alt" id="pesan">
-        <h2>Cara Pemesanan — 4 Langkah</h2>
+      <section className="ld-sec dark" id="cuan">
+        <span className="ld-eyebrow light">Potensi Cuan</span>
+        <h2 className="light">Kalkulator Pendapatan Anda</h2>
+        <p className="ld-lead light">Berapa yang bisa Anda hasilkan sebagai reseller Proyekita?</p>
+        <div className="ld-calc">
+          <div className="ld-calc-row">
+            <div className="ld-calc-label">Modal per kartu</div>
+            <div className="ld-calc-value">Rp 35.000</div>
+          </div>
+          <div className="ld-calc-row">
+            <div className="ld-calc-label">Harga jual ke klien</div>
+            <div className="ld-calc-value">Rp 75.000 – Rp 150.000</div>
+          </div>
+          <div className="ld-calc-row">
+            <div className="ld-calc-label">Margin bersih per kartu</div>
+            <div className="ld-calc-value accent">Rp 40.000 – Rp 115.000</div>
+          </div>
+        </div>
+        <div className="ld-scenarios">
+          <div className="ld-scenario">
+            <div className="ld-scenario-head">Part-Time</div>
+            <div className="ld-scenario-num">5 kartu / minggu</div>
+            <div className="ld-scenario-money">Rp 1.000.000 – Rp 2.300.000 / bulan</div>
+          </div>
+          <div className="ld-scenario hot">
+            <div className="ld-scenario-tag">Umum dicapai</div>
+            <div className="ld-scenario-head">Serius</div>
+            <div className="ld-scenario-num">3 kartu / hari</div>
+            <div className="ld-scenario-money">Rp 3.600.000 – Rp 10.350.000 / bulan</div>
+          </div>
+          <div className="ld-scenario">
+            <div className="ld-scenario-head">Full-Time</div>
+            <div className="ld-scenario-num">5 kartu / hari</div>
+            <div className="ld-scenario-money">Rp 6.000.000 – Rp 17.250.000 / bulan</div>
+          </div>
+        </div>
+      </section>
+
+      <section className="ld-sec" id="starter">
+        <span className="ld-eyebrow">Yang Anda Dapat</span>
+        <h2>Starter Kit Reseller Proyekita</h2>
+        <div className="ld-kit">
+          <div className="ld-kit-item">
+            <div className="ld-kit-ico">📦</div>
+            <h3>Stok Kartu Fisik</h3>
+            <p>10 kartu akrilik NFC+QR siap jual dalam setiap batch awal. Anda tidak perlu urus supplier sendiri.</p>
+          </div>
+          <div className="ld-kit-item">
+            <div className="ld-kit-ico">🔑</div>
+            <h3>Akses Sistem Encode</h3>
+            <p>Passcode pribadi untuk alat encoder web kami. Satu scan QR + satu tap = kartu siap dijual.</p>
+          </div>
+          <div className="ld-kit-item">
+            <div className="ld-kit-ico">🎯</div>
+            <h3>Script Jualan Lengkap</h3>
+            <p>Cara pendekatan owner cafe, jawaban keberatan "kemahalan", dan teknik closing di tempat.</p>
+          </div>
+          <div className="ld-kit-item">
+            <div className="ld-kit-ico">🤝</div>
+            <h3>Group Mitra Eksklusif</h3>
+            <p>Komunitas privat sesama reseller untuk berbagi tips, tanya jawab, dan update produk.</p>
+          </div>
+        </div>
+      </section>
+
+      <section className="ld-sec alt" id="alur">
+        <span className="ld-eyebrow">Alur Pendaftaran</span>
+        <h2>4 Langkah Jadi Reseller</h2>
         <div className="ld-steps">
-          <div className="ld-step"><div className="ld-num">1</div><h3>Chat WhatsApp</h3><p>Kabari kami nama usaha Anda sebagaimana terdaftar di Google Maps.</p></div>
-          <div className="ld-step"><div className="ld-num">2</div><h3>Konfirmasi & pembayaran</h3><p>Kami kirim total tagihan dan rekening (transfer bank atau QRIS). Kartu masuk antrean produksi.</p></div>
-          <div className="ld-step"><div className="ld-num">3</div><h3>Produksi & encoding</h3><p>Kartu dicetak, dirakit, dan diisi link ulasan usaha Anda. Siap dalam 2–3 hari kerja.</p></div>
-          <div className="ld-step"><div className="ld-num">4</div><h3>Pemasangan & kartu hidup</h3><p>Kami pasang di lokasi Anda, atau kirim dengan panduan aktivasi 1 menit. Hari itu juga kartu bekerja.</p></div>
+          <div className="ld-step"><div className="ld-num">1</div><h3>Daftar Antrean</h3><p>Chat WhatsApp, isi nama dan kota Anda. Kami kunci wilayah kota Anda.</p></div>
+          <div className="ld-step"><div className="ld-num">2</div><h3>Briefing Singkat</h3><p>Call 15 menit dengan tim Proyekita untuk memastikan visi dan ekspektasi Anda.</p></div>
+          <div className="ld-step"><div className="ld-num">3</div><h3>Ambil Starter Kit</h3><p>Pembayaran dan pengiriman 10 kartu pertama + akses sistem + materi training.</p></div>
+          <div className="ld-step"><div className="ld-num">4</div><h3>Mulai Jual</h3><p>Datang ke bisnis lokal di kota Anda, demo, closing. Kami dampingi sampai klien pertama Anda puas.</p></div>
         </div>
       </section>
 
       <section className="ld-sec" id="faq">
-        <h2>Pertanyaan yang Sering Ditanyakan</h2>
+        <span className="ld-eyebrow">FAQ</span>
+        <h2>Pertanyaan Calon Reseller</h2>
         <div className="ld-faq">
-          <details><summary>Apakah ada biaya bulanan?</summary><p>Tidak. Bayar sekali per kartu, dan kartu bekerja selamanya.</p></details>
-          <details><summary>HP pelanggan saya macam-macam, apakah semua bisa?</summary><p>Bisa. Sistem kami dirancang agar bekerja di Android baru, Android lama, maupun iPhone — termasuk scan dari dalam WhatsApp dan Instagram.</p></details>
-          <details><summary>Berapa lama dari pesan sampai kartu hidup?</summary><p>Produksi 2–3 hari kerja. Pemasangan di lokasi atau pengiriman menambah 1–3 hari tergantung jarak. Aktivasi sendiri hanya sekitar 1 menit.</p></details>
-          <details><summary>Metode pembayarannya apa?</summary><p>Transfer bank dan QRIS. Setelah pembayaran masuk, kartu langsung masuk antrean produksi.</p></details>
-          <details><summary>Saya gaptek, apakah sulit?</summary><p>Tidak. Kami bantu aktivasi sampai kartu hidup. Setelah itu Anda tidak perlu melakukan apa-apa.</p></details>
-          <details><summary>Kalau usaha saya pindah lokasi?</summary><p>Kartu bisa direlokasi ke lokasi atau usaha baru dengan jasa relokasi Rp 50.000.</p></details>
-          <details><summary>Bisa pesan dari luar kota?</summary><p>Bisa. Kami kirim ke seluruh Indonesia, dan aktivasi didampingi lewat WhatsApp sampai kartu hidup.</p></details>
-          <details><summary>Bagaimana kalau kartu rusak?</summary><p>Cacat produksi (chip atau cetakan) dalam 30 hari kami ganti baru tanpa biaya. Kerusakan fisik seperti patah atau terendam di luar garansi, tapi bisa pesan ganti dengan harga khusus.</p></details>
+          <details><summary>Apakah ada wilayah eksklusif per kota?</summary><p>Ya. Kami batasi jumlah reseller per kota agar tidak saling berebut klien. Kota yang sudah penuh tidak akan dibuka lagi sampai kapasitasnya bertambah.</p></details>
+          <details><summary>Berapa minimum order pertama?</summary><p>Starter Kit berisi 10 kartu. Setelah itu pemesanan bebas — tidak ada minimum bulanan.</p></details>
+          <details><summary>Saya belum pernah jualan, apakah bisa?</summary><p>Bisa. Kami sediakan training dari nol sampai closing. Banyak reseller kami awalnya karyawan kantoran dan mahasiswa.</p></details>
+          <details><summary>Apakah saya harus cetak stiker sendiri?</summary><p>Tidak. Stiker sudah kami cetak dengan desain bermerek Proyekita. Anda hanya perlu encode chip NFC dengan alat yang kami sediakan.</p></details>
+          <details><summary>Kalau klien saya komplain, siapa yang handle?</summary><p>Anda sebagai reseller adalah kontak pertama. Untuk masalah teknis yang dalam, tim Proyekita mendukung Anda via WhatsApp agar klien Anda puas.</p></details>
+          <details><summary>Bolehkah saya jual online lewat marketplace?</summary><p>Tidak direkomendasikan. Produk ini paling efektif dijual tatap muka karena butuh demo. Marketplace hanya akan menyeret Anda ke perang harga.</p></details>
+          <details><summary>Berapa lama sampai bisa closing pertama?</summary><p>Rata-rata reseller kami closing klien pertama dalam 3–7 hari setelah mulai mendekati bisnis lokal.</p></details>
+          <details><summary>Apakah ada biaya bulanan sebagai reseller?</summary><p>Tidak. Anda hanya membayar saat pesan stok kartu baru. Tidak ada royalti, tidak ada langganan.</p></details>
         </div>
       </section>
 
-      <section className="ld-sec alt" id="kontak">
-        <h2>Kontak</h2>
-        <div className="ld-contact">
-          <div className="ld-crow"><b>WhatsApp</b><span>Satu kanal untuk pesan, tanya, dan dukungan — respon cepat di jam kerja.</span></div>
-          <div className="ld-crow"><b>Jam layanan</b><span>Senin–Sabtu, 09.00–18.00 WIB</span></div>
-          <div className="ld-crow"><b>Area pemasangan</b><span>Lubuk Sikaping & sekitarnya datang langsung; seluruh Indonesia via pengiriman.</span></div>
-          <div className="ld-crow"><b>Instagram</b><span>@{IG_HANDLE}</span></div>
+      <section className="ld-sec cta-sec">
+        <div className="ld-cta-card">
+          <h2>Siap Jadi Reseller Proyekita?</h2>
+          <p>Slot Batch 1 terbatas. Kota besar sudah mulai terisi. Amankan wilayah Anda sekarang sebelum ditutup.</p>
+          <a className="ld-btn primary big" href={wa('Halo Proyekita, saya mau daftar jadi reseller Batch 1.')}>Daftar Antrean Sekarang</a>
+          <p className="ld-cta-note">Gratis konsultasi awal • Tidak ada biaya pendaftaran • Bayar hanya saat ambil Starter Kit</p>
         </div>
-        <a className="ld-btn wa center" href={wa('Halo Proyekita, saya mau tanya-tanya dulu.')}>Chat WhatsApp Sekarang</a>
       </section>
 
-      <footer className="ld-foot">© 2026 Proyekita • koperasi-kita.com/proyekita</footer>
+      <footer className="ld-foot">
+        <div className="ld-foot-inner">
+          <div className="ld-brand">PROYEKITA</div>
+          <div className="ld-foot-note">Program Reseller Resmi</div>
+          <div className="ld-foot-copy">© 2026 Proyekita • koperasi-kita.com/proyekita</div>
+        </div>
+      </footer>
     </div>
   );
 }
