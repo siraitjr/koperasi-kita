@@ -168,7 +168,7 @@ export default function ProyekitaReseller() {
           <details><summary>Apakah ada wilayah eksklusif per kota?</summary><p>Ya. Kami batasi jumlah reseller per kota agar tidak saling berebut klien. Kota yang sudah penuh tidak akan dibuka lagi sampai kapasitasnya bertambah.</p></details>
           <details><summary>Berapa minimum order pertama?</summary><p>Starter Kit berisi 10 kartu. Setelah itu pemesanan bebas — tidak ada minimum bulanan.</p></details>
           <details><summary>Saya belum pernah jualan, apakah bisa?</summary><p>Bisa. Kami sediakan training dari nol sampai closing. Banyak reseller kami awalnya karyawan kantoran dan mahasiswa.</p></details>
-          <details><summary>Apakah saya harus cetak stiker sendiri?</summary><p>Tidak. Stiker sudah kami cetak dengan desain bermerek Proyekita. Anda hanya perlu encode chip NFC dengan alat yang kami sediakan.</p></details>
+          <details><summary>Apakah saya harus cetak stiker sendiri?</summary><p>Tidak. Stiker sudah kami cetak. Anda hanya perlu aktivasi saat ingin closing.</p></details>
           <details><summary>Kalau klien saya komplain, siapa yang handle?</summary><p>Anda sebagai reseller adalah kontak pertama. Untuk masalah teknis yang dalam, tim Proyekita mendukung Anda via WhatsApp agar klien Anda puas.</p></details>
           <details><summary>Bolehkah saya jual online lewat marketplace?</summary><p>Tidak direkomendasikan. Produk ini paling efektif dijual tatap muka karena butuh demo. Marketplace hanya akan menyeret Anda ke perang harga.</p></details>
           <details><summary>Berapa lama sampai bisa closing pertama?</summary><p>Rata-rata reseller kami closing klien pertama dalam 3–7 hari setelah mulai mendekati bisnis lokal.</p></details>
